@@ -1,0 +1,20 @@
+schema_version: agent_load_policy.v0.1
+default_action: deny
+
+# Optional host identity gates. A revoked agent is denied before rules run.
+allowed_agents: []
+revoked_agents: []
+
+# Add narrow allow rules only after reviewing artifact history, target host,
+# manifest intent, and rollback plan.
+rules:
+  # - name: allow-acme-aegis-on-host-01
+  #   action: allow
+  #   agents: ["host-01"]
+  #   tenants: ["acme"]
+  #   projects: ["aegis-bpf"]
+  #   artifacts: ["aegis"]
+  #   profiles: ["ubuntu-24.04-6.8"]
+  #   kernel_min: "6.8.0"
+  #   kernel_max: "6.8.99"
+  #   require_verified_history: true

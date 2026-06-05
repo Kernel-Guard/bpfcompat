@@ -1,0 +1,15 @@
+id: almalinux-9-5.14
+distro: almalinux
+version: "9"
+kernel_family: "5.14"
+arch: x86_64
+image:
+  source_url: "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+  local_path: "vm/cache/almalinux-9.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

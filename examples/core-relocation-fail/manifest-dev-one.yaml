@@ -1,0 +1,12 @@
+name: core-relocation-fail-dev-one
+programs:
+  - name: handle_exec_core_fail
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true
+required_profiles:
+  - ubuntu-22.04-5.15

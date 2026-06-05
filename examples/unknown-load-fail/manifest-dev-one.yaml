@@ -1,0 +1,4 @@
+name: unknown-load-fail-dev-one
+required_profiles:
+  - ubuntu-22.04-5.15
+

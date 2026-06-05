@@ -1,0 +1,15 @@
+name: cilium-tracepoint-in-c
+programs:
+  - name: mm_page_alloc
+    section: tracepoint/kmem/mm_page_alloc
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: kmem
+      name: mm_page_alloc
+      required: true
+required_profiles:
+  - ubuntu-18.04-4.15
+  - ubuntu-20.04-5.4
+  - ubuntu-22.04-5.15
+  - debian-12-6.1

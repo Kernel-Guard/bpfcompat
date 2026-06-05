@@ -1,0 +1,35 @@
+[Unit]
+Description=bpfcompat reviewed host-load agent
+Documentation=https://github.com/erenari/bpfcompat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/bpfcompat/agent.env
+EnvironmentFile=/etc/bpfcompat/agent-load.env
+WorkingDirectory=/var/lib/bpfcompat-agent
+ExecStart=/bin/sh -c 'exec /usr/local/bin/bpfcompat agent apply --api-url "$BPFCOMPAT_AGENT_API_URL" --tenant "$BPFCOMPAT_AGENT_TENANT" --project "$BPFCOMPAT_AGENT_PROJECT" --artifact-name "$BPFCOMPAT_AGENT_ARTIFACT_NAME" --agent-id "$BPFCOMPAT_AGENT_ID" --target-profile "$BPFCOMPAT_AGENT_TARGET_PROFILE" --version "$BPFCOMPAT_AGENT_VERSION" --workdir "$BPFCOMPAT_AGENT_WORKDIR" --out-dir "$BPFCOMPAT_AGENT_OUT_DIR" --out "${BPFCOMPAT_AGENT_LAST_LOAD_RESULT_PATH:-/var/lib/bpfcompat-agent/last-load.json}" --approve-load --load-policy "$BPFCOMPAT_AGENT_LOAD_POLICY_PATH" --require-load-policy="${BPFCOMPAT_AGENT_REQUIRE_LOAD_POLICY:-true}" --manifest "$BPFCOMPAT_AGENT_MANIFEST_PATH" --use-sudo=false $BPFCOMPAT_AGENT_LOAD_EXTRA_ARGS'
+
+# This unit is intentionally not paired with a timer. It is for reviewed
+# operator-triggered loads only after bpfcompat-agent.service has fetched and
+# verified a candidate.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bpfcompat-agent
+RuntimeDirectory=bpfcompat-agent-load
+StateDirectory=bpfcompat-agent
+LogsDirectory=bpfcompat-agent
+CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_NET_ADMIN
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

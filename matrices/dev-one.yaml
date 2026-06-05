@@ -1,0 +1,5 @@
+name: dev-one
+profiles:
+  - id: ubuntu-22.04-5.15
+    required: true
+

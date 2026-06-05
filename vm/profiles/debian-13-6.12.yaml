@@ -1,0 +1,15 @@
+id: debian-13-6.12
+distro: debian
+version: "13"
+kernel_family: "6.12"
+arch: x86_64
+image:
+  source_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+  local_path: "vm/cache/debian-13.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

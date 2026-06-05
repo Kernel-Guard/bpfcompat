@@ -1,0 +1,16 @@
+id: ubuntu-25.04-6.14
+distro: ubuntu
+version: "25.04"
+kernel_family: "6.14"
+arch: x86_64
+image:
+  source_url: "https://cloud-images.ubuntu.com/releases/25.04/release/ubuntu-25.04-server-cloudimg-amd64.img"
+  local_path: "vm/cache/ubuntu-25.04.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true
+

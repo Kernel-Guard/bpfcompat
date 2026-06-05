@@ -1,0 +1,15 @@
+id: oracle-linux-9-uek7-5.15
+distro: oracle
+version: "9"
+kernel_family: "5.15"
+arch: x86_64
+image:
+  source_url: "https://yum.oracle.com/templates/OracleLinux/OL9/u7/x86_64/OL9U7_x86_64-kvm-b269.qcow2"
+  local_path: "vm/cache/oracle-linux-9-uek7-5.15.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

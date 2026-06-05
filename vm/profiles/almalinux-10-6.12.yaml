@@ -1,0 +1,15 @@
+id: almalinux-10-6.12
+distro: almalinux
+version: "10"
+kernel_family: "6.12"
+arch: x86_64
+image:
+  source_url: "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2"
+  local_path: "vm/cache/almalinux-10.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

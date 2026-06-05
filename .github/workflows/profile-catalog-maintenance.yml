@@ -1,0 +1,51 @@
+name: profile-catalog-maintenance
+
+# Maintains the broad kernel/distro catalog separately from VM execution. This
+# catches broken profile YAML and stale public image URLs before a release sweep.
+
+on:
+  schedule:
+    - cron: "47 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog-audit:
+    name: Profile catalog audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+          cache: true
+
+      - name: Build CLI
+        run: make build
+
+      - name: Validate profile catalog
+        run: go test ./internal/vm -run 'TestAllProfileYAMLLoadAndValidate|TestProfileExecutionTransportSupport' -count=1
+
+      - name: Dry-run expanded image prefetch
+        run: make vm-images-expanded-2026-dry-run
+
+      - name: Generate profile audit evidence
+        run: make profile-catalog-audit
+
+      - name: Generate matrix readiness evidence
+        run: make matrix-readiness
+
+      - name: Upload catalog evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-profile-catalog-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            evidence/profile-catalog/*.md
+            matrices/expanded-2026.yaml
+            matrices/latest-kernel-sweep.yaml
+            matrices/arm64-smoke.yaml

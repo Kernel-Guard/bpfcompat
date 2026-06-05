@@ -1,0 +1,4 @@
+name: arm64-smoke
+profiles:
+  - id: ubuntu-22.04-arm64-5.15
+    required: true

@@ -1,0 +1,52 @@
+name: bpfcompat-suite
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: eBPF compatibility suite
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify KVM availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+
+      - name: Build BPF artifacts
+        shell: bash
+        run: make bpf
+
+      - name: Run compatibility suite
+        uses: erenari/bpfcompat@main
+        with:
+          suite: adapters/generic-ebpf-suite/bpfcompat-suite.yaml
+          suite-out: reports/bpfcompat-suite.json
+          suite-markdown: reports/bpfcompat-suite.md
+          timeout: 8m
+          concurrency: "1"
+
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            reports/bpfcompat-suite.json
+            reports/bpfcompat-suite.md
+            reports/bpfcompat-suite/*.json
+            reports/bpfcompat-suite/*.md
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr

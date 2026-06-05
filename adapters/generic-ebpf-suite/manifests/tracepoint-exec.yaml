@@ -1,0 +1,18 @@
+name: exec-tracepoint
+programs:
+  - name: handle_exec
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true
+required_profiles:
+  - ubuntu-22.04-5.15
+functional_tests:
+  - name: exec-event-smoke
+    command: "./test/expect-exec-event.sh"
+    timeout: 30s
+    expect_exit_code: 0
+    expect_stdout_contains: "exec_events="

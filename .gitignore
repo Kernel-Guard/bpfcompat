@@ -1,0 +1,48 @@
+# Build outputs
+/bin/
+/validator/c-libbpf/bin/
+
+# Runtime artifacts
+/.bpfcompat/
+/.bpfcompat-api/
+/reports/*
+!/reports/.gitkeep
+
+# VM image cache
+/vm/cache/*
+!/vm/cache/.gitkeep
+
+# Generated eBPF objects
+*.bpf.o
+
+# Runtime-selected fetched artifacts
+/artifacts/runtime-selected/
+
+# Local-only private notes
+/.private-diligence/
+/docs/strategy-private/
+
+# Generated evidence (high-churn local outputs)
+/evidence/
+
+# Local demo/example working sets
+/examples/aegis-live/
+
+# Generated matrix artifacts (local, environment-dependent)
+/matrices/expanded-2026-runnable.yaml
+/matrices/expanded-2026-runnable-keep-manual.yaml
+/matrices/latest-kernel-runnable.yaml
+/matrices/upstream-kernel-runnable.yaml
+/matrices/firecracker-*.yaml
+/matrices/smoke-*.yaml
+/vm/profiles/kernelorg-*.yaml
+/vm/profiles/firecracker-*.yaml
+
+# Generated static compatibility site
+/public/compatibility/
+
+# Common temporary files
+*.log
+*.tmp
+*.swp
+.DS_Store

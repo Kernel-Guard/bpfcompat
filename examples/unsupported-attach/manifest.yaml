@@ -1,0 +1,14 @@
+name: unsupported-attach
+programs:
+  - name: handle_missing_symbol
+    section: kprobe/bpfcompat_symbol_should_not_exist_987654
+    type: kprobe
+    attach:
+      kind: kprobe
+      symbol: bpfcompat_symbol_should_not_exist_987654
+      required: true
+required_profiles:
+  - ubuntu-18.04-4.15
+  - ubuntu-20.04-5.4
+  - ubuntu-22.04-5.15
+  - debian-12-6.1

@@ -1,0 +1,94 @@
+name: multiarch-compatibility
+
+# Falco-style architecture split. X64 runs the regular dev-one VM profile;
+# ARM64 requires an ARM64 self-hosted runner with KVM and qemu-system-aarch64.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  multiarch-smoke:
+    name: ${{ matrix.arch }} functional smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner_label: x64
+            qemu_bin: qemu-system-x86_64
+            examples_target: examples
+            image_target: vm-ubuntu-22
+            matrix_file: matrices/dev-one.yaml
+            manifest_file: examples/functional-execve/manifest-dev-one.yaml
+            report_json: reports/functional-execve-x64-smoke.json
+            report_md: reports/functional-execve-x64-smoke.md
+          - arch: arm64
+            runner_label: ARM64
+            qemu_bin: qemu-system-aarch64
+            examples_target: examples-arm64
+            image_target: vm-ubuntu-22-arm64
+            matrix_file: matrices/arm64-smoke.yaml
+            manifest_file: examples/functional-execve/manifest-arm64-smoke.yaml
+            report_json: reports/functional-execve-arm64-smoke.json
+            report_md: reports/functional-execve-arm64-smoke.md
+    runs-on: [self-hosted, linux, "${{ matrix.runner_label }}"]
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify runner virtualization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+          command -v "${{ matrix.qemu_bin }}" >/dev/null || (echo "::error::missing ${{ matrix.qemu_bin }}" && exit 1)
+
+      - name: Build validator and architecture-specific BPF fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build
+          make validator-static
+          make "${{ matrix.examples_target }}"
+
+      - name: Fetch architecture VM image
+        shell: bash
+        run: |
+          set -euo pipefail
+          make "${{ matrix.image_target }}"
+
+      - name: Run functional compatibility gate
+        uses: ./
+        with:
+          artifact: examples/functional-execve/functional_execve.bpf.o
+          manifest: ${{ matrix.manifest_file }}
+          matrix: ${{ matrix.matrix_file }}
+          out: ${{ matrix.report_json }}
+          markdown: ${{ matrix.report_md }}
+          timeout: 8m
+          concurrency: "1"
+          build: "false"
+
+      - name: Upload multiarch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-${{ matrix.arch }}-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            ${{ matrix.report_json }}
+            ${{ matrix.report_md }}
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr

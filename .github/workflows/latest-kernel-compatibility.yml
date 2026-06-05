@@ -1,0 +1,108 @@
+name: latest-kernel-compatibility
+
+# Scheduled compatibility sweep for moving distro-kernel targets. True
+# upstream kernel.org validation is handled separately by
+# upstream-kernel-compatibility.yml through the virtme-ng backend.
+
+on:
+  schedule:
+    - cron: "21 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: Matrix to prefetch and run.
+        required: false
+        default: matrices/latest-kernel-sweep.yaml
+      timeout:
+        description: Per-target timeout.
+        required: false
+        default: 12m
+      concurrency:
+        description: VM concurrency.
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  latest-kernel-sweep:
+    name: Latest distro-kernel sweep
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
+    env:
+      MATRIX: ${{ github.event.inputs.matrix || 'matrices/latest-kernel-sweep.yaml' }}
+      TIMEOUT: ${{ github.event.inputs.timeout || '12m' }}
+      VM_CONCURRENCY: ${{ github.event.inputs.concurrency || '2' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify KVM availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+          command -v qemu-system-x86_64 >/dev/null || (echo "::error::missing qemu-system-x86_64" && exit 1)
+
+      - name: Build validator and fixture artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build
+          make validator-static
+          make examples
+
+      - name: Prefetch latest-kernel images
+        shell: bash
+        run: |
+          set -euo pipefail
+          BPFCOMPAT_MATRIX="$MATRIX" bash scripts/fetch-matrix-images.sh
+
+      - name: Generate runnable latest-kernel matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          BPFCOMPAT_MATRIX="$MATRIX" \
+          BPFCOMPAT_OUT_MATRIX=matrices/latest-kernel-runnable.yaml \
+          bash scripts/generate-runnable-matrix.sh
+
+      - name: Run functional latest-kernel compatibility gate
+        uses: ./
+        with:
+          artifact: examples/functional-execve/functional_execve.bpf.o
+          manifest: examples/functional-execve/manifest-latest-kernel.yaml
+          matrix: matrices/latest-kernel-runnable.yaml
+          out: reports/functional-execve-latest-kernel.json
+          markdown: reports/functional-execve-latest-kernel.md
+          timeout: ${{ env.TIMEOUT }}
+          concurrency: ${{ env.VM_CONCURRENCY }}
+          build: "false"
+
+      - name: Generate compatibility site snapshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          BPFCOMPAT_COMPATIBILITY_VERSION="latest-kernel-${GITHUB_RUN_ID}" \
+          bash scripts/publish-compatibility-site.sh reports public/compatibility
+
+      - name: Upload latest-kernel evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-latest-kernel-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            reports/functional-execve-latest-kernel.json
+            reports/functional-execve-latest-kernel.md
+            matrices/latest-kernel-runnable.yaml
+            public/compatibility/**
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr

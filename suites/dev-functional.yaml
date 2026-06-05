@@ -1,0 +1,18 @@
+name: dev-functional
+defaults:
+  matrix: ../matrices/dev-one.yaml
+  workdir: ../.bpfcompat
+  report_dir: ../reports/suites/dev-functional
+  timeout: 8m
+  concurrency: 1
+cases:
+  - name: simple-pass
+    artifact: ../examples/simple-pass/simple_pass.bpf.o
+    manifest: ../examples/simple-pass/manifest-dev-one.yaml
+    artifact_name: simple_pass
+    artifact_variant: baseline
+  - name: functional-execve
+    artifact: ../examples/functional-execve/functional_execve.bpf.o
+    manifest: ../examples/functional-execve/manifest-dev-one.yaml
+    artifact_name: functional_execve
+    artifact_variant: event-capture

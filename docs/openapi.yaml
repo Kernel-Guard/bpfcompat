@@ -1,0 +1,681 @@
+openapi: 3.1.0
+info:
+  title: bpfcompat API
+  description: |
+    HTTP API for the bpfcompat adaptive BPF runtime. Routes are served under
+    both `/api/v1/<route>` (canonical) and `/api/<route>` (legacy alias —
+    scheduled for removal in a future minor release). New clients SHOULD
+    use the `v1` prefix.
+
+    All authenticated routes accept either:
+      - An API key via the `X-API-Key` header or `Authorization: Bearer <key>`.
+      - A JWT identity token via the `X-API-Identity-Token` header. JWTs must
+        carry an explicit `tenant` claim or a `projects` array; bare tokens
+        are rejected.
+      - An mTLS client certificate, but only when the verified certificate
+        also matches `BPFCOMPAT_API_MTLS_IDENTITY_MAP_PATH`.
+
+    The server returns JSON for every response with `Content-Type:
+    application/json` and adds the `X-Request-Id` response header so callers
+    can correlate logs.
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://{host}
+    description: TLS-terminated deployment
+    variables:
+      host:
+        default: bpfcompat.example.com
+  - url: http://{host}:8080
+    description: Local development
+    variables:
+      host:
+        default: localhost
+security:
+  - apiKey: []
+  - bearerAuth: []
+  - identityToken: []
+  - mutualTLS: []
+paths:
+  /livez:
+    get:
+      summary: Kubernetes-style liveness probe
+      description: Returns 200 as long as the process is up. Never gated by auth.
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "ok"
+  /readyz:
+    get:
+      summary: Kubernetes-style readiness probe
+      description: |
+        Returns 200 when the server is ready to handle traffic (workdir
+        writable, TLS material readable if configured). Returns 503 with a
+        structured payload listing the failing check otherwise.
+      security: []
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyzResponse"
+        "503":
+          description: One or more readiness checks failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyzResponse"
+  /metrics:
+    get:
+      summary: Prometheus exposition (opt-in via BPFCOMPAT_API_ENABLE_METRICS)
+      description: |
+        Returns the Prometheus text exposition. Gated by the read-auth helper
+        — scrapers must present a valid API key or identity token unless
+        anonymous read is explicitly enabled. Only available when metrics
+        are enabled at startup.
+      responses:
+        "200":
+          description: Metrics exposition
+          content:
+            text/plain: {}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Metrics endpoint is not enabled
+  /debug/pprof/{profile}:
+    get:
+      summary: Runtime profiles (opt-in via BPFCOMPAT_API_ENABLE_PPROF)
+      description: |
+        Serves the standard Go `net/http/pprof` profiles
+        (heap, goroutine, profile, trace, cmdline, symbol). Requires a
+        real API-key or JWT credential and deliberately ignores anonymous
+        demo read/write modes. Only available when pprof is enabled at
+        startup; off by default because the profiles expose goroutine stacks
+        and heap addresses.
+      parameters:
+        - in: path
+          name: profile
+          required: true
+          schema:
+            type: string
+            enum: [heap, goroutine, profile, trace, allocs, block, mutex, threadcreate, cmdline, symbol]
+      responses:
+        "200":
+          description: Profile output (binary pprof or text depending on profile)
+          content:
+            application/octet-stream: {}
+            text/plain: {}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: pprof endpoint is not enabled
+  /api/v1/health:
+    get:
+      summary: Lightweight liveness check
+      description: |
+        Returns `{ "status": "ok" }`. Kept for backward compatibility with
+        clients that don't follow the `/livez` convention.
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+  /api/v1/config:
+    get:
+      summary: Public server configuration flags
+      description: |
+        Reports which auth modes are configured (without revealing secrets).
+        Intended for the UI to render runtime-execute toggles.
+      security: []
+      responses:
+        "200":
+          description: Configuration response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigResponse"
+  /api/v1/profiles:
+    get:
+      summary: List installed VM profiles
+      responses:
+        "200":
+          description: Profile catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Profile"
+  /api/v1/validate:
+    post:
+      summary: Run a synchronous validation
+      description: Uploads an artifact, manifest, and matrix, then runs the validator inside VMs.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ValidateRequest"
+      responses:
+        "200":
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/validate/start:
+    post:
+      summary: Begin an async validation job
+      description: |
+        Same input shape as `/validate`, but returns immediately with a
+        job ID. Poll `/validate/status` for completion. New submissions are
+        refused with 503 while the server is shutting down so callers can
+        retry against a healthy replica.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ValidateRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateStartResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: Queue full
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/validate/status:
+    get:
+      summary: Look up an async validation job
+      parameters:
+        - in: query
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Job not found
+  /api/v1/history/artifacts:
+    get:
+      summary: List artifact-version history
+      parameters:
+        - in: query
+          name: artifact_name
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 200, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: History records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ArtifactVersionRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/history/runs:
+    get:
+      summary: List recent run records
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 200 }
+      responses:
+        "200":
+          description: Run records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/history/run-report:
+    get:
+      summary: Fetch the JSON report for a specific run
+      parameters:
+        - in: query
+          name: run_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Report contents
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Run not found
+  /api/v1/compare:
+    post:
+      summary: Diff two reports (or two registry versions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompareRequest"
+      responses:
+        "200":
+          description: Diff response
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/runtime/probe:
+    get:
+      summary: Probe host BPF capabilities
+      parameters:
+        - in: query
+          name: prefer_privileged
+          schema: { type: boolean, default: false }
+        - in: query
+          name: use_sudo
+          schema: { type: boolean, default: true }
+        - in: query
+          name: sudo_non_interactive
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: Host capability report
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/runtime/decisions:
+    get:
+      summary: List runtime decision audit events
+      responses:
+        "200":
+          description: Decision events
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/runtime/select:
+    post:
+      summary: Select the best artifact version for the host
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeSelectRequest"
+      responses:
+        "200":
+          description: Selection result
+  /api/v1/runtime/fetch:
+    post:
+      summary: Resolve, verify, and stage an artifact for runtime use
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeFetchRequest"
+      responses:
+        "200":
+          description: Fetched artifact metadata
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "412":
+          description: Required history verification failed
+  /api/v1/runtime/execute:
+    post:
+      summary: Load and probe-attach the artifact on the host
+      description: |
+        Strictly gated:
+          - `BPFCOMPAT_API_ENABLE_RUNTIME_EXECUTE=true` at startup.
+          - `X-Execute-Approval-Token` header must match the configured value.
+          - Caller must be authorized for the tenant/project.
+          - `allow_host_load=true` must be present in the body.
+        Output paths are redacted by default; see
+        `BPFCOMPAT_API_REDACT_RUNTIME_DETAILS`.
+      parameters:
+        - in: header
+          name: X-Execute-Approval-Token
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Execute-Approved-By
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeExecuteRequest"
+      responses:
+        "200":
+          description: Executed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          description: History verification or policy gate failed
+        "503":
+          description: Kill switch active or worker identity missing
+  /api/v1/agent/decision:
+    post:
+      summary: Select a verified artifact for a customer-owned agent host probe
+      description: |
+        Pilot Beta control-plane endpoint. The caller submits the target host
+        probe; the API selects a signed, compatibility-verified artifact and
+        returns registry download metadata. This endpoint never loads eBPF on
+        the API host.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDecisionRequest"
+      responses:
+        "200":
+          description: Agent decision
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          description: Selection or history verification failed
+  /api/v1/registry/projects:
+    get:
+      summary: List or fetch project metadata
+      parameters:
+        - in: query
+          name: tenant
+          required: true
+          schema: { type: string }
+        - in: query
+          name: project
+          schema: { type: string }
+      responses:
+        "200":
+          description: Projects
+    post:
+      summary: Upsert a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryProjectRequest"
+      responses:
+        "200":
+          description: Project
+  /api/v1/registry/artifacts/upload:
+    post:
+      summary: Upload an artifact + report to the registry
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                tenant: { type: string }
+                project: { type: string }
+                artifact_name: { type: string }
+                artifact_version: { type: string }
+                artifact_file:
+                  type: string
+                  format: binary
+  /api/v1/registry/artifacts:
+    get:
+      summary: List artifact versions for a project
+  /api/v1/registry/artifacts/download:
+    get:
+      summary: Download a specific artifact version
+  /api/v1/registry/history/verify:
+    get:
+      summary: Verify the signed artifact history chain
+  /api/v1/registry/audit/events:
+    get:
+      summary: List audit events
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    bearerAuth:
+      type: http
+      scheme: bearer
+    identityToken:
+      type: apiKey
+      in: header
+      name: X-API-Identity-Token
+      description: JWT (HS256 or RS256) with at least `sub`, `exp`, and either `tenant` or `projects`.
+    mutualTLS:
+      type: mutualTLS
+      description: Verified client certificate plus explicit server-side identity-map grant.
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Caller authenticated but not authorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: Server overloaded or shutting down
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    ReadyzResponse:
+      type: object
+      properties:
+        status: { type: string }
+        version: { type: string }
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              ok: { type: boolean }
+              message: { type: string }
+    ConfigResponse:
+      type: object
+      properties:
+        write_api_key_configured: { type: boolean }
+        write_identity_verifier_enabled: { type: boolean }
+        write_require_identity: { type: boolean }
+        allow_anonymous_validate: { type: boolean }
+        allow_anonymous_write: { type: boolean }
+        allow_anonymous_runtime_delivery: { type: boolean }
+        registry_require_identity: { type: boolean }
+        runtime_execute_enabled: { type: boolean }
+        runtime_execute_kill_switch: { type: boolean }
+        runtime_execute_approval_configured: { type: boolean }
+    Profile:
+      type: object
+      properties:
+        id: { type: string }
+        distro: { type: string }
+        version: { type: string }
+        kernel_family: { type: string }
+        arch: { type: string }
+        required_default: { type: boolean }
+        image_local_path: { type: string }
+        image_cached: { type: boolean }
+        source_mode: { type: string }
+        source_url: { type: string }
+        transport: { type: string }
+        transport_supported: { type: boolean }
+        transport_note: { type: string }
+    ValidateRequest:
+      type: object
+      properties:
+        artifact_file:
+          type: string
+          format: binary
+        manifest_file:
+          type: string
+          format: binary
+        matrix_file:
+          type: string
+          format: binary
+        profiles:
+          type: array
+          items: { type: string }
+        timeout: { type: string }
+        concurrency: { type: integer }
+    ValidateResponse:
+      type: object
+      properties:
+        exit_code: { type: integer }
+        run_dir: { type: string }
+        report_json_path: { type: string }
+        report_markdown_path: { type: string }
+        report: { type: object }
+    ValidateStartResponse:
+      type: object
+      properties:
+        job_id: { type: string }
+        status_url: { type: string }
+    ValidateStatusResponse:
+      type: object
+      properties:
+        job_id: { type: string }
+        state: { type: string, enum: [queued, running, completed, failed] }
+        stage: { type: string }
+        percent: { type: integer, minimum: 0, maximum: 100 }
+        total_profiles: { type: integer }
+        completed_profiles: { type: integer }
+        profile_statuses:
+          type: object
+          additionalProperties: { type: string }
+        result:
+          $ref: "#/components/schemas/ValidateResponse"
+        error: { type: string }
+    ArtifactVersionRecord:
+      type: object
+      additionalProperties: true
+    CompareRequest:
+      type: object
+      properties:
+        base_report: { type: string }
+        head_report: { type: string }
+        artifact_name: { type: string }
+        base_version: { type: string }
+        head_version: { type: string }
+    RuntimeSelectRequest:
+      type: object
+      properties:
+        artifact_name: { type: string }
+        version: { type: string }
+        target_profile: { type: string }
+        limit: { type: integer }
+        workdir: { type: string }
+    RuntimeFetchRequest:
+      type: object
+      properties:
+        artifact_name: { type: string }
+        version: { type: string }
+        target_profile: { type: string }
+        out_dir: { type: string }
+        require_verified_history: { type: boolean }
+    RuntimeExecuteRequest:
+      type: object
+      required: [tenant, project, artifact_name, allow_host_load]
+      properties:
+        tenant: { type: string }
+        project: { type: string }
+        artifact_name: { type: string }
+        version: { type: string }
+        target_profile: { type: string }
+        allow_host_load: { type: boolean }
+    AgentDecisionRequest:
+      type: object
+      required: [tenant, project, artifact_name, host_probe]
+      properties:
+        tenant: { type: string }
+        project: { type: string }
+        agent_id: { type: string }
+        artifact_name: { type: string }
+        version: { type: string }
+        target_profile: { type: string }
+        limit: { type: integer }
+        require_verified_history: { type: boolean, default: true }
+        policy:
+          type: object
+          additionalProperties: true
+        host_probe:
+          type: object
+          additionalProperties: true
+    RegistryProjectRequest:
+      type: object
+      required: [tenant, project]
+      properties:
+        tenant: { type: string }
+        project: { type: string }
+        visibility: { type: string, enum: [private, public] }
+        default_matrix_path: { type: string }

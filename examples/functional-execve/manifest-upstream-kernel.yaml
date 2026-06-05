@@ -1,0 +1,16 @@
+name: functional-execve-upstream-kernel
+programs:
+  - name: handle_exec
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true
+functional_tests:
+  - name: execve-trace-pipe-event
+    command: "sh -c 'set -eu; T=/sys/kernel/tracing; [ -r \"$T/trace_pipe\" ] || T=/sys/kernel/debug/tracing; [ -r \"$T/trace_pipe\" ] || { echo trace_pipe_missing >&2; exit 2; }; timeout 5 grep -m1 bpfcompat_functional_execve \"$T/trace_pipe\" & reader=$!; sleep 0.2; /bin/true; wait \"$reader\"'"
+    timeout: 8s
+    expect_exit_code: 0
+    expect_stdout_contains: bpfcompat_functional_execve

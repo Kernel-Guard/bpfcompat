@@ -1,0 +1,15 @@
+id: ubuntu-22.04-arm64-5.15
+distro: ubuntu
+version: "22.04"
+kernel_family: "5.15"
+arch: aarch64
+image:
+  source_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img"
+  local_path: "vm/cache/ubuntu-22.04-arm64.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

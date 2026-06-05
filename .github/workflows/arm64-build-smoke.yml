@@ -1,0 +1,48 @@
+name: arm64-build-smoke
+
+# Native ARM64 compile smoke. This is not VM-backed validation; the real
+# ARM64 compatibility proof remains .github/workflows/multiarch-compatibility.yml
+# on an ARM64 self-hosted KVM runner.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "pkg/**"
+      - "examples/**"
+      - "validator/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/arm64-build-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  arm64-build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang llvm make pkg-config libbpf-dev libelf-dev zlib1g-dev libzstd-dev
+
+      - name: Build Go CLI
+        run: make build
+
+      - name: Build C validator dynamically
+        run: make validator-dynamic
+
+      - name: Build ARM64 BPF examples
+        run: make examples-arm64
+
+      - name: Run cheap Go tests
+        run: go test ./cmd/... ./internal/... ./pkg/...

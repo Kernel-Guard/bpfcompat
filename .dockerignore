@@ -1,0 +1,30 @@
+# Workspace state — never belongs in the build context.
+/.bpfcompat/
+/.bpfcompat-api/
+/.private-diligence/
+/reports/
+/evidence/
+/vm/cache/
+/bin/
+/dist/
+
+# IDE/editor noise.
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git history isn't needed by the build (version metadata is passed via
+# --build-arg). Sending it copies ~MB of history on every layer miss.
+.git/
+
+# Pre-built artifacts on the host shouldn't end up in the image.
+*.bpf.o
+
+# Local Docker scratch space.
+docker-bake.json
+.devcontainer/
+
+# OS junk.
+.DS_Store
+Thumbs.db

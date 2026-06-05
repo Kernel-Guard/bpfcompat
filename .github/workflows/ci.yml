@@ -1,0 +1,121 @@
+name: ci
+
+# Quality gate for every push and pull request. The compatibility-gate
+# workflow (bpfcompat-example.yml) demonstrates running the action against
+# real VMs and stays opt-in; this workflow is the cheap, fast suite that
+# every PR must pass before merge:
+#   - go vet
+#   - golangci-lint against the new diff
+#   - go test -race -coverprofile
+#   - govulncheck against the pinned module set
+#   - go build for all targets
+#
+# Everything runs on the default GitHub-hosted ubuntu-latest runner so PRs
+# don't depend on the self-hosted KVM fleet to merge.
+#
+# Security note: every ${{ github.* }} interpolation in this file is in
+# a workflow-level position (concurrency, artifact name, etc.) and never
+# substituted into a "run:" shell block. None of github.event.*, head_ref,
+# or commit message fields are read here, so workflow-injection attacks
+# via PR titles or commit messages are not applicable to this file.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.25.11"
+
+jobs:
+  test:
+    name: Test (-race)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go mod download
+        run: go mod download
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -20
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage.out
+          if-no-files-found: warn
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: golangci-lint (pull request diff)
+        if: github.event_name == 'pull_request'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m --new-from-rev=origin/main
+      - name: golangci-lint (push diff)
+        if: github.event_name != 'pull_request'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m --new-from-rev=HEAD~1
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        run: govulncheck ./...
+
+  build:
+    name: Build (Go side)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # The C validator (validator/c-libbpf) needs libbpf-dev + clang on the
+      # builder which the example workflow already handles; here we only
+      # exercise the Go side so the CI gate stays portable.
+      - name: go build
+        run: go build ./...

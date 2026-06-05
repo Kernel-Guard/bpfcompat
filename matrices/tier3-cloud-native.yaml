@@ -1,0 +1,10 @@
+name: tier3-cloud-native
+profiles:
+  - id: bottlerocket-aws-6.1
+    required: false
+  - id: flatcar-6.6
+    required: false
+  - id: talos-6.6
+    required: false
+  - id: ubuntu-22.04-5.15-lockdown
+    required: true

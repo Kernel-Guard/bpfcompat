@@ -1,0 +1,74 @@
+name: expanded-2026
+profiles:
+  - id: ubuntu-16.04-4.4
+    required: false
+  - id: ubuntu-18.04-4.15
+    required: true
+  - id: rhel-8-4.18
+    required: false
+  - id: ubuntu-20.04-5.4
+    required: true
+  - id: ubuntu-20.04-minimal-5.4
+    required: false
+  - id: linux-mainline-5.6
+    required: false
+  - id: ubuntu-20.10-5.8
+    required: true
+  - id: debian-11-5.10
+    required: false
+  - id: amazon-linux-2-5.10
+    required: false
+  - id: amazon-linux-2-4.14
+    required: false
+  - id: almalinux-9-5.14
+    required: false
+  - id: rocky-9-5.14
+    required: false
+  - id: centos-stream-9-5.14
+    required: false
+  - id: oracle-linux-9-uek7-5.15
+    required: true
+  - id: ubuntu-22.04-5.15
+    required: true
+  - id: ubuntu-22.04-minimal-5.15
+    required: false
+  - id: ubuntu-22.04-5.15-lockdown
+    required: true
+  - id: debian-12-6.1
+    required: true
+  - id: amazon-linux-2023-6.1
+    required: true
+  - id: sles-15.6-6.4
+    required: true
+  - id: opensuse-leap-15.6-6.4
+    required: false
+  - id: ubuntu-23.10-6.5
+    required: true
+  - id: bottlerocket-aws-6.1
+    required: false
+  - id: flatcar-6.6
+    required: false
+  - id: talos-6.6
+    required: false
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: ubuntu-24.04-minimal-6.8
+    required: false
+  - id: ubuntu-24.10-6.11
+    required: false
+  - id: oracle-linux-10-uek8-6.12
+    required: false
+  - id: almalinux-10-6.12
+    required: false
+  - id: rocky-10-6.12
+    required: false
+  - id: centos-stream-10-6.12
+    required: false
+  - id: debian-13-6.12
+    required: false
+  - id: ubuntu-25.04-6.14
+    required: false
+  - id: ubuntu-25.10-6.17
+    required: false
+  - id: ubuntu-25.10-minimal-6.17
+    required: false

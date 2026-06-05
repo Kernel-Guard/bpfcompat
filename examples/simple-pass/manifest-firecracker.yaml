@@ -1,0 +1,10 @@
+name: simple-pass-firecracker
+programs:
+  - name: handle_exec
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true

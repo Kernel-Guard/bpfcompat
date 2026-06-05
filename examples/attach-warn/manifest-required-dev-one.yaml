@@ -1,0 +1,12 @@
+name: attach-warn-required
+programs:
+  - name: handle_missing_symbol
+    section: kprobe/this_symbol_should_not_exist_123456
+    type: kprobe
+    attach:
+      kind: kprobe
+      symbol: this_symbol_should_not_exist_123456
+      required: true
+required_profiles:
+  - ubuntu-22.04-5.15
+

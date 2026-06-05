@@ -1,0 +1,15 @@
+id: centos-stream-10-6.12
+distro: centos-stream
+version: "10"
+kernel_family: "6.12"
+arch: x86_64
+image:
+  source_url: "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-10-latest.x86_64.qcow2"
+  local_path: "vm/cache/centos-stream-10.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

@@ -1,0 +1,16 @@
+id: ubuntu-24.10-6.11
+distro: ubuntu
+version: "24.10"
+kernel_family: "6.11"
+arch: x86_64
+image:
+  source_url: "https://cloud-images.ubuntu.com/releases/24.10/release/ubuntu-24.10-server-cloudimg-amd64.img"
+  local_path: "vm/cache/ubuntu-24.10.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true
+

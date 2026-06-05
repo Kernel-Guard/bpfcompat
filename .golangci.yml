@@ -1,0 +1,134 @@
+# golangci-lint configuration for the adaptive-bpf-runtime-program repository.
+#
+# Goal: enforce the linters that a senior reviewer would expect on a security-
+# adjacent BPF runtime — no surprises, no false friend errors, and a strong
+# default posture against shell/path/network footguns.
+#
+# How to run locally:
+#   golangci-lint run --timeout=5m
+#
+# CI runs this with --new-from-rev=origin/main so it doesn't fail on
+# pre-existing issues outside the PR. Cleanups are tracked separately.
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: vendor
+
+linters:
+  disable-all: true
+  enable:
+    # Stdlib / language correctness
+    - errcheck         # unchecked errors are bugs in flight
+    - gosimple         # idioms
+    - govet
+    - ineffassign
+    - staticcheck      # the big one — catches many real bugs
+    - typecheck
+    - unused
+    - unconvert
+    - unparam          # unused params hint at incomplete refactors
+    # Style + readability
+    - gocritic
+    - gofmt
+    - goimports
+    - revive
+    - misspell
+    - whitespace
+    # Security-adjacent
+    - errorlint        # %w usage, errors.Is/As correctness
+    - gosec            # security-focused static analysis
+    - bodyclose        # http.Response.Body must be Closed
+    - contextcheck     # missing context propagation
+    - nilerr           # returning nil after non-nil err
+    - noctx            # http requests without context
+    - rowserrcheck     # sql.Rows.Err() check (cheap to keep)
+    # Concurrency
+    - copyloopvar      # Go 1.22+ for-loop variable capture
+    # Misc
+    - prealloc         # slice preallocation hints
+    - dupword
+    - exhaustive       # switch on enums
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment   # cosmetic; not worth the churn
+      - shadow           # too noisy on idiomatic err shadowing
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam      # noisy on small request structs
+      - unnamedResult  # we prefer terse signatures
+      - whyNoLint
+  gosec:
+    excludes:
+      # G107 (variable URL): we audit each call site explicitly (e.g. JWKS
+      # HTTPS check, SSRF guard) and the linter's heuristic flags every one.
+      - G107
+      # G304 (file inclusion via variable): we guard paths via
+      # report_paths.go and filepath.Clean. The linter can't see that and
+      # flags every os.Open.
+      - G304
+      # G115 (integer overflow): mostly noisy on size_t conversions where
+      # the value is already bounded by caller. Re-enable if we add untrusted
+      # numeric inputs.
+      - G115
+  revive:
+    rules:
+      - name: var-naming
+      - name: package-comments
+        disabled: true   # too noisy; we'll do this in a follow-up pass
+      - name: exported
+        disabled: true   # ditto — package-level docstring sweep is separate
+      - name: error-naming
+      - name: error-return
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+  exhaustive:
+    default-signifies-exhaustive: true
+
+issues:
+  # Don't fail the build on pre-existing issues outside the PR diff; CI
+  # passes --new-from-rev to enforce that. Locally, devs still see warnings.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Tests routinely shadow err and call panic-paths; relax there.
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+        - unparam
+        - contextcheck
+        - noctx
+    # Vendored code is not ours.
+    - path: ^vendor/
+      linters:
+        - typecheck
+        - staticcheck
+        - errcheck
+        - gosec
+        - revive
+        - gocritic
+    # Generated/embedded UI lives in one big string literal; gocritic's
+    # commentFormatting trips on the inline JS inside the heredoc.
+    - path: internal/api/ui\.go
+      linters:
+        - gocritic
+        - misspell
+        - dupword
+  exclude-dirs:
+    - vendor
+    - .bpfcompat
+    - .bpfcompat-api
+    - evidence
+    - reports
+    - vm/cache
+  exclude-files:
+    - ".*\\.pb\\.go"

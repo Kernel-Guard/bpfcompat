@@ -1,0 +1,10 @@
+name: latest-kernel-sweep
+profiles:
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: ubuntu-24.10-6.11
+    required: false
+  - id: ubuntu-25.04-6.14
+    required: false
+  - id: ubuntu-25.10-6.17
+    required: false

@@ -1,0 +1,15 @@
+id: flatcar-6.6
+distro: flatcar
+version: "stable"
+kernel_family: "6.6"
+arch: x86_64
+image:
+  source_url: "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_qemu_image.img"
+  local_path: "vm/cache/flatcar-6.6.img"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

@@ -1,0 +1,14 @@
+id: bottlerocket-aws-6.1
+distro: bottlerocket
+version: "aws"
+kernel_family: "6.1"
+arch: x86_64
+image:
+  local_path: "vm/cache/bottlerocket-aws-6.1.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

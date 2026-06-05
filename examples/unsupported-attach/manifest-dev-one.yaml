@@ -1,0 +1,11 @@
+name: unsupported-attach-dev-one
+programs:
+  - name: handle_missing_symbol
+    section: kprobe/bpfcompat_symbol_should_not_exist_987654
+    type: kprobe
+    attach:
+      kind: kprobe
+      symbol: bpfcompat_symbol_should_not_exist_987654
+      required: true
+required_profiles:
+  - ubuntu-22.04-5.15

@@ -1,0 +1,23 @@
+name: bcc-execsnoop
+programs:
+  - name: tracepoint__syscalls__sys_enter_execve
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true
+  - name: tracepoint__syscalls__sys_exit_execve
+    section: tracepoint/syscalls/sys_exit_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_exit_execve
+      required: true
+required_profiles:
+  - ubuntu-18.04-4.15
+  - ubuntu-20.04-5.4
+  - ubuntu-22.04-5.15
+  - debian-12-6.1

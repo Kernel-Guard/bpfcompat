@@ -1,0 +1,79 @@
+name: bpfcompat-example
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "validator/**"
+      - "examples/**"
+      - "matrices/**"
+      - "vm/**"
+      - "action.yml"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/bpfcompat-example.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility-gate:
+    name: Compatibility Gate
+    # Requires a self-hosted Linux x64 runner with KVM access.
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify KVM availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -e /dev/kvm ]]; then
+            echo "::error::/dev/kvm not found. Use a self-hosted runner with KVM enabled."
+            exit 1
+          fi
+
+      - name: Build validator and fixture artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          make validator-static
+          make examples
+
+      - name: Fetch VM image for dev-one profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          make vm-ubuntu-22
+
+      - name: Run bpfcompat action
+        uses: ./
+        with:
+          suite: suites/dev-functional.yaml
+          suite-out: reports/ci-dev-functional-suite.json
+          suite-markdown: reports/ci-dev-functional-suite.md
+          timeout: 8m
+          concurrency: "1"
+          build: "true"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-reports-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            reports/ci-dev-functional-suite.json
+            reports/ci-dev-functional-suite.md
+            reports/suites/dev-functional/*.json
+            reports/suites/dev-functional/*.md
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr

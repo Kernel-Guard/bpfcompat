@@ -1,0 +1,18 @@
+name: tier1-enterprise-cloud
+profiles:
+  - id: amazon-linux-2023-6.1
+    required: true
+  - id: amazon-linux-2-5.10
+    required: false
+  - id: amazon-linux-2-4.14
+    required: false
+  - id: rhel-8-4.18
+    required: false
+  - id: oracle-linux-9-uek7-5.15
+    required: true
+  - id: oracle-linux-10-uek8-6.12
+    required: false
+  - id: sles-15.6-6.4
+    required: true
+  - id: opensuse-leap-15.6-6.4
+    required: false

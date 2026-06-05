@@ -1,0 +1,15 @@
+id: amazon-linux-2-5.10
+distro: amazon-linux
+version: "2"
+kernel_family: "5.10"
+arch: x86_64
+image:
+  source_url: "https://cdn.amazonlinux.com/os-images/2.0.20260109.1/kvm/amzn2-kvm-2.0.20260109.1-x86_64.xfs.gpt.qcow2"
+  local_path: "vm/cache/amazon-linux-2-5.10.qcow2"
+boot:
+  memory_mb: 1024
+  cpus: 1
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

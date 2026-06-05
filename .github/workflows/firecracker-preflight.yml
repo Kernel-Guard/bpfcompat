@@ -1,0 +1,30 @@
+name: firecracker-preflight
+
+# Firecracker executable proof. This requires a self-hosted x64 KVM runner
+# because GitHub-hosted runners do not expose /dev/kvm.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firecracker-preflight:
+    runs-on: [self-hosted, linux, x64, kvm]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify KVM
+        run: |
+          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+
+      - name: Install Firecracker release
+        run: make firecracker-install
+
+      - name: Run Firecracker preflight
+        run: make firecracker-preflight
+
+      - name: Run Firecracker validator proof
+        run: make acceptance-firecracker-dev-one

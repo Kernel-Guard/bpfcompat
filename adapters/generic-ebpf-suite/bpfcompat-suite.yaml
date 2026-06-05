@@ -1,0 +1,18 @@
+name: my-ebpf-project
+defaults:
+  matrix: ../matrices/customer-kernels.yaml
+  workdir: ../.bpfcompat
+  report_dir: ../reports/bpfcompat-suite
+  timeout: 8m
+  concurrency: 1
+cases:
+  - name: exec-tracepoint
+    artifact: ../build/exec_tracepoint.bpf.o
+    manifest: ../manifests/exec_tracepoint.yaml
+    artifact_name: exec_tracepoint
+    artifact_variant: tracepoint
+  - name: network-xdp
+    artifact: ../build/network_xdp.bpf.o
+    manifest: ../manifests/network_xdp.yaml
+    artifact_name: network_xdp
+    artifact_variant: xdp

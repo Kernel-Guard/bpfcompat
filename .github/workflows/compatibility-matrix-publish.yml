@@ -1,0 +1,128 @@
+name: compatibility-matrix-publish
+
+# Publishes release-style compatibility evidence from a self-hosted KVM runner.
+# This is intentionally separate from cheap PR CI because it boots real VMs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_pages:
+        description: Deploy generated compatibility site to GitHub Pages. Requires Pages to be enabled for the repo.
+        required: false
+        default: "false"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-compatibility-matrix:
+    name: Publish compatibility matrix
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify KVM availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+
+      - name: Build validator and fixture artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          make validator-static
+          make examples
+
+      - name: Fetch dev VM image
+        shell: bash
+        run: |
+          set -euo pipefail
+          make vm-ubuntu-22
+
+      - name: Run bpfcompat action
+        uses: ./
+        with:
+          artifact: examples/functional-execve/functional_execve.bpf.o
+          manifest: examples/functional-execve/manifest-dev-one.yaml
+          matrix: matrices/dev-one.yaml
+          out: reports/release-functional-execve.json
+          markdown: reports/release-functional-execve.md
+          timeout: 8m
+          concurrency: "1"
+          build: "true"
+
+      - name: Generate static compatibility index
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="manual-${GITHUB_RUN_ID}"
+          fi
+          export BPFCOMPAT_COMPATIBILITY_VERSION="$version"
+          bash scripts/publish-compatibility-site.sh reports public/compatibility
+
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-compatibility-matrix-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            public/compatibility/index.html
+            public/compatibility/index.md
+            reports/release-functional-execve.json
+            reports/release-functional-execve.md
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr
+
+      - name: Package compatibility evidence for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" \
+            public/compatibility \
+            reports/release-functional-execve.json \
+            reports/release-functional-execve.md
+
+      - name: Attach compatibility evidence to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Compatibility evidence attached by ${GITHUB_WORKFLOW}."
+          fi
+          gh release upload "$GITHUB_REF_NAME" "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" --clobber
+
+      - name: Configure Pages
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public/compatibility
+
+      - name: Deploy Pages
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        uses: actions/deploy-pages@v4

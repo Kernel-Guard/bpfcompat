@@ -1,0 +1,32 @@
+name: extended-15
+profiles:
+  - id: ubuntu-18.04-4.15
+    required: true
+  - id: ubuntu-20.04-5.4
+    required: true
+  - id: ubuntu-22.04-5.15
+    required: true
+  - id: ubuntu-22.04-minimal-5.15
+    required: false
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: debian-11-5.10
+    required: false
+  - id: debian-12-6.1
+    required: true
+  - id: debian-13-6.12
+    required: false
+  - id: ubuntu-24.04-minimal-6.8
+    required: false
+  - id: almalinux-9-5.14
+    required: true
+  - id: almalinux-10-6.12
+    required: false
+  - id: rocky-9-5.14
+    required: true
+  - id: rocky-10-6.12
+    required: false
+  - id: centos-stream-9-5.14
+    required: true
+  - id: centos-stream-10-6.12
+    required: false

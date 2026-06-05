@@ -1,0 +1,12 @@
+[Unit]
+Description=Run bpfcompat runtime delivery agent periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=bpfcompat-agent.service
+
+[Install]
+WantedBy=timers.target

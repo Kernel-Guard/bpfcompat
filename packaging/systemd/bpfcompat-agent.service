@@ -1,0 +1,34 @@
+[Unit]
+Description=bpfcompat runtime delivery agent
+Documentation=https://github.com/erenari/bpfcompat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=bpfcompat-agent
+Group=bpfcompat-agent
+EnvironmentFile=/etc/bpfcompat/agent.env
+WorkingDirectory=/var/lib/bpfcompat-agent
+ExecStart=/bin/sh -c 'exec /usr/local/bin/bpfcompat agent apply --api-url "$BPFCOMPAT_AGENT_API_URL" --tenant "$BPFCOMPAT_AGENT_TENANT" --project "$BPFCOMPAT_AGENT_PROJECT" --artifact-name "$BPFCOMPAT_AGENT_ARTIFACT_NAME" --agent-id "$BPFCOMPAT_AGENT_ID" --target-profile "$BPFCOMPAT_AGENT_TARGET_PROFILE" --version "$BPFCOMPAT_AGENT_VERSION" --workdir "$BPFCOMPAT_AGENT_WORKDIR" --out-dir "$BPFCOMPAT_AGENT_OUT_DIR" --out "$BPFCOMPAT_AGENT_LAST_RESULT_PATH" $BPFCOMPAT_AGENT_EXTRA_ARGS'
+
+# Alpha service posture: fetch-only runtime delivery can run without elevated
+# privileges. Host loading should be handled by a separate reviewed unit/drop-in.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bpfcompat-agent
+RuntimeDirectory=bpfcompat-agent
+StateDirectory=bpfcompat-agent
+LogsDirectory=bpfcompat-agent
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
