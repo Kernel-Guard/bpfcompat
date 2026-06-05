@@ -45,6 +45,41 @@ const uiHTML = `<!doctype html>
     }
     .section { padding: 12px 14px; border-bottom: 1px solid #2c3340; }
     .section:last-child { border-bottom: 0; }
+    .advanced-settings {
+      border-bottom: 1px solid #2c3340;
+    }
+    .advanced-settings > summary {
+      cursor: pointer;
+      padding: 10px 14px;
+      color: #cbd6ea;
+      font-size: 12px;
+      font-weight: 600;
+      list-style: none;
+    }
+    .advanced-settings[open] > summary {
+      border-bottom: 1px solid #2c3340;
+    }
+    .advanced-settings .section {
+      border-bottom: 0;
+    }
+    .workflow-strip {
+      display: grid;
+      gap: 8px;
+    }
+    .workflow-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .workflow-step {
+      border: 1px solid #334057;
+      border-radius: 6px;
+      background: #101723;
+      padding: 7px 8px;
+      font-size: 12px;
+      color: #d8e2f4;
+      text-align: center;
+    }
     label { display: block; font-size: 12px; color: #b5bfd1; margin: 8px 0 6px; }
     input, select, textarea, button {
       width: 100%;
@@ -67,6 +102,16 @@ const uiHTML = `<!doctype html>
     button.secondary { background: #1c2431; border-color: #3b4557; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .profiles { max-height: 220px; overflow: auto; border: 1px solid #2f3748; border-radius: 6px; padding: 8px; }
+    .profile-header {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      color: #95a3bc;
+      font-size: 11px;
+      margin: 8px 0 4px;
+      padding: 0 8px;
+    }
     .profile {
       display: grid;
       grid-template-columns: 18px 1fr auto;
@@ -225,6 +270,26 @@ const uiHTML = `<!doctype html>
       margin-bottom: 6px;
       list-style: none;
     }
+    .result-drilldown {
+      border: 1px solid #2f3748;
+      border-radius: 6px;
+      background: #111722;
+      overflow: hidden;
+    }
+    .result-drilldown > summary {
+      cursor: pointer;
+      padding: 9px 10px;
+      color: #cbd6ea;
+      font-size: 12px;
+      font-weight: 600;
+      list-style: none;
+      border-bottom: 1px solid #2f3748;
+    }
+    .result-drilldown:not([open]) > summary { border-bottom: 0; }
+    .result-drilldown > pre { border: 0; border-radius: 0; }
+    .summary-cell-pass { color: #8fe0ab; font-weight: 700; }
+    .summary-cell-fail, .summary-cell-error, .summary-cell-infra_error { color: #f1a0a0; font-weight: 700; }
+    .summary-cell-running { color: #9fc1ff; font-weight: 700; }
     .hidden { display: none; }
     .mt8 { margin-top: 8px; }
     .mt10 { margin-top: 10px; }
@@ -233,74 +298,97 @@ const uiHTML = `<!doctype html>
   </style>
 </head>
 <body>
-  <div class="preview-banner">Technical Preview — VM-backed eBPF compatibility validation and runtime selection proof. Not for production runtime loading.</div>
+  <div class="preview-banner">Technical Preview — CI-first eBPF compatibility gate. Select target kernels, run validation, inspect drill-down evidence. Not for production runtime loading.</div>
   <div class="layout">
     <div class="panel">
-      <h2>Validation Request</h2>
-      <div class="section">
-        <div class="row">
-          <div>
-            <label>Artifact Name</label>
-            <input id="artifactName" placeholder="execsnoop">
-          </div>
-          <div>
-            <label>Artifact Version</label>
-            <input id="artifactVersion" placeholder="v1.0.0">
-          </div>
+      <h2>BPF Compatibility Gate</h2>
+      <div class="section workflow-strip">
+        <div class="workflow-steps">
+          <div class="workflow-step">1. Select targets</div>
+          <div class="workflow-step">2. Provide BPF</div>
+          <div class="workflow-step">3. Run validation</div>
+          <div class="workflow-step">4. Pass/fail matrix</div>
         </div>
-        <label>Artifact Variant</label>
-        <input id="artifactVariant" placeholder="ringbuf-modern">
-        <label>Artifact URI (optional)</label>
-        <input id="artifactURI" placeholder="https://object-store.example.com/execsnoop-v1.0.0.bpf.o">
+        <div class="hint">For BPF object collections, use the GitHub Action suite mode. This web demo validates one object or source file at a time.</div>
+      </div>
+      <div class="section">
+        <label>Artifact Name</label>
+        <input id="artifactName" placeholder="execsnoop">
       </div>
 
+      <details class="advanced-settings">
+        <summary>Advanced artifact metadata</summary>
+        <div class="section">
+          <div class="row">
+            <div>
+              <label>Artifact Version</label>
+              <input id="artifactVersion" placeholder="v1.0.0">
+            </div>
+            <div>
+              <label>Artifact Variant</label>
+              <input id="artifactVariant" placeholder="ringbuf-modern">
+            </div>
+          </div>
+          <label>Artifact URI (optional)</label>
+          <input id="artifactURI" placeholder="https://object-store.example.com/execsnoop-v1.0.0.bpf.o">
+        </div>
+      </details>
+
       <div class="section">
-        <label>Input Mode</label>
+        <label>BPF Input</label>
         <div class="row">
-          <button type="button" class="secondary" id="modeArtifact">Artifact Upload</button>
-          <button type="button" class="secondary" id="modeSource">Source Upload</button>
+          <button type="button" class="secondary" id="modeArtifact">Upload .bpf.o</button>
+          <button type="button" class="secondary" id="modeSource">Compile Source</button>
         </div>
         <div id="artifactMode">
-          <label>artifact_file</label>
+          <label>Artifact File</label>
           <input id="artifactFile" type="file">
         </div>
         <div id="sourceMode" class="hidden">
-          <label>source_file</label>
+          <label>Source File</label>
           <input id="sourceFile" type="file">
-          <label>or source_code</label>
+          <label>Paste Source Code</label>
           <textarea id="sourceCode" placeholder="Paste .bpf.c source"></textarea>
-          <label>clang_flags (optional)</label>
+          <label>Clang Flags (optional)</label>
           <input id="clangFlags" placeholder="-I./include -DDEBUG=1">
         </div>
       </div>
 
-      <div class="section">
-        <label>manifest_file (optional)</label>
-        <input id="manifestFile" type="file">
-        <label>or manifest_text</label>
-        <textarea id="manifestText" placeholder="name: demo
+      <details class="advanced-settings">
+        <summary>Advanced manifest and run settings</summary>
+        <div class="section">
+          <label>Manifest File (optional)</label>
+          <input id="manifestFile" type="file">
+          <label>or Manifest Text</label>
+          <textarea id="manifestText" placeholder="name: demo
 programs:
   - name: prog
     section: tracepoint/syscalls/sys_enter_execve"></textarea>
-      </div>
+          <div id="writeAuthSection" class="hidden">
+            <input id="writeApiKey" type="hidden" autocomplete="off">
+            <input id="writeIdentityToken" type="hidden" autocomplete="off">
+          </div>
+          <div id="authHint" class="hint"></div>
+          <div class="row">
+            <div>
+              <label>Timeout</label>
+              <input id="timeout" value="8m">
+            </div>
+            <div>
+              <label>Concurrency</label>
+              <input id="concurrency" value="2">
+            </div>
+          </div>
+        </div>
+      </details>
 
       <div class="section">
-        <div id="writeAuthSection" class="hidden">
-          <input id="writeApiKey" type="hidden" autocomplete="off">
-          <input id="writeIdentityToken" type="hidden" autocomplete="off">
+        <label>Target Kernels</label>
+        <div class="profile-header">
+          <span>Run</span>
+          <span>Kernel / distro profile</span>
+          <span>Required</span>
         </div>
-        <div id="authHint" class="hint"></div>
-        <div class="row">
-          <div>
-            <label>timeout</label>
-            <input id="timeout" value="8m">
-          </div>
-          <div>
-            <label>concurrency</label>
-            <input id="concurrency" value="2">
-          </div>
-        </div>
-        <label>Profiles</label>
         <div id="profiles" class="profiles"></div>
         <div class="split-actions">
           <button type="button" class="secondary" id="selectAll">Select All</button>
@@ -309,23 +397,28 @@ programs:
       </div>
 
       <div class="section">
-        <button id="runBtn">Run Validation</button>
+        <button id="runBtn">Run Compatibility Gate</button>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Results & History</h2>
+      <h2>Pass/Fail Matrix</h2>
       <div class="results">
-        <div id="status" class="status">Ready</div>
+        <div id="status" class="status">Select target kernels and run validation.</div>
         <div class="progress-wrap">
           <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
           <div id="progressMeta" class="progress-meta">0%</div>
           <div id="progressProfiles" class="progress-profiles"></div>
         </div>
         <div id="summary"></div>
-        <pre id="resultJson" class="mono">{}</pre>
+        <details class="result-drilldown">
+          <summary>Technical JSON report</summary>
+          <pre id="resultJson" class="mono">{}</pre>
+        </details>
 
-        <div>
+        <details class="result-drilldown">
+          <summary>Drill down: history, compare, and runtime decision proof</summary>
+          <div class="section">
           <div class="row">
             <div>
               <label>Artifact Filter</label>
@@ -479,7 +572,8 @@ programs:
               <pre id="runtimeJson" class="mono">{}</pre>
             </details>
           </div>
-        </div>
+          </div>
+        </details>
       </div>
     </div>
   </div>
@@ -1025,10 +1119,19 @@ programs:
       return row;
     }
 
-    function appendCell(tr, value) {
+    function appendCell(tr, value, className = "") {
       const td = document.createElement("td");
       td.textContent = String(value);
+      if (className) {
+        td.className = className;
+      }
       tr.appendChild(td);
+    }
+
+    function summaryStatusClass(status) {
+      const normalized = String(status || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+      if (!normalized) return "";
+      return "summary-cell-" + normalized;
     }
 
     function formatProfileEnv(target) {
@@ -1048,6 +1151,15 @@ programs:
       const kernel = env.kernel || "-";
       if (env.arch) return kernel + " (" + env.arch + ")";
       return kernel;
+    }
+
+    function formatTargetReason(target) {
+      if (!target) return "-";
+      if (String(target.status || "").toLowerCase() === "pass") return "-";
+      if (target.classification_code) return target.classification_code;
+      if (target.failed_stage) return target.failed_stage;
+      if (target.classification_reason) return target.classification_reason;
+      return "failed";
     }
 
     async function loadProfiles() {
@@ -1074,10 +1186,18 @@ programs:
         container.replaceChildren();
         return;
       }
+      const headline = document.createElement("div");
+      const summaryStatus = String(report.summary && report.summary.status || "unknown");
+      headline.className = summaryStatus.toLowerCase() === "pass" ? "status" : "status error";
+      const targetCount = report.targets.length;
+      const requiredFailed = report.targets.filter((t) => t.required && t.status !== "pass").length;
+      const requiredPassed = report.targets.filter((t) => t.required && t.status === "pass").length;
+      headline.textContent = "Overall: " + summaryStatus + " • targets: " + targetCount + " • required pass/fail: " + requiredPassed + "/" + requiredFailed;
+
       const table = document.createElement("table");
       const thead = document.createElement("thead");
       const headRow = document.createElement("tr");
-      ["Profile", "Profile Env", "Host Kernel", "Status", "Failed Stage", "Required", "Class"].forEach((name) => {
+      ["Target", "Distro / kernel", "Pass/Fail", "Required", "Reason"].forEach((name) => {
         const th = document.createElement("th");
         th.textContent = name;
         headRow.appendChild(th);
@@ -1089,16 +1209,14 @@ programs:
       report.targets.forEach((t) => {
         const tr = document.createElement("tr");
         appendCell(tr, t.profile_id || "-");
-        appendCell(tr, formatProfileEnv(t));
-        appendCell(tr, formatHostKernel(t));
-        appendCell(tr, t.status || "-");
-        appendCell(tr, t.failed_stage || "-");
-        appendCell(tr, t.required ? "true" : "false");
-        appendCell(tr, t.classification_code || "-");
+        appendCell(tr, formatProfileEnv(t) + " • " + formatHostKernel(t));
+        appendCell(tr, t.status || "-", summaryStatusClass(t.status));
+        appendCell(tr, t.required ? "yes" : "optional");
+        appendCell(tr, formatTargetReason(t));
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
-      container.replaceChildren(table);
+      container.replaceChildren(headline, table);
     }
 
     byId("selectAll").addEventListener("click", () => {

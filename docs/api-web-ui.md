@@ -9,6 +9,19 @@
 5. tracking artifact version history,
 6. comparing compatibility between artifact versions.
 
+The web UI is intentionally optimized for the primary compatibility workflow:
+
+1. name the artifact,
+2. upload or compile one BPF object,
+3. select target kernels,
+4. run the compatibility gate,
+5. read the pass/fail matrix first, then open drill-down evidence only when
+   needed.
+
+For projects that ship collections of BPF objects/programs, use suite mode in
+the CLI or GitHub Action. The web UI remains a single-artifact demo and local
+inspection surface.
+
 ## Start
 
 ```bash
