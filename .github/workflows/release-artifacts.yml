@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # required to attach SBOM/release assets on tag builds
   id-token: write   # cosign keyless signing
   packages: read
 
