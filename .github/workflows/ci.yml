@@ -82,12 +82,25 @@ jobs:
         with:
           version: latest
           args: --timeout=5m --new-from-rev=origin/main
-      - name: golangci-lint (push diff)
+      - name: Check push diff base
+        id: push-diff-base
         if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            echo "has_parent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_parent=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: golangci-lint (push diff)
+        if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent == 'true'
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --timeout=5m --new-from-rev=HEAD~1
+      - name: golangci-lint (root commit bootstrap)
+        if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent != 'true'
+        run: echo "Skipping diff lint because this checkout has no parent commit."
 
   vuln:
     name: govulncheck
