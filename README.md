@@ -235,7 +235,7 @@ requires a self-hosted Linux runner with KVM access (`/dev/kvm`).
 Suite mode (recommended — gates the whole collection):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.1.3
+- uses: Kernel-Guard/bpfcompat@v0.1.4
   with:
     suite: suites/project.yaml
     suite-out: reports/suite.json
@@ -249,7 +249,7 @@ are alive and adds the result to the suite-level collection matrix.
 Single artifact:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.1.3
+- uses: Kernel-Guard/bpfcompat@v0.1.4
   with:
     artifact: path/to/program.bpf.o
     manifest: path/to/manifest.yaml

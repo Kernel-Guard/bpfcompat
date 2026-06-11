@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-11
+
 ### Added
 - Web gate now includes a sticky readiness snapshot, clearer target/BPF/gate
   workflow, explicit load-only/load+attach test intent, and a collection-first
