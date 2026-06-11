@@ -107,7 +107,7 @@ exit 0
 		shellQuote(artifactPath),
 		manifestArg,
 		functionalPlanArg,
-		mapFixupArgs(req.MapFixups),
+		validatorTuningArgs(req),
 		shellSafeWord(attachMode),
 		shellQuote(filepath.Join(outDir, "result.json")),
 		shellQuote(outDir),

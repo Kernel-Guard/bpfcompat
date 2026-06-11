@@ -19,10 +19,26 @@ type ExecutionRequest struct {
 	ManifestPath       string
 	FunctionalPlanPath string
 	MapFixups          []MapFixup
+	ProgVariants       []ProgVariantGroup
+	ProbeCompanions    []string
 	ValidatorBinary    string
 	AttachMode         string
 	Timeout            time.Duration
 	KeepVMOnFailure    bool
+}
+
+// ProgVariantGroup mirrors a manifest program-variant group for the
+// validator command line. Group and variant names are validated at manifest
+// load (identifier characters), so they are shell-safe here.
+type ProgVariantGroup struct {
+	Group    string
+	Variants []ProgVariant
+}
+
+type ProgVariant struct {
+	Name       string
+	HelperID   uint32 // 0 = unconditional fallback
+	TrialProbe bool   // gate on an isolated trial load on the target kernel
 }
 
 // MapFixup mirrors a manifest map fixup for the validator command line.
@@ -45,6 +61,34 @@ func mapFixupArgs(fixups []MapFixup) string {
 		}
 	}
 	return b.String()
+}
+
+func progVariantArgs(groups []ProgVariantGroup) string {
+	var b strings.Builder
+	for _, group := range groups {
+		fmt.Fprintf(&b, " --prog-variants %s=", group.Group)
+		for i, variant := range group.Variants {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			if variant.TrialProbe {
+				fmt.Fprintf(&b, "%s:trial", variant.Name)
+			} else {
+				fmt.Fprintf(&b, "%s:%d", variant.Name, variant.HelperID)
+			}
+		}
+	}
+	return b.String()
+}
+
+// validatorTuningArgs renders all manifest-declared loader-contract flags
+// (map fixups, program variant groups) for the in-guest validator command.
+func validatorTuningArgs(req ExecutionRequest) string {
+	args := mapFixupArgs(req.MapFixups) + progVariantArgs(req.ProgVariants)
+	if len(req.ProbeCompanions) > 0 {
+		args += " --probe-companions " + strings.Join(req.ProbeCompanions, ",")
+	}
+	return args
 }
 
 type ExecutionResult struct {
@@ -257,7 +301,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		artifactRemotePath,
 		manifestArg,
 		functionalPlanArg,
-		mapFixupArgs(req.MapFixups),
+		validatorTuningArgs(req),
 		attachMode,
 		remoteResultPath,
 		remoteRoot,

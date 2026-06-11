@@ -15,6 +15,7 @@
 - `--probe-features <bool>` (optional, default `true`)
 - `--set-map-max-entries <map>=<n|cpus>` (repeatable, generated from manifest `maps`)
 - `--set-map-inner-ringbuf <map>=<bytes>` (repeatable, generated from manifest `maps`)
+- `--prog-variants <group>=<prog>:<helper_id>,...` (repeatable, generated from manifest `program_variants`)
 
 ## Map fixups for runtime-sized maps
 
@@ -45,6 +46,39 @@ maps:
 Fixups apply to the whole-object load and to isolated per-program load
 probes. Per-fixup outcomes are emitted in the result JSON under
 `map_fixups` and surfaced as target notes in the report.
+
+## Program variant groups
+
+Some artifacts ship multiple programs for the same event and let their
+loader pick one by probing kernel helper support — Falco's loader selects
+`recvmmsg_x` (requires `bpf_loop`, kernel >= 5.17) or falls back to
+`recvmmsg_old_x`, disabling the loser before load. The losing variant is
+*expected* to fail verification on kernels missing its helper, so loading
+it is a loader-contract violation, not kernel-compatibility evidence.
+
+Declare the groups in the manifest; the validator mirrors the selection
+between open and load:
+
+```yaml
+program_variants:
+  - group: recvmmsg_x
+    programs:
+      - name: recvmmsg_x
+        requires_helper: bpf_loop   # known helper name or numeric id
+      - name: recvmmsg_old_x        # unconditional fallback
+```
+
+Variant order is selection priority. Helper support is probed with
+`libbpf_probe_bpf_helper` (raw-tracepoint program type, matching Falco's
+libpman). The chosen/disabled variants per group are emitted in the result
+JSON under `program_variants` and surfaced as target notes — so the
+matrix records not just pass/fail but *which* variant a kernel gets.
+
+Isolated per-program load probes are unaffected: they still report each
+variant's own load result on the kernel, which is exactly the per-variant
+evidence the selection is based on. Objects that statically initialize
+prog-array (tail-call) slots cannot be loaded one program at a time;
+those per-program probes are reported as `skipped` rather than `fail`.
 
 ## Execution phases
 

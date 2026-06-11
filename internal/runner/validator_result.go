@@ -71,6 +71,11 @@ type validatorResult struct {
 			TracepointEvents string `json:"tracepoint_events"`
 		} `json:"attach_prereqs"`
 	} `json:"capabilities"`
+	ProgramVariants []struct {
+		Group    string   `json:"group"`
+		Chosen   string   `json:"chosen"`
+		Disabled []string `json:"disabled"`
+	} `json:"program_variants"`
 	MapFixups []struct {
 		Name              string `json:"name"`
 		MaxEntries        string `json:"max_entries"`

@@ -365,7 +365,7 @@ while true; do sleep 1; done
 `,
 		manifestArg,
 		functionalPlanArg,
-		mapFixupArgs(req.MapFixups),
+		validatorTuningArgs(req),
 		attachMode,
 		firecrackerExitBegin,
 		firecrackerExitEnd,

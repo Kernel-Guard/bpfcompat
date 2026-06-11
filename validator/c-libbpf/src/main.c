@@ -38,6 +38,24 @@ struct map_fixup {
     unsigned int applied_entries;
 };
 
+#define MAX_VARIANT_GROUPS 16
+#define MAX_VARIANTS_PER_GROUP 6
+
+/* A group of alternative programs for the same event where the artifact's
+ * loader probes kernel helper support and autoloads only the first
+ * satisfying variant (Falco's exit_event_progs_table pattern). Programs in
+ * the object that lose the selection are EXPECTED to fail verification on
+ * kernels missing their required helper, so loading them is a loader-
+ * contract violation, not a compatibility result. */
+struct prog_variant_group {
+    char group[68];
+    int count;
+    char names[MAX_VARIANTS_PER_GROUP][128];
+    unsigned int helper_ids[MAX_VARIANTS_PER_GROUP]; /* 0 = unconditional */
+    bool trial_probe[MAX_VARIANTS_PER_GROUP]; /* gate via isolated trial load */
+    int chosen; /* index of selected variant after apply; -1 = none */
+};
+
 struct options {
     const char *artifact;
     const char *manifest;
@@ -48,6 +66,12 @@ struct options {
     bool probe_features;
     struct map_fixup map_fixups[MAX_MAP_FIXUPS];
     int map_fixup_count;
+    struct prog_variant_group variant_groups[MAX_VARIANT_GROUPS];
+    int variant_group_count;
+    /* Programs statically referenced from prog-array map slots; they must
+     * stay autoloaded during trial probes or slot init fails with EBADF. */
+    char probe_companions[MAX_ITEMS][128];
+    int probe_companion_count;
 };
 
 struct discovered_program {
@@ -131,7 +155,9 @@ static void usage(const char *prog) {
             "Usage: %s --artifact <path> --out <result.json> [--manifest <path>] "
             "[--functional-plan <path>] [--log-dir <dir>] [--attach-mode <mode>] "
             "[--probe-features <bool>] [--set-map-max-entries <map>=<n|cpus>]... "
-            "[--set-map-inner-ringbuf <map>=<bytes>]...\n",
+            "[--set-map-inner-ringbuf <map>=<bytes>]... "
+            "[--prog-variants <group>=<prog>:<helper_id|trial>,...]... "
+            "[--probe-companions <prog>,<prog>,...]\n",
             prog);
 }
 
@@ -261,6 +287,81 @@ static int add_map_fixup(struct options *opts, const char *spec, bool inner_ring
     return 0;
 }
 
+/* Parse "<group>=<prog>:<helper_id>,<prog>:<helper_id>,..." for
+ * --prog-variants. helper_id 0 means the variant has no helper requirement
+ * (the unconditional fallback). Variant order is selection priority. */
+static int add_prog_variant_group(struct options *opts, const char *spec) {
+    const char *eq = spec ? strchr(spec, '=') : NULL;
+    if (!eq || eq == spec || !eq[1]) {
+        fprintf(stderr, "invalid prog variants spec (want <group>=<prog>:<id>,...): %s\n",
+                spec ? spec : "");
+        return -1;
+    }
+    if (opts->variant_group_count >= MAX_VARIANT_GROUPS) {
+        fprintf(stderr, "too many prog variant groups: max %d\n", MAX_VARIANT_GROUPS);
+        return -1;
+    }
+    struct prog_variant_group *grp = &opts->variant_groups[opts->variant_group_count];
+    memset(grp, 0, sizeof(*grp));
+    grp->chosen = -1;
+
+    size_t group_len = (size_t)(eq - spec);
+    if (group_len >= sizeof(grp->group)) {
+        fprintf(stderr, "prog variant group name too long: %s\n", spec);
+        return -1;
+    }
+    memcpy(grp->group, spec, group_len);
+    grp->group[group_len] = '\0';
+
+    const char *cursor = eq + 1;
+    while (*cursor) {
+        if (grp->count >= MAX_VARIANTS_PER_GROUP) {
+            fprintf(stderr, "too many variants in group %s: max %d\n", grp->group,
+                    MAX_VARIANTS_PER_GROUP);
+            return -1;
+        }
+        const char *comma = strchr(cursor, ',');
+        size_t entry_len = comma ? (size_t)(comma - cursor) : strlen(cursor);
+        const char *colon = memchr(cursor, ':', entry_len);
+        size_t name_len = colon ? (size_t)(colon - cursor) : entry_len;
+        if (name_len == 0 || name_len >= sizeof(grp->names[0])) {
+            fprintf(stderr, "invalid variant program name in group %s\n", grp->group);
+            return -1;
+        }
+        memcpy(grp->names[grp->count], cursor, name_len);
+        grp->names[grp->count][name_len] = '\0';
+        unsigned long helper_id = 0;
+        bool trial = false;
+        if (colon && colon + 1 < cursor + entry_len) {
+            size_t value_len = (size_t)((cursor + entry_len) - (colon + 1));
+            if (value_len == 5 && strncmp(colon + 1, "trial", 5) == 0) {
+                trial = true;
+            } else {
+                char *end = NULL;
+                helper_id = strtoul(colon + 1, &end, 10);
+                if (!end || end != cursor + entry_len || helper_id > 0xffffffffUL) {
+                    fprintf(stderr, "invalid helper id for variant %s in group %s\n",
+                            grp->names[grp->count], grp->group);
+                    return -1;
+                }
+            }
+        }
+        grp->helper_ids[grp->count] = (unsigned int)helper_id;
+        grp->trial_probe[grp->count] = trial;
+        grp->count++;
+        if (!comma) {
+            break;
+        }
+        cursor = comma + 1;
+    }
+    if (grp->count == 0) {
+        fprintf(stderr, "prog variant group %s has no variants\n", grp->group);
+        return -1;
+    }
+    opts->variant_group_count++;
+    return 0;
+}
+
 static int parse_args(int argc, char **argv, struct options *opts) {
     memset(opts, 0, sizeof(*opts));
     opts->probe_features = true;
@@ -310,6 +411,32 @@ static int parse_args(int argc, char **argv, struct options *opts) {
             }
             continue;
         }
+        if (strcmp(argv[i], "--prog-variants") == 0 && i + 1 < argc) {
+            if (add_prog_variant_group(opts, argv[++i]) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--probe-companions") == 0 && i + 1 < argc) {
+            const char *cursor = argv[++i];
+            while (*cursor) {
+                const char *comma = strchr(cursor, ',');
+                size_t len = comma ? (size_t)(comma - cursor) : strlen(cursor);
+                if (len == 0 || len >= sizeof(opts->probe_companions[0]) ||
+                    opts->probe_companion_count >= MAX_ITEMS) {
+                    fprintf(stderr, "invalid --probe-companions list\n");
+                    return -1;
+                }
+                memcpy(opts->probe_companions[opts->probe_companion_count], cursor, len);
+                opts->probe_companions[opts->probe_companion_count][len] = '\0';
+                opts->probe_companion_count++;
+                if (!comma) {
+                    break;
+                }
+                cursor = comma + 1;
+            }
+            continue;
+        }
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             usage(argv[0]);
             return 1;
@@ -349,6 +476,12 @@ static void append_libbpf_log(const char *msg) {
     g_result->libbpf_log[g_result->libbpf_log_len] = '\0';
 }
 
+/* libbpf emits a failed program's entire verifier log as ONE print call, so
+ * the per-call format buffer must be large enough to hold it or the verdict
+ * at the end of the log is silently cut. Static is safe: the validator is
+ * single-threaded by design. */
+static char g_print_buf[LIBBPF_LOG_CAPACITY];
+
 static int libbpf_log_callback(enum libbpf_print_level level, const char *fmt, va_list args) {
     /* Skip DEBUG (per-insn CO-RE relocation spam): large objects emit far
      * more than the capture buffer holds, and append stops at capacity — so
@@ -356,10 +489,9 @@ static int libbpf_log_callback(enum libbpf_print_level level, const char *fmt, v
     if (level == LIBBPF_DEBUG) {
         return 0;
     }
-    char buf[2048];
-    int n = vsnprintf(buf, sizeof(buf), fmt, args);
+    int n = vsnprintf(g_print_buf, sizeof(g_print_buf), fmt, args);
     if (n > 0) {
-        append_libbpf_log(buf);
+        append_libbpf_log(g_print_buf);
     }
     return n;
 }
@@ -1354,6 +1486,74 @@ static void apply_map_fixups(struct options *opts, struct bpf_object *obj, bool 
     }
 }
 
+/* Select one variant per group the way the artifact's loader does: walk in
+ * priority order, probe required helpers against this kernel, autoload the
+ * first satisfying variant and disable the rest. Probing uses
+ * BPF_PROG_TYPE_RAW_TRACEPOINT to match Falco's libpman; helper support is
+ * not program-type-specific for the helpers this gates. */
+/* Probe a variant the way Falco's iter_support_probing does: open a fresh
+ * object, apply map fixups, disable every program except the probed one and
+ * the declared prog-array companions, and attempt a real load. */
+static bool trial_probe_variant(struct options *opts, const char *prog_name) {
+    struct bpf_object *o = bpf_object__open_file(opts->artifact, NULL);
+    if (!o) {
+        return false;
+    }
+    apply_map_fixups(opts, o, false);
+
+    struct bpf_program *p;
+    bpf_object__for_each_program(p, o) {
+        bpf_program__set_autoload(p, false);
+    }
+    for (int i = 0; i < opts->probe_companion_count; i++) {
+        struct bpf_program *companion =
+            bpf_object__find_program_by_name(o, opts->probe_companions[i]);
+        if (companion) {
+            bpf_program__set_autoload(companion, true);
+        }
+    }
+    struct bpf_program *target = bpf_object__find_program_by_name(o, prog_name);
+    if (!target) {
+        bpf_object__close(o);
+        close_inner_map_fds();
+        return false;
+    }
+    bpf_program__set_autoload(target, true);
+
+    int err = bpf_object__load(o);
+    bpf_object__close(o);
+    close_inner_map_fds();
+    return err == 0;
+}
+
+static void apply_prog_variants(struct options *opts, struct bpf_object *obj) {
+    for (int g = 0; g < opts->variant_group_count; g++) {
+        struct prog_variant_group *grp = &opts->variant_groups[g];
+        grp->chosen = -1;
+        for (int v = 0; v < grp->count; v++) {
+            struct bpf_program *prog = bpf_object__find_program_by_name(obj, grp->names[v]);
+            if (!prog) {
+                continue;
+            }
+            bool satisfied = grp->chosen == -1;
+            if (satisfied && grp->helper_ids[v] > 0) {
+                satisfied = libbpf_probe_bpf_helper(BPF_PROG_TYPE_RAW_TRACEPOINT,
+                                                    (enum bpf_func_id)grp->helper_ids[v],
+                                                    NULL) == 1;
+            }
+            if (satisfied && grp->trial_probe[v]) {
+                satisfied = trial_probe_variant(opts, grp->names[v]);
+            }
+            if (satisfied) {
+                grp->chosen = v;
+                bpf_program__set_autoload(prog, true);
+            } else {
+                bpf_program__set_autoload(prog, false);
+            }
+        }
+    }
+}
+
 static int trial_load_one_program(struct options *opts, int target_index) {
     struct bpf_object *o = bpf_object__open_file(opts->artifact, NULL);
     if (!o) {
@@ -1390,22 +1590,19 @@ static int trial_log_callback(enum libbpf_print_level level, const char *fmt, va
     if (level == LIBBPF_DEBUG) {
         return 0;
     }
-    char buf[2048];
-    int n = vsnprintf(buf, sizeof(buf), fmt, args);
+    int n = vsnprintf(g_print_buf, sizeof(g_print_buf), fmt, args);
     if (n <= 0) {
         return n;
     }
     /* vsnprintf returns the would-be-written length, which can exceed the
-     * buffer on truncation. Clamp before memcpy so we never read past buf. */
+     * buffer on truncation. Clamp before memcpy so we never read past it. */
     size_t copy = (size_t)n;
-    if (copy >= sizeof(buf)) {
-        copy = sizeof(buf) - 1;
+    if (copy >= sizeof(g_print_buf)) {
+        copy = sizeof(g_print_buf) - 1;
     }
-    if (g_trial_log_len + copy < sizeof(g_trial_log) - 1) {
-        memcpy(g_trial_log + g_trial_log_len, buf, copy);
-        g_trial_log_len += copy;
-        g_trial_log[g_trial_log_len] = '\0';
-    }
+    /* Keep the tail: the verifier verdict is at the end of the log. */
+    append_tail(g_trial_log, sizeof(g_trial_log), g_print_buf, copy);
+    g_trial_log_len = strlen(g_trial_log);
     return n;
 }
 
@@ -1426,9 +1623,18 @@ static void probe_per_program_loads(struct validator_result *res) {
         int e = trial_load_one_program(&res->opts, i);
         libbpf_set_print(NULL);
         res->programs[i].load_errno = e;
+        const char *status = e == 0 ? "pass" : "fail";
+        /* Objects that statically initialize prog-array slots (tail-call
+         * dispatch tables) cannot be loaded one-program-at-a-time: libbpf
+         * fails slot initialization with EBADF because the referenced
+         * programs are not autoloaded. That is a limitation of isolated
+         * loading, not per-program kernel evidence — report it as skipped. */
+        if (e == -EBADF && strstr(g_trial_log, "failed to initialize slot") != NULL) {
+            status = "skipped";
+        }
         snprintf(res->programs[i].load_status, sizeof(res->programs[i].load_status),
-                 "%s", e == 0 ? "pass" : "fail");
-        if (e != 0 && g_trial_log_len > 0) {
+                 "%s", status);
+        if (e != 0 && strcmp(status, "fail") == 0 && g_trial_log_len > 0) {
             /* keep the tail — the verifier verdict is at the end */
             size_t keep = sizeof(res->programs[i].load_log) - 1;
             const char *start =
@@ -1460,6 +1666,10 @@ static void run_libbpf_load(struct validator_result *res) {
 
     probe_per_program_loads(res);
 
+    /* Variant selection first: its trial probes open their own objects and
+     * close their own inner-map fds, which must not race the main object's
+     * fixup fds — those are created after this and stay open through load. */
+    apply_prog_variants(&res->opts, obj);
     apply_map_fixups(&res->opts, obj, true);
 
     int err = bpf_object__load(obj);
@@ -1560,6 +1770,29 @@ static int write_result_json(const struct validator_result *res) {
         fprintf(f, "\",\"inner_ringbuf_bytes\":%u,\"status\":\"", fx->inner_ringbuf_bytes);
         escape_json_string(f, fx->status);
         fprintf(f, "\",\"errno\":%d,\"applied_entries\":%u}", fx->err, fx->applied_entries);
+    }
+    fprintf(f, "],\n");
+    fprintf(f, "  \"program_variants\": [");
+    for (int g = 0; g < res->opts.variant_group_count; g++) {
+        const struct prog_variant_group *grp = &res->opts.variant_groups[g];
+        fprintf(f, "%s{\"group\":\"", g == 0 ? "" : ",");
+        escape_json_string(f, grp->group);
+        fprintf(f, "\",\"chosen\":\"");
+        if (grp->chosen >= 0) {
+            escape_json_string(f, grp->names[grp->chosen]);
+        }
+        fprintf(f, "\",\"disabled\":[");
+        bool first = true;
+        for (int v = 0; v < grp->count; v++) {
+            if (v == grp->chosen) {
+                continue;
+            }
+            fprintf(f, "%s\"", first ? "" : ",");
+            escape_json_string(f, grp->names[v]);
+            fprintf(f, "\"");
+            first = false;
+        }
+        fprintf(f, "]}");
     }
     fprintf(f, "],\n");
     fprintf(f, "  \"btf\": {\n");

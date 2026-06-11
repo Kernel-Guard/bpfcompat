@@ -99,7 +99,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 
 	var stagedManifest string
 	var functionalPlanPath string
-	var mapFixups []vm.MapFixup
+	var tuning validatorTuning
 	validationMode := NormalizeValidationMode(cfg.ValidationMode)
 	attachMode := "best-effort"
 	matrixPathAbs, err := filepath.Abs(cfg.MatrixPath)
@@ -149,7 +149,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, err
 			}
 		}
-		mapFixups = mapFixupsFromManifest(mf)
+		tuning = validatorTuningFromManifest(mf)
 	}
 	if validationMode == ValidationModeLoadOnly {
 		attachMode = "disabled"
@@ -181,7 +181,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		stagedArtifact,
 		stagedManifest,
 		functionalPlanPath,
-		mapFixups,
+		tuning,
 		validatorBinPath,
 		attachMode,
 		cfg.Progress,
@@ -316,7 +316,7 @@ func executeTargets(
 	stagedArtifact string,
 	stagedManifest string,
 	functionalPlanPath string,
-	mapFixups []vm.MapFixup,
+	tuning validatorTuning,
 	validatorBinPath string,
 	attachMode string,
 	progress ProgressReporter,
@@ -375,7 +375,7 @@ func executeTargets(
 				stagedArtifact,
 				stagedManifest,
 				functionalPlanPath,
-				mapFixups,
+				tuning,
 				validatorBinPath,
 				attachMode,
 			)
@@ -432,7 +432,7 @@ func executeTarget(
 	stagedArtifact string,
 	stagedManifest string,
 	functionalPlanPath string,
-	mapFixups []vm.MapFixup,
+	tuning validatorTuning,
 	validatorBinPath string,
 	attachMode string,
 ) (schema.Target, bool, bool) {
@@ -506,7 +506,9 @@ func executeTarget(
 		ArtifactPath:       stagedArtifact,
 		ManifestPath:       stagedManifest,
 		FunctionalPlanPath: functionalPlanPath,
-		MapFixups:          mapFixups,
+		MapFixups:          tuning.mapFixups,
+		ProgVariants:       tuning.progVariants,
+		ProbeCompanions:    tuning.probeCompanions,
 		ValidatorBinary:    validatorBinPath,
 		AttachMode:         attachMode,
 		Timeout:            cfg.Timeout,
@@ -548,6 +550,7 @@ func executeTarget(
 	target.Notes = append(target.Notes, capabilityProbeNotes(vr)...)
 	target.Notes = append(target.Notes, mapTypeHintNotes(vr.Logs.Libbpf)...)
 	target.Notes = append(target.Notes, mapFixupNotes(vr)...)
+	target.Notes = append(target.Notes, progVariantNotes(vr)...)
 	target.Notes = append(target.Notes, perProgramLoadNotes(vr)...)
 	target.BTF = &schema.TargetBTF{
 		KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
@@ -910,6 +913,24 @@ func mapTypeName(id int) string {
 	}
 }
 
+func progVariantNotes(vr validatorResult) []string {
+	notes := make([]string, 0, len(vr.ProgramVariants))
+	for _, group := range vr.ProgramVariants {
+		if group.Chosen == "" {
+			notes = append(notes, fmt.Sprintf(
+				"program variant group %s: no variant satisfied on this kernel (disabled: %s)",
+				group.Group, strings.Join(group.Disabled, ", ")))
+			continue
+		}
+		note := fmt.Sprintf("program variant group %s: selected %s", group.Group, group.Chosen)
+		if len(group.Disabled) > 0 {
+			note += fmt.Sprintf(" (disabled: %s)", strings.Join(group.Disabled, ", "))
+		}
+		notes = append(notes, note)
+	}
+	return notes
+}
+
 func mapFixupNotes(vr validatorResult) []string {
 	notes := make([]string, 0, len(vr.MapFixups))
 	for _, fixup := range vr.MapFixups {
@@ -932,19 +953,41 @@ func mapFixupNotes(vr validatorResult) []string {
 	return notes
 }
 
-func mapFixupsFromManifest(mf manifest.Manifest) []vm.MapFixup {
-	if len(mf.Maps) == 0 {
-		return nil
-	}
-	fixups := make([]vm.MapFixup, 0, len(mf.Maps))
+// validatorTuning carries manifest-declared loader-contract settings (map
+// fixups, program variant groups) from manifest load to VM execution.
+type validatorTuning struct {
+	mapFixups       []vm.MapFixup
+	progVariants    []vm.ProgVariantGroup
+	probeCompanions []string
+}
+
+func validatorTuningFromManifest(mf manifest.Manifest) validatorTuning {
+	var tuning validatorTuning
 	for _, fixup := range mf.Maps {
-		fixups = append(fixups, vm.MapFixup{
+		tuning.mapFixups = append(tuning.mapFixups, vm.MapFixup{
 			Name:              fixup.Name,
 			MaxEntries:        string(fixup.MaxEntries),
 			InnerRingbufBytes: fixup.InnerRingbufBytes,
 		})
 	}
-	return fixups
+	for _, group := range mf.ProgramVariants {
+		vmGroup := vm.ProgVariantGroup{Group: group.Group}
+		for _, variant := range group.Programs {
+			helperID := uint32(0)
+			if variant.RequiresHelper != "" {
+				// Resolvability is guaranteed by manifest validation.
+				helperID, _ = manifest.HelperID(variant.RequiresHelper)
+			}
+			vmGroup.Variants = append(vmGroup.Variants, vm.ProgVariant{
+				Name:       variant.Name,
+				HelperID:   helperID,
+				TrialProbe: variant.Probe == "trial_load",
+			})
+		}
+		tuning.progVariants = append(tuning.progVariants, vmGroup)
+	}
+	tuning.probeCompanions = append(tuning.probeCompanions, mf.ProbeCompanions...)
+	return tuning
 }
 
 func attachModeFromManifest(mf manifest.Manifest) string {

@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- Manifest `program_variants:` groups for loaders that ship multiple
+  programs per event and select one at load time: variants gate on a BPF
+  helper (`requires_helper: bpf_loop` or numeric id) or on an isolated
+  `probe: trial_load` with `probe_companions:` kept autoloaded (mirroring
+  Falco's helper-gated exit programs and trial-probed BPF iterators). The
+  chosen/disabled variant per kernel is recorded in the validator JSON and
+  report notes. With these plus map fixups, Falco's modern_bpf probe passes
+  as shipped on Ubuntu 22.04 (5.15), with `recvmmsg_old_x`/`sendmmsg_old_x`
+  selected and `dump_task` correctly detected unsupported.
+
+### Fixed
+- The validator no longer truncates verifier output: libbpf emits a failed
+  program's whole log as one print call, and the old 2 KiB per-call buffer
+  cut the verdict off the end. Isolated per-program probes on objects with
+  statically initialized prog-array slots are reported as `skipped` instead
+  of misleading EBADF failures.
+
 ## [0.1.4] - 2026-06-11
 
 ### Added

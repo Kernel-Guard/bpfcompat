@@ -59,6 +59,51 @@ func Validate(m Manifest) error {
 		}
 	}
 
+	seenGroups := make(map[string]struct{}, len(m.ProgramVariants))
+	seenVariantPrograms := make(map[string]struct{})
+	for i := range m.ProgramVariants {
+		group := &m.ProgramVariants[i]
+		if !validMapName(group.Group) {
+			return fmt.Errorf("program_variants[%d].group %q must be an identifier (letters, digits, '_', '.')", i, group.Group)
+		}
+		if _, exists := seenGroups[group.Group]; exists {
+			return fmt.Errorf("duplicate program variant group %q", group.Group)
+		}
+		seenGroups[group.Group] = struct{}{}
+		if len(group.Programs) == 0 {
+			return fmt.Errorf("program variant group %q has no programs", group.Group)
+		}
+		for j := range group.Programs {
+			variant := &group.Programs[j]
+			if !validMapName(variant.Name) {
+				return fmt.Errorf("program variant group %q programs[%d].name %q must be an identifier", group.Group, j, variant.Name)
+			}
+			if _, exists := seenVariantPrograms[variant.Name]; exists {
+				return fmt.Errorf("program %q appears in more than one variant group", variant.Name)
+			}
+			seenVariantPrograms[variant.Name] = struct{}{}
+			if variant.RequiresHelper != "" {
+				if _, err := HelperID(variant.RequiresHelper); err != nil {
+					return fmt.Errorf("program variant %q: %w", variant.Name, err)
+				}
+			}
+			if variant.Probe != "" && variant.Probe != "trial_load" {
+				return fmt.Errorf("program variant %q: probe must be \"trial_load\"", variant.Name)
+			}
+		}
+	}
+
+	seenCompanions := make(map[string]struct{}, len(m.ProbeCompanions))
+	for i, companion := range m.ProbeCompanions {
+		if !validMapName(companion) {
+			return fmt.Errorf("probe_companions[%d] %q must be an identifier", i, companion)
+		}
+		if _, exists := seenCompanions[companion]; exists {
+			return fmt.Errorf("duplicate probe companion %q", companion)
+		}
+		seenCompanions[companion] = struct{}{}
+	}
+
 	seenProfiles := make(map[string]struct{}, len(m.RequiredProfiles))
 	for _, profile := range m.RequiredProfiles {
 		if profile == "" {

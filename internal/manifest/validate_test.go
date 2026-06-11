@@ -54,6 +54,42 @@ func TestValidateMapFixups(t *testing.T) {
 	}
 }
 
+func TestValidateProgramVariants(t *testing.T) {
+	valid := Manifest{ProgramVariants: []ProgramVariantGroup{{
+		Group: "recvmmsg_x",
+		Programs: []ProgramVariant{
+			{Name: "recvmmsg_x", RequiresHelper: "bpf_loop"},
+			{Name: "recvmmsg_old_x"},
+		},
+	}}}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+
+	numeric := Manifest{ProgramVariants: []ProgramVariantGroup{{
+		Group:    "g",
+		Programs: []ProgramVariant{{Name: "p", RequiresHelper: "181"}},
+	}}}
+	if err := Validate(numeric); err != nil {
+		t.Fatalf("numeric helper id should validate: %v", err)
+	}
+
+	bad := []Manifest{
+		{ProgramVariants: []ProgramVariantGroup{{Group: "g"}}},
+		{ProgramVariants: []ProgramVariantGroup{{Group: "bad name", Programs: []ProgramVariant{{Name: "p"}}}}},
+		{ProgramVariants: []ProgramVariantGroup{{Group: "g", Programs: []ProgramVariant{{Name: "p", RequiresHelper: "no_such_helper"}}}}},
+		{ProgramVariants: []ProgramVariantGroup{
+			{Group: "g1", Programs: []ProgramVariant{{Name: "p"}}},
+			{Group: "g2", Programs: []ProgramVariant{{Name: "p"}}},
+		}},
+	}
+	for i, m := range bad {
+		if err := Validate(m); err == nil {
+			t.Errorf("case %d: expected validation error", i)
+		}
+	}
+}
+
 func TestLoadBytesParsesIntegerMaxEntries(t *testing.T) {
 	m, err := LoadBytes([]byte("name: t\nmaps:\n  - name: counter_maps\n    max_entries: 64\n"))
 	if err != nil {

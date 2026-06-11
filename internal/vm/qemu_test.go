@@ -395,3 +395,17 @@ func TestMapFixupArgs(t *testing.T) {
 		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
 	}
 }
+
+func TestProgVariantArgs(t *testing.T) {
+	groups := []ProgVariantGroup{{
+		Group: "recvmmsg_x",
+		Variants: []ProgVariant{
+			{Name: "recvmmsg_x", HelperID: 181},
+			{Name: "recvmmsg_old_x"},
+		},
+	}}
+	want := " --prog-variants recvmmsg_x=recvmmsg_x:181,recvmmsg_old_x:0"
+	if got := progVariantArgs(groups); got != want {
+		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
+	}
+}
