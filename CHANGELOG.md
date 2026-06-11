@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- Web gate now includes a sticky readiness snapshot, clearer target/BPF/gate
+  workflow, explicit load-only/load+attach test intent, and a collection-first
+  suite preview with generated CLI and GitHub Action snippets.
+- Result view now leads with the gate decision and required/optional pass/fail
+  matrix before technical JSON, history, compare, or runtime evidence.
+
 ## [0.1.2] - 2026-06-05
 
 ### Added — web UX and Marketplace

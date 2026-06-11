@@ -28,8 +28,10 @@ proof stay behind the **Advanced evidence and history** drawer and are loaded
 only when that drawer is opened.
 
 For projects that ship collections of BPF objects/programs, use suite mode in
-the CLI or GitHub Action. The web UI previews suite cases, explains the
-recommended CI mode, and generates the GitHub Action YAML, but real collection
+the CLI or GitHub Action. The web UI treats the collection as a first-class
+gate input: it previews object cases, counts `load_only`, `load_attach`, and
+`behavior` checks, mirrors the collection summary in the result panel, and
+generates both the local CLI command and GitHub Action YAML. Real collection
 execution remains CI-first. Suite cases may choose `validation_mode:
 load_only`, `load_attach`, or `behavior`; behavior mode runs manifest or suite
 `test` commands while the BPF links are alive and reports those results in the

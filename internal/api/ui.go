@@ -68,7 +68,7 @@ const uiHTML = `<!doctype html>
     }
     .workflow-steps {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 6px;
     }
     .workflow-step {
@@ -79,6 +79,47 @@ const uiHTML = `<!doctype html>
       font-size: 12px;
       color: #d8e2f4;
       text-align: center;
+    }
+    .run-snapshot {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      border-bottom: 1px solid #2c3340;
+      background: #151a22;
+      padding: 10px 14px;
+      display: grid;
+      gap: 8px;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+    }
+    .run-snapshot-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .run-snapshot-top strong {
+      font-size: 13px;
+      color: #edf1f8;
+    }
+    .run-snapshot-state {
+      border: 1px solid #856b2c;
+      border-radius: 999px;
+      color: #f3d28d;
+      background: #221d11;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .run-snapshot-state.ready {
+      border-color: #2f7b58;
+      color: #9bd9b4;
+      background: #12231b;
+    }
+    .run-snapshot-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 5px;
     }
     .step-title {
       display: flex;
@@ -182,6 +223,30 @@ const uiHTML = `<!doctype html>
       color: #9fd5a7;
     }
     .status.error { color: #f2a3a3; }
+    .gate-decision {
+      border: 1px solid #2f3748;
+      border-radius: 6px;
+      background: #101723;
+      padding: 8px 10px;
+      color: #cbd6ea;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .gate-decision.pass {
+      border-color: #2f7b58;
+      background: #102119;
+      color: #9bd9b4;
+    }
+    .gate-decision.fail, .gate-decision.error {
+      border-color: #8b4a4a;
+      background: #241516;
+      color: #f1a0a0;
+    }
+    .gate-decision.check {
+      border-color: #856b2c;
+      background: #221d11;
+      color: #f3d28d;
+    }
     .verdict-bar {
       border: 1px solid #334057;
       border-radius: 8px;
@@ -192,6 +257,7 @@ const uiHTML = `<!doctype html>
     }
     .verdict-bar.pass { border-color: #2f7b58; background: #102119; }
     .verdict-bar.fail, .verdict-bar.error { border-color: #8b4a4a; background: #241516; }
+    .verdict-bar.check { border-color: #856b2c; background: #221d11; }
     .verdict-bar.running { border-color: #3863ab; background: #111d31; }
     .verdict-title {
       font-size: 16px;
@@ -363,6 +429,28 @@ const uiHTML = `<!doctype html>
     .matrix-count.pass { border-color: #2f7b58; background: #102119; }
     .matrix-count.fail, .matrix-count.error { border-color: #8b4a4a; background: #241516; }
     .matrix-count.check { border-color: #856b2c; background: #221d11; }
+    .failure-summary {
+      border: 1px solid #2f3748;
+      border-radius: 6px;
+      background: #101723;
+      padding: 8px 10px;
+      display: grid;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .failure-summary strong {
+      font-size: 12px;
+      color: #edf1f8;
+    }
+    .failure-summary ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 4px;
+      color: #d7deec;
+      font-size: 12px;
+      line-height: 1.35;
+    }
     .matrix-required-fail td {
       background: rgba(139, 74, 74, 0.16);
     }
@@ -441,7 +529,7 @@ const uiHTML = `<!doctype html>
     }
     .readiness-item {
       display: grid;
-      grid-template-columns: 12px 76px 1fr;
+      grid-template-columns: 12px minmax(44px, auto) minmax(0, 1fr);
       gap: 7px;
       align-items: center;
       min-width: 0;
@@ -453,9 +541,8 @@ const uiHTML = `<!doctype html>
       font-size: 12px;
     }
     .readiness-item span:last-child {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
+      line-height: 1.25;
     }
     .readiness-dot {
       width: 8px;
@@ -483,6 +570,32 @@ const uiHTML = `<!doctype html>
     }
     .suite-preview table {
       margin-top: 2px;
+    }
+    .suite-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin: 8px 0;
+    }
+    .suite-stat {
+      border: 1px solid #2f3748;
+      border-radius: 6px;
+      background: #101723;
+      padding: 8px;
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .suite-stat strong {
+      font-size: 15px;
+      color: #edf1f8;
+    }
+    .suite-stat span {
+      font-size: 11px;
+      color: #aebbd0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     table {
       border-collapse: collapse;
@@ -626,6 +739,8 @@ const uiHTML = `<!doctype html>
         padding: 10px;
       }
       .workflow-steps,
+      .run-snapshot-grid,
+      .suite-stats,
       .row,
       .segmented,
       .target-presets,
@@ -651,31 +766,52 @@ const uiHTML = `<!doctype html>
   </style>
 </head>
 <body>
-  <div class="preview-banner">Technical Preview — CI-first eBPF compatibility gate. Select target kernels, run validation, inspect drill-down evidence. Not for production runtime loading.</div>
+  <div class="preview-banner">Technical Preview — CI-first eBPF compatibility gate. Production runtime loading remains disabled in the public demo.</div>
   <div class="layout">
     <div class="panel">
-      <h2>Compatibility Run Builder</h2>
+      <h2>BPF Compatibility Gate</h2>
+      <div class="run-snapshot">
+        <div class="run-snapshot-top">
+          <strong>Gate Snapshot</strong>
+          <span id="runSnapshotState" class="run-snapshot-state">not ready</span>
+        </div>
+        <div id="gateReadiness" class="run-snapshot-grid">
+          <div id="readyTargets" class="readiness-item">
+            <span class="readiness-dot"></span>
+            <strong>Targets</strong>
+            <span id="readyTargetsText">No targets selected</span>
+          </div>
+          <div id="readyBPF" class="readiness-item">
+            <span class="readiness-dot"></span>
+            <strong>BPF</strong>
+            <span id="readyBPFText">No object or suite selected</span>
+          </div>
+          <div id="readyOutput" class="readiness-item">
+            <span class="readiness-dot"></span>
+            <strong>Gate</strong>
+            <span id="readyOutputText">Pass/fail matrix after run</span>
+          </div>
+        </div>
+      </div>
       <div class="section workflow-strip">
         <div class="workflow-steps">
-          <div class="workflow-step">1. Select targets</div>
-          <div class="workflow-step">2. Provide BPF</div>
-          <div class="workflow-step">3. Test intent</div>
-          <div class="workflow-step">4. Run</div>
-          <div class="workflow-step">5. Matrix</div>
+          <div class="workflow-step">Targets</div>
+          <div class="workflow-step">BPF</div>
+          <div class="workflow-step">Gate</div>
+          <div class="workflow-step">Matrix</div>
         </div>
-        <div class="hint">Built for the CI workflow Samy and Falco both pointed at: choose kernels, provide BPF objects, run the gate, inspect failures only when needed.</div>
       </div>
 
       <div class="section">
         <div class="step-title">
           <strong>1. Select Targets</strong>
-          <span>kernel/distro matrix</span>
+          <span>release scope</span>
         </div>
         <div class="target-presets" id="targetPresets">
-          <button type="button" class="secondary" data-preset="enterprise-broad">Enterprise Broad</button>
+          <button type="button" class="secondary" data-preset="enterprise-broad">Enterprise</button>
           <button type="button" class="secondary" data-preset="ubuntu-lts">Ubuntu LTS</button>
-          <button type="button" class="secondary" data-preset="rhel-like">RHEL-like</button>
-          <button type="button" class="secondary" data-preset="aws">AWS</button>
+          <button type="button" class="secondary" data-preset="rhel-like">RHEL / EL</button>
+          <button type="button" class="secondary" data-preset="aws">Cloud</button>
           <button type="button" class="secondary" data-preset="custom">Custom</button>
         </div>
         <div id="targetPresetHint" class="hint">Loading target catalog...</div>
@@ -703,8 +839,8 @@ const uiHTML = `<!doctype html>
           <span>object or collection</span>
         </div>
         <div class="segmented">
-          <button type="button" class="secondary active" id="modeSingle">Single Object</button>
-          <button type="button" class="secondary" id="modeSuite">Collection / Suite</button>
+          <button type="button" class="secondary active" id="modeSingle">Single object</button>
+          <button type="button" class="secondary" id="modeSuite">Object collection</button>
         </div>
 
         <div id="singleInputMode">
@@ -731,14 +867,15 @@ const uiHTML = `<!doctype html>
 
         <div id="suiteInputMode" class="hidden">
           <div class="ci-mode-panel">
-            <strong>CI mode</strong>
-            <p>Collections are designed to run in GitHub Actions on a self-hosted Linux/KVM runner. The suite lists BPF objects, manifests, and target policy; the output is a pass/fail matrix plus a detailed job summary.</p>
+            <strong>Object collection gate</strong>
+            <p>Recommended for product releases: one suite lists every BPF object/program, its manifest, gate mode, and optional behavior assertion. CI runs the suite and returns one collection matrix first, then per-object evidence.</p>
             <div class="ci-mode-pills">
-              <span class="badge">suite YAML</span>
-              <span class="badge">self-hosted KVM</span>
-              <span class="badge">GitHub summary</span>
+              <span class="badge">collection matrix</span>
+              <span class="badge">per-object reports</span>
+              <span class="badge">self-hosted KVM CI</span>
             </div>
           </div>
+          <div id="suiteStats" class="suite-stats"></div>
           <label>Suite YAML File</label>
           <input id="suiteFile" type="file" accept=".yaml,.yml,text/yaml">
           <label>or Paste Suite YAML</label>
@@ -765,6 +902,9 @@ cases:
           <div id="suitePreview" class="suite-preview">
             <div class="hint">Paste a suite YAML to preview collection cases and generate GitHub Action configuration.</div>
           </div>
+          <label>Local CLI Preview</label>
+          <pre id="suiteCliCommand" class="mono">Paste a suite YAML to generate a local suite command.</pre>
+          <button type="button" class="secondary mt8" id="copySuiteCli">Copy CLI Command</button>
           <label>GitHub Action Preview</label>
           <pre id="suiteActionYaml" class="mono">Paste a suite YAML to generate a CI snippet.</pre>
           <button type="button" class="secondary mt8" id="copyActionYaml">Copy GitHub Action YAML</button>
@@ -791,8 +931,8 @@ cases:
 
       <div class="section">
         <div class="step-title">
-          <strong>3. Test Intent</strong>
-          <span>what the gate proves</span>
+          <strong>3. Gate Mode</strong>
+          <span>load evidence level</span>
         </div>
         <div class="intent-options">
           <label class="intent-card active" id="intentLoadAttach">
@@ -853,35 +993,19 @@ programs:
           <strong>4. Run</strong>
           <span>gate selected targets</span>
         </div>
-        <div id="gateReadiness" class="gate-readiness">
-          <div id="readyTargets" class="readiness-item">
-            <span class="readiness-dot"></span>
-            <strong>Targets</strong>
-            <span id="readyTargetsText">No targets selected</span>
-          </div>
-          <div id="readyBPF" class="readiness-item">
-            <span class="readiness-dot"></span>
-            <strong>BPF</strong>
-            <span id="readyBPFText">No object or suite selected</span>
-          </div>
-          <div id="readyOutput" class="readiness-item">
-            <span class="readiness-dot"></span>
-            <strong>Output</strong>
-            <span id="readyOutputText">Pass/fail matrix after run</span>
-          </div>
-        </div>
         <button id="runBtn">Run Compatibility Gate</button>
-        <div id="runHint" class="hint">Single-object mode runs directly here. Collection mode generates the recommended CI suite configuration.</div>
+        <div id="runHint" class="hint">Single-object mode runs here. Collection mode generates CI configuration.</div>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Compatibility Matrix</h2>
+      <h2>Result Matrix</h2>
       <div class="results">
         <div id="verdictBar" class="verdict-bar neutral">
           <div id="verdictTitle" class="verdict-title">No validation run yet</div>
           <div id="verdictMeta" class="verdict-meta">Select targets, provide a BPF object, then run the gate.</div>
         </div>
+        <div id="gateDecision" class="gate-decision">Gate decision will appear after validation.</div>
         <div id="status" class="status">Select target kernels and run validation.</div>
         <div class="progress-wrap">
           <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
@@ -1071,6 +1195,7 @@ programs:
     const verdictBarEl = byId("verdictBar");
     const verdictTitleEl = byId("verdictTitle");
     const verdictMetaEl = byId("verdictMeta");
+    const gateDecisionEl = byId("gateDecision");
     const resultJsonEl = byId("resultJson");
     const compareJsonEl = byId("compareJson");
     const decisionJsonEl = byId("decisionJson");
@@ -1089,8 +1214,11 @@ programs:
     const readyBPFTextEl = byId("readyBPFText");
     const readyOutputEl = byId("readyOutput");
     const readyOutputTextEl = byId("readyOutputText");
+    const runSnapshotStateEl = byId("runSnapshotState");
     const suitePreviewEl = byId("suitePreview");
     const suiteActionYamlEl = byId("suiteActionYaml");
+    const suiteCliCommandEl = byId("suiteCliCommand");
+    const suiteStatsEl = byId("suiteStats");
     const evidenceDrilldownEl = byId("evidenceDrilldown");
     const writeAuthSectionEl = byId("writeAuthSection");
     const authHintEl = byId("authHint");
@@ -1138,6 +1266,11 @@ programs:
       verdictMetaEl.textContent = meta || "";
     }
 
+    function setGateDecision(kind, text) {
+      gateDecisionEl.className = "gate-decision " + (kind || "neutral");
+      gateDecisionEl.textContent = text || "Gate decision will appear after validation.";
+    }
+
     function setAuthHint(text, error = false) {
       authHintEl.textContent = text || "";
       authHintEl.className = error ? "hint error" : "hint";
@@ -1174,10 +1307,10 @@ programs:
     function suiteInputStatus() {
       const count = state.suite && state.suite.cases ? state.suite.cases.length : 0;
       if (count > 0) {
-        const name = state.suite.name || "suite";
+        const name = state.suite.name || "collection";
         return { ready: true, text: name + " • " + count + " object case(s)" };
       }
-      return { ready: false, text: "Paste suite YAML with cases" };
+      return { ready: false, text: "Paste collection suite YAML" };
     }
 
     function updateGateReadiness() {
@@ -1199,6 +1332,8 @@ programs:
         outputReady,
         outputText
       );
+      runSnapshotStateEl.classList.toggle("ready", outputReady);
+      runSnapshotStateEl.textContent = outputReady ? "ready" : "not ready";
     }
 
     function deriveProfileHintFromProbe(probe) {
@@ -1608,15 +1743,19 @@ programs:
       setButtonActive("modeSuite", bpfInputMode === "suite");
       if (bpfInputMode === "suite") {
         runBtnEl.textContent = "Generate CI Gate";
-        runHintEl.textContent = "Collection mode is CI-first. The browser previews the suite and generates the GitHub Action configuration.";
+        runHintEl.textContent = "Collection mode generates the GitHub Action configuration.";
         setStatus("Collection mode selected. Paste suite YAML to preview the BPF object set.");
         setVerdict("neutral", "Collection preview mode", "Use the generated GitHub Action on a self-hosted Linux/KVM runner for real suite execution.");
+        setGateDecision("neutral", "CI suite gate preview.");
         updateSuitePreview();
+        renderSuiteGatePreview(state.suite);
       } else {
         runBtnEl.textContent = "Run Compatibility Gate";
-        runHintEl.textContent = "Single-object mode runs directly here. Collection mode generates the recommended CI suite configuration.";
+        runHintEl.textContent = "Single-object mode runs here. Collection mode generates CI configuration.";
         setStatus("Single-object mode selected. Upload or compile one BPF object.");
         setVerdict("neutral", "No validation run yet", "Select targets, provide a BPF object, then run the gate.");
+        setGateDecision("neutral", "Gate decision will appear after validation.");
+        byId("summary").replaceChildren();
       }
       updateGateReadiness();
     }
@@ -1661,6 +1800,14 @@ programs:
         setStatus("GitHub Action YAML copied");
       } catch (err) {
         setStatus("Copy failed; select the generated YAML manually.", true);
+      }
+    });
+    byId("copySuiteCli").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(suiteCliCommandEl.textContent || "");
+        setStatus("Suite CLI command copied");
+      } catch (err) {
+        setStatus("Copy failed; select the generated command manually.", true);
       }
     });
 
@@ -1959,6 +2106,41 @@ programs:
       return "failed";
     }
 
+    function formatTargetFailureDetail(target) {
+      if (!target) return "failed";
+      const code = formatTargetReason(target);
+      const reason = String(target.classification_reason || "").trim();
+      if (reason && reason !== code) {
+        return code + ": " + reason;
+      }
+      return code;
+    }
+
+    function renderFailureSummary(targets) {
+      const failures = targets.filter((target) => normalizeStatus(target.status) !== "pass");
+      if (failures.length === 0) {
+        return null;
+      }
+      const panel = document.createElement("div");
+      panel.className = "failure-summary";
+      const title = document.createElement("strong");
+      title.textContent = "Failure reasons";
+      const list = document.createElement("ul");
+      failures.slice(0, 6).forEach((target) => {
+        const item = document.createElement("li");
+        const required = target.required ? "required" : "optional";
+        item.textContent = (target.profile_id || "target") + " (" + required + "): " + formatTargetFailureDetail(target);
+        list.appendChild(item);
+      });
+      if (failures.length > 6) {
+        const item = document.createElement("li");
+        item.textContent = String(failures.length - 6) + " more failure(s) in the matrix.";
+        list.appendChild(item);
+      }
+      panel.append(title, list);
+      return panel;
+    }
+
     function targetMatchesMatrixFilter(target, filter) {
       const status = normalizeStatus(target && target.status);
       switch (filter) {
@@ -2045,6 +2227,60 @@ programs:
       return value.trim();
     }
 
+    function suiteSlug(name) {
+      const slug = String(name || "bpfcompat-suite").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+      return slug || "bpfcompat-suite";
+    }
+
+    function suiteModeForCase(suite, c) {
+      if (c.testMode === "behavior") {
+        return "behavior";
+      }
+      return c.validationMode || suite.defaultMode || "load_attach";
+    }
+
+    function suiteCounts(suite) {
+      const counts = { cases: 0, loadOnly: 0, loadAttach: 0, behavior: 0, manifests: 0 };
+      if (!suite || !suite.cases) {
+        return counts;
+      }
+      counts.cases = suite.cases.length;
+      suite.cases.forEach((c) => {
+        const mode = suiteModeForCase(suite, c);
+        if (mode === "load_only") {
+          counts.loadOnly++;
+        } else if (mode === "behavior") {
+          counts.behavior++;
+        } else {
+          counts.loadAttach++;
+        }
+        if (c.manifest) {
+          counts.manifests++;
+        }
+      });
+      return counts;
+    }
+
+    function appendSuiteStat(label, value) {
+      const item = document.createElement("div");
+      item.className = "suite-stat";
+      const strong = document.createElement("strong");
+      strong.textContent = String(value);
+      const span = document.createElement("span");
+      span.textContent = label;
+      item.append(strong, span);
+      suiteStatsEl.appendChild(item);
+    }
+
+    function renderSuiteStats(suite) {
+      suiteStatsEl.replaceChildren();
+      const counts = suiteCounts(suite);
+      appendSuiteStat("object cases", counts.cases);
+      appendSuiteStat("load only", counts.loadOnly);
+      appendSuiteStat("load + attach", counts.loadAttach);
+      appendSuiteStat("behavior", counts.behavior);
+    }
+
     function parseSuitePreview(text) {
       const suite = { name: "", defaultMode: "", cases: [] };
       let current = null;
@@ -2122,9 +2358,76 @@ programs:
       ].join("\n");
     }
 
+    function generateSuiteCLICommand(suite) {
+      const suitePath = byId("suitePath").value.trim() || "suites/project.yaml";
+      const slug = suiteSlug(suite && suite.name);
+      return [
+        "make validator-static",
+        "",
+        "./bin/bpfcompat suite \\",
+        "  --suite " + suitePath + " \\",
+        "  --out reports/suites/" + slug + "/suite.json \\",
+        "  --markdown reports/suites/" + slug + "/suite.md \\",
+        "  --timeout 8m \\",
+        "  --concurrency 1"
+      ].join("\n");
+    }
+
+    function renderSuiteGatePreview(suite) {
+      const container = byId("summary");
+      const counts = suiteCounts(suite);
+      const countCards = document.createElement("div");
+      countCards.className = "matrix-counts";
+      appendMatrixCount(countCards, "object cases", counts.cases);
+      appendMatrixCount(countCards, "load only", counts.loadOnly);
+      appendMatrixCount(countCards, "load + attach", counts.loadAttach);
+      appendMatrixCount(countCards, "behavior", counts.behavior);
+
+      if (!suite || !suite.cases || suite.cases.length === 0) {
+        const note = document.createElement("div");
+        note.className = "failure-summary";
+        const title = document.createElement("strong");
+        title.textContent = "Collection gate";
+        const list = document.createElement("ul");
+        const item = document.createElement("li");
+        item.textContent = "Paste suite YAML with cases[].name and cases[].artifact to preview the BPF object collection.";
+        list.appendChild(item);
+        note.append(title, list);
+        container.replaceChildren(countCards, note);
+        return;
+      }
+
+      const wrap = document.createElement("div");
+      wrap.className = "matrix-wrap";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Case", "Mode", "Artifact", "Manifest", "Behavior"].forEach((name) => {
+        const th = document.createElement("th");
+        th.textContent = name;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      suite.cases.forEach((c) => {
+        const tr = document.createElement("tr");
+        appendCell(tr, c.artifactName || c.name || "-");
+        appendCell(tr, suiteModeForCase(suite, c));
+        appendCell(tr, c.artifact || "-");
+        appendCell(tr, c.manifest || "-");
+        appendCell(tr, suiteModeForCase(suite, c) === "behavior" ? (c.testCommand || "behavior command") : "-");
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      container.replaceChildren(countCards, wrap);
+    }
+
     function updateSuitePreview() {
       const suite = parseSuitePreview(byId("suiteText").value);
       state.suite = suite;
+      renderSuiteStats(suite);
       suitePreviewEl.replaceChildren();
       const title = document.createElement("div");
       title.className = "hint";
@@ -2147,7 +2450,7 @@ programs:
         const tbody = document.createElement("tbody");
         suite.cases.forEach((c) => {
           const tr = document.createElement("tr");
-          const mode = c.testMode === "behavior" ? "behavior" : (c.validationMode || suite.defaultMode || "default");
+          const mode = suiteModeForCase(suite, c);
           appendCell(tr, c.artifactName || c.name || "-");
           appendCell(tr, mode);
           appendCell(tr, c.artifact || "-");
@@ -2159,6 +2462,10 @@ programs:
         suitePreviewEl.appendChild(table);
       }
       suiteActionYamlEl.textContent = generateSuiteActionYAML(suite);
+      suiteCliCommandEl.textContent = generateSuiteCLICommand(suite);
+      if (bpfInputMode === "suite") {
+        renderSuiteGatePreview(suite);
+      }
       updateGateReadiness();
     }
 
@@ -2187,24 +2494,28 @@ programs:
         container.replaceChildren();
         return;
       }
-      const summaryStatus = String(report.summary && report.summary.status || "unknown");
       const targetCount = report.targets.length;
       const requiredFailed = report.targets.filter((t) => t.required && t.status !== "pass").length;
       const requiredPassed = report.targets.filter((t) => t.required && t.status === "pass").length;
       const optionalFailed = report.targets.filter((t) => !t.required && t.status !== "pass").length;
-      const verdictKind = summaryStatus.toLowerCase() === "pass" ? "pass" : "fail";
+      let verdictKind = "pass";
       let verdictTitle = "PASS: all required targets passed";
-      if (summaryStatus.toLowerCase() !== "pass" && requiredFailed > 0) {
+      if (requiredFailed > 0) {
+        verdictKind = "fail";
         verdictTitle = "FAIL: " + requiredFailed + " required target(s) failed";
-      } else if (summaryStatus.toLowerCase() !== "pass") {
+      } else if (optionalFailed > 0) {
+        verdictKind = "check";
         verdictTitle = "CHECK: optional target failure(s) found";
       }
       const verdictMeta = targetCount + " target(s) checked. Required pass/fail: " + requiredPassed + "/" + requiredFailed + ". Optional failures: " + optionalFailed + ".";
       setVerdict(verdictKind, verdictTitle, verdictMeta);
-
-      const headline = document.createElement("div");
-      headline.className = summaryStatus.toLowerCase() === "pass" ? "status" : "status error";
-      headline.textContent = "Overall: " + summaryStatus + " • targets: " + targetCount + " • required pass/fail: " + requiredPassed + "/" + requiredFailed;
+      if (requiredFailed > 0) {
+        setGateDecision("fail", "Do not ship: " + requiredFailed + " required target(s) failed.");
+      } else if (optionalFailed > 0) {
+        setGateDecision("check", "Required targets passed. Review " + optionalFailed + " optional failure(s).");
+      } else {
+        setGateDecision("pass", "Ship candidate: all selected targets passed.");
+      }
 
       const counts = document.createElement("div");
       counts.className = "matrix-counts";
@@ -2239,7 +2550,12 @@ programs:
       renderMatrixRows(tbody, targets, state.matrixFilter);
       table.appendChild(tbody);
       wrap.appendChild(table);
-      container.replaceChildren(headline, counts, renderMatrixToolbar(targets, tbody), wrap);
+      const failureSummary = renderFailureSummary(targets);
+      if (failureSummary) {
+        container.replaceChildren(counts, failureSummary, renderMatrixToolbar(targets, tbody), wrap);
+      } else {
+        container.replaceChildren(counts, renderMatrixToolbar(targets, tbody), wrap);
+      }
     }
 
     document.querySelectorAll("button[data-preset]").forEach((btn) => {
@@ -2339,12 +2655,15 @@ programs:
         updateSuitePreview();
         const count = state.suite.cases.length;
         if (count === 0) {
-          setStatus("Paste a suite YAML before generating a CI gate.", true);
-          setVerdict("error", "Suite YAML needs cases", "Add cases with name and artifact fields, then use the generated GitHub Action.");
+        setStatus("Paste a suite YAML before generating a CI gate.", true);
+        setVerdict("error", "Collection needs object cases", "Add cases with name and artifact fields, then use the generated GitHub Action.");
+          setGateDecision("error", "Blocked: suite has no cases.");
           return;
         }
         setStatus("Suite preview ready. Run this collection through the generated GitHub Action.");
         setVerdict("neutral", "CI suite gate generated", count + " BPF object case(s) ready for self-hosted Linux/KVM execution.");
+        setGateDecision("neutral", "Ready for CI: " + count + " object case(s).");
+        renderSuiteGatePreview(state.suite);
         return;
       }
       if (runInFlight) {
@@ -2361,6 +2680,7 @@ programs:
         resetProgress();
         setStatus("Starting validation...");
         setVerdict("running", "Running compatibility gate", "Validating selected targets. Required failures will be shown first.");
+        setGateDecision("neutral", "Running selected target matrix.");
         const fd = new FormData();
 
         fd.append("artifact_name", byId("artifactName").value.trim());
@@ -2416,6 +2736,7 @@ programs:
       } catch (err) {
         setStatus(String(err), true);
         setVerdict("error", "Validation could not complete", String(err));
+        setGateDecision("error", "Blocked: validation did not complete.");
       } finally {
         runInFlight = false;
         runBtnEl.disabled = false;
