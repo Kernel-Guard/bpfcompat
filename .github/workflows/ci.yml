@@ -50,6 +50,11 @@ jobs:
           cache: true
       - name: go mod download
         run: go mod download
+      - name: Validate action.yml parses
+        # The composite action ships by tag; a YAML syntax error (e.g. an
+        # unquoted colon in a description) breaks every consumer at "Set up
+        # job" with no way to patch the tag. Catch it before release.
+        run: python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in ['action.yml'] + glob.glob('.github/workflows/*.yml')]; print('ok')"
       - name: go vet
         run: go vet ./...
       - name: go test

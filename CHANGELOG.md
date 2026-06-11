@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-06-11
+
+### Fixed
+- `action.yml` was invalid YAML from v0.1.4 (unquoted colon in the
+  `validation-mode` description), which broke every consumer of the
+  published action at job setup. The description is now quoted and CI
+  parses `action.yml` plus all workflow files on every push so a broken
+  tag cannot ship again.
+
 ### Added
 - Manifest `program_variants:` groups for loaders that ship multiple
   programs per event and select one at load time: variants gate on a BPF

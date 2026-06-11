@@ -32,7 +32,7 @@ inputs:
     required: false
     default: ""
   validation-mode:
-    description: Optional single-artifact validation mode: load_only, load_attach, or behavior. Suite mode should set validation_mode inside the suite YAML.
+    description: "Optional single-artifact validation mode: load_only, load_attach, or behavior. Suite mode should set validation_mode inside the suite YAML."
     required: false
     default: ""
   markdown:
