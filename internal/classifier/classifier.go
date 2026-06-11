@@ -57,7 +57,7 @@ func Classify(in Input) Result {
 			Code:        "UNSUPPORTED_MAP_TYPE",
 			Confidence:  "high",
 			Reason:      fmt.Sprintf("Map %q failed to create on this kernel (%s); likely an unsupported map type.", mapName, errTail),
-			Remediation: "Confirm the map type used by this map is supported on this kernel/profile, or ship a fallback artifact.",
+			Remediation: "Confirm the map type used by this map is supported on this kernel/profile, or ship a fallback artifact. If the artifact's own loader sizes this map at runtime (max_entries=0 in the object), declare it under `maps:` in the manifest instead.",
 		}
 	}
 

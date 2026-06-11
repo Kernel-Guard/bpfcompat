@@ -13,9 +13,33 @@ import (
 type Manifest struct {
 	Name             string           `yaml:"name"`
 	Programs         []Program        `yaml:"programs"`
+	Maps             []MapFixup       `yaml:"maps,omitempty"`
 	RequiredProfiles []string         `yaml:"required_profiles,omitempty"`
 	FunctionalTests  []FunctionalTest `yaml:"functional_tests,omitempty"`
 	Metadata         map[string]any   `yaml:"metadata,omitempty"`
+}
+
+// MapFixup declares a pre-load adjustment for a map whose final shape the
+// artifact's own loader decides at runtime — for example per-CPU arrays or
+// ring buffers sized from the CPU count, which are compiled with
+// max_entries=0 and would otherwise fail to load under any generic loader.
+// The validator applies fixups between bpf_object open and load.
+type MapFixup struct {
+	Name string `yaml:"name"`
+	// MaxEntries is a positive integer or the literal "cpus", which resolves
+	// to the number of possible CPUs on the target kernel at load time.
+	MaxEntries EntriesValue `yaml:"max_entries,omitempty"`
+	// InnerRingbufBytes creates a BPF_MAP_TYPE_RINGBUF of this byte size and
+	// installs it as the inner-map prototype for an array-of-maps.
+	InnerRingbufBytes uint32 `yaml:"inner_ringbuf_bytes,omitempty"`
+}
+
+// EntriesValue accepts either a YAML integer or the string "cpus".
+type EntriesValue string
+
+func (e *EntriesValue) UnmarshalYAML(node *yaml.Node) error {
+	*e = EntriesValue(node.Value)
+	return nil
 }
 
 type Program struct {

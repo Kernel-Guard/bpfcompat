@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,6 +35,27 @@ func Validate(m Manifest) error {
 
 		if _, ok := allowedAttachKinds[program.Attach.Kind]; !ok {
 			return fmt.Errorf("program %q has unsupported attach kind %q", program.Name, program.Attach.Kind)
+		}
+	}
+
+	seenMaps := make(map[string]struct{}, len(m.Maps))
+	for i := range m.Maps {
+		fixup := &m.Maps[i]
+		if !validMapName(fixup.Name) {
+			return fmt.Errorf("maps[%d].name %q must be a map identifier (letters, digits, '_', '.')", i, fixup.Name)
+		}
+		if _, exists := seenMaps[fixup.Name]; exists {
+			return fmt.Errorf("duplicate map fixup %q", fixup.Name)
+		}
+		seenMaps[fixup.Name] = struct{}{}
+		if fixup.MaxEntries == "" && fixup.InnerRingbufBytes == 0 {
+			return fmt.Errorf("map fixup %q must set max_entries or inner_ringbuf_bytes", fixup.Name)
+		}
+		if fixup.MaxEntries != "" && fixup.MaxEntries != "cpus" {
+			entries, err := strconv.ParseUint(string(fixup.MaxEntries), 10, 32)
+			if err != nil || entries == 0 {
+				return fmt.Errorf("map fixup %q max_entries must be a positive integer or \"cpus\"", fixup.Name)
+			}
 		}
 	}
 
@@ -97,4 +119,18 @@ func Validate(m Manifest) error {
 
 func hasLineBreak(value string) bool {
 	return strings.ContainsAny(value, "\r\n")
+}
+
+// validMapName restricts fixup names to BPF/ELF map identifiers so they are
+// safe to interpolate into the validator command line inside the guest.
+func validMapName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
 }

@@ -99,6 +99,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 
 	var stagedManifest string
 	var functionalPlanPath string
+	var mapFixups []vm.MapFixup
 	validationMode := NormalizeValidationMode(cfg.ValidationMode)
 	attachMode := "best-effort"
 	matrixPathAbs, err := filepath.Abs(cfg.MatrixPath)
@@ -148,6 +149,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, err
 			}
 		}
+		mapFixups = mapFixupsFromManifest(mf)
 	}
 	if validationMode == ValidationModeLoadOnly {
 		attachMode = "disabled"
@@ -179,6 +181,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		stagedArtifact,
 		stagedManifest,
 		functionalPlanPath,
+		mapFixups,
 		validatorBinPath,
 		attachMode,
 		cfg.Progress,
@@ -313,6 +316,7 @@ func executeTargets(
 	stagedArtifact string,
 	stagedManifest string,
 	functionalPlanPath string,
+	mapFixups []vm.MapFixup,
 	validatorBinPath string,
 	attachMode string,
 	progress ProgressReporter,
@@ -371,6 +375,7 @@ func executeTargets(
 				stagedArtifact,
 				stagedManifest,
 				functionalPlanPath,
+				mapFixups,
 				validatorBinPath,
 				attachMode,
 			)
@@ -427,6 +432,7 @@ func executeTarget(
 	stagedArtifact string,
 	stagedManifest string,
 	functionalPlanPath string,
+	mapFixups []vm.MapFixup,
 	validatorBinPath string,
 	attachMode string,
 ) (schema.Target, bool, bool) {
@@ -500,6 +506,7 @@ func executeTarget(
 		ArtifactPath:       stagedArtifact,
 		ManifestPath:       stagedManifest,
 		FunctionalPlanPath: functionalPlanPath,
+		MapFixups:          mapFixups,
 		ValidatorBinary:    validatorBinPath,
 		AttachMode:         attachMode,
 		Timeout:            cfg.Timeout,
@@ -540,6 +547,7 @@ func executeTarget(
 	}
 	target.Notes = append(target.Notes, capabilityProbeNotes(vr)...)
 	target.Notes = append(target.Notes, mapTypeHintNotes(vr.Logs.Libbpf)...)
+	target.Notes = append(target.Notes, mapFixupNotes(vr)...)
 	target.Notes = append(target.Notes, perProgramLoadNotes(vr)...)
 	target.BTF = &schema.TargetBTF{
 		KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
@@ -900,6 +908,43 @@ func mapTypeName(id int) string {
 	default:
 		return ""
 	}
+}
+
+func mapFixupNotes(vr validatorResult) []string {
+	notes := make([]string, 0, len(vr.MapFixups))
+	for _, fixup := range vr.MapFixups {
+		switch fixup.Status {
+		case "applied":
+			detail := ""
+			if fixup.AppliedEntries > 0 {
+				detail = fmt.Sprintf(" max_entries=%d", fixup.AppliedEntries)
+			}
+			if fixup.InnerRingbufBytes > 0 {
+				detail += fmt.Sprintf(" inner_ringbuf_bytes=%d", fixup.InnerRingbufBytes)
+			}
+			notes = append(notes, fmt.Sprintf("map fixup applied: %s%s", fixup.Name, detail))
+		case "map_not_found":
+			notes = append(notes, fmt.Sprintf("map fixup skipped: map %q not found in artifact", fixup.Name))
+		case "error":
+			notes = append(notes, fmt.Sprintf("map fixup failed: %s (errno=%d)", fixup.Name, fixup.Errno))
+		}
+	}
+	return notes
+}
+
+func mapFixupsFromManifest(mf manifest.Manifest) []vm.MapFixup {
+	if len(mf.Maps) == 0 {
+		return nil
+	}
+	fixups := make([]vm.MapFixup, 0, len(mf.Maps))
+	for _, fixup := range mf.Maps {
+		fixups = append(fixups, vm.MapFixup{
+			Name:              fixup.Name,
+			MaxEntries:        string(fixup.MaxEntries),
+			InnerRingbufBytes: fixup.InnerRingbufBytes,
+		})
+	}
+	return fixups
 }
 
 func attachModeFromManifest(mf manifest.Manifest) string {

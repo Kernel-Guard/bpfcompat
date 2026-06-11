@@ -23,6 +23,20 @@
 
 #define LIBBPF_LOG_CAPACITY (256 * 1024)
 #define MAX_ITEMS 64
+#define MAX_MAP_FIXUPS 32
+
+/* A pre-load adjustment for a map whose final shape the artifact's own
+ * loader decides at runtime (max_entries=0 in the object, sized by
+ * userspace). Declared in the manifest and applied between open and load so
+ * such artifacts can be validated the same way their real loader runs them. */
+struct map_fixup {
+    char name[68];
+    char max_entries[16]; /* decimal or "cpus"; empty = unset */
+    unsigned int inner_ringbuf_bytes; /* 0 = unset */
+    char status[32]; /* applied | map_not_found | error (main load only) */
+    int err;
+    unsigned int applied_entries;
+};
 
 struct options {
     const char *artifact;
@@ -32,6 +46,8 @@ struct options {
     const char *log_dir;
     const char *attach_mode;
     bool probe_features;
+    struct map_fixup map_fixups[MAX_MAP_FIXUPS];
+    int map_fixup_count;
 };
 
 struct discovered_program {
@@ -114,7 +130,8 @@ static void usage(const char *prog) {
     fprintf(stderr,
             "Usage: %s --artifact <path> --out <result.json> [--manifest <path>] "
             "[--functional-plan <path>] [--log-dir <dir>] [--attach-mode <mode>] "
-            "[--probe-features <bool>]\n",
+            "[--probe-features <bool>] [--set-map-max-entries <map>=<n|cpus>]... "
+            "[--set-map-inner-ringbuf <map>=<bytes>]...\n",
             prog);
 }
 
@@ -186,6 +203,64 @@ static bool is_auto_attach_candidate(const char *section) {
            starts_with(section, "usdt/");
 }
 
+/* Parse "<map>=<value>" for --set-map-max-entries / --set-map-inner-ringbuf.
+ * Fixups for the same map name merge into one entry so both settings can
+ * target one array-of-maps. */
+static int add_map_fixup(struct options *opts, const char *spec, bool inner_ringbuf) {
+    const char *eq = spec ? strchr(spec, '=') : NULL;
+    if (!eq || eq == spec || !eq[1]) {
+        fprintf(stderr, "invalid map fixup spec (want <map>=<value>): %s\n", spec ? spec : "");
+        return -1;
+    }
+    size_t name_len = (size_t)(eq - spec);
+    if (name_len >= sizeof(((struct map_fixup *)0)->name)) {
+        fprintf(stderr, "map fixup name too long: %s\n", spec);
+        return -1;
+    }
+    const char *value = eq + 1;
+
+    struct map_fixup *fx = NULL;
+    for (int i = 0; i < opts->map_fixup_count; i++) {
+        if (strncmp(opts->map_fixups[i].name, spec, name_len) == 0 &&
+            opts->map_fixups[i].name[name_len] == '\0') {
+            fx = &opts->map_fixups[i];
+            break;
+        }
+    }
+    if (!fx) {
+        if (opts->map_fixup_count >= MAX_MAP_FIXUPS) {
+            fprintf(stderr, "too many map fixups: max %d\n", MAX_MAP_FIXUPS);
+            return -1;
+        }
+        fx = &opts->map_fixups[opts->map_fixup_count++];
+        memset(fx, 0, sizeof(*fx));
+        memcpy(fx->name, spec, name_len);
+        fx->name[name_len] = '\0';
+    }
+
+    if (inner_ringbuf) {
+        char *end = NULL;
+        unsigned long bytes = strtoul(value, &end, 10);
+        if (!end || *end != '\0' || bytes == 0 || bytes > 0xffffffffUL) {
+            fprintf(stderr, "invalid inner ringbuf size: %s\n", spec);
+            return -1;
+        }
+        fx->inner_ringbuf_bytes = (unsigned int)bytes;
+        return 0;
+    }
+
+    if (strcmp(value, "cpus") != 0) {
+        char *end = NULL;
+        unsigned long entries = strtoul(value, &end, 10);
+        if (!end || *end != '\0' || entries == 0 || entries > 0xffffffffUL) {
+            fprintf(stderr, "invalid map max entries (want positive integer or \"cpus\"): %s\n", spec);
+            return -1;
+        }
+    }
+    snprintf(fx->max_entries, sizeof(fx->max_entries), "%s", value);
+    return 0;
+}
+
 static int parse_args(int argc, char **argv, struct options *opts) {
     memset(opts, 0, sizeof(*opts));
     opts->probe_features = true;
@@ -219,6 +294,18 @@ static int parse_args(int argc, char **argv, struct options *opts) {
         if (strcmp(argv[i], "--probe-features") == 0 && i + 1 < argc) {
             if (parse_bool(argv[++i], &opts->probe_features) != 0) {
                 fprintf(stderr, "invalid bool for --probe-features\n");
+                return -1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--set-map-max-entries") == 0 && i + 1 < argc) {
+            if (add_map_fixup(opts, argv[++i], false) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--set-map-inner-ringbuf") == 0 && i + 1 < argc) {
+            if (add_map_fixup(opts, argv[++i], true) != 0) {
                 return -1;
             }
             continue;
@@ -263,7 +350,12 @@ static void append_libbpf_log(const char *msg) {
 }
 
 static int libbpf_log_callback(enum libbpf_print_level level, const char *fmt, va_list args) {
-    (void)level;
+    /* Skip DEBUG (per-insn CO-RE relocation spam): large objects emit far
+     * more than the capture buffer holds, and append stops at capacity — so
+     * keeping DEBUG would crowd out the WARN-level failure verdict. */
+    if (level == LIBBPF_DEBUG) {
+        return 0;
+    }
     char buf[2048];
     int n = vsnprintf(buf, sizeof(buf), fmt, args);
     if (n > 0) {
@@ -1188,11 +1280,86 @@ static void destroy_links(struct validator_result *res) {
  * agent gates optional programs by capability. Indexing by position (not name)
  * is robust to artifacts that contain two programs with the same function name.
  * Returns 0 on success or a negative errno. */
-static int trial_load_one_program(const char *artifact, int target_index) {
-    struct bpf_object *o = bpf_object__open_file(artifact, NULL);
+/* Inner-map prototype fds created by apply_map_fixups. They must stay open
+ * until the owning bpf_object load completes; the validator is
+ * single-threaded and loads are sequential, so one shared pool whose entries
+ * are closed right after each object closes is sufficient. */
+static int g_inner_map_fds[MAX_MAP_FIXUPS];
+static int g_inner_map_fd_count;
+
+static void close_inner_map_fds(void) {
+    for (int i = 0; i < g_inner_map_fd_count; i++) {
+        close(g_inner_map_fds[i]);
+    }
+    g_inner_map_fd_count = 0;
+}
+
+static void record_fixup(struct map_fixup *fx, bool record, const char *status, int err,
+                         unsigned int entries) {
+    if (!record) {
+        return;
+    }
+    snprintf(fx->status, sizeof(fx->status), "%s", status);
+    fx->err = err;
+    fx->applied_entries = entries;
+}
+
+/* Apply manifest-declared map fixups between open and load, mirroring what
+ * the artifact's own loader does for runtime-sized maps. `record` writes
+ * per-fixup status back into opts for the result JSON; trial loads pass
+ * false so they don't overwrite the whole-object outcome. */
+static void apply_map_fixups(struct options *opts, struct bpf_object *obj, bool record) {
+    for (int i = 0; i < opts->map_fixup_count; i++) {
+        struct map_fixup *fx = &opts->map_fixups[i];
+        struct bpf_map *map = bpf_object__find_map_by_name(obj, fx->name);
+        if (!map) {
+            record_fixup(fx, record, "map_not_found", 0, 0);
+            continue;
+        }
+
+        unsigned int entries = 0;
+        if (fx->max_entries[0]) {
+            if (strcmp(fx->max_entries, "cpus") == 0) {
+                int cpus = libbpf_num_possible_cpus();
+                entries = cpus > 0 ? (unsigned int)cpus : 1;
+            } else {
+                entries = (unsigned int)strtoul(fx->max_entries, NULL, 10);
+            }
+            int err = bpf_map__set_max_entries(map, entries);
+            if (err) {
+                record_fixup(fx, record, "error", err, entries);
+                continue;
+            }
+        }
+
+        if (fx->inner_ringbuf_bytes > 0) {
+            int inner_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0,
+                                          fx->inner_ringbuf_bytes, NULL);
+            if (inner_fd < 0) {
+                record_fixup(fx, record, "error", inner_fd, entries);
+                continue;
+            }
+            int err = bpf_map__set_inner_map_fd(map, inner_fd);
+            if (err) {
+                close(inner_fd);
+                record_fixup(fx, record, "error", err, entries);
+                continue;
+            }
+            if (g_inner_map_fd_count < MAX_MAP_FIXUPS) {
+                g_inner_map_fds[g_inner_map_fd_count++] = inner_fd;
+            }
+        }
+
+        record_fixup(fx, record, "applied", 0, entries);
+    }
+}
+
+static int trial_load_one_program(struct options *opts, int target_index) {
+    struct bpf_object *o = bpf_object__open_file(opts->artifact, NULL);
     if (!o) {
         return errno ? -errno : -EINVAL;
     }
+    apply_map_fixups(opts, o, false);
     struct bpf_program *p;
     int idx = 0;
     bpf_object__for_each_program(p, o) {
@@ -1207,6 +1374,7 @@ static int trial_load_one_program(const char *artifact, int target_index) {
     }
     int err = bpf_object__load(o);
     bpf_object__close(o);
+    close_inner_map_fds();
     return err;
 }
 
@@ -1255,7 +1423,7 @@ static void probe_per_program_loads(struct validator_result *res) {
         g_trial_log_len = 0;
         g_trial_log[0] = '\0';
         libbpf_set_print(trial_log_callback);
-        int e = trial_load_one_program(res->opts.artifact, i);
+        int e = trial_load_one_program(&res->opts, i);
         libbpf_set_print(NULL);
         res->programs[i].load_errno = e;
         snprintf(res->programs[i].load_status, sizeof(res->programs[i].load_status),
@@ -1292,6 +1460,8 @@ static void run_libbpf_load(struct validator_result *res) {
 
     probe_per_program_loads(res);
 
+    apply_map_fixups(&res->opts, obj, true);
+
     int err = bpf_object__load(obj);
     if (err) {
         res->load_ok = false;
@@ -1308,6 +1478,7 @@ static void run_libbpf_load(struct validator_result *res) {
     destroy_links(res);
 
     bpf_object__close(obj);
+    close_inner_map_fds();
 }
 
 static const char *overall_status(const struct validator_result *res) {
@@ -1379,6 +1550,18 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "\",\n");
     fprintf(f, "    \"probe_features\": %s\n", res->opts.probe_features ? "true" : "false");
     fprintf(f, "  },\n");
+    fprintf(f, "  \"map_fixups\": [");
+    for (int i = 0; i < res->opts.map_fixup_count; i++) {
+        const struct map_fixup *fx = &res->opts.map_fixups[i];
+        fprintf(f, "%s{\"name\":\"", i == 0 ? "" : ",");
+        escape_json_string(f, fx->name);
+        fprintf(f, "\",\"max_entries\":\"");
+        escape_json_string(f, fx->max_entries);
+        fprintf(f, "\",\"inner_ringbuf_bytes\":%u,\"status\":\"", fx->inner_ringbuf_bytes);
+        escape_json_string(f, fx->status);
+        fprintf(f, "\",\"errno\":%d,\"applied_entries\":%u}", fx->err, fx->applied_entries);
+    }
+    fprintf(f, "],\n");
     fprintf(f, "  \"btf\": {\n");
     fprintf(f, "    \"kernel_btf_available\": %s,\n", res->kernel_btf_available ? "true" : "false");
     fprintf(f, "    \"kernel_btf_path\": \"/sys/kernel/btf/vmlinux\",\n");

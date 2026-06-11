@@ -379,3 +379,19 @@ func TestSeedDeliveryForProfile(t *testing.T) {
 		t.Fatalf("expected default seed delivery %q, got %q", seedDeliveryNoCloudNet, got)
 	}
 }
+
+func TestMapFixupArgs(t *testing.T) {
+	if got := mapFixupArgs(nil); got != "" {
+		t.Fatalf("expected empty args for no fixups, got %q", got)
+	}
+	fixups := []MapFixup{
+		{Name: "auxiliary_maps", MaxEntries: "cpus"},
+		{Name: "ringbuf_maps", MaxEntries: "16", InnerRingbufBytes: 8388608},
+	}
+	want := " --set-map-max-entries auxiliary_maps=cpus" +
+		" --set-map-max-entries ringbuf_maps=16" +
+		" --set-map-inner-ringbuf ringbuf_maps=8388608"
+	if got := mapFixupArgs(fixups); got != want {
+		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
+	}
+}

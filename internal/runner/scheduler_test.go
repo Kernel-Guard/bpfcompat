@@ -74,6 +74,7 @@ func TestExecuteTargetsHonorsConcurrencyAndOrder(t *testing.T) {
 		"/tmp/a.bpf.o",
 		"",
 		"",
+		nil,
 		"/tmp/validator",
 		"best-effort",
 		nil,
@@ -147,6 +148,7 @@ func TestExecuteTargetsMarksUnsupportedTransportAsCompatibilityFailure(t *testin
 		"/tmp/a.bpf.o",
 		"",
 		"",
+		nil,
 		"/tmp/validator",
 		"best-effort",
 		nil,
@@ -232,6 +234,7 @@ func TestExecuteTargetClassifiesFunctionalFailure(t *testing.T) {
 		"/tmp/a.bpf.o",
 		"",
 		"/tmp/functional-plan.txt",
+		nil,
 		"/tmp/validator",
 		"required",
 	)

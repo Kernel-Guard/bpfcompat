@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   approval pins for decision ID and artifact SHA-256, manifest-intent
   enforcement, preflight checks for both, and persisted evidence in
   `last-load.json` plus the agent load ledger.
+- Manifest `maps:` fixups for runtime-sized maps: `max_entries` (integer or
+  `cpus`) and `inner_ringbuf_bytes` mirror what an artifact's own loader does
+  before load, so skeleton-style probes that compile maps with
+  `max_entries=0` (for example Falco's `modern_bpf`) can be validated
+  as shipped. Per-fixup outcomes are recorded in the validator JSON and
+  report notes.
 
 ### Changed
 - Packaged `bpfcompat-agent-load.service` now fails closed by default unless

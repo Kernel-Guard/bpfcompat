@@ -71,6 +71,14 @@ type validatorResult struct {
 			TracepointEvents string `json:"tracepoint_events"`
 		} `json:"attach_prereqs"`
 	} `json:"capabilities"`
+	MapFixups []struct {
+		Name              string `json:"name"`
+		MaxEntries        string `json:"max_entries"`
+		InnerRingbufBytes uint32 `json:"inner_ringbuf_bytes"`
+		Status            string `json:"status"`
+		Errno             int    `json:"errno"`
+		AppliedEntries    uint32 `json:"applied_entries"`
+	} `json:"map_fixups"`
 	Discovery struct {
 		Programs []struct {
 			Name         string `json:"name"`

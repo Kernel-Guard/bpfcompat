@@ -13,6 +13,38 @@
 - `--log-dir <dir>` (optional)
 - `--attach-mode <disabled|best-effort|required>` (optional, default `best-effort`)
 - `--probe-features <bool>` (optional, default `true`)
+- `--set-map-max-entries <map>=<n|cpus>` (repeatable, generated from manifest `maps`)
+- `--set-map-inner-ringbuf <map>=<bytes>` (repeatable, generated from manifest `maps`)
+
+## Map fixups for runtime-sized maps
+
+Some artifacts compile maps with `max_entries=0` and rely on their userspace
+loader to size them before load — per-CPU arrays and ring buffers sized from
+the CPU count are the common cases (Falco's `modern_bpf` probe does both).
+Under a generic loader such objects fail with `EINVAL` on every kernel, which
+is a loader-contract issue, not a kernel-compatibility signal.
+
+Declaring the maps in the manifest makes the validator mirror the real
+loader between `bpf_object` open and load:
+
+```yaml
+maps:
+  - name: auxiliary_maps
+    max_entries: cpus          # or a positive integer
+  - name: ringbuf_maps
+    max_entries: cpus
+    inner_ringbuf_bytes: 8388608
+```
+
+- `max_entries: cpus` resolves to `libbpf_num_possible_cpus()` on the target
+  kernel at load time.
+- `inner_ringbuf_bytes` creates a `BPF_MAP_TYPE_RINGBUF` of that size and
+  installs it as the inner-map prototype for an array-of-maps
+  (`bpf_map__set_inner_map_fd`).
+
+Fixups apply to the whole-object load and to isolated per-program load
+probes. Per-fixup outcomes are emitted in the result JSON under
+`map_fixups` and surfaced as target notes in the report.
 
 ## Execution phases
 

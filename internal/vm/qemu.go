@@ -18,10 +18,33 @@ type ExecutionRequest struct {
 	ArtifactPath       string
 	ManifestPath       string
 	FunctionalPlanPath string
+	MapFixups          []MapFixup
 	ValidatorBinary    string
 	AttachMode         string
 	Timeout            time.Duration
 	KeepVMOnFailure    bool
+}
+
+// MapFixup mirrors a manifest map fixup for the validator command line.
+// Name and MaxEntries are validated at manifest load (identifier characters
+// and "cpus"/positive-integer respectively), so they are shell-safe here.
+type MapFixup struct {
+	Name              string
+	MaxEntries        string
+	InnerRingbufBytes uint32
+}
+
+func mapFixupArgs(fixups []MapFixup) string {
+	var b strings.Builder
+	for _, fixup := range fixups {
+		if fixup.MaxEntries != "" {
+			fmt.Fprintf(&b, " --set-map-max-entries %s=%s", fixup.Name, fixup.MaxEntries)
+		}
+		if fixup.InnerRingbufBytes > 0 {
+			fmt.Fprintf(&b, " --set-map-inner-ringbuf %s=%d", fixup.Name, fixup.InnerRingbufBytes)
+		}
+	}
+	return b.String()
 }
 
 type ExecutionResult struct {
@@ -229,11 +252,12 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	if attachMode == "" {
 		attachMode = "best-effort"
 	}
-	runCmd := fmt.Sprintf("sudo %s --artifact %s%s%s --attach-mode %s --out %s --log-dir %s/out 2>%s; code=$?; echo \"$code\" > %s; exit 0",
+	runCmd := fmt.Sprintf("sudo %s --artifact %s%s%s%s --attach-mode %s --out %s --log-dir %s/out 2>%s; code=$?; echo \"$code\" > %s; exit 0",
 		validatorRemotePath,
 		artifactRemotePath,
 		manifestArg,
 		functionalPlanArg,
+		mapFixupArgs(req.MapFixups),
 		attachMode,
 		remoteResultPath,
 		remoteRoot,

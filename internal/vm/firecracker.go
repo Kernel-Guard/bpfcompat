@@ -345,7 +345,7 @@ mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
 mount -t tracefs tracefs /sys/kernel/tracing 2>/dev/null || true
 mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
 
-/bpfcompat/bin/bpfcompat-validator --artifact /bpfcompat/input/artifact.bpf.o%s%s --attach-mode %s --out /bpfcompat/out/result.json --log-dir /bpfcompat/out 2>/bpfcompat/out/validator.stderr
+/bpfcompat/bin/bpfcompat-validator --artifact /bpfcompat/input/artifact.bpf.o%s%s%s --attach-mode %s --out /bpfcompat/out/result.json --log-dir /bpfcompat/out 2>/bpfcompat/out/validator.stderr
 code=$?
 echo "$code" >/bpfcompat/out/validator-exit-code
 
@@ -365,6 +365,7 @@ while true; do sleep 1; done
 `,
 		manifestArg,
 		functionalPlanArg,
+		mapFixupArgs(req.MapFixups),
 		attachMode,
 		firecrackerExitBegin,
 		firecrackerExitEnd,

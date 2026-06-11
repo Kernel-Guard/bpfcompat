@@ -97,7 +97,7 @@ func ExecuteVirtmeNGProfile(ctx context.Context, req ExecutionRequest) (result E
 	script := fmt.Sprintf(`#!/bin/sh
 set +e
 mkdir -p %s
-%s --artifact %s%s%s --attach-mode %s --out %s --log-dir %s 2>%s
+%s --artifact %s%s%s%s --attach-mode %s --out %s --log-dir %s 2>%s
 code=$?
 echo "$code" >%s
 exit 0
@@ -107,6 +107,7 @@ exit 0
 		shellQuote(artifactPath),
 		manifestArg,
 		functionalPlanArg,
+		mapFixupArgs(req.MapFixups),
 		shellSafeWord(attachMode),
 		shellQuote(filepath.Join(outDir, "result.json")),
 		shellQuote(outDir),
