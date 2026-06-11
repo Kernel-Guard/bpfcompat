@@ -329,6 +329,7 @@ User guide — start here:
 - [`docs/project-compatibility-suite.md`](docs/project-compatibility-suite.md) — suites and collection matrices
 - [`docs/validator.md`](docs/validator.md) — what the in-guest validator checks
 - [`docs/profile-catalog.md`](docs/profile-catalog.md) — kernel/distro profiles and image maintenance
+- [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
 - [`docs/upstream-kernel-virtme-ng.md`](docs/upstream-kernel-virtme-ng.md)
 - [`docs/firecracker-backend.md`](docs/firecracker-backend.md)
 - [`docs/api-web-ui.md`](docs/api-web-ui.md)

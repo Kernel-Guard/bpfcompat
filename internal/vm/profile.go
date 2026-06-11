@@ -25,6 +25,11 @@ type Profile struct {
 type ImageConfig struct {
 	SourceURL string `yaml:"source_url"`
 	LocalPath string `yaml:"local_path"`
+	// SHA256 optionally pins the expected image digest. When set, a
+	// downloaded or cached image that does not match fails the run instead
+	// of silently testing different bytes. Pinning requires a
+	// release-versioned source_url — vendor "current" URLs mutate.
+	SHA256 string `yaml:"sha256,omitempty"`
 }
 
 type VirtmeNGCfg struct {

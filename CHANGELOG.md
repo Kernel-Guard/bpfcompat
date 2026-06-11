@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   report notes. With these plus map fixups, Falco's modern_bpf probe passes
   as shipped on Ubuntu 22.04 (5.15), with `recvmmsg_old_x`/`sendmmsg_old_x`
   selected and `dump_task` correctly detected unsupported.
+- Image integrity for reproducible matrices: every cached image gets a
+  sha256 sidecar recorded on first use and surfaced as a target note
+  (`base image sha256: …`); profiles can pin `image.sha256` to fail runs on
+  mismatching downloads. `docs/image-pipeline.md` documents the full image/
+  profile pipeline: sources, caching, audits, generated lanes, and how to
+  add a profile.
 
 ### Fixed
 - The validator no longer truncates verifier output: libbpf emits a failed
