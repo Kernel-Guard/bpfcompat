@@ -23,6 +23,8 @@ This is a gated runtime delivery proof, not a production runtime loading service
 - API runtime execution can be pinned to a dedicated OS user with `BPFCOMPAT_API_RUNTIME_EXECUTE_WORKER_USER` and can fail closed when worker identity is missing via `BPFCOMPAT_API_RUNTIME_EXECUTE_REQUIRE_WORKER_IDENTITY=true`.
 - API runtime execution can enforce allow/deny policy rules via `BPFCOMPAT_API_RUNTIME_EXECUTE_POLICY_PATH` (optional) and fail closed when missing with `BPFCOMPAT_API_RUNTIME_EXECUTE_REQUIRE_POLICY=true`.
 - Agent approved loading enforces local allow/deny policy via `BPFCOMPAT_AGENT_LOAD_POLICY_PATH` / `--load-policy` and fails closed by default with `BPFCOMPAT_AGENT_REQUIRE_LOAD_POLICY=true`.
+- Packaged reviewed host loading also requires operator-reviewed approval pins (`BPFCOMPAT_AGENT_EXPECTED_DECISION_ID`, `BPFCOMPAT_AGENT_EXPECTED_SHA256`, `BPFCOMPAT_AGENT_REQUIRE_APPROVAL_PINS=true`) so a load cannot silently switch to a different selected decision or artifact digest after review.
+- Packaged reviewed host loading requires a valid manifest (`BPFCOMPAT_AGENT_MANIFEST_PATH`, `BPFCOMPAT_AGENT_REQUIRE_MANIFEST=true`) so host loads are tied to explicit program and attach intent.
 - Agent rollback, unload, and revocation drills are available through `bpfcompat agent rollback`, `bpfcompat agent unload`, and `bpfcompat agent revocation-drill`; each can append evidence to the local load ledger.
 - API runtime execute can be emergency-blocked with `BPFCOMPAT_API_RUNTIME_EXECUTE_KILL_SWITCH=true`; denied attempts are written to runtime decision audit.
 - API runtime execute rejects request-level overrides for workdir/output path/manifest path/validator path/sudo options/timeout and enforces verified-history by default.

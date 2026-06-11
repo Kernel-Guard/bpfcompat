@@ -84,6 +84,16 @@ var catalog = []Var{
 
 	// ---------- Agent ----------
 	{
+		Name: "BPFCOMPAT_AGENT_EXPECTED_DECISION_ID", Default: "",
+		Category:    "Agent",
+		Description: "Reviewed agent decision id required by bpfcompat agent apply --approve-load when approval pinning is enabled.",
+	},
+	{
+		Name: "BPFCOMPAT_AGENT_EXPECTED_SHA256", Default: "",
+		Category:    "Agent",
+		Description: "Reviewed selected artifact SHA-256 required by bpfcompat agent apply --approve-load when approval pinning is enabled.",
+	},
+	{
 		Name: "BPFCOMPAT_AGENT_IDENTITY_TOKEN", Default: "",
 		Category:    "Agent",
 		Description: "Optional identity JWT sent as X-API-Identity-Token by bpfcompat agent plan/apply when --identity-token is omitted.",
@@ -104,9 +114,19 @@ var catalog = []Var{
 		Description: "Default registry bearer token used by bpfcompat agent plan/apply when --registry-token is omitted.",
 	},
 	{
+		Name: "BPFCOMPAT_AGENT_REQUIRE_APPROVAL_PINS", Default: "false",
+		Category:    "Agent",
+		Description: "Require reviewed decision-id and artifact-SHA pins before bpfcompat agent apply --approve-load. The packaged load service sets this to true.",
+	},
+	{
 		Name: "BPFCOMPAT_AGENT_REQUIRE_LOAD_POLICY", Default: "true",
 		Category:    "Agent",
 		Description: "Require a local load policy before bpfcompat agent apply --approve-load. Disable only in controlled labs.",
+	},
+	{
+		Name: "BPFCOMPAT_AGENT_REQUIRE_MANIFEST", Default: "false",
+		Category:    "Agent",
+		Description: "Require a valid manifest before bpfcompat agent apply --approve-load. The packaged load service sets this to true.",
 	},
 
 	// ---------- Auth (API) ----------

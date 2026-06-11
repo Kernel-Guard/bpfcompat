@@ -13,6 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   suite preview with generated CLI and GitHub Action snippets.
 - Result view now leads with the gate decision and required/optional pass/fail
   matrix before technical JSON, history, compare, or runtime evidence.
+- Production Runtime Agent Alpha reviewed-load path now supports operator
+  approval pins for decision ID and artifact SHA-256, manifest-intent
+  enforcement, preflight checks for both, and persisted evidence in
+  `last-load.json` plus the agent load ledger.
+
+### Changed
+- Packaged `bpfcompat-agent-load.service` now fails closed by default unless
+  reviewed approval pins and a valid manifest are supplied.
+- Agent load policy documentation now treats host loading as a reviewed,
+  local-policy-controlled path rather than part of the public web/API demo.
 
 ## [0.1.2] - 2026-06-05
 

@@ -4,6 +4,30 @@
 This keeps the cloud/control-plane decision separate from the final host-owner
 approval.
 
+For reviewed production-style loads, also pin the decision and artifact digest
+that the operator approved:
+
+```bash
+bpfcompat agent apply \
+  --artifact-name aegis \
+  --approve-load \
+  --load-policy /etc/bpfcompat/agent-load-policy.yaml \
+  --expected-decision-id 20260606T120000Z-abcdef \
+  --expected-sha256 <64-hex-artifact-sha256> \
+  --require-approval-pins=true
+```
+
+The packaged `bpfcompat-agent-load.service` sets
+`BPFCOMPAT_AGENT_REQUIRE_APPROVAL_PINS=true` by default. This denies host load
+before policy evaluation if the reviewed decision id or selected artifact
+SHA-256 is missing or mismatched.
+
+The same packaged load service sets `BPFCOMPAT_AGENT_REQUIRE_MANIFEST=true` by
+default. This requires `BPFCOMPAT_AGENT_MANIFEST_PATH` / `--manifest` to point
+at a valid manifest before host load, so local policy and validator execution
+receive explicit program and attach intent. Required manifests must declare at
+least one program.
+
 Before a reviewed host-load attempt, run:
 
 ```bash
@@ -58,8 +82,9 @@ Inspect it with:
 bpfcompat agent ledger --workdir /var/lib/bpfcompat-agent
 ```
 
-The ledger records selected version/digest, policy rule, audit trace, execution
-result, and previous successful load metadata for rollback planning.
+The ledger records selected version/digest, reviewed approval pins, manifest
+intent summary, policy rule, audit trace, execution result, and previous
+successful load metadata for rollback planning.
 
 Operational drills:
 

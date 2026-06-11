@@ -31,6 +31,10 @@ const (
 	agentIdentityTokenEnv     = "BPFCOMPAT_AGENT_IDENTITY_TOKEN"
 	agentLoadPolicyPathEnv    = "BPFCOMPAT_AGENT_LOAD_POLICY_PATH"
 	agentRequireLoadPolicyEnv = "BPFCOMPAT_AGENT_REQUIRE_LOAD_POLICY"
+	agentExpectedDecisionEnv  = "BPFCOMPAT_AGENT_EXPECTED_DECISION_ID"
+	agentExpectedSHA256Env    = "BPFCOMPAT_AGENT_EXPECTED_SHA256"
+	agentRequirePinsEnv       = "BPFCOMPAT_AGENT_REQUIRE_APPROVAL_PINS"
+	agentRequireManifestEnv   = "BPFCOMPAT_AGENT_REQUIRE_MANIFEST"
 	agentIdentityHeader       = "X-API-Identity-Token"
 	agentFetchMaxBytes        = 128 << 20
 
@@ -72,6 +76,8 @@ type agentApplyResultFile struct {
 	HostProbe       runtime.HostCapabilities       `json:"host_probe"`
 	Fetch           runtime.FetchResult            `json:"fetch"`
 	PlanAudit       *runtime.DecisionPersistResult `json:"plan_audit,omitempty"`
+	ApprovalPins    *agentApprovalPins             `json:"approval_pins,omitempty"`
+	ManifestIntent  *agentManifestIntent           `json:"manifest_intent,omitempty"`
 	LoadPolicy      *agent.LoadPolicyDecision      `json:"load_policy,omitempty"`
 	LoadLedger      *agent.LoadLedgerEntry         `json:"load_ledger,omitempty"`
 	LoadLedgerPath  string                         `json:"load_ledger_path,omitempty"`
@@ -80,6 +86,20 @@ type agentApplyResultFile struct {
 	LoadSkipped     string                         `json:"load_skipped,omitempty"`
 	Audit           *runtime.DecisionPersistResult `json:"audit,omitempty"`
 	AuditError      string                         `json:"audit_error,omitempty"`
+}
+
+type agentApprovalPins struct {
+	Required           bool   `json:"required"`
+	ExpectedDecisionID string `json:"expected_decision_id,omitempty"`
+	ExpectedSHA256     string `json:"expected_sha256,omitempty"`
+	Verified           bool   `json:"verified"`
+}
+
+type agentManifestIntent struct {
+	Required     bool   `json:"required"`
+	Path         string `json:"path,omitempty"`
+	ProgramCount int    `json:"program_count,omitempty"`
+	Valid        bool   `json:"valid"`
 }
 
 type agentStatusSummary struct {
@@ -233,6 +253,11 @@ func runAgentPreflight(args []string) int {
 	registryToken := fs.String("registry-token", "", "Registry bearer token (or BPFCOMPAT_AGENT_REGISTRY_TOKEN)")
 	loadPolicyPath := fs.String("load-policy", strings.TrimSpace(os.Getenv(agentLoadPolicyPathEnv)), "Local agent load policy path for reviewed host-load preflight")
 	requireLoadPolicy := fs.Bool("require-load-policy", boolEnvDefault(agentRequireLoadPolicyEnv, true), "Require a local load policy when --include-load is set")
+	expectedDecisionID := fs.String("expected-decision-id", strings.TrimSpace(os.Getenv(agentExpectedDecisionEnv)), "Reviewed agent decision id expected during approved host load")
+	expectedSHA256 := fs.String("expected-sha256", strings.TrimSpace(os.Getenv(agentExpectedSHA256Env)), "Reviewed selected artifact SHA-256 expected during approved host load")
+	requireApprovalPins := fs.Bool("require-approval-pins", boolEnvDefault(agentRequirePinsEnv, false), "Require expected decision id and SHA-256 when --include-load is set")
+	manifestPath := fs.String("manifest", "", "Manifest path expected during approved host load")
+	requireManifest := fs.Bool("require-manifest", boolEnvDefault(agentRequireManifestEnv, false), "Require a valid manifest when --include-load is set")
 	validatorPath := fs.String("validator", "", "Validator binary override path for reviewed host-load preflight")
 	includeLoad := fs.Bool("include-load", false, "Also verify reviewed host-load prerequisites")
 	requireConfig := fs.Bool("require-config", false, "Require api-url, tenant, project, artifact-name, and registry token")
@@ -252,21 +277,26 @@ func runAgentPreflight(args []string) int {
 	}
 
 	result := buildAgentPreflight(agentPreflightOptions{
-		WorkDir:           *workDir,
-		OutDir:            *outDir,
-		APIURL:            *apiURL,
-		Tenant:            *tenant,
-		Project:           *project,
-		ArtifactName:      *artifactName,
-		AgentID:           *agentID,
-		RegistryToken:     agentRegistryToken(*registryToken),
-		LoadPolicyPath:    *loadPolicyPath,
-		RequireLoadPolicy: *requireLoadPolicy,
-		ValidatorPath:     *validatorPath,
-		IncludeLoad:       *includeLoad,
-		RequireConfig:     *requireConfig,
-		CheckHostProbe:    *checkHostProbe,
-		ProbeOptions:      probeFlags.BuildProbeOptions(),
+		WorkDir:            *workDir,
+		OutDir:             *outDir,
+		APIURL:             *apiURL,
+		Tenant:             *tenant,
+		Project:            *project,
+		ArtifactName:       *artifactName,
+		AgentID:            *agentID,
+		RegistryToken:      agentRegistryToken(*registryToken),
+		LoadPolicyPath:     *loadPolicyPath,
+		RequireLoadPolicy:  *requireLoadPolicy,
+		ExpectedDecisionID: *expectedDecisionID,
+		ExpectedSHA256:     *expectedSHA256,
+		RequirePins:        *requireApprovalPins,
+		ManifestPath:       *manifestPath,
+		RequireManifest:    *requireManifest,
+		ValidatorPath:      *validatorPath,
+		IncludeLoad:        *includeLoad,
+		RequireConfig:      *requireConfig,
+		CheckHostProbe:     *checkHostProbe,
+		ProbeOptions:       probeFlags.BuildProbeOptions(),
 	})
 	if strings.TrimSpace(*outPath) != "" {
 		if err := writeAgentJSONFile(*outPath, result); err != nil {
@@ -289,21 +319,26 @@ func runAgentPreflight(args []string) int {
 }
 
 type agentPreflightOptions struct {
-	WorkDir           string
-	OutDir            string
-	APIURL            string
-	Tenant            string
-	Project           string
-	ArtifactName      string
-	AgentID           string
-	RegistryToken     string
-	LoadPolicyPath    string
-	RequireLoadPolicy bool
-	ValidatorPath     string
-	IncludeLoad       bool
-	RequireConfig     bool
-	CheckHostProbe    bool
-	ProbeOptions      runtime.ProbeOptions
+	WorkDir            string
+	OutDir             string
+	APIURL             string
+	Tenant             string
+	Project            string
+	ArtifactName       string
+	AgentID            string
+	RegistryToken      string
+	LoadPolicyPath     string
+	RequireLoadPolicy  bool
+	ExpectedDecisionID string
+	ExpectedSHA256     string
+	RequirePins        bool
+	ManifestPath       string
+	RequireManifest    bool
+	ValidatorPath      string
+	IncludeLoad        bool
+	RequireConfig      bool
+	CheckHostProbe     bool
+	ProbeOptions       runtime.ProbeOptions
 }
 
 func buildAgentPreflight(opts agentPreflightOptions) agentPreflightResult {
@@ -379,6 +414,9 @@ func buildAgentPreflight(opts agentPreflightOptions) agentPreflightResult {
 		add(agentPreflightCheck{Name: "load_policy", Status: "skip", Required: false, Detail: "not required for fetch-only preflight"})
 	}
 
+	checkAgentApprovalPinsPreflight(opts, add)
+	checkAgentManifestPreflight(opts, add)
+
 	if opts.IncludeLoad || strings.TrimSpace(opts.ValidatorPath) != "" || strings.TrimSpace(os.Getenv("BPFCOMPAT_VALIDATOR_BIN")) != "" {
 		path, err := resolveAgentValidatorBinary(opts.ValidatorPath)
 		if err != nil {
@@ -441,6 +479,64 @@ func checkAgentConfigPreflight(opts agentPreflightOptions, add func(agentPreflig
 		details = append(details, "not required")
 	}
 	add(agentPreflightCheck{Name: "agent_config", Status: "pass", Required: required, Detail: strings.Join(details, " ")})
+}
+
+func checkAgentApprovalPinsPreflight(opts agentPreflightOptions, add func(agentPreflightCheck)) {
+	if !opts.IncludeLoad {
+		add(agentPreflightCheck{Name: "approval_pins", Status: "skip", Required: false, Detail: "not required for fetch-only preflight"})
+		return
+	}
+	required := opts.RequirePins
+	expectedDecisionID := strings.TrimSpace(opts.ExpectedDecisionID)
+	expectedSHA256 := strings.TrimSpace(opts.ExpectedSHA256)
+	var errorsOut []string
+	if required && expectedDecisionID == "" {
+		errorsOut = append(errorsOut, "--expected-decision-id is required")
+	}
+	if required && expectedSHA256 == "" {
+		errorsOut = append(errorsOut, "--expected-sha256 is required")
+	}
+	if expectedSHA256 != "" && !isAgentSHA256Hex(expectedSHA256) {
+		errorsOut = append(errorsOut, "--expected-sha256 must be 64 hex characters")
+	}
+	if len(errorsOut) > 0 {
+		add(agentPreflightCheck{Name: "approval_pins", Status: "fail", Required: required, Error: strings.Join(errorsOut, "; ")})
+		return
+	}
+	detail := "not configured"
+	if expectedDecisionID != "" || expectedSHA256 != "" {
+		parts := []string{}
+		if expectedDecisionID != "" {
+			parts = append(parts, "decision_id=configured")
+		}
+		if expectedSHA256 != "" {
+			parts = append(parts, "sha256=configured")
+		}
+		detail = strings.Join(parts, " ")
+	}
+	add(agentPreflightCheck{Name: "approval_pins", Status: "pass", Required: required, Detail: detail})
+}
+
+func checkAgentManifestPreflight(opts agentPreflightOptions, add func(agentPreflightCheck)) {
+	if !opts.IncludeLoad {
+		add(agentPreflightCheck{Name: "manifest_intent", Status: "skip", Required: false, Detail: "not required for fetch-only preflight"})
+		return
+	}
+	required := opts.RequireManifest
+	manifestPath := strings.TrimSpace(opts.ManifestPath)
+	if required && manifestPath == "" {
+		add(agentPreflightCheck{Name: "manifest_intent", Status: "fail", Required: true, Error: "--manifest is required when --require-manifest=true"})
+		return
+	}
+	if manifestPath == "" {
+		add(agentPreflightCheck{Name: "manifest_intent", Status: "skip", Required: false, Detail: "not configured"})
+		return
+	}
+	if _, err := loadAgentManifestIntent(manifestPath); err != nil {
+		add(agentPreflightCheck{Name: "manifest_intent", Status: "fail", Required: required, Detail: filepath.Clean(manifestPath), Error: err.Error()})
+		return
+	}
+	add(agentPreflightCheck{Name: "manifest_intent", Status: "pass", Required: required, Detail: filepath.Clean(manifestPath)})
 }
 
 func checkWritableDirectory(path string) error {
@@ -577,6 +673,10 @@ func runAgentApply(args []string) int {
 	timeoutText := fs.String("timeout", "2m", "Approved host load timeout")
 	loadPolicyPath := fs.String("load-policy", strings.TrimSpace(os.Getenv(agentLoadPolicyPathEnv)), "Local agent load policy path required before approved host load")
 	requireLoadPolicy := fs.Bool("require-load-policy", boolEnvDefault(agentRequireLoadPolicyEnv, true), "Require --load-policy before approved host load")
+	expectedDecisionID := fs.String("expected-decision-id", strings.TrimSpace(os.Getenv(agentExpectedDecisionEnv)), "Reviewed agent decision id required to match before approved host load")
+	expectedSHA256 := fs.String("expected-sha256", strings.TrimSpace(os.Getenv(agentExpectedSHA256Env)), "Reviewed selected artifact SHA-256 required to match before approved host load")
+	requireApprovalPins := fs.Bool("require-approval-pins", boolEnvDefault(agentRequirePinsEnv, false), "Require both --expected-decision-id and --expected-sha256 before approved host load")
+	requireManifest := fs.Bool("require-manifest", boolEnvDefault(agentRequireManifestEnv, false), "Require a valid manifest before approved host load")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat agent apply --artifact-name <name> [--api-url URL --tenant T --project P] [--approve-load] [flags]\n\n")
 		fs.PrintDefaults()
@@ -643,11 +743,45 @@ func runAgentApply(args []string) int {
 	}
 
 	if *approveLoad {
+		payload.ApprovalPins = buildAgentApprovalPins(*expectedDecisionID, *expectedSHA256, *requireApprovalPins, false)
+		if err := validateAgentApprovalPins(envelope.Decision, fetchResult, *expectedDecisionID, *expectedSHA256, *requireApprovalPins); err != nil {
+			err := fmt.Errorf("agent approval pinning failed: %w", err)
+			payload.Phase = "approval"
+			payload.Error = err.Error()
+			trace.Operation = "execute"
+			trace.Status = "error"
+			trace.Error = err.Error()
+			persistAgentApplyAuditAndLedger(*flags.workDir, &payload, trace, "load", "denied", err.Error())
+			if writeErr := writeAgentJSON(*flags.outPath, payload); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "write agent apply result: %v\n", writeErr)
+			}
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return runner.ExitToolError
+		}
+		if payload.ApprovalPins != nil {
+			payload.ApprovalPins.Verified = true
+		}
 		envelope.Decision.LoadApproved = true
 		payload.Decision = envelope.Decision
 		manifestToUse := strings.TrimSpace(*manifestPath)
 		if manifestToUse == "" && !remote {
 			manifestToUse = strings.TrimSpace(selectedRecord.ManifestPath)
+		}
+		manifestIntent, err := buildAgentManifestIntent(manifestToUse, *requireManifest)
+		payload.ManifestIntent = &manifestIntent
+		if err != nil {
+			err := fmt.Errorf("agent manifest intent failed: %w", err)
+			payload.Phase = "manifest"
+			payload.Error = err.Error()
+			trace.Operation = "execute"
+			trace.Status = "error"
+			trace.Error = err.Error()
+			persistAgentApplyAuditAndLedger(*flags.workDir, &payload, trace, "load", "denied", err.Error())
+			if writeErr := writeAgentJSON(*flags.outPath, payload); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "write agent apply result: %v\n", writeErr)
+			}
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return runner.ExitToolError
 		}
 		policyDecision, policyErr := evaluateAgentLocalLoadPolicy(
 			strings.TrimSpace(*loadPolicyPath),
@@ -1216,6 +1350,102 @@ func evaluateAgentLocalLoadPolicy(
 	return agent.EvaluateLoadPolicy(policy, ctx), nil
 }
 
+func validateAgentApprovalPins(decision agent.DecisionResult, fetchResult runtime.FetchResult, expectedDecisionID, expectedSHA256 string, requirePins bool) error {
+	expectedDecisionID = strings.TrimSpace(expectedDecisionID)
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
+	if requirePins {
+		if expectedDecisionID == "" {
+			return fmt.Errorf("--expected-decision-id is required when --require-approval-pins=true")
+		}
+		if expectedSHA256 == "" {
+			return fmt.Errorf("--expected-sha256 is required when --require-approval-pins=true")
+		}
+	}
+	if expectedDecisionID != "" && expectedDecisionID != strings.TrimSpace(decision.DecisionID) {
+		return fmt.Errorf("decision id mismatch: expected=%s got=%s", expectedDecisionID, strings.TrimSpace(decision.DecisionID))
+	}
+	if expectedSHA256 != "" {
+		if !isAgentSHA256Hex(expectedSHA256) {
+			return fmt.Errorf("expected sha256 must be 64 lowercase/uppercase hex characters")
+		}
+		actual := strings.ToLower(firstNonEmpty(decision.SelectedArtifact.SHA256, fetchResult.ExpectedSHA256, fetchResult.ActualSHA256))
+		if actual == "" {
+			return fmt.Errorf("selected artifact sha256 is unavailable")
+		}
+		if actual != expectedSHA256 {
+			return fmt.Errorf("selected artifact sha256 mismatch: expected=%s got=%s", expectedSHA256, actual)
+		}
+	}
+	return nil
+}
+
+func buildAgentApprovalPins(expectedDecisionID, expectedSHA256 string, required, verified bool) *agentApprovalPins {
+	expectedDecisionID = strings.TrimSpace(expectedDecisionID)
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
+	if !required && expectedDecisionID == "" && expectedSHA256 == "" {
+		return nil
+	}
+	return &agentApprovalPins{
+		Required:           required,
+		ExpectedDecisionID: expectedDecisionID,
+		ExpectedSHA256:     expectedSHA256,
+		Verified:           verified,
+	}
+}
+
+func validateAgentManifestIntent(manifestPath string, requireManifest bool) error {
+	_, err := buildAgentManifestIntent(manifestPath, requireManifest)
+	return err
+}
+
+func buildAgentManifestIntent(manifestPath string, requireManifest bool) (agentManifestIntent, error) {
+	manifestPath = strings.TrimSpace(manifestPath)
+	out := agentManifestIntent{
+		Required: requireManifest,
+		Path:     filepath.Clean(manifestPath),
+	}
+	if manifestPath == "" {
+		out.Path = ""
+	}
+	if manifestPath == "" {
+		if requireManifest {
+			return out, fmt.Errorf("--manifest is required when --require-manifest=true")
+		}
+		return out, nil
+	}
+	loaded, err := loadAgentManifestIntent(manifestPath)
+	if err != nil {
+		return out, fmt.Errorf("load manifest intent: %w", err)
+	}
+	out.ProgramCount = len(loaded.Programs)
+	out.Valid = true
+	return out, nil
+}
+
+func loadAgentManifestIntent(manifestPath string) (manifest.Manifest, error) {
+	loaded, err := manifest.Load(filepath.Clean(manifestPath))
+	if err != nil {
+		return manifest.Manifest{}, err
+	}
+	if len(loaded.Programs) == 0 {
+		return manifest.Manifest{}, fmt.Errorf("manifest must declare at least one program")
+	}
+	return loaded, nil
+}
+
+func isAgentSHA256Hex(raw string) bool {
+	if len(raw) != 64 {
+		return false
+	}
+	for _, r := range raw {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func persistAgentApplyAuditAndLedger(workDir string, payload *agentApplyResultFile, trace runtime.DecisionTrace, operation, status, errText string) {
 	audit, auditErr := runtime.PersistDecisionTrace(workDir, trace)
 	if auditErr != nil {
@@ -1267,6 +1497,18 @@ func buildAgentLoadLedgerEntry(workDir string, payload agentApplyResultFile, ope
 	entry.HostProfileHint = decision.HostProfileHint
 	entry.LoadApproved = decision.LoadApproved
 	entry.Error = strings.TrimSpace(errText)
+	if payload.ApprovalPins != nil {
+		entry.ApprovalPinsRequired = payload.ApprovalPins.Required
+		entry.ApprovalPinsVerified = payload.ApprovalPins.Verified
+		entry.ApprovalExpectedDecisionID = payload.ApprovalPins.ExpectedDecisionID
+		entry.ApprovalExpectedSHA256 = payload.ApprovalPins.ExpectedSHA256
+	}
+	if payload.ManifestIntent != nil {
+		entry.ManifestIntentRequired = payload.ManifestIntent.Required
+		entry.ManifestIntentVerified = payload.ManifestIntent.Valid
+		entry.ManifestPath = payload.ManifestIntent.Path
+		entry.ManifestProgramCount = payload.ManifestIntent.ProgramCount
+	}
 	if payload.LoadPolicy != nil {
 		entry.PolicyRule = payload.LoadPolicy.RuleName
 		entry.PolicyAction = payload.LoadPolicy.Action

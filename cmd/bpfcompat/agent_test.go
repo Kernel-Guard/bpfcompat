@@ -13,6 +13,7 @@ import (
 	"github.com/kernel-guard/bpfcompat/internal/agent"
 	"github.com/kernel-guard/bpfcompat/internal/registry"
 	"github.com/kernel-guard/bpfcompat/internal/runner"
+	"github.com/kernel-guard/bpfcompat/internal/runtime"
 )
 
 func TestAgentApplyWithoutApprovalFetchesOnly(t *testing.T) {
@@ -216,6 +217,65 @@ rules: []
 	}
 }
 
+func TestBuildAgentLoadLedgerEntryIncludesApprovalAndManifestEvidence(t *testing.T) {
+	workDir := t.TempDir()
+	manifestPath := writeAgentTestManifest(t, workDir)
+	sum := strings.Repeat("d", 64)
+	payload := agentApplyResultFile{
+		Decision: agent.DecisionResult{
+			DecisionID: "20260606T120000Z-abcdef",
+			Tenant:     "acme",
+			Project:    "aegis-bpf",
+			AgentID:    "host-1",
+			SelectedArtifact: agent.SelectedArtifact{
+				Name:    "aegis",
+				Version: "v1",
+				SHA256:  sum,
+			},
+			LoadApproved: true,
+		},
+		Fetch: runtime.FetchResult{
+			ArtifactName:    "aegis",
+			ArtifactVersion: "v1",
+			OutputPath:      filepath.Join(workDir, "selected", "aegis-v1.o"),
+			ExpectedSHA256:  sum,
+			ActualSHA256:    sum,
+		},
+		ApprovalPins: &agentApprovalPins{
+			Required:           true,
+			ExpectedDecisionID: "20260606T120000Z-abcdef",
+			ExpectedSHA256:     sum,
+			Verified:           true,
+		},
+		ManifestIntent: &agentManifestIntent{
+			Required:     true,
+			Path:         manifestPath,
+			ProgramCount: 1,
+			Valid:        true,
+		},
+	}
+
+	entry, err := buildAgentLoadLedgerEntry(workDir, payload, "load", "pass", "")
+	if err != nil {
+		t.Fatalf("build ledger entry: %v", err)
+	}
+	if !entry.ApprovalPinsRequired || !entry.ApprovalPinsVerified {
+		t.Fatalf("expected verified approval pin evidence: %+v", entry)
+	}
+	if entry.ApprovalExpectedDecisionID != payload.ApprovalPins.ExpectedDecisionID {
+		t.Fatalf("unexpected decision pin: %+v", entry)
+	}
+	if entry.ApprovalExpectedSHA256 != sum {
+		t.Fatalf("unexpected sha pin: %+v", entry)
+	}
+	if !entry.ManifestIntentRequired || !entry.ManifestIntentVerified {
+		t.Fatalf("expected verified manifest evidence: %+v", entry)
+	}
+	if entry.ManifestPath != manifestPath || entry.ManifestProgramCount != 1 {
+		t.Fatalf("unexpected manifest evidence: %+v", entry)
+	}
+}
+
 func TestAgentRollbackRecordsDrill(t *testing.T) {
 	workDir := t.TempDir()
 	first := agent.LoadLedgerEntry{
@@ -370,16 +430,22 @@ rules: []
 	if err := os.WriteFile(validatorPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write validator: %v", err)
 	}
+	manifestPath := writeAgentTestManifest(t, workDir)
 
 	result := buildAgentPreflight(agentPreflightOptions{
-		WorkDir:           workDir,
-		OutDir:            filepath.Join(workDir, "selected"),
-		AgentID:           "host-1",
-		LoadPolicyPath:    policyPath,
-		RequireLoadPolicy: true,
-		ValidatorPath:     validatorPath,
-		IncludeLoad:       true,
-		CheckHostProbe:    false,
+		WorkDir:            workDir,
+		OutDir:             filepath.Join(workDir, "selected"),
+		AgentID:            "host-1",
+		LoadPolicyPath:     policyPath,
+		RequireLoadPolicy:  true,
+		ExpectedDecisionID: "20260606T120000Z-abcdef",
+		ExpectedSHA256:     strings.Repeat("a", 64),
+		RequirePins:        true,
+		ManifestPath:       manifestPath,
+		RequireManifest:    true,
+		ValidatorPath:      validatorPath,
+		IncludeLoad:        true,
+		CheckHostProbe:     false,
 	})
 	if result.Status != "pass" {
 		t.Fatalf("expected load preflight pass: %+v", result)
@@ -389,6 +455,12 @@ rules: []
 	}
 	if checkStatus(result, "validator_binary") != "pass" {
 		t.Fatalf("expected validator pass: %+v", result.Checks)
+	}
+	if checkStatus(result, "approval_pins") != "pass" {
+		t.Fatalf("expected approval pins pass: %+v", result.Checks)
+	}
+	if checkStatus(result, "manifest_intent") != "pass" {
+		t.Fatalf("expected manifest intent pass: %+v", result.Checks)
 	}
 }
 
@@ -410,6 +482,86 @@ func TestAgentPreflightIncludeLoadFailsWithoutPolicy(t *testing.T) {
 	}
 }
 
+func TestAgentPreflightIncludeLoadRequiresApprovalPins(t *testing.T) {
+	workDir := t.TempDir()
+	result := buildAgentPreflight(agentPreflightOptions{
+		WorkDir:        workDir,
+		OutDir:         filepath.Join(workDir, "selected"),
+		AgentID:        "host-1",
+		IncludeLoad:    true,
+		RequirePins:    true,
+		CheckHostProbe: false,
+	})
+	if result.Status != "fail" {
+		t.Fatalf("expected load preflight failure: %+v", result)
+	}
+	if checkStatus(result, "approval_pins") != "fail" {
+		t.Fatalf("expected approval pins failure: %+v", result.Checks)
+	}
+}
+
+func TestAgentPreflightIncludeLoadRequiresManifest(t *testing.T) {
+	workDir := t.TempDir()
+	result := buildAgentPreflight(agentPreflightOptions{
+		WorkDir:            workDir,
+		OutDir:             filepath.Join(workDir, "selected"),
+		AgentID:            "host-1",
+		ExpectedDecisionID: "20260606T120000Z-abcdef",
+		ExpectedSHA256:     strings.Repeat("a", 64),
+		RequirePins:        true,
+		IncludeLoad:        true,
+		RequireManifest:    true,
+		CheckHostProbe:     false,
+	})
+	if result.Status != "fail" {
+		t.Fatalf("expected load preflight failure: %+v", result)
+	}
+	if checkStatus(result, "manifest_intent") != "fail" {
+		t.Fatalf("expected manifest intent failure: %+v", result.Checks)
+	}
+}
+
+func TestValidateAgentApprovalPins(t *testing.T) {
+	sum := strings.Repeat("b", 64)
+	decision := agent.DecisionResult{
+		DecisionID: "20260606T120000Z-abcdef",
+		SelectedArtifact: agent.SelectedArtifact{
+			SHA256: sum,
+		},
+	}
+	fetch := runtime.FetchResult{ActualSHA256: sum}
+	if err := validateAgentApprovalPins(decision, fetch, decision.DecisionID, sum, true); err != nil {
+		t.Fatalf("expected approval pins to validate: %v", err)
+	}
+	if err := validateAgentApprovalPins(decision, fetch, "wrong", sum, true); err == nil || !strings.Contains(err.Error(), "decision id mismatch") {
+		t.Fatalf("expected decision mismatch, got %v", err)
+	}
+	if err := validateAgentApprovalPins(decision, fetch, decision.DecisionID, strings.Repeat("c", 64), true); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("expected sha mismatch, got %v", err)
+	}
+	if err := validateAgentApprovalPins(decision, fetch, "", "", true); err == nil || !strings.Contains(err.Error(), "--expected-decision-id") {
+		t.Fatalf("expected required pins error, got %v", err)
+	}
+}
+
+func TestValidateAgentManifestIntent(t *testing.T) {
+	workDir := t.TempDir()
+	manifestPath := writeAgentTestManifest(t, workDir)
+	if err := validateAgentManifestIntent(manifestPath, true); err != nil {
+		t.Fatalf("expected manifest intent to validate: %v", err)
+	}
+	if err := validateAgentManifestIntent("", true); err == nil || !strings.Contains(err.Error(), "--manifest is required") {
+		t.Fatalf("expected required manifest error, got %v", err)
+	}
+	emptyPath := filepath.Join(workDir, "empty-manifest.yaml")
+	if err := os.WriteFile(emptyPath, []byte("name: empty\n"), 0o644); err != nil {
+		t.Fatalf("write empty manifest: %v", err)
+	}
+	if err := validateAgentManifestIntent(emptyPath, true); err == nil || !strings.Contains(err.Error(), "at least one program") {
+		t.Fatalf("expected empty manifest error, got %v", err)
+	}
+}
+
 func checkStatus(result agentPreflightResult, name string) string {
 	for _, check := range result.Checks {
 		if check.Name == name {
@@ -417,4 +569,24 @@ func checkStatus(result agentPreflightResult, name string) string {
 		}
 	}
 	return ""
+}
+
+func writeAgentTestManifest(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "manifest.yaml")
+	raw := []byte(`name: aegis
+programs:
+  - name: prog
+    section: tracepoint/syscalls/sys_enter_execve
+    type: tracepoint
+    attach:
+      kind: tracepoint
+      category: syscalls
+      name: sys_enter_execve
+      required: true
+`)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	return path
 }

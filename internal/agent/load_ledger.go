@@ -32,6 +32,14 @@ type LoadLedgerEntry struct {
 	TargetProfile              string   `json:"target_profile,omitempty"`
 	HostProfileHint            string   `json:"host_profile_hint,omitempty"`
 	LoadApproved               bool     `json:"load_approved"`
+	ApprovalPinsRequired       bool     `json:"approval_pins_required,omitempty"`
+	ApprovalPinsVerified       bool     `json:"approval_pins_verified,omitempty"`
+	ApprovalExpectedDecisionID string   `json:"approval_expected_decision_id,omitempty"`
+	ApprovalExpectedSHA256     string   `json:"approval_expected_sha256,omitempty"`
+	ManifestIntentRequired     bool     `json:"manifest_intent_required,omitempty"`
+	ManifestIntentVerified     bool     `json:"manifest_intent_verified,omitempty"`
+	ManifestPath               string   `json:"manifest_path,omitempty"`
+	ManifestProgramCount       int      `json:"manifest_program_count,omitempty"`
 	PolicyRule                 string   `json:"policy_rule,omitempty"`
 	PolicyAction               string   `json:"policy_action,omitempty"`
 	PolicyReason               string   `json:"policy_reason,omitempty"`

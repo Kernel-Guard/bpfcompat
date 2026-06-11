@@ -160,7 +160,23 @@ sudo /usr/local/bin/bpfcompat agent ledger \
 
 Approved host loading now requires a local agent load policy by default
 (`BPFCOMPAT_AGENT_REQUIRE_LOAD_POLICY=true`). The default example policy denies
-everything until the operator adds a narrow allow rule. Policy rules can match:
+everything until the operator adds a narrow allow rule. The packaged
+`bpfcompat-agent-load.service` also requires reviewed approval pins by default:
+
+- `BPFCOMPAT_AGENT_EXPECTED_DECISION_ID`
+- `BPFCOMPAT_AGENT_EXPECTED_SHA256`
+- `BPFCOMPAT_AGENT_REQUIRE_APPROVAL_PINS=true`
+- `BPFCOMPAT_AGENT_MANIFEST_PATH`
+- `BPFCOMPAT_AGENT_REQUIRE_MANIFEST=true`
+
+Copy these values from a reviewed `bpfcompat agent plan --json` result or from
+a fetch-only `agent apply` result. If either value is missing or does not match
+the selected decision/artifact digest, the load attempt is denied before local
+policy evaluation and before any host eBPF load. The manifest requirement keeps
+reviewed loads tied to explicit program and attach intent instead of loading an
+opaque object with no declared behavior.
+
+Policy rules can match:
 
 - agent identity (`agents`, plus top-level `allowed_agents`/`revoked_agents`)
 - tenant/project/artifact
@@ -170,8 +186,10 @@ everything until the operator adds a narrow allow rule. Policy rules can match:
 
 Each approved, denied, or failed host-load attempt is appended to
 `/var/lib/bpfcompat-agent/agent-load-ledger.jsonl`. The ledger records the
-selected artifact digest, policy rule, audit trace, execution result, and the
-previous successful load for rollback planning.
+selected artifact digest, reviewed approval pins, manifest intent summary,
+policy rule, audit trace, execution result, and the previous successful load for
+rollback planning. `last-load.json` includes the same approval and manifest
+evidence for the most recent load attempt.
 
 ## Production Drills
 
