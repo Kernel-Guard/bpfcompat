@@ -143,6 +143,44 @@ distro image:
   artifact are injected into the generated initramfs; nothing opaque is
   downloaded.
 
+## Dense kernel sweeps (one image, many kernels)
+
+A cloud image boots exactly one kernel release, so image-per-profile
+matrices sample a kernel series at one point. The sweep lane densifies
+that: a generated profile sets `install_kernel` plus `kernel_packages`
+(direct archive-pool `.deb` URLs), and the executor downloads and installs
+that exact release inside the guest (dpkg), pins it as the grub default,
+reboots into it (QEMU runs with `-no-reboot`, so the reboot exits the
+first QEMU process and the executor relaunches it on the same overlay),
+verifies `uname -r`, and only then validates. The overlay is grown +4G
+before boot — cloud images ship near-full rootfs, and cloud-init's
+growpart expands the partition to fit the kernel install.
+
+Direct pool URLs matter: apt only indexes the *current* ABI per pocket, so
+superseded kernel releases remain downloadable in the archive pool but are
+invisible to `apt-get install`. The kernel-crawler inventory records pool
+URLs per release, which is exactly what makes dense sweeps possible — the
+generator derives the image/modules `.deb` URLs from the crawler's headers
+URLs. The base image stays an unmodified vendor image; the kernel packages
+come from the distro's own archive.
+
+Generate the profiles and matrix from the crawler inventory:
+
+```bash
+./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4
+./bin/bpfcompat test --artifact app.bpf.o \
+  --matrix matrices/kernel-sweep-ubuntu-22.04-5.15.yaml \
+  --out reports/sweep.json --timeout 20m
+```
+
+This writes `vm/profiles/<base>-k<release>.yaml` per release (newest
+first) plus `matrices/kernel-sweep-<base>.yaml`. Targets need generous
+timeouts: the apt download and reboot add minutes per kernel.
+
+Current limits: Ubuntu only (apt package naming and grub menu titles are
+distro-specific), and the release must still be published in the apt
+indexes — which the crawler inventory guarantees at generation time.
+
 ## Adding a profile (checklist)
 
 1. Find the vendor's cloud image URL — prefer a release-versioned URL over

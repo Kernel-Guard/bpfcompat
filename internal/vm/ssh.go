@@ -126,6 +126,19 @@ func sshRun(ctx context.Context, target sshTarget, remoteCmd string) error {
 	return nil
 }
 
+func sshOutput(ctx context.Context, target sshTarget, remoteCmd string) (string, error) {
+	cmd := exec.CommandContext(ctx, "ssh", target.sshArgs(remoteCmd)...) // #nosec G204 -- remote commands are built from validated profile fields, same trust model as sshRun.
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(output))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("ssh run failed (%s): %s", target.addr(), msg)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 func scpToGuest(ctx context.Context, target sshTarget, localPath, remotePath string) error {
 	args := append(target.scpBaseArgs(), localPath, fmt.Sprintf("%s:%s", target.addr(), remotePath))
 	cmd := exec.CommandContext(ctx, "scp", args...)

@@ -214,3 +214,52 @@ func TestMarkdownMarksStale(t *testing.T) {
 		t.Errorf("markdown missing stale emphasis:\n%s", md)
 	}
 }
+
+func TestSweepReleases(t *testing.T) {
+	inv := Inventory{
+		"ubuntu": {
+			{KernelRelease: "5.15.0-92-generic", Target: "ubuntu-generic"},
+			{KernelRelease: "5.15.0-184-generic", Target: "ubuntu-generic"},
+			{KernelRelease: "5.15.0-184-generic", Target: "ubuntu-generic"}, // duplicate
+			{KernelRelease: "5.15.0-130-generic", Target: "ubuntu-generic"},
+			{KernelRelease: "5.15.0-1102-kvm", Target: "ubuntu-kvm"},
+			{KernelRelease: "6.8.0-130-generic", Target: "ubuntu-generic"},
+		},
+	}
+	got := inv.SweepEntries(CrawlerRef{Distro: "ubuntu", Target: "ubuntu-generic", ReleasePrefix: "5.15.0-"}, 2)
+	if len(got) != 2 || got[0].KernelRelease != "5.15.0-184-generic" || got[1].KernelRelease != "5.15.0-130-generic" {
+		t.Errorf("SweepEntries = %v", got)
+	}
+	all := inv.SweepEntries(CrawlerRef{Distro: "ubuntu", Target: "ubuntu-generic", ReleasePrefix: "5.15.0-"}, 0)
+	if len(all) != 3 {
+		t.Errorf("unbounded sweep = %v", all)
+	}
+}
+
+func TestUbuntuKernelDebs(t *testing.T) {
+	entry := Entry{
+		KernelRelease: "5.15.0-184-generic",
+		Target:        "ubuntu-generic",
+		Headers: []string{
+			"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-headers-5.15.0-184_5.15.0-184.194_all.deb",
+			"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-headers-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
+		},
+	}
+	debs, err := UbuntuKernelDebs(entry)
+	if err != nil {
+		t.Fatalf("UbuntuKernelDebs: %v", err)
+	}
+	want := []string{
+		"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
+		"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
+	}
+	if len(debs) != 2 || debs[0] != want[0] || debs[1] != want[1] {
+		t.Errorf("UbuntuKernelDebs = %v, want %v", debs, want)
+	}
+
+	// Only the arch-independent header URL: cannot derive package URLs.
+	entry.Headers = entry.Headers[:1]
+	if _, err := UbuntuKernelDebs(entry); err == nil {
+		t.Error("expected error without flavor-specific headers URL")
+	}
+}

@@ -155,6 +155,16 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		result.InfraError = err.Error()
 		return
 	}
+	if req.Profile.InstallKernel != "" {
+		// Cloud images ship near-full rootfs; a kernel install plus
+		// initramfs generation overflows it. Grow the overlay's virtual
+		// disk — cloud-init's growpart expands the partition at boot.
+		if err := resizeOverlayImage(ctx, overlayPath, "+4G"); err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+		result.Notes = append(result.Notes, "overlay grown +4G for in-guest kernel install")
+	}
 	// Register the overlay-removal defer immediately so we don't leak the
 	// qcow2 if any of the steps between here and startQEMU fail (SSH key
 	// generation, seed write, seed image build, seed server bind, port
@@ -248,6 +258,36 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 	result.Notes = append(result.Notes, fmt.Sprintf("SSH user selected: %s", target.User))
+
+	if req.Profile.InstallKernel != "" {
+		newCmd, err := installGuestKernelAndReboot(ctx, &result, req, target, cmd,
+			overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDirAbs, seedImagePath)
+		if err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+		cmd = newCmd
+		qemuProc = newCmd.Process
+
+		rebootCtx, cancelReboot := context.WithTimeout(ctx, req.Timeout)
+		defer cancelReboot()
+		target, err = waitForSSHAnyUser(rebootCtx, targetBase, []string{target.User}, req.Timeout)
+		if err != nil {
+			result.InfraError = fmt.Sprintf("wait for SSH after kernel-install reboot: %v", err)
+			return
+		}
+
+		booted, err := sshOutput(ctx, target, "uname -r")
+		if err != nil {
+			result.InfraError = fmt.Sprintf("verify installed kernel: %v", err)
+			return
+		}
+		if booted != req.Profile.InstallKernel {
+			result.InfraError = fmt.Sprintf("guest booted kernel %q after install of %q; grub default selection failed", booted, req.Profile.InstallKernel)
+			return
+		}
+		result.Notes = append(result.Notes, fmt.Sprintf("installed kernel booted: %s", booted))
+	}
 
 	remoteRoot := "/tmp/bpfcompat"
 	if err := sshRun(ctx, target, fmt.Sprintf("mkdir -p %s/bin %s/input %s/out", remoteRoot, remoteRoot, remoteRoot)); err != nil {
@@ -346,6 +386,82 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	return
 }
 
+// installGuestKernelAndReboot installs profile.install_kernel inside the
+// guest via apt, pins it as the grub default, reboots, and relaunches QEMU
+// on the same overlay. QEMU runs with -no-reboot, so the guest reboot exits
+// the first QEMU process; the second boot comes up on the freshly written
+// overlay with the requested kernel selected. Returns the new QEMU command;
+// the caller re-establishes SSH and verifies uname -r.
+//
+// Ubuntu-only by validation: the release string is package-exact
+// (linux-image-<release>) and the grub menu titles are Ubuntu's.
+func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, req ExecutionRequest, target sshTarget, qemuCmd *exec.Cmd,
+	overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*exec.Cmd, error) {
+	release := req.Profile.InstallKernel
+
+	installCmd := guestKernelInstallCmd(release, req.Profile.KernelPackages)
+	if err := sshRun(ctx, target, installCmd); err != nil {
+		return nil, fmt.Errorf("install kernel %s in guest: %w", release, err)
+	}
+	result.Notes = append(result.Notes, fmt.Sprintf("kernel installed in guest: %s", release))
+
+	// The connection drops as the guest goes down; only the reboot itself
+	// matters, so the ssh error is irrelevant.
+	_ = sshRun(ctx, target, "sudo systemctl reboot")
+	if err := waitProcessExit(qemuCmd, 3*time.Minute); err != nil {
+		return nil, err
+	}
+
+	newCmd, _, err := startQEMU(ctx, req.Profile, overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath)
+	if err != nil {
+		return nil, fmt.Errorf("relaunch qemu after kernel install: %w", err)
+	}
+	result.Notes = append(result.Notes, "guest rebooted into installed kernel (qemu relaunched on same overlay)")
+	return newCmd, nil
+}
+
+// guestKernelInstallCmd builds the in-guest install script. With explicit
+// package URLs the .debs are fetched from the archive pool and installed via
+// dpkg — required for superseded kernel releases, which stay downloadable in
+// the pool but disappear from the apt indexes. Without URLs it falls back to
+// apt, which only works for releases the indexes still carry. Both paths pin
+// the requested release as the grub default; the dpkg path relies on the
+// kernel postinst hooks for initramfs, then pins explicitly. The DPkg lock
+// timeout rides out cloud-init/unattended-upgrades holding the apt lock
+// right after first boot. All interpolated values are validated at profile
+// load (validKernelRelease / validKernelPackageURL), so they are shell-safe.
+func guestKernelInstallCmd(release string, packageURLs []string) string {
+	var b strings.Builder
+	b.WriteString("set -e; export DEBIAN_FRONTEND=noninteractive; ")
+	if len(packageURLs) > 0 {
+		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
+		for i, pkg := range packageURLs {
+			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.deb '%s'; ", i, pkg)
+		}
+		b.WriteString("sudo -E dpkg -i pkg*.deb; ")
+	} else {
+		b.WriteString("sudo -E apt-get -o DPkg::Lock::Timeout=180 -q update; ")
+		fmt.Fprintf(&b, "sudo -E apt-get -o DPkg::Lock::Timeout=180 -q -y --no-install-recommends install linux-image-%s; ", release)
+	}
+	b.WriteString("sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub; ")
+	b.WriteString("sudo update-grub; ")
+	fmt.Fprintf(&b, "sudo grub-set-default 'Advanced options for Ubuntu>Ubuntu, with Linux %s'", release)
+	return b.String()
+}
+
+// waitProcessExit waits for the guest-initiated QEMU exit (-no-reboot turns
+// the reboot into a clean process exit). The exit status is irrelevant.
+func waitProcessExit(cmd *exec.Cmd, timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("qemu did not exit within %s after guest reboot request", timeout)
+	}
+}
+
 // ensureImageAvailable returns the cached image path and its sha256. The
 // digest is computed once and cached in a sidecar so every run is
 // attributable to exact image bytes; when the profile pins image.sha256, a
@@ -408,6 +524,15 @@ func createOverlayImage(ctx context.Context, baseImage, overlayPath string) erro
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("create overlay image failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func resizeOverlayImage(ctx context.Context, overlayPath, delta string) error {
+	cmd := exec.CommandContext(ctx, "qemu-img", "resize", overlayPath, delta)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("resize overlay image failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

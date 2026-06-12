@@ -16,6 +16,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   `--fail-on-stale` turns staleness into an exit-code signal. A scheduled
   non-blocking workflow (`kernel-freshness.yml`) runs the comparison weekly
   after kernel-crawler's own refresh. Suggested by Federico Di Pierro.
+- Dense kernel-sweep lane: profiles can set `install_kernel` (plus
+  `kernel_packages` pool URLs) to install a specific kernel release inside
+  the guest, pin it as the grub default, reboot into it, and verify
+  `uname -r` before validation — one vendor cloud image then covers a
+  whole release series instead of only the kernel it shipped with.
+  Packages install from direct archive-pool `.deb` URLs because apt only
+  indexes the current ABI; superseded releases stay in the pool but
+  disappear from the indexes. `bpfcompat kernel-sweep --profile <id>
+  --count N` generates the derived profiles and matrix from the
+  kernel-crawler inventory. Ubuntu only for now.
 
 ## [0.1.5] - 2026-06-11
 

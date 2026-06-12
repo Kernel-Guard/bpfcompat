@@ -159,6 +159,23 @@ maps:
 
 See [`docs/validator.md`](docs/validator.md) for details.
 
+### Dense kernel sweeps and freshness
+
+One cloud image samples a kernel series at a single release. The sweep lane
+installs exact kernel releases (from the distro archive pool, indexed by
+[falcosecurity/kernel-crawler](https://github.com/falcosecurity/kernel-crawler))
+inside the guest and reboots into them before validating:
+
+```bash
+./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4
+./bin/bpfcompat test --artifact app.bpf.o \
+  --matrix matrices/kernel-sweep-ubuntu-22.04-5.15.yaml --timeout 20m ...
+```
+
+`bpfcompat kernel-freshness` compares each profile's last-validated kernel
+against what its distro currently ships and flags stale evidence (run
+weekly in CI). See [`docs/image-pipeline.md`](docs/image-pipeline.md).
+
 ## Main Acceptance Flows
 
 Fast local checks:
