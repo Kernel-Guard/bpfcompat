@@ -13,6 +13,7 @@ This document defines the maintained profile matrices used for compatibility cam
 - ARM64 smoke matrix: `matrices/arm64-smoke.yaml`
 - Latest distro-kernel sweep: `matrices/latest-kernel-sweep.yaml`
 - Generated upstream-mainline sweep: `matrices/upstream-kernel-runnable.yaml` (`make upstream-kernel-runnable`)
+- Generated dense kernel sweep: `matrices/kernel-sweep-<profile>.yaml` (`bpfcompat kernel-sweep --profile <id>`; installs exact kernel releases inside the guest, see [`image-pipeline.md`](image-pipeline.md))
 - Firecracker backend: Firecracker profiles use `runner: firecracker` and are generated locally by `make firecracker-runnable` because kernel image paths are machine-specific.
 
 ## Tiered Coverage Focus
@@ -76,6 +77,14 @@ This document defines the maintained profile matrices used for compatibility cam
    - `.github/workflows/multiarch-compatibility.yml`
    - `.github/workflows/firecracker-preflight.yml`
    - `.github/workflows/profile-catalog-maintenance.yml`
+   - `.github/workflows/kernel-freshness.yml` (weekly: flags profiles whose
+     last-validated kernel is behind what the distro currently ships, using
+     the falcosecurity/kernel-crawler inventory; baselines live in
+     `vm/kernel-baselines.yaml` and are refreshed with
+     `bpfcompat kernel-freshness --update-from-report <report.json>`)
+8. Densify a kernel series beyond what one image samples:
+   - `./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4`
+     generates per-release `install_kernel` profiles plus a sweep matrix
 
 ## Current Strict-Mode Status
 

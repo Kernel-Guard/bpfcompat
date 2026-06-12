@@ -20,6 +20,8 @@ multi-architecture runners, and release matrix publication.
 | Multi-architecture lane | `.github/workflows/multiarch-compatibility.yml`, `matrices/arm64-smoke.yaml`, `make acceptance-arm64-smoke`. |
 | Firecracker executable backend | `--runner firecracker`, generated initramfs validator execution, serial result extraction, `make acceptance-firecracker-dev-one`, `.github/workflows/firecracker-preflight.yml`, and `docs/firecracker-backend.md`. |
 | Catalog maintenance | `.github/workflows/profile-catalog-maintenance.yml`, `make profile-catalog-audit`, `make matrix-readiness`. |
+| kernel-crawler freshness signal | `bpfcompat kernel-freshness` + `vm/kernel-baselines.yaml` + `.github/workflows/kernel-freshness.yml` compare validated kernels against falcosecurity/kernel-crawler's weekly inventory. |
+| Dense per-release kernel sweep | `bpfcompat kernel-sweep` generates `install_kernel`/`kernel_packages` profiles that install exact kernel releases (archive-pool .debs from kernel-crawler URLs) inside the guest and reboot into them before validation. |
 | Release matrix publishing | `.github/workflows/compatibility-matrix-publish.yml`, `scripts/publish-compatibility-site.sh`, optional GitHub Pages deployment, tag release attachment. |
 | Project adapter template | `adapters/generic-ebpf-suite/`. |
 

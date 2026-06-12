@@ -19,6 +19,9 @@ Default validation remains VM-backed; optional runtime host execution is behind 
 4. For each profile:
    - prepare overlay image from cached base image
    - boot VM with cloud-init
+   - if the profile sets `install_kernel`: install that exact kernel release
+     inside the guest, reboot into it, and verify `uname -r` (dense
+     kernel-sweep lane, see `docs/image-pipeline.md`)
    - copy artifact/manifest, generated functional plan, and validator into guest
    - execute validator inside guest
    - run manifest functional commands while successful BPF links are alive
