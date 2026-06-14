@@ -631,12 +631,37 @@ func qemuSystemBinary(profile Profile) string {
 }
 
 func qemuMachineArgs(profile Profile) []string {
-	switch normalizeArch(profile.Arch) {
+	return machineArgsFor(normalizeArch(profile.Arch), kvmAvailable())
+}
+
+// machineArgsFor is the pure acceleration decision: with KVM it pins -cpu host
+// for speed; without it (e.g. some hosted runners) it degrades to TCG software
+// emulation with -cpu max so results stay correct rather than the launch
+// failing outright.
+func machineArgsFor(arch string, kvm bool) []string {
+	switch arch {
 	case "aarch64":
-		return []string{"-machine", "virt,accel=kvm", "-cpu", "host"}
+		if kvm {
+			return []string{"-machine", "virt,accel=kvm", "-cpu", "host"}
+		}
+		return []string{"-machine", "virt,accel=tcg", "-cpu", "max"}
 	default:
-		return []string{"-enable-kvm", "-cpu", "host"}
+		if kvm {
+			return []string{"-enable-kvm", "-cpu", "host"}
+		}
+		return []string{"-accel", "tcg", "-cpu", "max"}
 	}
+}
+
+// kvmAvailable reports whether hardware-accelerated virtualization is usable on
+// this host. When /dev/kvm is missing (some CI runners), callers degrade to TCG
+// software emulation rather than failing the QEMU launch outright.
+func kvmAvailable() bool {
+	info, err := os.Stat("/dev/kvm")
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func normalizeArch(arch string) string {

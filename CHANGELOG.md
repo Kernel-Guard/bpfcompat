@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Zero-infrastructure CI on-ramp: `.github/workflows/bpfcompat-example-hosted.yml`
+  runs the full QEMU VM compatibility gate on a stock GitHub-hosted
+  `ubuntu-latest` runner. GitHub-hosted Linux runners now expose `/dev/kvm`, so
+  no self-hosted runner is required for the default lane. The README now leads
+  with this path and with the Falco `modern_bpf` 5-kernel proof.
 - `bpfcompat kernel-freshness`: compares the kernel release each VM profile
   last validated (`vm/kernel-baselines.yaml`) against the per-distro kernel
   inventory published weekly by falcosecurity/kernel-crawler, flagging
@@ -26,6 +31,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   disappear from the indexes. `bpfcompat kernel-sweep --profile <id>
   --count N` generates the derived profiles and matrix from the
   kernel-crawler inventory. Ubuntu only for now.
+
+### Changed
+- QEMU executor falls back to TCG software emulation when `/dev/kvm` is absent
+  (`-accel tcg -cpu max`) instead of failing the launch, so VM validation stays
+  correct on runners without hardware virtualization (just slower). Hosted-KVM
+  runners keep `-enable-kvm -cpu host`.
 
 ## [0.1.5] - 2026-06-11
 

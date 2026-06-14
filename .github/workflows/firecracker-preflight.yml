@@ -1,7 +1,9 @@
 name: firecracker-preflight
 
-# Firecracker executable proof. This requires a self-hosted x64 KVM runner
-# because GitHub-hosted runners do not expose /dev/kvm.
+# Firecracker executable proof. This uses a self-hosted x64 KVM runner for the
+# full Firecracker toolchain (Firecracker binary, busybox, cpio, uncompressed
+# guest kernel). The default QEMU lane runs on stock GitHub-hosted runners,
+# which now expose /dev/kvm (see bpfcompat-example-hosted.yml).
 
 on:
   workflow_dispatch:

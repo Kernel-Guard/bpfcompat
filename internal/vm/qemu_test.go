@@ -409,3 +409,25 @@ func TestProgVariantArgs(t *testing.T) {
 		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
 	}
 }
+
+func TestMachineArgsForAccelFallback(t *testing.T) {
+	cases := []struct {
+		name string
+		arch string
+		kvm  bool
+		want []string
+	}{
+		{"x86 kvm", "x86_64", true, []string{"-enable-kvm", "-cpu", "host"}},
+		{"x86 tcg", "x86_64", false, []string{"-accel", "tcg", "-cpu", "max"}},
+		{"arm kvm", "aarch64", true, []string{"-machine", "virt,accel=kvm", "-cpu", "host"}},
+		{"arm tcg", "aarch64", false, []string{"-machine", "virt,accel=tcg", "-cpu", "max"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := machineArgsFor(tc.arch, tc.kvm)
+			if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+				t.Fatalf("machineArgsFor(%q, %v) = %v, want %v", tc.arch, tc.kvm, got, tc.want)
+			}
+		})
+	}
+}

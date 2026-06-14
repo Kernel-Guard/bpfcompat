@@ -10,6 +10,7 @@ multi-architecture runners, and release matrix publication.
 | Capability | Current implementation |
 |---|---|
 | CI/release gate | `action.yml`, `.github/workflows/bpfcompat-example.yml`, and external proof repo. |
+| Zero-infra hosted-runner gate | `.github/workflows/bpfcompat-example-hosted.yml` runs the full QEMU VM gate on stock `ubuntu-latest` (GitHub-hosted runners now expose `/dev/kvm`; TCG software-emulation fallback when absent). |
 | Multi-artifact input | `bpfcompat suite` and `suites/dev-functional.yaml`. |
 | Manifest-described test steps | Manifest `functional_tests` are converted into validator functional plans. |
 | Behavioral event proof | `examples/functional-execve` attaches to execve, triggers `/bin/true`, and observes the trace marker while the BPF link is alive. |

@@ -1,0 +1,94 @@
+name: bpfcompat-example-hosted
+
+# Zero-infrastructure on-ramp: this runs the full QEMU VM compatibility gate on a
+# stock GitHub-hosted runner. No self-hosted runner is required. GitHub-hosted
+# Linux runners now expose /dev/kvm, so VM validation is hardware-accelerated;
+# if a runner ever lacks KVM, bpfcompat degrades to TCG software emulation
+# (correct results, slower) instead of failing.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "validator/**"
+      - "examples/**"
+      - "matrices/**"
+      - "vm/**"
+      - "action.yml"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/bpfcompat-example-hosted.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility-gate:
+    name: Compatibility Gate (hosted runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Report KVM acceleration status
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e /dev/kvm ]]; then
+            echo "::notice::/dev/kvm present - VM validation is hardware-accelerated."
+          else
+            echo "::warning::/dev/kvm not found - falling back to TCG software emulation (slower, still correct)."
+          fi
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils clang llvm libbpf-dev libelf-dev zlib1g-dev \
+            pkg-config jq
+
+      - name: Build validator and fixture artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          make validator-static
+          make examples
+
+      - name: Fetch VM image for dev-one profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          make vm-ubuntu-22
+
+      - name: Run bpfcompat action
+        uses: ./
+        with:
+          suite: suites/dev-functional.yaml
+          suite-out: reports/ci-dev-functional-suite.json
+          suite-markdown: reports/ci-dev-functional-suite.md
+          timeout: 12m
+          concurrency: "1"
+          build: "true"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpfcompat-reports-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            reports/ci-dev-functional-suite.json
+            reports/ci-dev-functional-suite.md
+            reports/suites/dev-functional/*.json
+            reports/suites/dev-functional/*.md
+            .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/libbpf.log
+            .bpfcompat/runs/**/targets/**/validator-result.json
+            .bpfcompat/runs/**/targets/**/validator.stderr
