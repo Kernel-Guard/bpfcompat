@@ -41,6 +41,10 @@ jobs:
           set -euo pipefail
           if [[ -e /dev/kvm ]]; then
             echo "::notice::/dev/kvm present - VM validation is hardware-accelerated."
+            # Some hosted images expose /dev/kvm but the runner user is not in
+            # the kvm group; loosen perms so QEMU can open it.
+            sudo chmod 0666 /dev/kvm || true
+            ls -l /dev/kvm || true
           else
             echo "::warning::/dev/kvm not found - falling back to TCG software emulation (slower, still correct)."
           fi
@@ -73,9 +77,21 @@ jobs:
           suite: suites/dev-functional.yaml
           suite-out: reports/ci-dev-functional-suite.json
           suite-markdown: reports/ci-dev-functional-suite.md
-          timeout: 12m
+          # Short while we stabilize hosted-runner guest boot: a stuck VM fails
+          # in ~5m instead of burning the full budget on the SSH-ready wait.
+          timeout: 5m
           concurrency: "1"
           build: "true"
+
+      - name: Dump guest serial + validator output on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== /dev/kvm ====="; ls -l /dev/kvm || true
+          for f in $(find .bpfcompat -type f \( -name serial.log -o -name qemu.log -o -name validator.stderr -o -name validator-result.json \) 2>/dev/null); do
+            echo "===== $f ====="
+            tail -n 120 "$f" || true
+          done
 
       - name: Upload reports
         if: always()
@@ -83,12 +99,18 @@ jobs:
         with:
           name: bpfcompat-reports-${{ github.run_id }}
           if-no-files-found: warn
+          # Allowlist only — never `.bpfcompat/runs/**` wholesale: the per-run
+          # dir also holds the generated SSH private key (id_ed25519), the
+          # cloud-init seed, and the disk overlay, none of which belong in a
+          # downloadable artifact.
           path: |
             reports/ci-dev-functional-suite.json
             reports/ci-dev-functional-suite.md
             reports/suites/dev-functional/*.json
             reports/suites/dev-functional/*.md
             .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/qemu.log
             .bpfcompat/runs/**/targets/**/libbpf.log
             .bpfcompat/runs/**/targets/**/validator-result.json
             .bpfcompat/runs/**/targets/**/validator.stderr
+            .bpfcompat/runs/**/targets/**/validator-exit-code
