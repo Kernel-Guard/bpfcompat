@@ -60,7 +60,8 @@ These are not files in the repo. Track their status here.
 
 - `publish_results: true` in the Scorecard workflow requires the repository to
   be public; it is a no-op signal otherwise.
-- CodeQL uses `build-mode: none`, so it does not need the C/libbpf validator
-  toolchain (the validator is a separate non-Go component).
+- CodeQL uses `build-mode: autobuild` (Go does not support `none`); autobuild
+  runs `go build`, which does not need the C/libbpf validator toolchain (the
+  validator is a separate non-Go component).
 - The `Kernel-Guard` GitHub org and the "KernelGuard" site branding should be
   reconciled before a wider public launch; see the project roadmap.

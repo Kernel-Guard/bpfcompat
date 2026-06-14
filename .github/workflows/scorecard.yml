@@ -30,6 +30,7 @@ jobs:
     permissions:
       security-events: write   # upload SARIF to code scanning
       id-token: write          # publish results to the Scorecard API
+      actions: read            # evaluate workflow token-permission/pinning checks
       contents: read
     steps:
       - name: Checkout
@@ -38,7 +39,7 @@ jobs:
           persist-credentials: false
 
       - name: Run analysis
-        uses: ossf/scorecard-action@v2
+        uses: ossf/scorecard-action@v2.4.3
         with:
           results_file: results.sarif
           results_format: sarif
