@@ -3,6 +3,7 @@
 [![CI](https://github.com/Kernel-Guard/bpfcompat/actions/workflows/ci.yml/badge.svg)](https://github.com/Kernel-Guard/bpfcompat/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Kernel-Guard/bpfcompat/actions/workflows/codeql.yml/badge.svg)](https://github.com/Kernel-Guard/bpfcompat/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kernel-Guard/bpfcompat/badge)](https://scorecard.dev/viewer/?uri=github.com/Kernel-Guard/bpfcompat)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13230/badge)](https://www.bestpractices.dev/projects/13230)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 `bpfcompat` is an open-source compatibility validator for compiled eBPF

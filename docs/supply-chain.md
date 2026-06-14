@@ -47,11 +47,10 @@ These are not files in the repo. Track their status here.
 - [ ] **Code scanning default setup OFF if CodeQL workflow is used** (avoid
       double analysis): Settings → Code security → Code scanning. Do this after
       `codeql.yml` lands on `main`.
-- [ ] **OpenSSF Best Practices badge**: register the project at
-      <https://www.bestpractices.dev/>, then add the returned badge:
-      `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<ID>/badge)](https://www.bestpractices.dev/projects/<ID>)`
-      to the README badge row. (Scorecard is automated; this one needs a
-      one-time self-assessment.)
+- [x] **OpenSSF Best Practices badge** (passing, 2026-06-15): project
+      [13230](https://www.bestpractices.dev/projects/13230) at the *passing*
+      tier; badge is in the README row. Keep the self-assessment current as the
+      project evolves, and pursue the *silver*/*gold* tiers when ready.
 - [ ] **Scorecard badge publishing**: the first successful `scorecard.yml` run
       on `main` populates <https://scorecard.dev/viewer/?uri=github.com/Kernel-Guard/bpfcompat>
       and resolves the README badge.
