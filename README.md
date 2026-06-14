@@ -28,14 +28,19 @@ CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
 `bpfcompat` answers the empirical question CO-RE leaves open: *does it actually
 load and attach here?* — by running the artifact in a real kernel.
 
-## Try it in CI — no self-hosted runner
+## Try it in CI without your own KVM box
 
-GitHub-hosted Linux runners now expose `/dev/kvm`, so the full QEMU VM
-compatibility gate runs on a stock `ubuntu-latest` runner. No KVM box of your
-own, no self-hosted runner. See
+GitHub-hosted Linux runners now expose `/dev/kvm`, so the QEMU VM lane can run
+on a stock `ubuntu-latest` runner instead of requiring a self-hosted KVM
+machine. See
 [`.github/workflows/bpfcompat-example-hosted.yml`](.github/workflows/bpfcompat-example-hosted.yml)
-for a copy-paste workflow; if a runner ever lacks KVM, validation degrades to
-TCG software emulation (correct, just slower) instead of failing.
+for a copy-paste workflow; if a runner lacks KVM, validation degrades to TCG
+software emulation (correct, just slower) instead of failing.
+
+> **Status:** the hosted-runner lane is wired and KVM is confirmed available on
+> `ubuntu-latest`, but end-to-end guest boot on hosted runners is still being
+> stabilized (tracking a cloud-init/SSH-readiness timeout). Self-hosted KVM
+> remains the validated path today; see issue tracker for hosted-runner status.
 
 ## Proof: a real Falco probe catches a real regression
 
