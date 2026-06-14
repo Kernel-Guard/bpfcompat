@@ -11,10 +11,9 @@ on:
         required: false
         default: "false"
 
+# Least privilege at the top; write scopes are granted per-job below.
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,9 +24,13 @@ jobs:
     name: Publish compatibility matrix
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 60
+    permissions:
+      contents: write  # attach matrix assets to tag releases
+      pages: write     # deploy the compatibility site to GitHub Pages
+      id-token: write  # OIDC for Pages deployment
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Verify KVM availability
         shell: bash
@@ -75,7 +78,7 @@ jobs:
 
       - name: Upload compatibility evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bpfcompat-compatibility-matrix-${{ github.run_id }}
           if-no-files-found: warn
@@ -113,14 +116,14 @@ jobs:
 
       - name: Configure Pages
         if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
         if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: public/compatibility
 
       - name: Deploy Pages
         if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
