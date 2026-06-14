@@ -26,12 +26,12 @@
 #     drops the build-id, so two builds of the same commit hash produce
 #     byte-identical binaries.
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.25
 
 #######################################
 # 1. Builder
 #######################################
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:bbb255b0e131db500cf0520adc97441d2260cf629c7fa7e39e025ddf53995a24 AS builder
 
 WORKDIR /src
 
@@ -68,7 +68,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 #######################################
 # 2. Final image (default): Go binary only
 #######################################
-FROM gcr.io/distroless/static-debian12:nonroot AS final
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639 AS final
 
 # /data is the conventional mount point for the workdir. Override via
 #   docker run -v /host/path:/data/.bpfcompat ...
@@ -94,7 +94,7 @@ CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
 # in libbpf/clang/llvm and bloats the image. Build explicitly when you need
 # host-side runtime execute from inside the container:
 #   docker build --target with-validator -t bpfcompat:dev-validator .
-FROM debian:bookworm-slim AS validator-builder
+FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716 AS validator-builder
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -113,7 +113,7 @@ COPY validator/c-libbpf ./validator/c-libbpf
 COPY Makefile ./Makefile
 RUN make -C validator/c-libbpf clean all LIBBPF_LINK_MODE=static
 
-FROM gcr.io/distroless/cc-debian12:nonroot AS with-validator
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:b0ae8e989418b458e0f25489bc3be523718938a2b70864cc0f6a00af1ddbd985 AS with-validator
 WORKDIR /data
 COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
 COPY --from=validator-builder /src/validator/c-libbpf/bin/bpfcompat-validator \
