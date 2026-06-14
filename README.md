@@ -109,7 +109,7 @@ For the main QEMU path:
 - Linux host (a GitHub-hosted `ubuntu-latest` runner works; `/dev/kvm`
   enables hardware acceleration, and bpfcompat falls back to TCG software
   emulation when it is absent)
-- Go 1.22+
+- Go 1.25+
 - `make`
 - `clang`
 - `qemu-system-x86_64`
