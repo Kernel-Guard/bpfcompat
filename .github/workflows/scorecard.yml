@@ -43,6 +43,9 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
+          # Fine-grained PAT (Administration: read) so Scorecard can read
+          # branch-protection rules, which the default GITHUB_TOKEN cannot.
+          repo_token: ${{ secrets.SCORECARD_TOKEN }}
           publish_results: true
 
       - name: Upload artifact
