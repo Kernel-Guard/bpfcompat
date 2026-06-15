@@ -282,9 +282,8 @@ const uiHTML = `<!doctype html>
     .results {
       padding: 12px 14px;
       display: grid;
-      grid-template-rows: auto auto auto 1fr auto;
+      grid-template-rows: repeat(5, auto);
       gap: 10px;
-      height: calc(100% - 52px);
       box-sizing: border-box;
     }
     .progress-wrap {
@@ -854,6 +853,10 @@ const uiHTML = `<!doctype html>
           <div id="artifactMode">
             <label>Artifact File</label>
             <input id="artifactFile" type="file">
+            <div class="hint" id="trySampleHint">
+              Don't have a <code>.bpf.o</code>?
+              <button type="button" class="secondary" id="trySampleBtn">Try our aegis sample &rarr;</button>
+            </div>
           </div>
           <div id="sourceMode" class="hidden">
             <label>Source File</label>
@@ -1766,6 +1769,59 @@ programs:
     byId("modeSource").addEventListener("click", () => switchMode("source"));
     byId("intentLoadAttach").addEventListener("click", () => switchTestIntent("load_attach"));
     byId("intentLoadOnly").addEventListener("click", () => switchTestIntent("load_only"));
+
+    // "Try our aegis sample": load the bundled artifact into the form and run a
+    // real validation across a kernel spread that crosses aegis's 5.16 boundary
+    // (it uses a bloom-filter map). One click -> artifact filled below -> run.
+    byId("trySampleBtn").addEventListener("click", async () => {
+      const btn = byId("trySampleBtn");
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Loading aegis sample...";
+      try {
+        const res = await fetch("/api/v1/sample/aegis/artifact");
+        if (!res.ok) throw new Error("sample unavailable (HTTP " + res.status + ")");
+        const blob = await res.blob();
+        const file = new File([blob], "aegis.bpf.o", { type: "application/octet-stream" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const input = byId("artifactFile");
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        byId("artifactName").value = "aegis";
+
+        // Reset to a clean slate so only the boundary spread runs (no arm64 /
+        // kernel-sweep variants from the default selection).
+        document.querySelectorAll("input[data-kind='include']").forEach((x) => { x.checked = false; });
+        document.querySelectorAll("input[data-kind='required']").forEach((x) => { x.checked = false; x.disabled = true; });
+
+        // Boundary spread: 5.4/5.15 fail (no bloom map), 6.1/6.8 pass (required).
+        const include = ["ubuntu-20.04-5.4", "ubuntu-22.04-5.15", "debian-12-6.1", "ubuntu-24.04-6.8"];
+        const required = ["debian-12-6.1", "ubuntu-24.04-6.8"];
+        include.forEach((id) => {
+          const inc = document.querySelector("input[data-kind='include'][data-id='" + id + "']");
+          if (!inc || inc.disabled) return;
+          inc.checked = true;
+          inc.dispatchEvent(new Event("change", { bubbles: true }));
+          if (required.includes(id)) {
+            const req = document.querySelector("input[data-kind='required'][data-id='" + id + "']");
+            if (req) {
+              req.disabled = false;
+              req.checked = true;
+              req.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          }
+        });
+
+        btn.textContent = original;
+        btn.disabled = false;
+        byId("runBtn").click();
+      } catch (e) {
+        btn.textContent = original;
+        btn.disabled = false;
+        alert("Could not load the aegis sample: " + e.message);
+      }
+    });
     runtimeModeButtons.probe.addEventListener("click", () => setRuntimeMode("probe"));
     runtimeModeButtons.select.addEventListener("click", () => setRuntimeMode("select"));
     runtimeModeButtons.fetch.addEventListener("click", () => setRuntimeMode("fetch"));
