@@ -488,6 +488,7 @@ func (s *Server) serve(ctx context.Context) error {
 	registerAPIRoute(mux, "/health", s.handleHealth)
 	registerAPIRoute(mux, "/config", s.handleConfig)
 	registerAPIRoute(mux, "/profiles", s.handleProfiles)
+	registerAPIRoute(mux, "/sample/aegis/artifact", s.handleSampleArtifact)
 	registerAPIRoute(mux, "/validate/start", s.handleValidateStart)
 	registerAPIRoute(mux, "/validate/status", s.handleValidateStatus)
 	registerAPIRoute(mux, "/validate", s.handleValidate)

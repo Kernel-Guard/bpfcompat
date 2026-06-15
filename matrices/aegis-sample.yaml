@@ -1,0 +1,20 @@
+name: aegis-sample
+# Boundary-spanning matrix for the "try our aegis sample" demo. aegis uses a BPF
+# bloom-filter map ("deny_bloom", BPF_MAP_TYPE_BLOOM_FILTER) that only exists on
+# kernel >= 5.16, so it exercises a precise, real compatibility boundary:
+#   - ubuntu-20.04-5.4 : < 5.16 -> map create fails (UNSUPPORTED_MAP_TYPE)  [expected]
+#   - ubuntu-22.04-5.15: < 5.16 -> map create fails (UNSUPPORTED_MAP_TYPE)  [expected]
+#   - debian-12-6.1    : >= 5.16 -> loads + attaches -> pass
+#   - ubuntu-24.04-6.8 : >= 5.16 -> loads + attaches -> pass
+# The < 5.16 rows are not "required": they are the teaching rows showing the
+# tool catching a genuine incompatibility, while the gate is green for the
+# kernels aegis actually supports.
+profiles:
+  - id: ubuntu-20.04-5.4
+    required: false
+  - id: ubuntu-22.04-5.15
+    required: false
+  - id: debian-12-6.1
+    required: true
+  - id: ubuntu-24.04-6.8
+    required: true
