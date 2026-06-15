@@ -15,6 +15,9 @@ The core question is simple:
 > Will this `.bpf.o` load and attach on the kernels I care about, and if not,
 > what failed?
 
+**Live demo:** [demo.kernelguard.net](https://demo.kernelguard.net) — upload a
+`.bpf.o` and see the compatibility matrix.
+
 ## Why not just rely on CO-RE / BTFHub?
 
 CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
