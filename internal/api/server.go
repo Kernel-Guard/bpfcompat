@@ -338,8 +338,8 @@ type agentDecisionRequest struct {
 
 type validateResponse struct {
 	ExitCode           int         `json:"exit_code"`
-	RunDir             string      `json:"run_dir"`
-	ReportJSONPath     string      `json:"report_json_path"`
+	RunDir             string      `json:"run_dir,omitempty"`
+	ReportJSONPath     string      `json:"report_json_path,omitempty"`
 	ReportMarkdownPath string      `json:"report_markdown_path,omitempty"`
 	Report             interface{} `json:"report"`
 }
@@ -2308,14 +2308,9 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		s.log().Warn("auto-sync registry warning", slog.String("error", err.Error()))
 	}
 
-	response := validateResponse{
-		ExitCode:           result.ExitCode,
-		RunDir:             result.RunDir,
-		ReportJSONPath:     result.Report.Paths.JSON,
-		ReportMarkdownPath: result.Report.Paths.Markdown,
-		Report:             result.Report,
-	}
-	writeJSON(w, http.StatusOK, response)
+	// Strip host-internal fields (absolute paths, VM run dir, QEMU command,
+	// serial-log pointers) before returning over HTTP. See sanitize.go.
+	writeJSON(w, http.StatusOK, publicValidateResponse(result))
 }
 
 func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
@@ -2484,13 +2479,8 @@ func (s *Server) runValidateJob(jobID string, cfg runner.Config) {
 		s.log().Warn("auto-sync registry warning", slog.String("error", err.Error()))
 	}
 
-	response := &validateResponse{
-		ExitCode:           result.ExitCode,
-		RunDir:             result.RunDir,
-		ReportJSONPath:     result.Report.Paths.JSON,
-		ReportMarkdownPath: result.Report.Paths.Markdown,
-		Report:             result.Report,
-	}
+	// Strip host-internal fields before this response leaves the host. See sanitize.go.
+	response := publicValidateResponse(result)
 	s.updateValidateJob(jobID, func(job *validateJob) {
 		job.State = "completed"
 		job.Stage = string(runner.ProgressStageCompleted)
