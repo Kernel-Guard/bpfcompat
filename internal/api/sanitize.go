@@ -47,7 +47,7 @@ func publicValidateResponse(result runner.RunResult) *validateResponse {
 // decoded from disk as a generic map (the history run-report endpoint).
 func sanitizeReportMapForPublic(report map[string]any) map[string]any {
 	if report == nil {
-		return report
+		return nil
 	}
 	delete(report, "paths")
 	if a, ok := report["artifact"].(map[string]any); ok {
