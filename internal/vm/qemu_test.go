@@ -52,7 +52,10 @@ func TestQEMUSystemBinaryForARM64(t *testing.T) {
 
 	args := buildQEMUArgs(profile, "/tmp/overlay.qcow2", "/tmp/serial.log", 2222, seedDeliveryNoCloudNet, "http://127.0.0.1:8080/", "", "")
 	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "-machine virt,accel=kvm") {
+	// arm64 always uses the "-machine virt,accel=..." form. The accel mode
+	// (kvm vs tcg) depends on whether the host exposes /dev/kvm, so don't pin
+	// it here — explicit kvm/tcg coverage lives in TestMachineArgsForAccelFallback.
+	if !strings.Contains(joined, "-machine virt,accel=") {
 		t.Fatalf("expected arm64 virt machine args: %s", joined)
 	}
 	if strings.Contains(joined, "-enable-kvm") {

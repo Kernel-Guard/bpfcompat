@@ -88,5 +88,5 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("parse report: %v", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"run_id": runID, "report": report})
+	writeJSON(w, http.StatusOK, map[string]any{"run_id": runID, "report": sanitizeReportMapForPublic(report)})
 }
