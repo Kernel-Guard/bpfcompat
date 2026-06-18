@@ -1,6 +1,6 @@
 # Hetzner demo runbook
 
-Move / host the public bpfcompat demo (`demo.kernelguard.net`) on a Hetzner
+Move / host the public bpfcompat demo (`bpfcompat.kernelguard.net`) on a Hetzner
 bare-metal server. This replaces the Azure VM after the Azure credit expired.
 
 ## Why bare metal (not Hetzner Cloud)
@@ -49,7 +49,7 @@ ssh root@$HETZNER_HOST "systemctl --no-pager status bpfcompat-serve.service"
 
 ## 3) Repoint DNS (Cloudflare)
 
-Update the `demo.kernelguard.net` `A` record from the old Azure IP
+Update the `bpfcompat.kernelguard.net` `A` record from the old Azure IP
 (`20.91.218.19`) to `$HETZNER_HOST`. Keep it **DNS only (grey cloud)** so Caddy
 can complete the Let's Encrypt HTTP-01 challenge.
 
@@ -59,19 +59,19 @@ can complete the Let's Encrypt HTTP-01 challenge.
 
 ```bash
 export HETZNER_HOST=<server-ip>
-export BPFCOMPAT_DOMAIN=demo.kernelguard.net
+export BPFCOMPAT_DOMAIN=bpfcompat.kernelguard.net
 make hetzner-configure-tls
 ```
 
 After completion:
 
-- UI:     `https://demo.kernelguard.net/`
-- Health: `https://demo.kernelguard.net/api/health`
+- UI:     `https://bpfcompat.kernelguard.net/`
+- Health: `https://bpfcompat.kernelguard.net/api/health`
 
 ## 5) Verify, then decommission Azure
 
 ```bash
-curl -fsS https://demo.kernelguard.net/api/health
+curl -fsS https://bpfcompat.kernelguard.net/api/health
 ```
 
 Once green, tear down the Azure VM/resource group to stop any residual billing.
