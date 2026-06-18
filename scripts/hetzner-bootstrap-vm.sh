@@ -98,6 +98,12 @@ sudo make examples
 echo "[remote] installing /usr/local/bin/bpfcompat"
 sudo install -m 0755 ./bin/bpfcompat /usr/local/bin/bpfcompat
 
+# The repo tree is root-owned (cloned via sudo) and the service runs as the
+# unprivileged bpfcompat-demo user with WorkingDirectory here. It writes a few
+# runtime dirs relative to the repo (UI report copies, API state), so make those
+# writable by the service user. VM run overlays go to the separate --workdir.
+sudo install -d -o bpfcompat-demo -g bpfcompat-demo /opt/bpfcompat-src/reports /opt/bpfcompat-src/.bpfcompat-api
+
 echo "[remote] installing demo serve systemd unit + env stub"
 sudo install -d -m 0750 /etc/bpfcompat
 if [ ! -f /etc/bpfcompat/serve.env ]; then
