@@ -1,0 +1,36 @@
+[Unit]
+Description=bpfcompat public demo web/API server
+Documentation=https://github.com/kernel-guard/bpfcompat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=bpfcompat-demo
+Group=bpfcompat-demo
+# The demo boots real QEMU/KVM guests, so the service user needs /dev/kvm.
+SupplementaryGroups=kvm
+EnvironmentFile=/etc/bpfcompat/serve.env
+WorkingDirectory=/var/lib/bpfcompat-demo
+ExecStart=/usr/local/bin/bpfcompat serve --addr 127.0.0.1:8080 --workdir /var/lib/bpfcompat-demo
+Restart=on-failure
+RestartSec=3
+
+# Hardening compatible with running QEMU/KVM. Note this is deliberately looser
+# than bpfcompat-agent.service: the demo spawns qemu, which needs /dev/kvm and a
+# writable run tree, so ProtectSystem=strict and MemoryDenyWriteExecute are NOT
+# used here (they break KVM and the TCG JIT respectively).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/bpfcompat-demo
+StateDirectory=bpfcompat-demo
+LogsDirectory=bpfcompat-demo
+DeviceAllow=/dev/kvm rw
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

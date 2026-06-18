@@ -405,6 +405,12 @@ azure-configure-tls:
 azure-rotate-registry-secret:
 	bash scripts/azure-rotate-registry-secret.sh
 
+hetzner-bootstrap-vm:
+	bash scripts/hetzner-bootstrap-vm.sh
+
+hetzner-configure-tls:
+	bash scripts/hetzner-configure-tls.sh
+
 clean:
 	rm -rf bin
 	rm -rf .bpfcompat
