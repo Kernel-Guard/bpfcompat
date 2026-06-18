@@ -21,6 +21,9 @@ HETZNER_USER="${HETZNER_USER:-root}"
 HETZNER_SSH_KEY="${HETZNER_SSH_KEY:-}"
 BPFCOMPAT_REPO_URL="${BPFCOMPAT_REPO_URL:-https://github.com/Kernel-Guard/bpfcompat.git}"
 BPFCOMPAT_REPO_REF="${BPFCOMPAT_REPO_REF:-main}"
+# bpfcompat needs a modern Go (see go.mod); distro packages lag, so we install
+# the official toolchain. Keep this in sync with the go directive in go.mod.
+GO_VERSION="${GO_VERSION:-1.25.0}"
 
 if [[ -z "$HETZNER_HOST" ]]; then
   echo "[hetzner-bootstrap-vm] set HETZNER_HOST first" >&2
@@ -46,9 +49,19 @@ sudo apt-get install -y \
   clang llvm libbpf-dev libelf-dev zlib1g-dev zstd \
   qemu-system-x86 qemu-utils qemu-kvm openssh-client
 
-if ! command -v go >/dev/null 2>&1; then
-  sudo apt-get install -y golang
+# bpfcompat requires Go ${GO_VERSION}; Ubuntu's apt golang is too old, so install
+# the official toolchain to /usr/local/go and symlink it onto the default PATH
+# (non-interactive ssh sessions do not source /etc/profile.d).
+if ! { command -v go >/dev/null 2>&1 && go version | grep -q "go${GO_VERSION} "; }; then
+  echo "[remote] installing Go ${GO_VERSION}"
+  curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz
+  sudo rm -rf /usr/local/go
+  sudo tar -C /usr/local -xzf /tmp/go.tgz
+  sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go
+  sudo ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+  rm -f /tmp/go.tgz
 fi
+go version
 
 # Bare metal MUST expose /dev/kvm. If it is missing the box is not suitable for
 # the demo (no native virt) -- fail loudly rather than silently fall back to TCG.

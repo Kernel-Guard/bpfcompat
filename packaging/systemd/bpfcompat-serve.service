@@ -11,8 +11,11 @@ Group=bpfcompat-demo
 # The demo boots real QEMU/KVM guests, so the service user needs /dev/kvm.
 SupplementaryGroups=kvm
 EnvironmentFile=/etc/bpfcompat/serve.env
-WorkingDirectory=/var/lib/bpfcompat-demo
-ExecStart=/usr/local/bin/bpfcompat serve --addr 127.0.0.1:8080 --workdir /var/lib/bpfcompat-demo
+# WorkingDirectory is the cloned repo so relative data paths (matrices/, vm/
+# profiles, examples) resolve; run artifacts are written to the writable
+# --workdir state dir instead.
+WorkingDirectory=/opt/bpfcompat-src
+ExecStart=/usr/local/bin/bpfcompat serve --addr 127.0.0.1:8080 --workdir /var/lib/bpfcompat-demo --matrix matrices/mvp.yaml
 Restart=on-failure
 RestartSec=3
 
