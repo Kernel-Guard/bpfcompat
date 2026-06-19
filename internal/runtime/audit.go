@@ -147,8 +147,8 @@ type DecisionEvent struct {
 
 type DecisionPersistResult struct {
 	DecisionID      string        `json:"decision_id"`
-	TracePath       string        `json:"trace_path"`
-	EventStreamPath string        `json:"event_stream_path"`
+	TracePath       string        `json:"trace_path,omitempty"`
+	EventStreamPath string        `json:"event_stream_path,omitempty"`
 	Event           DecisionEvent `json:"event"`
 }
 

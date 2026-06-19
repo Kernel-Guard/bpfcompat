@@ -921,6 +921,34 @@ func TestRuntimeDecisionsRedactTracePath(t *testing.T) {
 	}
 }
 
+// TestAttachRuntimeAuditRedactsHostPaths confirms select/fetch responses do not
+// leak absolute host audit paths when redaction is on (the demo posture, where
+// runtime delivery can be anonymous).
+func TestAttachRuntimeAuditRedactsHostPaths(t *testing.T) {
+	workDir := t.TempDir()
+	trace := runtime.DecisionTrace{Source: "api", Operation: "fetch", ArtifactName: "aegis", Status: "success"}
+
+	t.Setenv(envRedactRuntime, "true")
+	resp := map[string]any{}
+	attachRuntimeAudit(resp, workDir, trace)
+	audit, ok := resp["audit"].(runtime.DecisionPersistResult)
+	if !ok {
+		t.Fatalf("expected audit in response, got %#v", resp["audit"])
+	}
+	if audit.TracePath != "" || audit.EventStreamPath != "" || audit.Event.TracePath != "" {
+		t.Fatalf("expected host paths redacted, got trace=%q stream=%q event=%q",
+			audit.TracePath, audit.EventStreamPath, audit.Event.TracePath)
+	}
+
+	t.Setenv(envRedactRuntime, "false")
+	resp2 := map[string]any{}
+	attachRuntimeAudit(resp2, workDir, trace)
+	audit2 := resp2["audit"].(runtime.DecisionPersistResult)
+	if audit2.TracePath == "" {
+		t.Fatalf("expected trace_path present when redaction is disabled")
+	}
+}
+
 // TestReadEndpointsAllowAuthenticated confirms that supplying the configured
 // API key restores access to the read surface after H-1b's auth gate.
 func TestReadEndpointsAllowAuthenticated(t *testing.T) {
