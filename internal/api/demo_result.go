@@ -1,8 +1,12 @@
 package api
 
 import (
+	"fmt"
+	"html"
 	"net/http"
 	"strings"
+
+	"github.com/kernel-guard/bpfcompat/internal/registry"
 )
 
 func (s *Server) handleDemoResult(w http.ResponseWriter, r *http.Request) {
@@ -13,7 +17,58 @@ func (s *Server) handleDemoResult(w http.ResponseWriter, r *http.Request) {
 	nonce := generateCSPNonce(r)
 	w.Header().Set("Content-Security-Policy", htmlCSPWithNonce(nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(strings.ReplaceAll(demoResultHTML, "__CSP_NONCE__", nonce)))
+	page := strings.ReplaceAll(demoResultHTML, "__CSP_NONCE__", nonce)
+	page = strings.Replace(page, "__OG_META__", s.resultOGMeta(r), 1)
+	_, _ = w.Write([]byte(page))
+}
+
+// resultOGMeta server-renders Open Graph / Twitter card tags for a shared
+// result link so it unfurls richly in Slack/Discord/social. The summary is
+// computed per run_id at request time (crawlers do not run the page's JS).
+func (s *Server) resultOGMeta(r *http.Request) string {
+	title := "bpfcompat — eBPF kernel compatibility"
+	desc := "Real load/attach evidence across distro kernels, booted in disposable VMs."
+
+	runID := strings.TrimSpace(r.URL.Query().Get("run_id"))
+	if runID != "" {
+		if record, err := registry.GetRunRecord(s.cfg.WorkDir, runID); err == nil {
+			if total, passed, requiredFailed, ok := s.badgeCounts(runID); ok {
+				name := strings.TrimSpace(record.ArtifactName)
+				if name == "" {
+					name = "artifact"
+				}
+				title = fmt.Sprintf("bpfcompat: %s — %d/%d kernels compatible", name, passed, total)
+				if requiredFailed > 0 {
+					desc = fmt.Sprintf("%d required kernel(s) failed. ", requiredFailed) + desc
+				} else {
+					desc = "All required kernels passed. " + desc
+				}
+			}
+		}
+	}
+
+	scheme := "https"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else if r.TLS == nil {
+		scheme = "http"
+	}
+	pageURL := scheme + "://" + r.Host + r.URL.RequestURI()
+
+	t := html.EscapeString(title)
+	d := html.EscapeString(desc)
+	u := html.EscapeString(pageURL)
+	return strings.Join([]string{
+		`<meta name="description" content="` + d + `">`,
+		`<meta property="og:type" content="website">`,
+		`<meta property="og:site_name" content="bpfcompat">`,
+		`<meta property="og:title" content="` + t + `">`,
+		`<meta property="og:description" content="` + d + `">`,
+		`<meta property="og:url" content="` + u + `">`,
+		`<meta name="twitter:card" content="summary">`,
+		`<meta name="twitter:title" content="` + t + `">`,
+		`<meta name="twitter:description" content="` + d + `">`,
+	}, "\n")
 }
 
 const demoResultHTML = `<!doctype html>
@@ -22,6 +77,7 @@ const demoResultHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>bpfcompat Results</title>
+__OG_META__
   <style nonce="__CSP_NONCE__">
     :root {
       --bg: #0b1220;
@@ -114,7 +170,10 @@ const demoResultHTML = `<!doctype html>
         <h1>Artifact Compatibility Result</h1>
         <div class="muted">Mobile-friendly evidence snapshot: where this BPF object loads, where it fails, and why.</div>
       </div>
-      <button class="btn" type="button" id="refreshBtn">Refresh</button>
+      <div class="row">
+        <button class="btn" type="button" id="shareBtn">Copy link</button>
+        <button class="btn" type="button" id="refreshBtn">Refresh</button>
+      </div>
     </div>
 
     <div class="card">
@@ -403,6 +462,17 @@ const demoResultHTML = `<!doctype html>
     }
 
     byId("refreshBtn").addEventListener("click", loadPage);
+    byId("shareBtn").addEventListener("click", async () => {
+      const btn = byId("shareBtn");
+      const original = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        btn.textContent = "Copied";
+      } catch (e) {
+        btn.textContent = "Copy failed";
+      }
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
     loadPage();
   </script>
 </body>
