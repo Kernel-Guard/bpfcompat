@@ -547,6 +547,15 @@ const uiHTML = `<!doctype html>
       background: var(--primary-active-bg);
       color: var(--info-text);
     }
+    .matrix-status-pill.pending { color: var(--fg-subtle); }
+    @keyframes bpfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .matrix-status-pill.running { animation: bpfPulse 1.1s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .matrix-status-pill.running { animation: none; } }
+    .live-caption {
+      font-size: 12px;
+      color: var(--info-text);
+      margin-bottom: 6px;
+    }
     .example-panel {
       border: 1px dashed var(--border-strong);
       border-radius: 6px;
@@ -1659,14 +1668,54 @@ programs:
 
       progressProfilesEl.innerHTML = "";
       const statuses = (job && job.profile_statuses) || {};
-      const ids = Object.keys(statuses).sort();
-      ids.forEach((id) => {
-        const pill = document.createElement("span");
-        const state = String(statuses[id] || "").trim() || "pending";
-        pill.className = "progress-pill " + state;
-        pill.textContent = id + ": " + state;
-        progressProfilesEl.appendChild(pill);
+      renderLiveMatrix(statuses);
+    }
+
+    // "Watch it boot": render the per-kernel statuses as a live matrix that
+    // fills in cell-by-cell as each disposable VM boots and loads the object.
+    // Running cells pulse. Replaced by the full report on completion.
+    function renderLiveMatrix(statuses) {
+      const container = byId("summary");
+      if (!container) return;
+      const ids = Object.keys(statuses || {}).sort();
+      if (ids.length === 0) return;
+
+      const cap = document.createElement("div");
+      cap.className = "live-caption";
+      const running = ids.filter((id) => normalizeStatus(statuses[id]) === "running").length;
+      const done = ids.filter((id) => ["pass", "fail", "error", "infra_error"].includes(normalizeStatus(statuses[id]))).length;
+      cap.textContent = "Booting real kernels in disposable VMs — " + done + "/" + ids.length + " done" + (running ? ", " + running + " loading now…" : "…");
+
+      const wrap = document.createElement("div");
+      wrap.className = "matrix-wrap";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Target", "Status"].forEach((name) => {
+        const th = document.createElement("th");
+        th.textContent = name;
+        headRow.appendChild(th);
       });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const order = { running: 0, pending: 1, fail: 2, error: 2, infra_error: 2, pass: 3 };
+      const tbody = document.createElement("tbody");
+      ids.slice().sort((a, b) => {
+        const sa = order[normalizeStatus(statuses[a])] ?? 1;
+        const sb = order[normalizeStatus(statuses[b])] ?? 1;
+        return sa !== sb ? sa - sb : a.localeCompare(b);
+      }).forEach((id) => {
+        const st = String(statuses[id] || "pending").trim() || "pending";
+        const tr = document.createElement("tr");
+        tr.classList.add("matrix-row-" + normalizeStatus(st));
+        appendCell(tr, id);
+        appendStatusCell(tr, st);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      container.replaceChildren(cap, wrap);
     }
 
     async function decodeJSONResponse(res) {
