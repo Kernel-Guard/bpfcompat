@@ -110,7 +110,7 @@ func renderBadgeSVG(label, message, color string) string {
 	em := escapeXML(message)
 	// Standard shields "flat" geometry: text is drawn at 10x scale then scaled
 	// down 0.1 for crisp rendering, with a shadow text underneath.
-	lcx := lw * 5         // label centre, x10
+	lcx := lw * 5 // label centre, x10
 	mcx := (lw + mw/2) * 10
 	ltl := (lw - 10) * 10 // textLength, x10
 	mtl := (mw - 10) * 10
