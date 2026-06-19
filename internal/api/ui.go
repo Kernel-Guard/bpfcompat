@@ -35,6 +35,32 @@ const uiHTML = `<!doctype html>
       --warning-text: #f1c21b;
       --warning-bg: #2a2410;
     }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --layer: #f4f4f4;
+      --layer-hover: #e8e8e8;
+      --field: #ffffff;
+      --border: #d1d1d1;
+      --border-strong: #a8a8a8;
+      --fg: #161616;
+      --fg-muted: #525252;
+      --fg-subtle: #6f6f6f;
+      --primary: #0f62fe;
+      --primary-hover: #0043ce;
+      --primary-active-bg: #d0e2ff;
+      --info-text: #0043ce;
+      --accent: #0ca678;
+      --success: #24a148;
+      --success-text: #198038;
+      --success-bg: #defbe6;
+      --danger: #da1e28;
+      --danger-text: #da1e28;
+      --danger-bg: #fff1f1;
+      --warning: #f1c21b;
+      --warning-text: #8e6a00;
+      --warning-bg: #fcf4d6;
+    }
     body {
       margin: 0;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -48,6 +74,29 @@ const uiHTML = `<!doctype html>
       padding: 10px 14px;
       font-size: 12px;
       letter-spacing: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .theme-toggle {
+      width: auto;
+      flex: none;
+      border: 1px solid var(--border-strong);
+      background: transparent;
+      color: var(--warning-text);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .example-run-btn {
+      width: auto;
+      margin-top: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
     }
     .layout {
       display: grid;
@@ -799,7 +848,10 @@ const uiHTML = `<!doctype html>
 </style>
 </head>
 <body>
-  <div class="preview-banner">Technical Preview — CI-first eBPF compatibility gate. Production runtime loading remains disabled in the public demo.</div>
+  <div class="preview-banner">
+    <span>Technical Preview — CI-first eBPF compatibility gate. Production runtime loading remains disabled in the public demo.</span>
+    <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark theme">Light</button>
+  </div>
   <div class="layout">
     <div class="panel">
       <h2>BPF Compatibility Gate</h2>
@@ -2663,7 +2715,17 @@ programs:
       tag.className = "example-tag";
       tag.textContent = "Example output";
       cap.appendChild(tag);
-      cap.appendChild(document.createTextNode("This is what a gate run produces. Pick targets, drop a .bpf.o, and run to generate your own."));
+      cap.appendChild(document.createTextNode("This is what a gate run produces. Pick targets, drop a .bpf.o, and run to generate your own — or run this live in one click:"));
+      const runLive = document.createElement("button");
+      runLive.type = "button";
+      runLive.className = "secondary example-run-btn";
+      runLive.textContent = "Run this example live ▸";
+      runLive.addEventListener("click", () => {
+        const b = byId("trySampleBtn");
+        if (b) b.click();
+      });
+      cap.appendChild(document.createElement("br"));
+      cap.appendChild(runLive);
 
       const counts = document.createElement("div");
       counts.className = "matrix-counts";
@@ -3166,8 +3228,33 @@ programs:
       }
     });
 
+    function setTheme(theme) {
+      const light = theme === "light";
+      if (light) {
+        document.documentElement.setAttribute("data-theme", "light");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      try { localStorage.setItem("bpfcompat-theme", light ? "light" : "dark"); } catch (e) {}
+      const btn = byId("themeToggle");
+      if (btn) btn.textContent = light ? "Dark" : "Light";
+    }
+    function initTheme() {
+      let stored = "dark";
+      try { stored = localStorage.getItem("bpfcompat-theme") || "dark"; } catch (e) {}
+      setTheme(stored);
+      const btn = byId("themeToggle");
+      if (btn) {
+        btn.addEventListener("click", () => {
+          const isLight = document.documentElement.getAttribute("data-theme") === "light";
+          setTheme(isLight ? "dark" : "light");
+        });
+      }
+    }
+
     (async () => {
       try {
+        initTheme();
         resetProgress();
         await refreshAPIConfig();
         await loadProfiles();
