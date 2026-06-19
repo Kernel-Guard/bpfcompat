@@ -748,6 +748,15 @@ func (s *Server) handleRuntimeDecisions(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("read runtime decision history: %v", err))
 		return
 	}
+	// trace_path is an absolute host path to the per-decision audit file. It is
+	// not retrievable via the API and leaks the server's workdir layout, so on
+	// the public/redacted posture strip it from the listing (consistent with the
+	// report sanitizer). Operators with shell access can read the file directly.
+	if redactRuntimeDetailsEnabled() {
+		for i := range events {
+			events[i].TracePath = ""
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"records": events})
 }
 

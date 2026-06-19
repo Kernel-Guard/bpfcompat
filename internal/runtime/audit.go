@@ -142,7 +142,7 @@ type DecisionEvent struct {
 	RequestedVersion string `json:"requested_version,omitempty"`
 	SelectedVersion  string `json:"selected_version,omitempty"`
 	ExecutionStatus  string `json:"execution_status,omitempty"`
-	TracePath        string `json:"trace_path"`
+	TracePath        string `json:"trace_path,omitempty"`
 }
 
 type DecisionPersistResult struct {
