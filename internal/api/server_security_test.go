@@ -866,6 +866,61 @@ func TestReadEndpointsRejectUnauthenticated(t *testing.T) {
 	}
 }
 
+// TestRuntimeDecisionsRedactTracePath confirms the public decisions listing
+// strips the absolute host trace_path when redaction is on (demo posture), and
+// keeps it when redaction is off. trace_path leaks the server workdir layout and
+// is not retrievable via the API.
+func TestRuntimeDecisionsRedactTracePath(t *testing.T) {
+	t.Setenv(envAllowAnonymousRead, "true")
+	workDir := t.TempDir()
+	if _, err := runtime.PersistDecisionTrace(workDir, runtime.DecisionTrace{
+		Source:       "api",
+		Operation:    "select",
+		ArtifactName: "aegis",
+		Status:       "success",
+	}); err != nil {
+		t.Fatalf("persist decision trace: %v", err)
+	}
+	s := &Server{cfg: Config{WorkDir: workDir}}
+
+	decode := func() []runtime.DecisionEvent {
+		req := httptest.NewRequest(http.MethodGet, "/api/runtime/decisions", nil)
+		rec := httptest.NewRecorder()
+		s.handleRuntimeDecisions(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Records []runtime.DecisionEvent `json:"records"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode decisions: %v", err)
+		}
+		if len(body.Records) == 0 {
+			t.Fatalf("expected at least one decision record")
+		}
+		return body.Records
+	}
+
+	t.Setenv(envRedactRuntime, "true")
+	for _, rec := range decode() {
+		if rec.TracePath != "" {
+			t.Fatalf("expected trace_path redacted, got %q", rec.TracePath)
+		}
+	}
+
+	t.Setenv(envRedactRuntime, "false")
+	sawPath := false
+	for _, rec := range decode() {
+		if rec.TracePath != "" {
+			sawPath = true
+		}
+	}
+	if !sawPath {
+		t.Fatalf("expected trace_path present when redaction is disabled")
+	}
+}
+
 // TestReadEndpointsAllowAuthenticated confirms that supplying the configured
 // API key restores access to the read surface after H-1b's auth gate.
 func TestReadEndpointsAllowAuthenticated(t *testing.T) {
