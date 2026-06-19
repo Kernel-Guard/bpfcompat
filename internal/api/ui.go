@@ -2750,6 +2750,8 @@ programs:
         if (mode === "artifact") {
           if (byId("artifactFile").files[0]) {
             fd.append("artifact_file", byId("artifactFile").files[0]);
+          } else {
+            throw new Error("Choose a compiled BPF object (.bpf.o) to validate, or switch to the source tab.");
           }
         } else {
           if (byId("sourceFile").files[0]) {
@@ -2757,6 +2759,9 @@ programs:
           }
           if (byId("sourceCode").value.trim()) {
             fd.append("source_code", byId("sourceCode").value);
+          }
+          if (!byId("sourceFile").files[0] && !byId("sourceCode").value.trim()) {
+            throw new Error("Provide BPF source (upload a .c file or paste source code) before running.");
           }
           if (byId("clangFlags").value.trim()) {
             fd.append("clang_flags", byId("clangFlags").value.trim());
