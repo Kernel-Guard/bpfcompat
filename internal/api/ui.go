@@ -89,24 +89,6 @@ const uiHTML = `<!doctype html>
     .advanced-settings .section {
       border-bottom: 0;
     }
-    .workflow-strip {
-      display: grid;
-      gap: 8px;
-    }
-    .workflow-steps {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 6px;
-    }
-    .workflow-step {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      padding: 7px 8px;
-      font-size: 12px;
-      color: var(--fg-muted);
-      text-align: center;
-    }
     .run-snapshot {
       position: sticky;
       top: 0;
@@ -742,9 +724,6 @@ const uiHTML = `<!doctype html>
         height: auto;
         grid-template-rows: auto;
       }
-      .workflow-steps {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
       .matrix-counts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -764,7 +743,6 @@ const uiHTML = `<!doctype html>
       .section {
         padding: 10px;
       }
-      .workflow-steps,
       .run-snapshot-grid,
       .suite-stats,
       .row,
@@ -824,15 +802,6 @@ const uiHTML = `<!doctype html>
           </div>
         </div>
       </div>
-      <div class="section workflow-strip">
-        <div class="workflow-steps">
-          <div class="workflow-step">Targets</div>
-          <div class="workflow-step">BPF</div>
-          <div class="workflow-step">Gate</div>
-          <div class="workflow-step">Matrix</div>
-        </div>
-      </div>
-
       <div class="section">
         <div class="step-title">
           <strong>1. Select Targets</strong>
