@@ -884,7 +884,7 @@ func TestRuntimeDecisionsRedactTracePath(t *testing.T) {
 	s := &Server{cfg: Config{WorkDir: workDir}}
 
 	decode := func() []runtime.DecisionEvent {
-		req := httptest.NewRequest(http.MethodGet, "/api/runtime/decisions", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/runtime/decisions", http.NoBody)
 		rec := httptest.NewRecorder()
 		s.handleRuntimeDecisions(rec, req)
 		if rec.Code != http.StatusOK {
