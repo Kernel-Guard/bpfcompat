@@ -516,6 +516,7 @@ func (s *Server) serve(ctx context.Context) error {
 	mux.HandleFunc("/api/v1/openapi.yaml", handleOpenAPISpec)
 	mux.HandleFunc("/results", s.handleDemoResult)
 	mux.HandleFunc("/demo-result", s.handleDemoResult)
+	mux.HandleFunc("/badge/", s.handleBadge)
 	if metricsEnabled() {
 		mux.Handle("/metrics", s.handleMetrics())
 	}
