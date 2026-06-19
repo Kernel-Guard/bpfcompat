@@ -35,6 +35,29 @@ export HETZNER_HOST=<server-ip>
 make hetzner-bootstrap-vm
 ```
 
+## 1b) Install the "Try our aegis sample" artifact
+
+The empty-state **"Try our aegis sample"** button serves
+`examples/aegis-live/aegis.bpf.o`. That object is **git-ignored** (we never
+commit built `.bpf.o`s), so a fresh checkout does not contain it and the
+`/api/v1/sample/aegis/artifact` endpoint 404s until you copy it out-of-band.
+
+Copy the sample to a path that survives re-provisioning (the state dir is not
+wiped by re-clones) and point the server at it via `BPFCOMPAT_SAMPLE_ARTIFACT`:
+
+```bash
+scp examples/aegis-live/aegis.bpf.o \
+  root@$HETZNER_HOST:/var/lib/bpfcompat-demo/sample-aegis.bpf.o
+ssh root@$HETZNER_HOST '
+  chown bpfcompat-demo:bpfcompat-demo /var/lib/bpfcompat-demo/sample-aegis.bpf.o
+  chmod 0644 /var/lib/bpfcompat-demo/sample-aegis.bpf.o
+  grep -q "^BPFCOMPAT_SAMPLE_ARTIFACT=" /etc/bpfcompat/serve.env \
+    && sed -i "s|^BPFCOMPAT_SAMPLE_ARTIFACT=.*|BPFCOMPAT_SAMPLE_ARTIFACT=/var/lib/bpfcompat-demo/sample-aegis.bpf.o|" /etc/bpfcompat/serve.env \
+    || echo "BPFCOMPAT_SAMPLE_ARTIFACT=/var/lib/bpfcompat-demo/sample-aegis.bpf.o" >> /etc/bpfcompat/serve.env'
+```
+
+(If the unit is already running, `systemctl restart bpfcompat-serve` after.)
+
 ## 2) Set the write key and start the demo server
 
 The server binds `127.0.0.1:8080` only. Anonymous visitors may validate and read
