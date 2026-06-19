@@ -423,6 +423,15 @@ func attachRuntimeAudit(resp map[string]any, workDir string, trace runtime.Decis
 		resp["audit_error"] = err.Error()
 		return
 	}
+	// trace_path / event_stream_path are absolute host paths to the audit files.
+	// They are not retrievable via the API and leak the server's workdir layout,
+	// so strip them from the response under the public/redacted posture (the
+	// runtime delivery endpoints can be anonymous on the demo).
+	if redactRuntimeDetailsEnabled() {
+		audit.TracePath = ""
+		audit.EventStreamPath = ""
+		audit.Event.TracePath = ""
+	}
 	resp["audit"] = audit
 }
 
