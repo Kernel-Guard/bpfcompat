@@ -498,6 +498,30 @@ const uiHTML = `<!doctype html>
       background: var(--primary-active-bg);
       color: var(--info-text);
     }
+    .example-panel {
+      border: 1px dashed var(--border-strong);
+      border-radius: 6px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .example-caption {
+      font-size: 12px;
+      color: var(--fg-subtle);
+      line-height: 1.35;
+    }
+    .example-tag {
+      display: inline-block;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--fg-muted);
+      margin-right: 6px;
+    }
     .ci-mode-panel {
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -2615,6 +2639,73 @@ programs:
       }
     }
 
+    // Empty-state hero: before any run, show a clearly-labelled example matrix so
+    // first-time visitors immediately see the payoff (the actual deliverable).
+    // Mirrors the real Falco modern_bpf boundary (5.4 ringbuf) so it doubles as
+    // honest, representative output. Cleared as soon as a real run starts.
+    function renderExampleMatrix() {
+      const container = byId("summary");
+      if (!container || container.children.length) return;
+      const rows = [
+        { p: "ubuntu-24.04-6.8", e: "ubuntu 24.04 • 6.8.0", s: "pass", r: true, why: "loaded + attached" },
+        { p: "debian-12-6.1", e: "debian 12 • 6.1.0", s: "pass", r: true, why: "loaded + attached" },
+        { p: "ubuntu-22.04-5.15", e: "ubuntu 22.04 • 5.15.0", s: "pass", r: true, why: "loaded + attached" },
+        { p: "debian-11-5.10", e: "debian 11 • 5.10.0", s: "partial", r: false, why: "loaded; attach limited" },
+        { p: "ubuntu-20.04-5.4", e: "ubuntu 20.04 • 5.4.0", s: "fail", r: false, why: "UNSUPPORTED_MAP_TYPE: ringbuf needs ≥ 5.8" }
+      ];
+
+      const panel = document.createElement("div");
+      panel.className = "example-panel";
+
+      const cap = document.createElement("div");
+      cap.className = "example-caption";
+      const tag = document.createElement("span");
+      tag.className = "example-tag";
+      tag.textContent = "Example output";
+      cap.appendChild(tag);
+      cap.appendChild(document.createTextNode("This is what a gate run produces. Pick targets, drop a .bpf.o, and run to generate your own."));
+
+      const counts = document.createElement("div");
+      counts.className = "matrix-counts";
+      appendMatrixCount(counts, "required passed", 3, "pass");
+      appendMatrixCount(counts, "required failed", 0, "pass");
+      appendMatrixCount(counts, "optional failed", 1, "check");
+      appendMatrixCount(counts, "targets checked", 5);
+
+      const wrap = document.createElement("div");
+      wrap.className = "matrix-wrap";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Target", "Distro / kernel", "Pass/Fail", "Required", "Reason"].forEach((name) => {
+        const th = document.createElement("th");
+        th.textContent = name;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((t) => {
+        const tr = document.createElement("tr");
+        tr.classList.add("matrix-row-" + normalizeStatus(t.s));
+        if (t.r && t.s !== "pass") {
+          tr.classList.add("matrix-required-fail");
+        }
+        appendCell(tr, t.p);
+        appendCell(tr, t.e);
+        appendStatusCell(tr, t.s);
+        appendCell(tr, t.r ? "yes" : "optional");
+        appendCell(tr, t.why);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+
+      panel.replaceChildren(cap, counts, wrap);
+      container.replaceChildren(panel);
+    }
+
     document.querySelectorAll("button[data-preset]").forEach((btn) => {
       btn.addEventListener("click", () => applyTargetPreset(btn.dataset.preset));
     });
@@ -2735,6 +2826,7 @@ programs:
           throw new Error("Validation is not open on this server. Use the public Results page or run the CLI locally.");
         }
         resetProgress();
+        byId("summary").replaceChildren();
         setStatus("Starting validation...");
         setVerdict("running", "Running compatibility gate", "Validating selected targets. Required failures will be shown first.");
         setGateDecision("neutral", "Running selected target matrix.");
@@ -3083,6 +3175,7 @@ programs:
         switchMode("artifact");
         switchBPFInputMode("single");
         setRuntimeMode("probe");
+        renderExampleMatrix();
       } catch (err) {
         setStatus(String(err), true);
       }
