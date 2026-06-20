@@ -98,6 +98,58 @@ const uiHTML = `<!doctype html>
       padding: 5px 10px;
       font-size: 12px;
     }
+    .banner-nav { display: flex; align-items: center; gap: 14px; flex: none; }
+    .banner-nav a {
+      color: var(--warning-text);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .banner-nav a:hover { text-decoration: underline; }
+    .site-footer {
+      border-top: 1px solid var(--border);
+      background: var(--layer);
+      padding: 28px 16px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .footer-grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.2fr 1.4fr 1fr;
+      gap: 28px;
+    }
+    .site-footer h3 {
+      font-size: 12px;
+      color: var(--fg);
+      margin: 0 0 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .site-footer ol { margin: 0; padding-left: 18px; display: grid; gap: 7px; line-height: 1.4; }
+    .site-footer a { color: var(--primary); text-decoration: none; }
+    .site-footer a:hover { text-decoration: underline; }
+    .footer-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+    .site-footer details { border-bottom: 1px solid var(--border); padding: 8px 0; }
+    .site-footer summary { cursor: pointer; color: var(--fg); font-weight: 600; list-style: none; }
+    .site-footer summary::-webkit-details-marker { display: none; }
+    .site-footer details p { margin: 8px 0 0; line-height: 1.45; color: var(--fg-muted); }
+    .footer-bottom {
+      max-width: 1100px;
+      margin: 24px auto 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--fg-subtle);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: space-between;
+    }
+    @media (max-width: 820px) { .footer-grid { grid-template-columns: 1fr; gap: 22px; } }
+    @media (max-width: 640px) { .banner-nav a { display: none; } }
     .layout {
       display: grid;
       grid-template-columns: 420px 1fr;
@@ -859,7 +911,12 @@ const uiHTML = `<!doctype html>
 <body>
   <div class="preview-banner">
     <span>Technical Preview — CI-first eBPF compatibility gate. Production runtime loading remains disabled in the public demo.</span>
-    <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark theme">Light</button>
+    <nav class="banner-nav">
+      <a href="#how-it-works">How it works</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/Kernel-Guard/bpfcompat" target="_blank" rel="noopener noreferrer">Source &#8599;</a>
+      <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark theme">Light</button>
+    </nav>
   </div>
   <div class="layout">
     <div class="panel">
@@ -1268,6 +1325,42 @@ programs:
       </div>
     </div>
   </div>
+
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <section id="how-it-works">
+        <h3>How it works</h3>
+        <ol>
+          <li>Provide compiled BPF object(s) and the kernel matrix you ship to.</li>
+          <li>Each profile boots as a throwaway QEMU/KVM VM from a clean cloud image — nothing touches a shared host.</li>
+          <li>A libbpf validator loads (and optionally attaches) your object inside the guest — real evidence, not a static guess.</li>
+          <li>Results roll into a pass/fail matrix with classified reasons; in CI a regression exits non-zero.</li>
+        </ol>
+      </section>
+      <section id="faq">
+        <h3>FAQ</h3>
+        <details><summary>What does a "pass" mean?</summary><p>The object loaded — and attached, if you chose load+attach — inside a real VM running that exact kernel. It is not a static or heuristic check.</p></details>
+        <details><summary>Is my BPF object uploaded or stored?</summary><p>On this public demo it is processed in a disposable VM and only a sanitized report is kept. In your own CI via the GitHub Action, the artifact never leaves your runner.</p></details>
+        <details><summary>Which kernels and architectures are covered?</summary><p>A multi-distro 5.x–6.x matrix (Ubuntu, Debian, and more) on x86_64 and ARM64. Each profile records kernel version and BTF availability.</p></details>
+        <details><summary>What do classifications like MISSING_BTF mean?</summary><p>They name why an object failed on a kernel — missing BTF, unsupported map/program type, or a CO-RE relocation mismatch — so you know exactly what to fix or fall back to.</p></details>
+        <details><summary>Is it open source? Can I self-host?</summary><p>Yes — Apache-2.0. Run it locally with the CLI or in CI with the GitHub Action; no account required.</p></details>
+      </section>
+      <section>
+        <h3>Project</h3>
+        <ul class="footer-links">
+          <li><a href="https://github.com/Kernel-Guard/bpfcompat" target="_blank" rel="noopener noreferrer">View source on GitHub &#8599;</a></li>
+          <li><a href="https://github.com/Kernel-Guard/bpfcompat/tree/main/docs" target="_blank" rel="noopener noreferrer">Documentation &#8599;</a></li>
+          <li><a href="https://github.com/marketplace/actions/bpfcompat-ebpf-compatibility-gate" target="_blank" rel="noopener noreferrer">GitHub Action &#8599;</a></li>
+          <li><a href="/api/openapi.yaml" target="_blank" rel="noopener noreferrer">OpenAPI spec</a></li>
+          <li><a href="https://kernelguard.net/projects/bpfcompat/" target="_blank" rel="noopener noreferrer">kernelguard.net &#8599;</a></li>
+        </ul>
+      </section>
+    </div>
+    <div class="footer-bottom">
+      <span>bpfcompat — Apache-2.0 · boots real kernels, proves your eBPF loads.</span>
+      <span>Technical Preview</span>
+    </div>
+  </footer>
 
   <script nonce="__CSP_NONCE__">
     let mode = "artifact";
