@@ -19,7 +19,7 @@ Production-safe runtime loading and production multi-tenant SaaS require the sep
   - `external-cmd` for production key-management integration.
 - [ ] External signer health monitored when enabled.
 - [ ] KMS/HSM-backed signer integration and key rotation tested before production claims.
-- [ ] Build provenance generated for `bpfcompat` and validator binaries before production claims.
+- [x] Build provenance generated for `bpfcompat` and validator binaries before production claims (SLSA Build L3 via `actions/attest-build-provenance` on tag releases; see `docs/verifying-releases.md`).
 - [ ] Registry auth secret rotated on schedule (`make azure-rotate-registry-secret` when using Azure Key Vault).
 - [ ] Artifact storage is private and versioned (`make azure-provision-foundation` storage account baseline).
 

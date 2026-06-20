@@ -41,8 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write  # attach SBOM/release assets on tag builds
-      id-token: write  # cosign keyless signing
+      contents: write       # attach SBOM/release assets on tag builds
+      id-token: write       # cosign keyless signing + attestation OIDC
+      attestations: write   # SLSA build-provenance attestations (Sigstore/Rekor)
       packages: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -102,6 +103,23 @@ jobs:
           path: .
           format: cyclonedx-json
           output-file: dist/bpfcompat.sbom.cdx.json
+      # Non-falsifiable SLSA build provenance (Build L3): binds each binary's
+      # digest to the exact repo/commit/workflow that produced it, signed
+      # keylessly via OIDC and recorded in the public Sigstore transparency log.
+      # Verify with: gh attestation verify <file> --repo Kernel-Guard/bpfcompat
+      - name: Attest build provenance (tag releases only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            dist/bpfcompat-linux-amd64
+            dist/bpfcompat-validator-static-linux-amd64
+      - name: Attest SBOM (tag releases only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/bpfcompat-linux-amd64
+          sbom-path: dist/bpfcompat.sbom.cdx.json
       - name: Install cosign
         if: startsWith(github.ref, 'refs/tags/v')
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3

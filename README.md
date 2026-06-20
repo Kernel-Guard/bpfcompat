@@ -455,17 +455,17 @@ Operator guidance:
   pinned GitHub Actions, grouped weekly.
 - **Risk scoring:** OpenSSF Scorecard (`scorecard.yml`), published to the
   public Scorecard API (badge above).
-- **Signed releases:** tag builds produce a CycloneDX SBOM and cosign keyless
-  (Sigstore OIDC) signatures over the binaries, `SHA256SUMS`, and SBOM
-  (`release-artifacts.yml`). Verify with:
+- **Signed releases + SLSA provenance:** tag builds produce a CycloneDX SBOM,
+  cosign keyless (Sigstore OIDC) signatures over the binaries / `SHA256SUMS` /
+  SBOM, and **SLSA Build L3 build-provenance attestations** bound to the
+  producing commit and workflow (`release-artifacts.yml`). Quick check:
 
   ```bash
-  cosign verify-blob \
-    --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-    --certificate-identity-regexp 'https://github.com/Kernel-Guard/bpfcompat/.*' \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    SHA256SUMS
+  gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat
   ```
+
+  Full verification steps (provenance, cosign, SBOM) are in
+  [`docs/verifying-releases.md`](docs/verifying-releases.md).
 
 Maintainer-side repo settings (branch protection, secret-scanning push
 protection, OpenSSF Best Practices registration) are tracked in

@@ -62,7 +62,7 @@ Still not production:
 - No production KMS/HSM signer operation or monitored signer SLO.
 - No full tenant isolation proof across storage, reports, audit, secrets, jobs, and runtime decisions.
 - Controlled rollback, unload, and revocation drill evidence exists locally; customer identity-provider, tenant backup/restore, and offboarding drills are still missing.
-- No SLSA-style build provenance for `bpfcompat` and validator binaries.
+- ~~No SLSA-style build provenance for `bpfcompat` and validator binaries.~~ Done: SLSA Build L3 build-provenance + SBOM attestations are generated on tag releases (`release-artifacts.yml`); verification in `docs/verifying-releases.md`.
 
 ## Runtime Loading Production Gate
 
