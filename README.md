@@ -18,6 +18,9 @@ The core question is simple:
 **Live demo:** [bpfcompat.kernelguard.net](https://bpfcompat.kernelguard.net) — upload a
 `.bpf.o` and see the compatibility matrix.
 
+**Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
+in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
+
 ## Why not just rely on CO-RE / BTFHub?
 
 CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
