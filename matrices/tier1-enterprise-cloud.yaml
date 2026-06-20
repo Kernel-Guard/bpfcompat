@@ -8,6 +8,10 @@ profiles:
     required: false
   - id: rhel-8-4.18
     required: false
+  - id: almalinux-8-4.18
+    required: true
+  - id: rocky-8-4.18
+    required: true
   - id: oracle-linux-9-uek7-5.15
     required: true
   - id: oracle-linux-10-uek8-6.12

@@ -6,6 +6,10 @@ profiles:
     required: true
   - id: rhel-8-4.18
     required: false
+  - id: almalinux-8-4.18
+    required: false
+  - id: rocky-8-4.18
+    required: false
   - id: ubuntu-20.04-5.4
     required: true
   - id: ubuntu-20.04-minimal-5.4
