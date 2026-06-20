@@ -1,0 +1,15 @@
+[Unit]
+Description=bpfcompat demo health watchdog (probe + restart on hang)
+Documentation=https://github.com/Kernel-Guard/bpfcompat
+After=bpfcompat-serve.service
+Wants=bpfcompat-serve.service
+
+[Service]
+Type=oneshot
+# Optional overrides (health URL, webhook, etc.) live here if present.
+EnvironmentFile=-/etc/bpfcompat/healthcheck.env
+ExecStart=/usr/local/bin/bpfcompat-healthcheck
+# Restarting the serve unit needs privilege; keep the rest locked down.
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full

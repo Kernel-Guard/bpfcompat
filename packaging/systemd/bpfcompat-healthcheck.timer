@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the bpfcompat demo health watchdog periodically
+Documentation=https://github.com/Kernel-Guard/bpfcompat
+
+[Timer]
+# First run shortly after boot, then every 2 minutes.
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=bpfcompat-healthcheck.service
+
+[Install]
+WantedBy=timers.target

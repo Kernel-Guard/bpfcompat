@@ -99,6 +99,36 @@ curl -fsS https://bpfcompat.kernelguard.net/api/health
 
 Once green, tear down the Azure VM/resource group to stop any residual billing.
 
+## 6) Uptime monitoring
+
+Two layers — use both:
+
+**a) Self-hosted health watchdog (catches "process up but API hung").**
+Installs a systemd timer that probes `/api/health` every 2 minutes and restarts
+`bpfcompat-serve` if it is unhealthy after retries (and optionally posts to a
+webhook). This complements `Restart=on-failure`, which only reacts to a crashed
+process, not a hung one.
+
+```bash
+ssh root@$HETZNER_HOST '
+  install -m 0755 /opt/bpfcompat-src/scripts/healthcheck.sh /usr/local/bin/bpfcompat-healthcheck
+  install -m 0644 /opt/bpfcompat-src/packaging/systemd/bpfcompat-healthcheck.service /etc/systemd/system/
+  install -m 0644 /opt/bpfcompat-src/packaging/systemd/bpfcompat-healthcheck.timer /etc/systemd/system/
+  # optional alert webhook:
+  # printf "BPFCOMPAT_HEALTH_WEBHOOK=%s\n" "<slack/discord webhook>" > /etc/bpfcompat/healthcheck.env
+  systemctl daemon-reload
+  systemctl enable --now bpfcompat-healthcheck.timer
+  systemctl start bpfcompat-healthcheck.service   # run once now
+'
+```
+
+**b) External monitor (the real safety net — the box can't alert when it's down).**
+Point a free monitor at the public health URL (5-minute setup, no code):
+
+- URL: `https://bpfcompat.kernelguard.net/api/health` — expect HTTP `200`
+- Interval: 1–5 min; alert to email/Slack on failure
+- UptimeRobot, Better Stack, or Cloudflare Health Checks all work
+
 ## Security notes
 
 - Backend never listens publicly: `--addr 127.0.0.1:8080` behind Caddy + `ufw`.
