@@ -1,0 +1,97 @@
+name: stability-gate
+
+# Weekly release-readiness rollup. Aggregates the CI-safe stability signals into
+# a single dated READY / NOT-READY report (uploaded as an artifact and written to
+# the job summary), giving the "consecutive ready reports over time" trend that
+# docs/production-technical-track.md asks for.
+#
+# Scope: this is the lightweight, no-VM trend signal. VM-backed compatibility
+# proof is covered separately by multiarch-compatibility / latest-kernel /
+# bpfcompat-example-hosted; kernel freshness by kernel-freshness +
+# profile-catalog-maintenance. The full operator gate (`make production-tech-check`)
+# aggregates local VM/OSS evidence and is run by maintainers, not here.
+#
+# Actions pinned by commit SHA; least-privilege permissions.
+
+on:
+  schedule:
+    - cron: "13 5 * * 1" # Mondays 05:13 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.25.11"
+
+jobs:
+  stability:
+    name: Release-readiness rollup
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run stability checks and build report
+        id: gate
+        run: |
+          set -uo pipefail
+          ts="$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p stability
+          report="stability/stability-${ts}.md"
+          overall="READY"
+
+          run() {
+            local name="$1"; shift
+            if "$@" >/tmp/"${name}".log 2>&1; then
+              printf '| %s | ✅ PASS |\n' "$name" >> /tmp/rows.md
+            else
+              printf '| %s | ❌ FAIL |\n' "$name" >> /tmp/rows.md
+              overall="NOT-READY"
+            fi
+          }
+
+          : > /tmp/rows.md
+          run "build" go build ./...
+          run "vet" go vet ./...
+          run "gofmt" bash -c '[ -z "$(gofmt -l $(git ls-files "*.go" ":!:vendor/*"))" ]'
+          run "unit-tests" go test ./...
+          run "govulncheck" bash -c 'go run golang.org/x/vuln/cmd/govulncheck@latest ./...'
+
+          {
+            echo "# bpfcompat stability report"
+            echo
+            echo "- Timestamp (UTC): ${ts}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Overall: **${overall}**"
+            echo
+            echo "| Check | Result |"
+            echo "|---|---|"
+            cat /tmp/rows.md
+            echo
+            echo "_Scope: CI-safe checks only. VM-backed compatibility is covered by the compatibility-gate workflows; full operator gate aggregates local evidence (\`make production-tech-check\`)._"
+          } | tee "$report" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "overall=${overall}" >> "$GITHUB_OUTPUT"
+          echo "report=${report}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload stability report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: stability-report
+          path: stability/
+          if-no-files-found: error
+
+      - name: Fail if not ready
+        if: steps.gate.outputs.overall != 'READY'
+        run: |
+          echo "::error::Stability gate is NOT-READY for commit ${GITHUB_SHA}"
+          exit 1

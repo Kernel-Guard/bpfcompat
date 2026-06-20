@@ -12,17 +12,17 @@ import (
 )
 
 type Manifest struct {
-	Name             string                `yaml:"name"`
-	Programs         []Program             `yaml:"programs"`
-	Maps             []MapFixup            `yaml:"maps,omitempty"`
-	ProgramVariants  []ProgramVariantGroup `yaml:"program_variants,omitempty"`
+	Name            string                `yaml:"name"`
+	Programs        []Program             `yaml:"programs"`
+	Maps            []MapFixup            `yaml:"maps,omitempty"`
+	ProgramVariants []ProgramVariantGroup `yaml:"program_variants,omitempty"`
 	// ProbeCompanions lists programs statically referenced from prog-array
 	// map slots; they must stay autoloaded during trial_load probes or
 	// slot initialization fails before the probed program is exercised.
-	ProbeCompanions []string `yaml:"probe_companions,omitempty"`
-	RequiredProfiles []string              `yaml:"required_profiles,omitempty"`
-	FunctionalTests  []FunctionalTest      `yaml:"functional_tests,omitempty"`
-	Metadata         map[string]any        `yaml:"metadata,omitempty"`
+	ProbeCompanions  []string         `yaml:"probe_companions,omitempty"`
+	RequiredProfiles []string         `yaml:"required_profiles,omitempty"`
+	FunctionalTests  []FunctionalTest `yaml:"functional_tests,omitempty"`
+	Metadata         map[string]any   `yaml:"metadata,omitempty"`
 }
 
 // ProgramVariantGroup declares alternative programs for the same event where
