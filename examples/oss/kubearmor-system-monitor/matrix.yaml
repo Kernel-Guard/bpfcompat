@@ -1,0 +1,7 @@
+name: kubearmor-system-monitor
+profiles:
+  - id: ubuntu-20.04-5.4
+  - id: ubuntu-22.04-5.15
+  - id: debian-12-6.1
+  - id: ubuntu-24.04-6.8
+  - id: almalinux-8-4.18

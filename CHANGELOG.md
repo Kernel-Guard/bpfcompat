@@ -16,6 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   `--set-map-inner-map <map>=<type>:<key>:<value>:<entries>`. Proven against
   KubeArmor's `system_monitor.bpf.o` (`kubearmor_visibility`), which then loads
   across Ubuntu 5.4/5.15, Debian 6.1, Ubuntu 6.8, and AlmaLinux 8 (4.18).
+- Reference behavior lane: `examples/oss/kubearmor-system-monitor/` validates
+  KubeArmor's `system_monitor.bpf.o` as shipped — declaring its inner-map
+  loader contract, then running a non-blocking `behavior`-mode functional test
+  that exercises the hooked syscalls (execve/openat/close/unlink/uid) under the
+  live monitor and asserts correct results. Passes load + functional across all
+  five kernels (5.4 → 6.8, AlmaLinux 8). Documents the honest scope
+  (liveness/correctness now; event-capture is Phase 2, needs the project's
+  perf reader).
 - Supply-chain trust signals: GitHub CodeQL static analysis
   (`.github/workflows/codeql.yml`), OpenSSF Scorecard
   (`.github/workflows/scorecard.yml`), and Dependabot

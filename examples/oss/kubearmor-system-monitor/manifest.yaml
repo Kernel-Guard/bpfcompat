@@ -1,0 +1,39 @@
+name: kubearmor-system-monitor
+
+# KubeArmor's system_monitor.bpf.o declares `kubearmor_visibility` as a
+# BPF_MAP_TYPE_HASH_OF_MAPS whose inner per-namespace map its Go (cilium/ebpf)
+# loader installs at runtime. A generic libbpf load has no inner-map prototype,
+# so map creation fails with EINVAL on every kernel. Declaring the prototype
+# here mirrors that loader contract so the object loads faithfully.
+maps:
+  - name: kubearmor_visibility
+    inner_map:
+      type: hash
+      key_size: 4
+      value_size: 4
+      max_entries: 64
+
+# Behavior lane (opt-in, non-blocking). Runs only under --validation-mode
+# behavior, AFTER load + best-effort attach, with the kprobes/kretprobes live.
+# It exercises the syscalls system_monitor hooks (execve, openat/open, close,
+# unlink, plus uid/gid paths) and asserts they still execute correctly while
+# the monitor is attached — i.e. the loaded program is live and non-disruptive
+# on a real workload, not just verifier-accepted.
+#
+# required: false keeps this a non-blocking signal: it is reported but does not
+# trip the exit-2 compatibility gate. Promote to required only once an artifact
+# proves stable.
+#
+# SCOPE: this proves liveness + correctness under load, NOT event capture.
+# Asserting that an event actually reaches the `sys_events` perf buffer needs
+# KubeArmor's own userspace reader; see README.md ("Phase 2").
+functional_tests:
+  - name: syscall-stimulus-under-live-monitor
+    required: false
+    timeout: 15s
+    expect_exit_code: 0
+    expect_stdout_contains: kubearmor_system_monitor_behavior_ok
+    # Single-line per the manifest schema. Exercises openat/write/read/close,
+    # unlink, execve and uid/gid syscalls (all hooked by system_monitor) and
+    # asserts each produced the correct result while the monitor is attached.
+    command: 'set -eu; d=$(mktemp -d); printf kubearmor-behavior-probe > "$d/f"; got=$(cat "$d/f"); [ "$got" = kubearmor-behavior-probe ] || { echo "file-roundtrip-mismatch:$got" >&2; exit 3; }; rm -f "$d/f"; [ ! -e "$d/f" ] || { echo unlink-failed >&2; exit 4; }; out=$(/bin/echo bpfcompat-execve-ok); [ "$out" = bpfcompat-execve-ok ] || { echo "execve-mismatch:$out" >&2; exit 5; }; id -u >/dev/null; rmdir "$d"; echo kubearmor_system_monitor_behavior_ok'
