@@ -675,16 +675,32 @@ func normalizeArch(arch string) string {
 	}
 }
 
+// needsCIDATASeed reports whether a profile's distro needs the cloud-init seed
+// delivered as a CIDATA-labelled disk/ISO rather than the NoCloud-over-SMBIOS
+// network seed (the Ubuntu/Debian default). EL (RHEL/AlmaLinux/Rocky/CentOS/
+// Oracle), Amazon Linux, and SUSE cloud-init configs do not reliably honour the
+// SMBIOS-net seed: on EL8 cloud-init falls back to DataSourceNone and never
+// authorises the injected SSH key (observed booting AlmaLinux/Rocky 8). Those
+// images do read a CIDATA disk/ConfigDrive, so use that instead.
+func needsCIDATASeed(profile Profile) bool {
+	switch strings.ToLower(strings.TrimSpace(profile.Distro)) {
+	case "rhel", "almalinux", "rocky", "centos", "centos-stream",
+		"oracle", "oracle-linux", "amazon-linux", "amazonlinux",
+		"sles", "suse", "opensuse":
+		return true
+	}
+	// Keep the explicit ID for any profile that omits a recognised distro.
+	return strings.EqualFold(strings.TrimSpace(profile.ID), "rhel-8-4.18")
+}
+
 func seedDeliveryForProfile(profile Profile) seedDeliveryMode {
-	switch strings.ToLower(strings.TrimSpace(profile.ID)) {
-	case "rhel-8-4.18":
+	if needsCIDATASeed(profile) {
 		if commandAvailable("cloud-localds") {
 			return seedDeliveryNoCloudConfigDrive
 		}
 		return seedDeliveryNoCloudConfigFS
-	default:
-		return seedDeliveryNoCloudNet
 	}
+	return seedDeliveryNoCloudNet
 }
 
 func commandAvailable(name string) bool {

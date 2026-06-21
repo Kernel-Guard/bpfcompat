@@ -47,7 +47,12 @@ sudo apt-get update -y
 sudo apt-get install -y \
   build-essential ca-certificates curl git jq make pkg-config \
   clang llvm libbpf-dev libelf-dev zlib1g-dev zstd \
-  qemu-system-x86 qemu-utils qemu-kvm openssh-client
+  qemu-system-x86 qemu-utils qemu-kvm openssh-client \
+  cloud-image-utils
+# cloud-image-utils provides cloud-localds, used to build a CIDATA ConfigDrive
+# ISO seed for EL/Amazon/SUSE guests whose cloud-init ignores the SMBIOS-net
+# seed (see internal/vm seedDeliveryForProfile). Without it those guests fall
+# back to an unreliable vvfat seed and fail to boot.
 
 # bpfcompat requires Go ${GO_VERSION}; Ubuntu's apt golang is too old, so install
 # the official toolchain to /usr/local/go and symlink it onto the default PATH

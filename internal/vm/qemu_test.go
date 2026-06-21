@@ -378,8 +378,19 @@ func TestSeedDeliveryForProfile(t *testing.T) {
 	if got := seedDeliveryForProfile(Profile{ID: "rhel-8-4.18"}); got != seedDeliveryNoCloudConfigDrive && got != seedDeliveryNoCloudConfigFS {
 		t.Fatalf("expected rhel-8-4.18 seed delivery %q or %q, got %q", seedDeliveryNoCloudConfigDrive, seedDeliveryNoCloudConfigFS, got)
 	}
-	if got := seedDeliveryForProfile(Profile{ID: "ubuntu-22.04-5.15"}); got != seedDeliveryNoCloudNet {
+	if got := seedDeliveryForProfile(Profile{ID: "ubuntu-22.04-5.15", Distro: "ubuntu"}); got != seedDeliveryNoCloudNet {
 		t.Fatalf("expected default seed delivery %q, got %q", seedDeliveryNoCloudNet, got)
+	}
+	if got := seedDeliveryForProfile(Profile{ID: "debian-12-6.1", Distro: "debian"}); got != seedDeliveryNoCloudNet {
+		t.Fatalf("expected debian seed delivery %q, got %q", seedDeliveryNoCloudNet, got)
+	}
+	// EL-family / Amazon / SUSE must use the CIDATA disk seed (SMBIOS-net is
+	// ignored by their cloud-init).
+	for _, distro := range []string{"almalinux", "rocky", "rhel", "centos-stream", "oracle", "amazon-linux", "sles", "opensuse"} {
+		got := seedDeliveryForProfile(Profile{ID: distro + "-x", Distro: distro})
+		if got != seedDeliveryNoCloudConfigDrive && got != seedDeliveryNoCloudConfigFS {
+			t.Fatalf("expected CIDATA seed for distro %q, got %q", distro, got)
+		}
 	}
 }
 
