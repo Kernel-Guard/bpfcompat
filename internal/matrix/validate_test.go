@@ -36,3 +36,21 @@ func TestValidateRejectsInvalidProfileID(t *testing.T) {
 		t.Fatal("expected invalid profile id error")
 	}
 }
+
+func TestQuickMatrix(t *testing.T) {
+	m := Quick()
+	if m.Name != "quick" {
+		t.Fatalf("expected name quick, got %q", m.Name)
+	}
+	if len(m.Profiles) == 0 {
+		t.Fatal("quick matrix must have profiles")
+	}
+	for _, p := range m.Profiles {
+		if !p.RequiredBool() {
+			t.Errorf("quick profile %q should default to required", p.ID)
+		}
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("quick matrix must validate: %v", err)
+	}
+}

@@ -16,6 +16,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   media type, with an ELF-magic fallback) and validates it like any other
   artifact. This lets gadget authors point the validator straight at a
   published gadget. (Requested by Inspektor Gadget maintainer.)
+- `--quick`: run the built-in quick-check kernel set (old LTS → recent) instead
+  of `--matrix`, for a fast local "does it load?" check with no matrix file —
+  e.g. `bpfcompat test --artifact ghcr.io/org/gadget:tag --quick`.
 - Supply-chain trust signals: GitHub CodeQL static analysis
   (`.github/workflows/codeql.yml`), OpenSSF Scorecard
   (`.github/workflows/scorecard.yml`), and Dependabot

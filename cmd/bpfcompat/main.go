@@ -170,6 +170,7 @@ func runTest(args []string) int {
 	fs.StringVar(&cfg.ArtifactVariant, "artifact-variant", "", "Artifact variant label (optional)")
 	fs.StringVar(&cfg.ValidationMode, "validation-mode", "", "Validation mode: load_only, load_attach, or behavior (default preserves manifest behavior)")
 	fs.StringVar(&cfg.MatrixPath, "matrix", "", "Path to matrix YAML")
+	fs.BoolVar(&cfg.Quick, "quick", false, "Use the built-in quick-check kernel set instead of --matrix (fast local 'does it load?' check)")
 	fs.StringVar(&cfg.ManifestPath, "manifest", "", "Path to artifact manifest YAML (optional)")
 	fs.StringVar(&cfg.OutPath, "out", "", "Path to JSON report output")
 	fs.StringVar(&cfg.MarkdownPath, "markdown", "", "Path to Markdown report output (optional)")

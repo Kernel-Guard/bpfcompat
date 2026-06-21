@@ -120,9 +120,12 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 	var tuning validatorTuning
 	validationMode := NormalizeValidationMode(cfg.ValidationMode)
 	attachMode := "best-effort"
-	matrixPathAbs, err := filepath.Abs(cfg.MatrixPath)
-	if err != nil {
-		return RunResult{}, fmt.Errorf("resolve matrix path: %w", err)
+	var matrixPathAbs string
+	if cfg.MatrixPath != "" {
+		matrixPathAbs, err = filepath.Abs(cfg.MatrixPath)
+		if err != nil {
+			return RunResult{}, fmt.Errorf("resolve matrix path: %w", err)
+		}
 	}
 
 	emitProgress(cfg.Progress, ProgressUpdate{
@@ -130,9 +133,14 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		Message: "Loading validation matrix",
 	})
 
-	m, err := matrix.Load(matrixPathAbs)
-	if err != nil {
-		return RunResult{}, err
+	var m matrix.Matrix
+	if cfg.MatrixPath == "" && cfg.Quick {
+		m = matrix.Quick()
+	} else {
+		m, err = matrix.Load(matrixPathAbs)
+		if err != nil {
+			return RunResult{}, err
+		}
 	}
 
 	var notes []string
