@@ -46,6 +46,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   correct on runners without hardware virtualization (just slower). Hosted-KVM
   runners keep `-enable-kvm -cpu host`.
 
+## [0.1.6] - 2026-06-21
+
+### Added
+- **Enterprise & backported-kernel coverage (14/14 proven).** New AlmaLinux 8 /
+  Rocky 8 (4.18) profiles plus a real reference run validating
+  `load_attach` across the RHEL 8/9/10 ABI (AlmaLinux/Rocky/CentOS-Stream),
+  Oracle UEK 7/8, Amazon Linux 2 (5.10 and the no-BTF 4.14) and 2023, and
+  openSUSE Leap — documented in `docs/case-study-enterprise-kernels.md`.
+- **SLSA Build L3 build-provenance + SBOM attestations** on tag releases
+  (keyless OIDC via Sigstore/Rekor), with a verification guide
+  (`docs/verifying-releases.md`).
+- **Weekly stability gate** (`.github/workflows/stability-gate.yml`) producing an
+  archived READY/NOT-READY readiness report.
+- **Self-hosted health watchdog** for the demo (`scripts/healthcheck.sh` +
+  `packaging/systemd/bpfcompat-healthcheck.{service,timer}`) and a runbook
+  monitoring section.
+- **Docs:** evidence-schema reference (`docs/evidence-schema.md`), self-hosted-first
+  quickstart + trust model (`docs/quickstart.md`), and the Falco modern_bpf
+  reference matrix (`docs/case-study-falco-modern-bpf.md`).
+- **Demo UI:** Carbon design tokens matching the marketing site, light/dark
+  toggle, example matrix on load, live "watch it boot" matrix, shareable compat
+  badge (`/badge/<run_id>.svg`) + OG social cards on `/results`, one-click live
+  example, and an in-page How-it-works/FAQ/source footer.
+
+### Fixed
+- EL/Amazon/SUSE guests now seed cloud-init via a CIDATA ConfigDrive ISO instead
+  of the SMBIOS-net seed their cloud-init ignores (fixes EL8 boot/SSH); bootstrap
+  installs `cloud-image-utils`. Enabled Amazon Linux 2 (4.14) validation.
+- Redacted absolute host audit paths (`trace_path`, `event_stream_path`) from
+  public runtime decision/select/fetch responses.
+- Validate UI blocks submitting with no artifact instead of a raw 400.
+
 ## [0.1.5] - 2026-06-11
 
 ### Fixed
