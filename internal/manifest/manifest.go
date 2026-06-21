@@ -86,6 +86,33 @@ type MapFixup struct {
 	// InnerRingbufBytes creates a BPF_MAP_TYPE_RINGBUF of this byte size and
 	// installs it as the inner-map prototype for an array-of-maps.
 	InnerRingbufBytes uint32 `yaml:"inner_ringbuf_bytes,omitempty"`
+	// InnerMap installs a generic inner-map prototype on a map-in-map
+	// (BPF_MAP_TYPE_HASH_OF_MAPS / ARRAY_OF_MAPS) whose inner shape the
+	// artifact's own loader sets at runtime — e.g. KubeArmor's
+	// kubearmor_visibility, a per-namespace inner hash.
+	InnerMap *InnerMapSpec `yaml:"inner_map,omitempty"`
+}
+
+// InnerMapSpec describes the inner-map prototype to create and install as the
+// template for a map-in-map before the outer object is loaded.
+type InnerMapSpec struct {
+	// Type is one of: hash, array, lru_hash, percpu_hash, percpu_array,
+	// lru_percpu_hash.
+	Type       string `yaml:"type"`
+	KeySize    uint32 `yaml:"key_size,omitempty"`
+	ValueSize  uint32 `yaml:"value_size"`
+	MaxEntries uint32 `yaml:"max_entries"`
+}
+
+// innerMapTypes is the set of inner-map type names the validator understands;
+// the value is informational (whether the type requires a non-zero key size).
+var innerMapTypes = map[string]bool{
+	"hash":            true,
+	"array":           true,
+	"lru_hash":        true,
+	"percpu_hash":     true,
+	"percpu_array":    true,
+	"lru_percpu_hash": true,
 }
 
 // EntriesValue accepts either a YAML integer or the string "cpus".

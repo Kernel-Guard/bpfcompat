@@ -48,13 +48,24 @@ func Validate(m Manifest) error {
 			return fmt.Errorf("duplicate map fixup %q", fixup.Name)
 		}
 		seenMaps[fixup.Name] = struct{}{}
-		if fixup.MaxEntries == "" && fixup.InnerRingbufBytes == 0 {
-			return fmt.Errorf("map fixup %q must set max_entries or inner_ringbuf_bytes", fixup.Name)
+		if fixup.MaxEntries == "" && fixup.InnerRingbufBytes == 0 && fixup.InnerMap == nil {
+			return fmt.Errorf("map fixup %q must set max_entries, inner_ringbuf_bytes, or inner_map", fixup.Name)
 		}
 		if fixup.MaxEntries != "" && fixup.MaxEntries != "cpus" {
 			entries, err := strconv.ParseUint(string(fixup.MaxEntries), 10, 32)
 			if err != nil || entries == 0 {
 				return fmt.Errorf("map fixup %q max_entries must be a positive integer or \"cpus\"", fixup.Name)
+			}
+		}
+		if fixup.InnerMap != nil {
+			if !innerMapTypes[fixup.InnerMap.Type] {
+				return fmt.Errorf("map fixup %q inner_map.type %q must be one of hash, array, lru_hash, percpu_hash, percpu_array, lru_percpu_hash", fixup.Name, fixup.InnerMap.Type)
+			}
+			if fixup.InnerMap.ValueSize == 0 {
+				return fmt.Errorf("map fixup %q inner_map.value_size must be positive", fixup.Name)
+			}
+			if fixup.InnerMap.MaxEntries == 0 {
+				return fmt.Errorf("map fixup %q inner_map.max_entries must be positive", fixup.Name)
 			}
 		}
 	}

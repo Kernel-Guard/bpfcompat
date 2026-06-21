@@ -33,10 +33,29 @@ struct map_fixup {
     char name[68];
     char max_entries[16]; /* decimal or "cpus"; empty = unset */
     unsigned int inner_ringbuf_bytes; /* 0 = unset */
+    /* Generic inner-map prototype for HASH_OF_MAPS / ARRAY_OF_MAPS whose inner
+     * shape the artifact's loader sets at runtime (e.g. KubeArmor's
+     * kubearmor_visibility, an inner per-namespace hash). 0 type = unset. */
+    unsigned int inner_map_type; /* BPF_MAP_TYPE_*; 0 = unset */
+    unsigned int inner_key_size;
+    unsigned int inner_value_size;
+    unsigned int inner_max_entries;
     char status[32]; /* applied | map_not_found | error (main load only) */
     int err;
     unsigned int applied_entries;
 };
+
+/* Resolve the inner-map type names accepted in manifests to numeric
+ * BPF_MAP_TYPE_* values. Returns 0 for an unknown name. */
+static unsigned int inner_map_type_from_name(const char *name) {
+    if (strcmp(name, "hash") == 0) return BPF_MAP_TYPE_HASH;
+    if (strcmp(name, "array") == 0) return BPF_MAP_TYPE_ARRAY;
+    if (strcmp(name, "lru_hash") == 0) return BPF_MAP_TYPE_LRU_HASH;
+    if (strcmp(name, "percpu_hash") == 0) return BPF_MAP_TYPE_PERCPU_HASH;
+    if (strcmp(name, "percpu_array") == 0) return BPF_MAP_TYPE_PERCPU_ARRAY;
+    if (strcmp(name, "lru_percpu_hash") == 0) return BPF_MAP_TYPE_LRU_PERCPU_HASH;
+    return 0;
+}
 
 #define MAX_VARIANT_GROUPS 16
 #define MAX_VARIANTS_PER_GROUP 6
@@ -156,6 +175,7 @@ static void usage(const char *prog) {
             "[--functional-plan <path>] [--log-dir <dir>] [--attach-mode <mode>] "
             "[--probe-features <bool>] [--set-map-max-entries <map>=<n|cpus>]... "
             "[--set-map-inner-ringbuf <map>=<bytes>]... "
+            "[--set-map-inner-map <map>=<type>:<key>:<value>:<entries>]... "
             "[--prog-variants <group>=<prog>:<helper_id|trial>,...]... "
             "[--probe-companions <prog>,<prog>,...]\n",
             prog);
@@ -287,6 +307,63 @@ static int add_map_fixup(struct options *opts, const char *spec, bool inner_ring
     return 0;
 }
 
+/* Parse "<map>=<type>:<key_size>:<value_size>:<max_entries>" for
+ * --set-map-inner-map, installing a generic inner-map prototype on a
+ * map-in-map (e.g. kubearmor_visibility=hash:4:4:64). */
+static int add_inner_map_fixup(struct options *opts, const char *spec) {
+    const char *eq = spec ? strchr(spec, '=') : NULL;
+    if (!eq || eq == spec || !eq[1]) {
+        fprintf(stderr, "invalid inner-map spec (want <map>=<type>:<key>:<value>:<entries>): %s\n", spec ? spec : "");
+        return -1;
+    }
+    size_t name_len = (size_t)(eq - spec);
+    if (name_len >= sizeof(((struct map_fixup *)0)->name)) {
+        fprintf(stderr, "map fixup name too long: %s\n", spec);
+        return -1;
+    }
+
+    char type_name[32];
+    unsigned int key_size = 0, value_size = 0, max_entries = 0;
+    if (sscanf(eq + 1, "%31[^:]:%u:%u:%u", type_name, &key_size, &value_size, &max_entries) != 4) {
+        fprintf(stderr, "invalid inner-map spec (want <type>:<key>:<value>:<entries>): %s\n", spec);
+        return -1;
+    }
+    unsigned int type = inner_map_type_from_name(type_name);
+    if (type == 0) {
+        fprintf(stderr, "unknown inner-map type '%s' (want hash|array|lru_hash|percpu_hash|percpu_array|lru_percpu_hash): %s\n", type_name, spec);
+        return -1;
+    }
+    if (value_size == 0 || max_entries == 0) {
+        fprintf(stderr, "inner-map value_size and max_entries must be positive: %s\n", spec);
+        return -1;
+    }
+
+    struct map_fixup *fx = NULL;
+    for (int i = 0; i < opts->map_fixup_count; i++) {
+        if (strncmp(opts->map_fixups[i].name, spec, name_len) == 0 &&
+            opts->map_fixups[i].name[name_len] == '\0') {
+            fx = &opts->map_fixups[i];
+            break;
+        }
+    }
+    if (!fx) {
+        if (opts->map_fixup_count >= MAX_MAP_FIXUPS) {
+            fprintf(stderr, "too many map fixups: max %d\n", MAX_MAP_FIXUPS);
+            return -1;
+        }
+        fx = &opts->map_fixups[opts->map_fixup_count++];
+        memset(fx, 0, sizeof(*fx));
+        memcpy(fx->name, spec, name_len);
+        fx->name[name_len] = '\0';
+    }
+
+    fx->inner_map_type = type;
+    fx->inner_key_size = key_size;
+    fx->inner_value_size = value_size;
+    fx->inner_max_entries = max_entries;
+    return 0;
+}
+
 /* Parse "<group>=<prog>:<helper_id>,<prog>:<helper_id>,..." for
  * --prog-variants. helper_id 0 means the variant has no helper requirement
  * (the unconditional fallback). Variant order is selection priority. */
@@ -407,6 +484,12 @@ static int parse_args(int argc, char **argv, struct options *opts) {
         }
         if (strcmp(argv[i], "--set-map-inner-ringbuf") == 0 && i + 1 < argc) {
             if (add_map_fixup(opts, argv[++i], true) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--set-map-inner-map") == 0 && i + 1 < argc) {
+            if (add_inner_map_fixup(opts, argv[++i]) != 0) {
                 return -1;
             }
             continue;
@@ -1482,6 +1565,25 @@ static void apply_map_fixups(struct options *opts, struct bpf_object *obj, bool 
             }
         }
 
+        if (fx->inner_map_type > 0) {
+            int inner_fd = bpf_map_create((enum bpf_map_type)fx->inner_map_type, NULL,
+                                          fx->inner_key_size, fx->inner_value_size,
+                                          fx->inner_max_entries, NULL);
+            if (inner_fd < 0) {
+                record_fixup(fx, record, "error", inner_fd, entries);
+                continue;
+            }
+            int err = bpf_map__set_inner_map_fd(map, inner_fd);
+            if (err) {
+                close(inner_fd);
+                record_fixup(fx, record, "error", err, entries);
+                continue;
+            }
+            if (g_inner_map_fd_count < MAX_MAP_FIXUPS) {
+                g_inner_map_fds[g_inner_map_fd_count++] = inner_fd;
+            }
+        }
+
         record_fixup(fx, record, "applied", 0, entries);
     }
 }
@@ -1767,7 +1869,10 @@ static int write_result_json(const struct validator_result *res) {
         escape_json_string(f, fx->name);
         fprintf(f, "\",\"max_entries\":\"");
         escape_json_string(f, fx->max_entries);
-        fprintf(f, "\",\"inner_ringbuf_bytes\":%u,\"status\":\"", fx->inner_ringbuf_bytes);
+        fprintf(f, "\",\"inner_ringbuf_bytes\":%u", fx->inner_ringbuf_bytes);
+        fprintf(f, ",\"inner_map_type\":%u,\"inner_key_size\":%u,\"inner_value_size\":%u,\"inner_max_entries\":%u",
+                fx->inner_map_type, fx->inner_key_size, fx->inner_value_size, fx->inner_max_entries);
+        fprintf(f, ",\"status\":\"");
         escape_json_string(f, fx->status);
         fprintf(f, "\",\"errno\":%d,\"applied_entries\":%u}", fx->err, fx->applied_entries);
     }

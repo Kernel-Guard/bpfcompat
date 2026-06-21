@@ -412,6 +412,16 @@ func TestMapFixupArgs(t *testing.T) {
 	}
 }
 
+func TestMapFixupArgsInnerMap(t *testing.T) {
+	fixups := []MapFixup{
+		{Name: "kubearmor_visibility", InnerMapType: "hash", InnerKeySize: 4, InnerValueSize: 4, InnerMaxEntries: 64},
+	}
+	want := " --set-map-inner-map kubearmor_visibility=hash:4:4:64"
+	if got := mapFixupArgs(fixups); got != want {
+		t.Fatalf("unexpected inner-map args:\n got %q\nwant %q", got, want)
+	}
+}
+
 func TestProgVariantArgs(t *testing.T) {
 	groups := []ProgVariantGroup{{
 		Group: "recvmmsg_x",
