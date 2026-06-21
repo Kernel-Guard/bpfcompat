@@ -204,6 +204,7 @@ func TestSSHUserCandidates(t *testing.T) {
 func TestExecutionTransport(t *testing.T) {
 	tests := []struct {
 		name          string
+		id            string
 		distro        string
 		wantTransport string
 		wantSupported bool
@@ -211,13 +212,14 @@ func TestExecutionTransport(t *testing.T) {
 	}{
 		{name: "ubuntu", distro: "ubuntu", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "rhel8 supported", distro: "rhel", wantTransport: ExecutionTransportSSH, wantSupported: true},
+		{name: "amazon-linux-2-4.14 supported", id: "amazon-linux-2-4.14", distro: "amazon-linux", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "talos blocked", distro: "talos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "no ssh"},
 		{name: "bottlerocket blocked", distro: "bottlerocket", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ssh"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport, supported, reason := ExecutionTransport(Profile{Distro: tt.distro})
+			transport, supported, reason := ExecutionTransport(Profile{ID: tt.id, Distro: tt.distro})
 			if transport != tt.wantTransport {
 				t.Fatalf("expected transport=%q, got %q", tt.wantTransport, transport)
 			}

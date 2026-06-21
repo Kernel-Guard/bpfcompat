@@ -13,7 +13,7 @@ This is a real run across the now-supported enterprise tier.
 - **Date:** 2026-06-21 · Run ID `20260621T102403Z-a20af3`
 - **Host:** x86_64 KVM
 
-## Result — 13 / 14 pass
+## Result — 14 / 14 pass
 
 | Profile | Actual host kernel | BTF | Result |
 |---|---|---|---|
@@ -30,15 +30,15 @@ This is a real run across the now-supported enterprise tier.
 | `amazon-linux-2-5.10` | `5.10.247-246.989.amzn2` | yes | ✅ pass |
 | `amazon-linux-2023-6.1` | `6.1.170-213.321.amzn2023` | yes | ✅ pass |
 | `opensuse-leap-15.6-6.4` | `6.4.0-150600.23.100-default` | yes | ✅ pass |
-| `amazon-linux-2-4.14` | — | — | ❌ `UNSUPPORTED_TRANSPORT` (known gap) |
+| `amazon-linux-2-4.14` | `4.14.26-54.32.amzn2` | **no** | ✅ pass |
 
-## The honest gap: Amazon Linux 2 / 4.14
+## The no-BTF backport case: Amazon Linux 2 / 4.14
 
-The 2018-era Amazon Linux 2 (`4.14`, no embedded BTF) image is rejected at the
-**transport-capability** step — the SSH executor cannot drive it — so it never
-reaches validation. This is a separate, deeper issue than the EL seed-delivery fix
-(which unblocked the rest of this tier); it likely needs a console/serial-based
-transport rather than SSH. Tracked as a known limitation, not a silent skip.
+The 2018-era Amazon Linux 2 (`4.14`, **no embedded BTF**) image was previously
+excluded as `UNSUPPORTED_TRANSPORT`. The CIDATA seed fix plus dropping that stale
+exclusion brought it online: it now boots and validates `load_attach` on a real
+`4.14.26-54.32.amzn2` kernel — the heavily-backported, no-BTF case where kernel
+version is least informative about feature support.
 
 ## Notes
 
