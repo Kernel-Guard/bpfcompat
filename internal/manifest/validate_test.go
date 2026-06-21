@@ -34,6 +34,11 @@ func TestValidateMapFixups(t *testing.T) {
 		{"no settings", MapFixup{Name: "m"}, true},
 		{"zero entries", MapFixup{Name: "m", MaxEntries: "0"}, true},
 		{"non-numeric entries", MapFixup{Name: "m", MaxEntries: "lots"}, true},
+		{"inner map hash", MapFixup{Name: "kubearmor_visibility", InnerMap: &InnerMapSpec{Type: "hash", KeySize: 4, ValueSize: 4, MaxEntries: 64}}, false},
+		{"inner map array no key", MapFixup{Name: "m", InnerMap: &InnerMapSpec{Type: "array", ValueSize: 8, MaxEntries: 1}}, false},
+		{"inner map bad type", MapFixup{Name: "m", InnerMap: &InnerMapSpec{Type: "queue", ValueSize: 4, MaxEntries: 1}}, true},
+		{"inner map zero value_size", MapFixup{Name: "m", InnerMap: &InnerMapSpec{Type: "hash", KeySize: 4, MaxEntries: 1}}, true},
+		{"inner map zero entries", MapFixup{Name: "m", InnerMap: &InnerMapSpec{Type: "hash", KeySize: 4, ValueSize: 4}}, true},
 	}
 	for _, tc := range cases {
 		err := Validate(Manifest{Maps: []MapFixup{tc.fixup}})

@@ -943,6 +943,9 @@ func mapFixupNotes(vr validatorResult) []string {
 			if fixup.InnerRingbufBytes > 0 {
 				detail += fmt.Sprintf(" inner_ringbuf_bytes=%d", fixup.InnerRingbufBytes)
 			}
+			if fixup.InnerMapType > 0 {
+				detail += fmt.Sprintf(" inner_map=type%d/%d/%d/%d", fixup.InnerMapType, fixup.InnerKeySize, fixup.InnerValueSize, fixup.InnerMaxEntries)
+			}
 			notes = append(notes, fmt.Sprintf("map fixup applied: %s%s", fixup.Name, detail))
 		case "map_not_found":
 			notes = append(notes, fmt.Sprintf("map fixup skipped: map %q not found in artifact", fixup.Name))
@@ -964,11 +967,18 @@ type validatorTuning struct {
 func validatorTuningFromManifest(mf manifest.Manifest) validatorTuning {
 	var tuning validatorTuning
 	for _, fixup := range mf.Maps {
-		tuning.mapFixups = append(tuning.mapFixups, vm.MapFixup{
+		vmFixup := vm.MapFixup{
 			Name:              fixup.Name,
 			MaxEntries:        string(fixup.MaxEntries),
 			InnerRingbufBytes: fixup.InnerRingbufBytes,
-		})
+		}
+		if fixup.InnerMap != nil {
+			vmFixup.InnerMapType = fixup.InnerMap.Type
+			vmFixup.InnerKeySize = fixup.InnerMap.KeySize
+			vmFixup.InnerValueSize = fixup.InnerMap.ValueSize
+			vmFixup.InnerMaxEntries = fixup.InnerMap.MaxEntries
+		}
+		tuning.mapFixups = append(tuning.mapFixups, vmFixup)
 	}
 	for _, group := range mf.ProgramVariants {
 		vmGroup := vm.ProgVariantGroup{Group: group.Group}
