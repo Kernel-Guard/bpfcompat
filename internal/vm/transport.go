@@ -17,11 +17,6 @@ func ExecutionTransport(profile Profile) (transport string, supported bool, reas
 		return ExecutionTransportUnsupported, false, "Profile requires the firecracker runner; use `--runner firecracker` instead of the default QEMU cloud-image runner."
 	}
 
-	switch strings.ToLower(strings.TrimSpace(profile.ID)) {
-	case "amazon-linux-2-4.14":
-		return ExecutionTransportUnsupported, false, "Legacy Amazon Linux 2 (4.14) image in this catalog does not provide reliable cloud-init+SSH bootstrap for current validator executor."
-	}
-
 	switch strings.ToLower(strings.TrimSpace(profile.Distro)) {
 	case "talos":
 		return ExecutionTransportUnsupported, false, "Talos is API-driven (no SSH/shell); current validator runner requires SSH transport."
