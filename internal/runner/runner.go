@@ -83,7 +83,25 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		Message: "Inspecting artifact",
 	})
 
-	meta, err := artifact.Inspect(cfg.ArtifactPath)
+	artifactPath := cfg.ArtifactPath
+	if artifact.IsOCISource(artifactPath) {
+		emitProgress(cfg.Progress, ProgressUpdate{
+			Stage:   ProgressStageInspectArtifact,
+			Message: "Extracting eBPF object from OCI source",
+		})
+		ociDir, err := os.MkdirTemp("", "bpfcompat-oci-")
+		if err != nil {
+			return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
+		}
+		defer os.RemoveAll(ociDir)
+		extracted, err := artifact.ExtractEBPFFromOCI(artifactPath, ociDir)
+		if err != nil {
+			return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
+		}
+		artifactPath = extracted
+	}
+
+	meta, err := artifact.Inspect(artifactPath)
 	if err != nil {
 		return RunResult{}, err
 	}

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- OCI gadget loading: `--artifact` now accepts an OCI image in addition to a
+  local `.bpf.o` ELF — a registry reference (e.g.
+  `ghcr.io/inspektor-gadget/gadget/trace_open:latest`), an OCI layout
+  directory, or an OCI/docker image archive. bpfcompat extracts the eBPF object
+  layer (Inspektor Gadget's `application/vnd.gadget.ebpf.program.v1+binary`
+  media type, with an ELF-magic fallback) and validates it like any other
+  artifact. This lets gadget authors point the validator straight at a
+  published gadget. (Requested by Inspektor Gadget maintainer.)
 - Supply-chain trust signals: GitHub CodeQL static analysis
   (`.github/workflows/codeql.yml`), OpenSSF Scorecard
   (`.github/workflows/scorecard.yml`), and Dependabot
