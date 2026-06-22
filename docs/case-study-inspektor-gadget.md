@@ -29,19 +29,39 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 
 | Kernel | `trace_open` | `trace_exec` | Notes |
 |---|---|---|---|
-| Ubuntu 20.04 — 5.4 | ❌ fail | ❌ fail | `events` ring buffer requires ≥ 5.8 |
+| Ubuntu 20.04 — 5.4 | ⚠️ fail *as-compiled* | ⚠️ fail *as-compiled* | `events` ring buffer requires ≥ 5.8 — but see the fallback note below |
 | Debian 12 — 6.1 | ✅ pass (4/4 attach) | ✅ pass (6/6 attach) | runtime-sized `ig_build_id` auto-sized |
 | Ubuntu 24.04 — 6.8 | ✅ pass (4/4 attach) | ✅ pass (6/6 attach) | runtime-sized `ig_build_id` auto-sized |
 
-The `5.4` failure is the point: it is flagged with the exact mechanism (the
-`events` ring buffer map cannot be created — ring buffer support lands in 5.8),
-not a generic "it broke." Auto-sizing deliberately leaves ring-buffer and
-perf-event maps untouched, so the boundary is reported truthfully.
+The `5.4` result is an **as-compiled** boundary, and it comes with an important
+nuance. bpfcompat loads the object exactly as it was compiled — with `events` as
+a BPF ring buffer — so it reports the floor where that map cannot be created
+(ring buffer support lands in 5.8).
 
-Run against the full enterprise-aware matrix, `trace_open` additionally **passes
-on AlmaLinux 8 (kernel 4.18)** — RHEL backported the ring buffer into 4.18, so
-the gadget loads there even though it fails on Ubuntu's *newer* vanilla 5.4. That
-is the canonical "kernel version ≠ feature support" case, shown empirically.
+But Inspektor Gadget's *loader* does more at runtime than a faithful load can
+see. As IG maintainer Alban Crequy notes, IG **automatically falls back from BPF
+ring buffers to perf buffers** (and from `bpf_ktime_get_boot_ns` to the older
+`bpf_ktime_get_ns`) on kernels that lack the newer primitives — so `trace_open`
+and `trace_exec` would in fact **run on 5.4**. The `as-compiled` fail above is
+therefore stricter than IG's real reach: it is a true statement about the object
+as shipped, not about what IG achieves with its fallback path.
+
+We confirmed this is genuinely a loader-side capability, not something a generic
+loader can stand in for. Swapping the `events` ring buffer to a perf-event array
+before load (which bpfcompat can do) gets past the map, but `trace_open` then
+fails the 5.4 verifier on `bpf_ktime_get_boot_ns` (`call unknown#125 → invalid
+func`) — a helper that lands in 5.7 and that IG rewrites to `bpf_ktime_get_ns`.
+A faithful validator cannot rewrite helper calls in the bytecode without
+reimplementing IG's loader, so bpfcompat reports the as-compiled floor and treats
+the runtime fallback as a documented limitation rather than replicating it. Read
+the 5.4 row as "the compiled object targets ≥ 5.8," not "the gadget can't run on
+5.4."
+
+The same matrix run against the enterprise tier shows the flip side cleanly:
+`trace_open` **passes on AlmaLinux 8 (kernel 4.18)** because RHEL backported the
+ring buffer into 4.18 — so the *as-compiled* object loads there even though it
+fails on Ubuntu's *newer* vanilla 5.4. Backports, fallbacks, and version numbers
+all pull apart: "kernel version ≠ feature support," shown empirically.
 
 ### `trace_dns` — two loader contracts, neither a kernel limit
 
