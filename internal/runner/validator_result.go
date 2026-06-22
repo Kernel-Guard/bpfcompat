@@ -84,6 +84,11 @@ type validatorResult struct {
 		Errno             int    `json:"errno"`
 		AppliedEntries    uint32 `json:"applied_entries"`
 	} `json:"map_fixups"`
+	AutoSizedMaps []struct {
+		Name       string `json:"name"`
+		MapType    uint32 `json:"map_type"`
+		MaxEntries uint32 `json:"max_entries"`
+	} `json:"auto_sized_maps"`
 	Discovery struct {
 		Programs []struct {
 			Name         string `json:"name"`

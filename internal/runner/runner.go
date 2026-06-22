@@ -576,6 +576,7 @@ func executeTarget(
 	target.Notes = append(target.Notes, capabilityProbeNotes(vr)...)
 	target.Notes = append(target.Notes, mapTypeHintNotes(vr.Logs.Libbpf)...)
 	target.Notes = append(target.Notes, mapFixupNotes(vr)...)
+	target.Notes = append(target.Notes, autoSizedMapNotes(vr)...)
 	target.Notes = append(target.Notes, progVariantNotes(vr)...)
 	target.Notes = append(target.Notes, perProgramLoadNotes(vr)...)
 	target.BTF = &schema.TargetBTF{
@@ -975,6 +976,17 @@ func mapFixupNotes(vr validatorResult) []string {
 		case "error":
 			notes = append(notes, fmt.Sprintf("map fixup failed: %s (errno=%d)", fixup.Name, fixup.Errno))
 		}
+	}
+	return notes
+}
+
+// autoSizedMapNotes reports maps the validator gave a default max_entries
+// because they shipped runtime-sized (max_entries=0) — transparent so a reader
+// knows the load was made possible by sizing, not that the object loads as-is.
+func autoSizedMapNotes(vr validatorResult) []string {
+	notes := make([]string, 0, len(vr.AutoSizedMaps))
+	for _, m := range vr.AutoSizedMaps {
+		notes = append(notes, fmt.Sprintf("auto-sized runtime map %q to max_entries=%d (shipped 0; loader sizes it at runtime)", m.Name, m.MaxEntries))
 	}
 	return notes
 }

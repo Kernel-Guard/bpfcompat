@@ -19,6 +19,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - `--quick`: run the built-in quick-check kernel set (old LTS → recent) instead
   of `--matrix`, for a fast local "does it load?" check with no matrix file —
   e.g. `bpfcompat test --artifact ghcr.io/org/gadget:tag --quick`.
+- Auto-size runtime-sized maps: the validator now gives a default `max_entries`
+  to maps that ship with `max_entries=0` and whose type requires a positive
+  size (hash/array/percpu/LRU/stack-trace/LPM/prog-array), matching what the
+  real loader does at runtime. Types where 0 is meaningful (perf-event-array,
+  ring/user ringbuf, the `*_STORAGE` local-storage maps) are never touched, and
+  manifest `max_entries` fixups take precedence. Reported per map in the run
+  notes. Together with the two items above this makes zero-config gadget
+  validation work — e.g. Inspektor Gadget's `trace_open` loads with no manifest
+  (its runtime-sized `ig_build_id` map is auto-sized).
 - Supply-chain trust signals: GitHub CodeQL static analysis
   (`.github/workflows/codeql.yml`), OpenSSF Scorecard
   (`.github/workflows/scorecard.yml`), and Dependabot

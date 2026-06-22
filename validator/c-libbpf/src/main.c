@@ -1486,6 +1486,67 @@ static void apply_map_fixups(struct options *opts, struct bpf_object *obj, bool 
     }
 }
 
+/* Auto-sizing of runtime-sized maps. Many real loaders (Inspektor Gadget,
+ * KubeArmor, Falco's libpman) compile maps with max_entries=0 and set the
+ * real size at load time from a userspace parameter. A generic load can't,
+ * so map creation fails with EINVAL on every kernel — a loader contract, not
+ * a compatibility result. We give such maps a default size so the object
+ * loads, matching what the real loader does. Manifest fixups run first and
+ * win; only maps still at 0 are touched. */
+#define AUTOSIZE_DEFAULT_MAX_ENTRIES 4096u
+#define MAX_AUTOSIZED_MAPS 64
+
+struct autosized_map {
+    char name[68];
+    unsigned int map_type;
+    unsigned int max_entries;
+};
+static struct autosized_map g_autosized[MAX_AUTOSIZED_MAPS];
+static int g_autosized_count;
+
+/* Only types where max_entries==0 is invalid AND a positive size is what the
+ * real loader supplies. Deliberately excludes types where 0 is meaningful:
+ * PERF_EVENT_ARRAY (kernel uses nr_cpus), RINGBUF/USER_RINGBUF (byte size),
+ * and the *_STORAGE local-storage maps (which REQUIRE max_entries==0). */
+static bool map_type_needs_size(unsigned int t) {
+    switch (t) {
+    case BPF_MAP_TYPE_HASH:
+    case BPF_MAP_TYPE_ARRAY:
+    case BPF_MAP_TYPE_PROG_ARRAY:
+    case BPF_MAP_TYPE_PERCPU_HASH:
+    case BPF_MAP_TYPE_PERCPU_ARRAY:
+    case BPF_MAP_TYPE_STACK_TRACE:
+    case BPF_MAP_TYPE_LRU_HASH:
+    case BPF_MAP_TYPE_LRU_PERCPU_HASH:
+    case BPF_MAP_TYPE_LPM_TRIE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void auto_size_maps(struct bpf_object *obj) {
+    struct bpf_map *map;
+    bpf_object__for_each_map(map, obj) {
+        if (bpf_map__max_entries(map) != 0) {
+            continue;
+        }
+        unsigned int t = (unsigned int)bpf_map__type(map);
+        if (!map_type_needs_size(t)) {
+            continue;
+        }
+        if (bpf_map__set_max_entries(map, AUTOSIZE_DEFAULT_MAX_ENTRIES) != 0) {
+            continue;
+        }
+        if (g_autosized_count < MAX_AUTOSIZED_MAPS) {
+            struct autosized_map *a = &g_autosized[g_autosized_count++];
+            snprintf(a->name, sizeof(a->name), "%s", bpf_map__name(map));
+            a->map_type = t;
+            a->max_entries = AUTOSIZE_DEFAULT_MAX_ENTRIES;
+        }
+    }
+}
+
 /* Select one variant per group the way the artifact's loader does: walk in
  * priority order, probe required helpers against this kernel, autoload the
  * first satisfying variant and disable the rest. Probing uses
@@ -1671,6 +1732,7 @@ static void run_libbpf_load(struct validator_result *res) {
      * fixup fds — those are created after this and stay open through load. */
     apply_prog_variants(&res->opts, obj);
     apply_map_fixups(&res->opts, obj, true);
+    auto_size_maps(obj);
 
     int err = bpf_object__load(obj);
     if (err) {
@@ -1770,6 +1832,13 @@ static int write_result_json(const struct validator_result *res) {
         fprintf(f, "\",\"inner_ringbuf_bytes\":%u,\"status\":\"", fx->inner_ringbuf_bytes);
         escape_json_string(f, fx->status);
         fprintf(f, "\",\"errno\":%d,\"applied_entries\":%u}", fx->err, fx->applied_entries);
+    }
+    fprintf(f, "],\n");
+    fprintf(f, "  \"auto_sized_maps\": [");
+    for (int i = 0; i < g_autosized_count; i++) {
+        fprintf(f, "%s{\"name\":\"", i == 0 ? "" : ",");
+        escape_json_string(f, g_autosized[i].name);
+        fprintf(f, "\",\"map_type\":%u,\"max_entries\":%u}", g_autosized[i].map_type, g_autosized[i].max_entries);
     }
     fprintf(f, "],\n");
     fprintf(f, "  \"program_variants\": [");
