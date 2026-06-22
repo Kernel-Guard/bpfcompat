@@ -70,6 +70,19 @@ func Validate(m Manifest) error {
 		}
 	}
 
+	for i := range m.ProgramTypes {
+		ov := &m.ProgramTypes[i]
+		if strings.TrimSpace(ov.Program) == "" {
+			return fmt.Errorf("program_types[%d].program is required (program name or ELF section)", i)
+		}
+		if !validProgramSelector(ov.Program) {
+			return fmt.Errorf("program_types[%d].program %q must be a program name or ELF section (letters, digits, '_', '.', '/', '-')", i, ov.Program)
+		}
+		if !progTypeNames[ov.Type] {
+			return fmt.Errorf("program_types[%d].type %q is not a recognized BPF program type", i, ov.Type)
+		}
+	}
+
 	seenGroups := make(map[string]struct{}, len(m.ProgramVariants))
 	seenVariantPrograms := make(map[string]struct{})
 	for i := range m.ProgramVariants {
@@ -185,6 +198,21 @@ func validMapName(name string) bool {
 	}
 	for _, r := range name {
 		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+// validProgramSelector accepts a program name or an ELF section name (which can
+// contain '/' and '-'), while staying shell-safe for the validator CLI arg.
+func validProgramSelector(sel string) bool {
+	if sel == "" || len(sel) > 128 {
+		return false
+	}
+	for _, r := range sel {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') &&
+			r != '_' && r != '.' && r != '/' && r != '-' {
 			return false
 		}
 	}

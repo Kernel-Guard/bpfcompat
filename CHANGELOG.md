@@ -18,6 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   later for its own reasons — e.g. `trace_dns` then hits a CO-RE relocation
   against Inspektor Gadget's socket-enricher API type `gadget_socket_value`,
   which the IG loader supplies at runtime and a standalone load does not.)
+- Manifest-declared program-type override: `program_types:` entries
+  (`{program: <name-or-section>, type: <bpf-type>}`) set a program's BPF type
+  explicitly before load, the general form of the auto-typing above — for any
+  program libbpf can't classify, not just socket-filter. Surfaced to the
+  validator as `--set-prog-type <program|section>=<type>`; takes precedence
+  over auto-typing and is reported per override in the run notes.
 - Generic inner-map prototype map fixup: a manifest `maps[].inner_map`
   (`type`/`key_size`/`value_size`/`max_entries`) installs an inner-map template
   on a `HASH_OF_MAPS`/`ARRAY_OF_MAPS` before load, so objects whose own loader

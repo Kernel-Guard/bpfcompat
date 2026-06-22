@@ -98,6 +98,11 @@ type validatorResult struct {
 		Section  string `json:"section"`
 		ProgType uint32 `json:"prog_type"`
 	} `json:"auto_typed_programs"`
+	ProgramTypeOverrides []struct {
+		Selector string `json:"selector"`
+		ProgType uint32 `json:"prog_type"`
+		Status   string `json:"status"`
+	} `json:"program_type_overrides"`
 	Discovery struct {
 		Programs []struct {
 			Name         string `json:"name"`

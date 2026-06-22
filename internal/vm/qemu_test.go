@@ -457,3 +457,14 @@ func TestMachineArgsForAccelFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestProgTypeArgs(t *testing.T) {
+	got := progTypeArgs([]ProgTypeOverride{
+		{Selector: "socket1", Type: "socket_filter"},
+		{Selector: "ig_trace_dns", Type: "socket_filter"},
+	})
+	want := " --set-prog-type socket1=socket_filter --set-prog-type ig_trace_dns=socket_filter"
+	if got != want {
+		t.Fatalf("unexpected prog-type args:\n got %q\nwant %q", got, want)
+	}
+}

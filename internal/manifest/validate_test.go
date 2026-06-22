@@ -124,3 +124,24 @@ func TestValidateAcceptsSimpleManifest(t *testing.T) {
 		t.Fatalf("unexpected validation error: %v", err)
 	}
 }
+
+func TestValidateProgramTypes(t *testing.T) {
+	ok := Manifest{ProgramTypes: []ProgramTypeOverride{
+		{Program: "ig_trace_dns", Type: "socket_filter"},
+		{Program: "socket1", Type: "socket_filter"},
+		{Program: "tracepoint/syscalls/sys_enter_open", Type: "tracepoint"},
+	}}
+	if err := Validate(ok); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+	bad := []Manifest{
+		{ProgramTypes: []ProgramTypeOverride{{Type: "socket_filter"}}},                 // missing program
+		{ProgramTypes: []ProgramTypeOverride{{Program: "p", Type: "no_such_type"}}},    // bad type
+		{ProgramTypes: []ProgramTypeOverride{{Program: "bad;rm -rf", Type: "kprobe"}}}, // shell-unsafe
+	}
+	for i, m := range bad {
+		if err := Validate(m); err == nil {
+			t.Errorf("case %d: expected validation error", i)
+		}
+	}
+}
