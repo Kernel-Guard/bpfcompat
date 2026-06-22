@@ -1649,6 +1649,53 @@ static void auto_size_maps(struct bpf_object *obj) {
     }
 }
 
+/* Programs whose ELF section name libbpf can't map to a program type get
+ * auto-typed the way the real loader would. The motivating case: Inspektor
+ * Gadget's socket-filter programs live in sections like "socket1", which
+ * libbpf doesn't recognize (it matches "socket" exactly or "socket/..."), so
+ * the load fails with "missing BPF prog type". Only programs libbpf left as
+ * UNSPEC are touched, and only for section families that unambiguously imply
+ * a type — today socket-filter. Other families (kprobe/, tracepoint/, ...)
+ * already use libbpf's "<type>/..." convention and resolve on their own. */
+#define MAX_AUTOTYPED_PROGS 64
+
+struct autotyped_prog {
+    char name[128];
+    char section[128];
+    unsigned int prog_type;
+};
+static struct autotyped_prog g_autotyped[MAX_AUTOTYPED_PROGS];
+static int g_autotyped_count;
+
+static void auto_type_programs(struct bpf_object *obj) {
+    struct bpf_program *prog;
+    bpf_object__for_each_program(prog, obj) {
+        if (bpf_program__type(prog) != BPF_PROG_TYPE_UNSPEC) {
+            continue;
+        }
+        const char *section = bpf_program__section_name(prog);
+        if (!section) {
+            continue;
+        }
+        unsigned int t = 0;
+        if (strncmp(section, "socket", 6) == 0) {
+            t = BPF_PROG_TYPE_SOCKET_FILTER;
+        }
+        if (t == 0) {
+            continue;
+        }
+        if (bpf_program__set_type(prog, (enum bpf_prog_type)t) != 0) {
+            continue;
+        }
+        if (g_autotyped_count < MAX_AUTOTYPED_PROGS) {
+            struct autotyped_prog *a = &g_autotyped[g_autotyped_count++];
+            snprintf(a->name, sizeof(a->name), "%s", bpf_program__name(prog));
+            snprintf(a->section, sizeof(a->section), "%s", section);
+            a->prog_type = t;
+        }
+    }
+}
+
 /* Select one variant per group the way the artifact's loader does: walk in
  * priority order, probe required helpers against this kernel, autoload the
  * first satisfying variant and disable the rest. Probing uses
@@ -1835,6 +1882,7 @@ static void run_libbpf_load(struct validator_result *res) {
     apply_prog_variants(&res->opts, obj);
     apply_map_fixups(&res->opts, obj, true);
     auto_size_maps(obj);
+    auto_type_programs(obj);
 
     int err = bpf_object__load(obj);
     if (err) {
@@ -1944,6 +1992,15 @@ static int write_result_json(const struct validator_result *res) {
         fprintf(f, "%s{\"name\":\"", i == 0 ? "" : ",");
         escape_json_string(f, g_autosized[i].name);
         fprintf(f, "\",\"map_type\":%u,\"max_entries\":%u}", g_autosized[i].map_type, g_autosized[i].max_entries);
+    }
+    fprintf(f, "],\n");
+    fprintf(f, "  \"auto_typed_programs\": [");
+    for (int i = 0; i < g_autotyped_count; i++) {
+        fprintf(f, "%s{\"name\":\"", i == 0 ? "" : ",");
+        escape_json_string(f, g_autotyped[i].name);
+        fprintf(f, "\",\"section\":\"");
+        escape_json_string(f, g_autotyped[i].section);
+        fprintf(f, "\",\"prog_type\":%u}", g_autotyped[i].prog_type);
     }
     fprintf(f, "],\n");
     fprintf(f, "  \"program_variants\": [");
