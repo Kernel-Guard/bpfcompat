@@ -533,6 +533,7 @@ func executeTarget(
 		ManifestPath:       stagedManifest,
 		FunctionalPlanPath: functionalPlanPath,
 		MapFixups:          tuning.mapFixups,
+		ProgTypes:          tuning.progTypes,
 		ProgVariants:       tuning.progVariants,
 		ProbeCompanions:    tuning.probeCompanions,
 		ValidatorBinary:    validatorBinPath,
@@ -578,6 +579,7 @@ func executeTarget(
 	target.Notes = append(target.Notes, mapFixupNotes(vr)...)
 	target.Notes = append(target.Notes, autoSizedMapNotes(vr)...)
 	target.Notes = append(target.Notes, autoTypedProgramNotes(vr)...)
+	target.Notes = append(target.Notes, progTypeOverrideNotes(vr)...)
 	target.Notes = append(target.Notes, progVariantNotes(vr)...)
 	target.Notes = append(target.Notes, perProgramLoadNotes(vr)...)
 	target.BTF = &schema.TargetBTF{
@@ -1007,10 +1009,28 @@ func autoTypedProgramNotes(vr validatorResult) []string {
 	return notes
 }
 
+// progTypeOverrideNotes reports the outcome of manifest-declared program-type
+// overrides (maps[].program_types) the validator applied before load.
+func progTypeOverrideNotes(vr validatorResult) []string {
+	notes := make([]string, 0, len(vr.ProgramTypeOverrides))
+	for _, o := range vr.ProgramTypeOverrides {
+		switch o.Status {
+		case "applied":
+			notes = append(notes, fmt.Sprintf("program type override applied: %q", o.Selector))
+		case "program_not_found":
+			notes = append(notes, fmt.Sprintf("program type override skipped: no program or section %q in artifact", o.Selector))
+		case "error":
+			notes = append(notes, fmt.Sprintf("program type override failed: %q", o.Selector))
+		}
+	}
+	return notes
+}
+
 // validatorTuning carries manifest-declared loader-contract settings (map
 // fixups, program variant groups) from manifest load to VM execution.
 type validatorTuning struct {
 	mapFixups       []vm.MapFixup
+	progTypes       []vm.ProgTypeOverride
 	progVariants    []vm.ProgVariantGroup
 	probeCompanions []string
 }
@@ -1030,6 +1050,12 @@ func validatorTuningFromManifest(mf manifest.Manifest) validatorTuning {
 			vmFixup.InnerMaxEntries = fixup.InnerMap.MaxEntries
 		}
 		tuning.mapFixups = append(tuning.mapFixups, vmFixup)
+	}
+	for _, ov := range mf.ProgramTypes {
+		tuning.progTypes = append(tuning.progTypes, vm.ProgTypeOverride{
+			Selector: ov.Program,
+			Type:     ov.Type,
+		})
 	}
 	for _, group := range mf.ProgramVariants {
 		vmGroup := vm.ProgVariantGroup{Group: group.Group}

@@ -43,11 +43,13 @@ on AlmaLinux 8 (kernel 4.18)** — RHEL backported the ring buffer into 4.18, so
 the gadget loads there even though it fails on Ubuntu's *newer* vanilla 5.4. That
 is the canonical "kernel version ≠ feature support" case, shown empirically.
 
-### `trace_dns` — a loader contract, not a kernel limit
+### `trace_dns` — two loader contracts, neither a kernel limit
 
 `trace_dns` fails to load on **every** kernel (including 6.8 with BTF), which by
-itself signals a loader contract rather than a compatibility boundary. bpfcompat
-surfaces the exact reason:
+itself signals loader contracts rather than a compatibility boundary. It hits two,
+in order:
+
+**1. Program type (handled).** The first failure is:
 
 ```
 prog 'ig_trace_dns': missing BPF prog type, check ELF section name 'socket1'
@@ -55,10 +57,24 @@ prog 'ig_trace_dns': missing BPF prog type, check ELF section name 'socket1'
 
 The DNS gadget is a **socket-filter** program in a `socket1` section — a section
 name libbpf cannot map to a program type on its own, so IG's loader sets the type
-explicitly. A generic load can't infer it, so the load fails identically across
-kernels. This is *not* a kernel-version result; it is exactly the kind of
-loader-side detail a gadget's OCI metadata can describe, which is the direction
-for deriving load config automatically.
+explicitly. bpfcompat now does the same: it auto-types `socket`-prefixed programs
+to `SOCKET_FILTER` (and a manifest `program_types:` override can set any type for
+any program/section). With that, `trace_dns` clears the program-type stage.
+
+**2. Framework API (the real boundary).** It then fails at a CO-RE relocation:
+
+```
+failed to resolve CO-RE relocation struct gadget_socket_value.ipv6only
+```
+
+`gadget_socket_value` / `gadget_sockets` is **Inspektor Gadget's socket-enricher
+API** — not a kernel struct. Its BTF is supplied by IG's loader/runtime, so a
+standalone load has nothing to relocate against, and it fails identically on 6.1
+and 6.8. This is *not* a kernel-version result; it is the honest **boundary of
+standalone gadget validation**: a framework-coupled gadget that depends on its
+host runtime's injected API can be load-checked up to that contract, but fully
+loading it would mean reproducing the IG runtime. The same applies to gadgets
+whose attach points are rewritten by a WASM module (`fsnotify`, `fsslower`).
 
 ## Why this matters
 
