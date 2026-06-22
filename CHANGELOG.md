@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Generic inner-map prototype map fixup: a manifest `maps[].inner_map`
+  (`type`/`key_size`/`value_size`/`max_entries`) installs an inner-map template
+  on a `HASH_OF_MAPS`/`ARRAY_OF_MAPS` before load, so objects whose own loader
+  sets up the inner map at runtime can be validated faithfully. Previously only
+  an inner *ringbuf* could be declared. Surfaced to the validator as
+  `--set-map-inner-map <map>=<type>:<key>:<value>:<entries>`. Proven against
+  KubeArmor's `system_monitor.bpf.o` (`kubearmor_visibility`), which then loads
+  across Ubuntu 5.4/5.15, Debian 6.1, Ubuntu 6.8, and AlmaLinux 8 (4.18).
 - OCI gadget loading: `--artifact` now accepts an OCI image in addition to a
   local `.bpf.o` ELF — a registry reference (e.g.
   `ghcr.io/inspektor-gadget/gadget/trace_open:latest`), an OCI layout

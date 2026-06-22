@@ -48,6 +48,13 @@ type MapFixup struct {
 	Name              string
 	MaxEntries        string
 	InnerRingbufBytes uint32
+	// Generic inner-map prototype for a map-in-map. InnerMapType is one of the
+	// names accepted by the validator (hash, array, lru_hash, ...) and is
+	// validated at manifest load, so it is shell-safe here. Empty = unset.
+	InnerMapType    string
+	InnerKeySize    uint32
+	InnerValueSize  uint32
+	InnerMaxEntries uint32
 }
 
 func mapFixupArgs(fixups []MapFixup) string {
@@ -58,6 +65,10 @@ func mapFixupArgs(fixups []MapFixup) string {
 		}
 		if fixup.InnerRingbufBytes > 0 {
 			fmt.Fprintf(&b, " --set-map-inner-ringbuf %s=%d", fixup.Name, fixup.InnerRingbufBytes)
+		}
+		if fixup.InnerMapType != "" {
+			fmt.Fprintf(&b, " --set-map-inner-map %s=%s:%d:%d:%d", fixup.Name,
+				fixup.InnerMapType, fixup.InnerKeySize, fixup.InnerValueSize, fixup.InnerMaxEntries)
 		}
 	}
 	return b.String()

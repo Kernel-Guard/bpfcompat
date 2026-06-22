@@ -80,6 +80,10 @@ type validatorResult struct {
 		Name              string `json:"name"`
 		MaxEntries        string `json:"max_entries"`
 		InnerRingbufBytes uint32 `json:"inner_ringbuf_bytes"`
+		InnerMapType      uint32 `json:"inner_map_type"`
+		InnerKeySize      uint32 `json:"inner_key_size"`
+		InnerValueSize    uint32 `json:"inner_value_size"`
+		InnerMaxEntries   uint32 `json:"inner_max_entries"`
 		Status            string `json:"status"`
 		Errno             int    `json:"errno"`
 		AppliedEntries    uint32 `json:"applied_entries"`
