@@ -93,6 +93,11 @@ type validatorResult struct {
 		MapType    uint32 `json:"map_type"`
 		MaxEntries uint32 `json:"max_entries"`
 	} `json:"auto_sized_maps"`
+	AutoTypedPrograms []struct {
+		Name     string `json:"name"`
+		Section  string `json:"section"`
+		ProgType uint32 `json:"prog_type"`
+	} `json:"auto_typed_programs"`
 	Discovery struct {
 		Programs []struct {
 			Name         string `json:"name"`

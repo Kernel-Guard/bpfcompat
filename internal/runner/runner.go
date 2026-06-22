@@ -577,6 +577,7 @@ func executeTarget(
 	target.Notes = append(target.Notes, mapTypeHintNotes(vr.Logs.Libbpf)...)
 	target.Notes = append(target.Notes, mapFixupNotes(vr)...)
 	target.Notes = append(target.Notes, autoSizedMapNotes(vr)...)
+	target.Notes = append(target.Notes, autoTypedProgramNotes(vr)...)
 	target.Notes = append(target.Notes, progVariantNotes(vr)...)
 	target.Notes = append(target.Notes, perProgramLoadNotes(vr)...)
 	target.BTF = &schema.TargetBTF{
@@ -990,6 +991,18 @@ func autoSizedMapNotes(vr validatorResult) []string {
 	notes := make([]string, 0, len(vr.AutoSizedMaps))
 	for _, m := range vr.AutoSizedMaps {
 		notes = append(notes, fmt.Sprintf("auto-sized runtime map %q to max_entries=%d (shipped 0; loader sizes it at runtime)", m.Name, m.MaxEntries))
+	}
+	return notes
+}
+
+// autoTypedProgramNotes reports programs whose BPF type the validator set
+// because libbpf could not infer it from the ELF section name (e.g. a
+// socket-filter program in a "socket1" section) — transparent so a reader
+// knows the load relied on setting the type, as the artifact's loader does.
+func autoTypedProgramNotes(vr validatorResult) []string {
+	notes := make([]string, 0, len(vr.AutoTypedPrograms))
+	for _, p := range vr.AutoTypedPrograms {
+		notes = append(notes, fmt.Sprintf("auto-typed program %q (section %q) — set BPF program type the loader assigns, since libbpf could not infer it from the section name", p.Name, p.Section))
 	}
 	return notes
 }
