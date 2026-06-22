@@ -181,7 +181,8 @@ func firstImageFromIndex(idx v1.ImageIndex) (v1.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read index manifest: %w", err)
 	}
-	for _, desc := range manifest.Manifests {
+	for i := range manifest.Manifests {
+		desc := &manifest.Manifests[i]
 		if desc.MediaType.IsImage() {
 			return idx.Image(desc.Digest)
 		}
@@ -304,12 +305,12 @@ func extractTar(path, dstDir string) error {
 	}
 }
 
-// safeJoin joins name onto dir, rejecting paths that escape dir (zip-slip).
-func safeJoin(dir, name string) (string, error) {
-	target := filepath.Join(dir, name)
+// safeJoin joins entry onto dir, rejecting paths that escape dir (zip-slip).
+func safeJoin(dir, entry string) (string, error) {
+	target := filepath.Join(dir, entry)
 	cleanDir := filepath.Clean(dir) + string(os.PathSeparator)
 	if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), cleanDir) {
-		return "", fmt.Errorf("archive entry escapes destination: %q", name)
+		return "", fmt.Errorf("archive entry escapes destination: %q", entry)
 	}
 	return target, nil
 }
