@@ -15,6 +15,7 @@ type Manifest struct {
 	Name            string                `yaml:"name"`
 	Programs        []Program             `yaml:"programs"`
 	Maps            []MapFixup            `yaml:"maps,omitempty"`
+	ProgramTypes    []ProgramTypeOverride `yaml:"program_types,omitempty"`
 	ProgramVariants []ProgramVariantGroup `yaml:"program_variants,omitempty"`
 	// ProbeCompanions lists programs statically referenced from prog-array
 	// map slots; they must stay autoloaded during trial_load probes or
@@ -113,6 +114,33 @@ var innerMapTypes = map[string]bool{
 	"percpu_hash":     true,
 	"percpu_array":    true,
 	"lru_percpu_hash": true,
+}
+
+// ProgramTypeOverride sets a program's BPF type explicitly when libbpf can't
+// map it from the ELF section name (e.g. Inspektor Gadget's socket-filter
+// programs in a "socket1" section). Program matches the program name or its
+// section name.
+type ProgramTypeOverride struct {
+	Program string `yaml:"program"`
+	Type    string `yaml:"type"`
+}
+
+// progTypeNames is the set of program-type names the validator understands.
+var progTypeNames = map[string]bool{
+	"socket_filter":  true,
+	"kprobe":         true,
+	"tracepoint":     true,
+	"raw_tracepoint": true,
+	"xdp":            true,
+	"perf_event":     true,
+	"cgroup_skb":     true,
+	"cgroup_sock":    true,
+	"sched_cls":      true,
+	"sched_act":      true,
+	"sk_skb":         true,
+	"sk_msg":         true,
+	"tracing":        true,
+	"lsm":            true,
 }
 
 // EntriesValue accepts either a YAML integer or the string "cpus".

@@ -19,6 +19,7 @@ type ExecutionRequest struct {
 	ManifestPath       string
 	FunctionalPlanPath string
 	MapFixups          []MapFixup
+	ProgTypes          []ProgTypeOverride
 	ProgVariants       []ProgVariantGroup
 	ProbeCompanions    []string
 	ValidatorBinary    string
@@ -74,6 +75,22 @@ func mapFixupArgs(fixups []MapFixup) string {
 	return b.String()
 }
 
+// ProgTypeOverride mirrors a manifest program-type override for the validator
+// command line. Selector (program name or section) and Type are validated at
+// manifest load, so both are shell-safe here.
+type ProgTypeOverride struct {
+	Selector string
+	Type     string
+}
+
+func progTypeArgs(overrides []ProgTypeOverride) string {
+	var b strings.Builder
+	for _, ov := range overrides {
+		fmt.Fprintf(&b, " --set-prog-type %s=%s", ov.Selector, ov.Type)
+	}
+	return b.String()
+}
+
 func progVariantArgs(groups []ProgVariantGroup) string {
 	var b strings.Builder
 	for _, group := range groups {
@@ -95,7 +112,7 @@ func progVariantArgs(groups []ProgVariantGroup) string {
 // validatorTuningArgs renders all manifest-declared loader-contract flags
 // (map fixups, program variant groups) for the in-guest validator command.
 func validatorTuningArgs(req ExecutionRequest) string {
-	args := mapFixupArgs(req.MapFixups) + progVariantArgs(req.ProgVariants)
+	args := mapFixupArgs(req.MapFixups) + progTypeArgs(req.ProgTypes) + progVariantArgs(req.ProgVariants)
 	if len(req.ProbeCompanions) > 0 {
 		args += " --probe-companions " + strings.Join(req.ProbeCompanions, ",")
 	}

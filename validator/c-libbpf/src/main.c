@@ -57,6 +57,37 @@ static unsigned int inner_map_type_from_name(const char *name) {
     return 0;
 }
 
+/* Resolve the program-type names accepted in manifests to numeric
+ * BPF_PROG_TYPE_* values. Returns 0 (UNSPEC) for an unknown name. */
+static unsigned int prog_type_from_name(const char *name) {
+    if (strcmp(name, "socket_filter") == 0) return BPF_PROG_TYPE_SOCKET_FILTER;
+    if (strcmp(name, "kprobe") == 0) return BPF_PROG_TYPE_KPROBE;
+    if (strcmp(name, "tracepoint") == 0) return BPF_PROG_TYPE_TRACEPOINT;
+    if (strcmp(name, "raw_tracepoint") == 0) return BPF_PROG_TYPE_RAW_TRACEPOINT;
+    if (strcmp(name, "xdp") == 0) return BPF_PROG_TYPE_XDP;
+    if (strcmp(name, "perf_event") == 0) return BPF_PROG_TYPE_PERF_EVENT;
+    if (strcmp(name, "cgroup_skb") == 0) return BPF_PROG_TYPE_CGROUP_SKB;
+    if (strcmp(name, "cgroup_sock") == 0) return BPF_PROG_TYPE_CGROUP_SOCK;
+    if (strcmp(name, "sched_cls") == 0) return BPF_PROG_TYPE_SCHED_CLS;
+    if (strcmp(name, "sched_act") == 0) return BPF_PROG_TYPE_SCHED_ACT;
+    if (strcmp(name, "sk_skb") == 0) return BPF_PROG_TYPE_SK_SKB;
+    if (strcmp(name, "sk_msg") == 0) return BPF_PROG_TYPE_SK_MSG;
+    if (strcmp(name, "tracing") == 0) return BPF_PROG_TYPE_TRACING;
+    if (strcmp(name, "lsm") == 0) return BPF_PROG_TYPE_LSM;
+    return 0;
+}
+
+#define MAX_PROG_TYPE_OVERRIDES 32
+
+/* A manifest-declared program-type override: set a program's BPF type
+ * explicitly when its ELF section name can't be mapped by libbpf. `selector`
+ * matches either the program name or its section name. */
+struct prog_type_override {
+    char selector[128];
+    unsigned int prog_type;
+    char status[32]; /* applied | program_not_found | error */
+};
+
 #define MAX_VARIANT_GROUPS 16
 #define MAX_VARIANTS_PER_GROUP 6
 
@@ -85,6 +116,8 @@ struct options {
     bool probe_features;
     struct map_fixup map_fixups[MAX_MAP_FIXUPS];
     int map_fixup_count;
+    struct prog_type_override prog_type_overrides[MAX_PROG_TYPE_OVERRIDES];
+    int prog_type_override_count;
     struct prog_variant_group variant_groups[MAX_VARIANT_GROUPS];
     int variant_group_count;
     /* Programs statically referenced from prog-array map slots; they must
@@ -176,6 +209,7 @@ static void usage(const char *prog) {
             "[--probe-features <bool>] [--set-map-max-entries <map>=<n|cpus>]... "
             "[--set-map-inner-ringbuf <map>=<bytes>]... "
             "[--set-map-inner-map <map>=<type>:<key>:<value>:<entries>]... "
+            "[--set-prog-type <program|section>=<type>]... "
             "[--prog-variants <group>=<prog>:<helper_id|trial>,...]... "
             "[--probe-companions <prog>,<prog>,...]\n",
             prog);
@@ -364,6 +398,37 @@ static int add_inner_map_fixup(struct options *opts, const char *spec) {
     return 0;
 }
 
+/* Parse "<selector>=<type>" for --set-prog-type, declaring an explicit BPF
+ * program type for a program libbpf can't classify from its section name.
+ * selector matches the program name or its ELF section name. */
+static int add_prog_type_override(struct options *opts, const char *spec) {
+    const char *eq = spec ? strchr(spec, '=') : NULL;
+    if (!eq || eq == spec || !eq[1]) {
+        fprintf(stderr, "invalid prog-type spec (want <selector>=<type>): %s\n", spec ? spec : "");
+        return -1;
+    }
+    size_t sel_len = (size_t)(eq - spec);
+    if (sel_len >= sizeof(((struct prog_type_override *)0)->selector)) {
+        fprintf(stderr, "prog-type selector too long: %s\n", spec);
+        return -1;
+    }
+    unsigned int t = prog_type_from_name(eq + 1);
+    if (t == 0) {
+        fprintf(stderr, "unknown program type '%s' in: %s\n", eq + 1, spec);
+        return -1;
+    }
+    if (opts->prog_type_override_count >= MAX_PROG_TYPE_OVERRIDES) {
+        fprintf(stderr, "too many prog-type overrides: max %d\n", MAX_PROG_TYPE_OVERRIDES);
+        return -1;
+    }
+    struct prog_type_override *o = &opts->prog_type_overrides[opts->prog_type_override_count++];
+    memset(o, 0, sizeof(*o));
+    memcpy(o->selector, spec, sel_len);
+    o->selector[sel_len] = '\0';
+    o->prog_type = t;
+    return 0;
+}
+
 /* Parse "<group>=<prog>:<helper_id>,<prog>:<helper_id>,..." for
  * --prog-variants. helper_id 0 means the variant has no helper requirement
  * (the unconditional fallback). Variant order is selection priority. */
@@ -490,6 +555,12 @@ static int parse_args(int argc, char **argv, struct options *opts) {
         }
         if (strcmp(argv[i], "--set-map-inner-map") == 0 && i + 1 < argc) {
             if (add_inner_map_fixup(opts, argv[++i]) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--set-prog-type") == 0 && i + 1 < argc) {
+            if (add_prog_type_override(opts, argv[++i]) != 0) {
                 return -1;
             }
             continue;
@@ -1667,6 +1738,34 @@ struct autotyped_prog {
 static struct autotyped_prog g_autotyped[MAX_AUTOTYPED_PROGS];
 static int g_autotyped_count;
 
+/* Apply manifest-declared program-type overrides: set each selected program's
+ * type explicitly. Runs before auto_type_programs so an explicit override wins
+ * and the program is no longer UNSPEC for the auto pass to touch. */
+static void apply_prog_type_overrides(struct options *opts, struct bpf_object *obj) {
+    for (int i = 0; i < opts->prog_type_override_count; i++) {
+        struct prog_type_override *o = &opts->prog_type_overrides[i];
+        bool found = false;
+        struct bpf_program *prog;
+        bpf_object__for_each_program(prog, obj) {
+            const char *name = bpf_program__name(prog);
+            const char *section = bpf_program__section_name(prog);
+            if ((name && strcmp(name, o->selector) == 0) ||
+                (section && strcmp(section, o->selector) == 0)) {
+                found = true;
+                if (bpf_program__set_type(prog, (enum bpf_prog_type)o->prog_type) == 0) {
+                    snprintf(o->status, sizeof(o->status), "applied");
+                } else {
+                    snprintf(o->status, sizeof(o->status), "error");
+                }
+                break;
+            }
+        }
+        if (!found) {
+            snprintf(o->status, sizeof(o->status), "program_not_found");
+        }
+    }
+}
+
 static void auto_type_programs(struct bpf_object *obj) {
     struct bpf_program *prog;
     bpf_object__for_each_program(prog, obj) {
@@ -1882,6 +1981,7 @@ static void run_libbpf_load(struct validator_result *res) {
     apply_prog_variants(&res->opts, obj);
     apply_map_fixups(&res->opts, obj, true);
     auto_size_maps(obj);
+    apply_prog_type_overrides(&res->opts, obj);
     auto_type_programs(obj);
 
     int err = bpf_object__load(obj);
@@ -2001,6 +2101,16 @@ static int write_result_json(const struct validator_result *res) {
         fprintf(f, "\",\"section\":\"");
         escape_json_string(f, g_autotyped[i].section);
         fprintf(f, "\",\"prog_type\":%u}", g_autotyped[i].prog_type);
+    }
+    fprintf(f, "],\n");
+    fprintf(f, "  \"program_type_overrides\": [");
+    for (int i = 0; i < res->opts.prog_type_override_count; i++) {
+        const struct prog_type_override *o = &res->opts.prog_type_overrides[i];
+        fprintf(f, "%s{\"selector\":\"", i == 0 ? "" : ",");
+        escape_json_string(f, o->selector);
+        fprintf(f, "\",\"prog_type\":%u,\"status\":\"", o->prog_type);
+        escape_json_string(f, o->status);
+        fprintf(f, "\"}");
     }
     fprintf(f, "],\n");
     fprintf(f, "  \"program_variants\": [");
