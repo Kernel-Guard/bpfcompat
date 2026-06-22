@@ -7,13 +7,22 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 `bpfcompat` is an open-source compatibility validator for compiled eBPF
-artifacts. It runs real libbpf load/attach checks against Linux kernel profiles
-and produces JSON/Markdown reports that can fail CI when an artifact regresses.
+artifacts. **Test your eBPF across real kernels — locally or in CI.** It boots
+real distro kernels in disposable VMs, runs libbpf load/attach checks, and
+produces JSON/Markdown reports that can fail CI when an artifact regresses — so
+the answer is empirical, not inferred from CO-RE.
 
 The core question is simple:
 
 > Will this `.bpf.o` load and attach on the kernels I care about, and if not,
 > what failed?
+
+Point it at a local `.bpf.o` or a **published gadget by OCI reference**, on your
+laptop or as a CI gate — `--quick` needs no matrix file:
+
+```sh
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+```
 
 **Live demo:** [bpfcompat.kernelguard.net](https://bpfcompat.kernelguard.net) — upload a
 `.bpf.o` and see the compatibility matrix.
@@ -67,6 +76,23 @@ The red `5.4` row is the point: a kernel below Falco's real floor is flagged
 *before* shipping, with the exact mechanism (`ringbuf_maps` create returns
 `-EINVAL`) and remediation — not a generic "it broke." Reproduce this matrix
 locally; see [`docs/falco-parity.md`](docs/falco-parity.md).
+
+## Validate a published gadget in one command
+
+eBPF gadgets ship as OCI images. Point `bpfcompat` at one by reference — it
+extracts the eBPF object, auto-sizes runtime-sized maps, and validates it across
+kernels with no manifest and no matrix file:
+
+```sh
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+```
+
+Pulled straight from the registry, Inspektor Gadget's `trace_open`/`trace_exec`
+load and attach on 6.1/6.8 and are correctly flagged on 5.4 (the `events` ring
+buffer needs ≥ 5.8) — and `trace_open` passes on AlmaLinux 8's backported 4.18,
+the textbook "kernel version ≠ feature support" case. Full write-up, including
+the `trace_dns` loader-contract finding:
+[`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md).
 
 ## Current Status
 
@@ -414,6 +440,12 @@ User guide — start here:
 - [`docs/upstream-kernel-virtme-ng.md`](docs/upstream-kernel-virtme-ng.md)
 - [`docs/firecracker-backend.md`](docs/firecracker-backend.md)
 - [`docs/api-web-ui.md`](docs/api-web-ui.md)
+
+Reference matrices (real, reproducible artifacts):
+
+- [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
+- [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
+- [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config
 
 Internal evidence and program docs (acceptance records, runbooks, and
 planning notes — useful for contributors, not needed to use the tool):

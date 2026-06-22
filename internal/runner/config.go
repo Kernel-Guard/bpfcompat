@@ -34,13 +34,16 @@ type ProgressUpdate struct {
 type ProgressReporter func(ProgressUpdate)
 
 type Config struct {
-	ArtifactPath          string
-	ArtifactURI           string
-	ArtifactName          string
-	ArtifactVersion       string
-	ArtifactVariant       string
-	ValidationMode        string
-	MatrixPath            string
+	ArtifactPath    string
+	ArtifactURI     string
+	ArtifactName    string
+	ArtifactVersion string
+	ArtifactVariant string
+	ValidationMode  string
+	MatrixPath      string
+	// Quick selects the built-in quick-check kernel set (matrix.Quick) when no
+	// MatrixPath is given — a fast local "does it load?" check.
+	Quick                 bool
 	ManifestPath          string
 	OutPath               string
 	MarkdownPath          string
@@ -85,8 +88,8 @@ func (c Config) Validate() error {
 	if c.ArtifactPath == "" {
 		return errors.New("--artifact is required")
 	}
-	if c.MatrixPath == "" {
-		return errors.New("--matrix is required")
+	if c.MatrixPath == "" && !c.Quick {
+		return errors.New("--matrix is required (or pass --quick for the default kernel set)")
 	}
 	if c.OutPath == "" {
 		return errors.New("--out is required")

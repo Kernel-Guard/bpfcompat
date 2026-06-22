@@ -910,7 +910,7 @@ const uiHTML = `<!doctype html>
 </head>
 <body>
   <div class="preview-banner">
-    <span>Technical Preview — CI-first eBPF compatibility gate. Production runtime loading remains disabled in the public demo.</span>
+    <span>Technical Preview — test your eBPF across real kernels, locally or in CI. Production runtime loading remains disabled in the public demo.</span>
     <nav class="banner-nav">
       <a href="#how-it-works">How it works</a>
       <a href="#faq">FAQ</a>

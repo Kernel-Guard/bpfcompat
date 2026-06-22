@@ -163,13 +163,14 @@ func runTest(args []string) int {
 	fs.SetOutput(os.Stderr)
 
 	var cfg runner.Config
-	fs.StringVar(&cfg.ArtifactPath, "artifact", "", "Path to compiled .bpf.o artifact")
+	fs.StringVar(&cfg.ArtifactPath, "artifact", "", "Compiled .bpf.o artifact: a local ELF file, an OCI gadget (registry ref e.g. ghcr.io/org/gadget:tag), or an OCI image archive/layout")
 	fs.StringVar(&cfg.ArtifactURI, "artifact-uri", "", "Optional remote URI for artifact retrieval metadata (http|https|file)")
 	fs.StringVar(&cfg.ArtifactName, "artifact-name", "", "Logical artifact family name for version history (optional)")
 	fs.StringVar(&cfg.ArtifactVersion, "artifact-version", "", "Artifact version label for version history (optional)")
 	fs.StringVar(&cfg.ArtifactVariant, "artifact-variant", "", "Artifact variant label (optional)")
 	fs.StringVar(&cfg.ValidationMode, "validation-mode", "", "Validation mode: load_only, load_attach, or behavior (default preserves manifest behavior)")
 	fs.StringVar(&cfg.MatrixPath, "matrix", "", "Path to matrix YAML")
+	fs.BoolVar(&cfg.Quick, "quick", false, "Use the built-in quick-check kernel set instead of --matrix (fast local 'does it load?' check)")
 	fs.StringVar(&cfg.ManifestPath, "manifest", "", "Path to artifact manifest YAML (optional)")
 	fs.StringVar(&cfg.OutPath, "out", "", "Path to JSON report output")
 	fs.StringVar(&cfg.MarkdownPath, "markdown", "", "Path to Markdown report output (optional)")

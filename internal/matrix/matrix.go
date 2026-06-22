@@ -28,6 +28,24 @@ func (p MatrixProfile) RequiredBool() bool {
 	return *p.Required
 }
 
+// QuickProfileIDs is the default kernel set used by `--quick`: a small,
+// representative spread (old LTS → recent) for a fast local "does it load?"
+// check without writing a matrix file.
+var QuickProfileIDs = []string{
+	"ubuntu-20.04-5.4",
+	"debian-12-6.1",
+	"ubuntu-24.04-6.8",
+}
+
+// Quick returns the built-in quick-check matrix used by `--quick`.
+func Quick() Matrix {
+	profiles := make([]MatrixProfile, 0, len(QuickProfileIDs))
+	for _, id := range QuickProfileIDs {
+		profiles = append(profiles, MatrixProfile{ID: id})
+	}
+	return Matrix{Name: "quick", Profiles: profiles}
+}
+
 func Load(path string) (Matrix, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
