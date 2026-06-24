@@ -66,33 +66,13 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -o /out/bpfcompat ./cmd/bpfcompat
 
 #######################################
-# 2. Final image (default): Go binary only
+# 2. Optional stage with the C validator bundled
 #######################################
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639 AS final
-
-# /data is the conventional mount point for the workdir. Override via
-#   docker run -v /host/path:/data/.bpfcompat ...
-# or via --workdir on the CLI.
-WORKDIR /data
-
-COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
-
-# distroless images carry an unprivileged 'nonroot' user (uid 65532) already.
-USER nonroot:nonroot
-
-EXPOSE 8080
-
-# Entry point is the binary; subcommand is passed via CMD so the typical
-# operator override is just `docker run bpfcompat:dev <subcommand>`.
-ENTRYPOINT ["/usr/local/bin/bpfcompat"]
-CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
-
-#######################################
-# 3. Optional final stage with the C validator bundled
-#######################################
-# This target shouldn't be the default because building the validator pulls
-# in libbpf/clang/llvm and bloats the image. Build explicitly when you need
-# host-side runtime execute from inside the container:
+# This is NOT the default target: building the validator pulls in
+# libbpf/clang/llvm and bloats the image. It is placed before `final` so
+# that a plain `docker build .` (no --target) resolves to the lean `final`
+# stage. Build this one explicitly when you need host-side runtime execute
+# from inside the container:
 #   docker build --target with-validator -t bpfcompat:dev-validator .
 FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716 AS validator-builder
 
@@ -104,6 +84,7 @@ RUN apt-get update -y && \
       libbpf-dev \
       libelf-dev \
       zlib1g-dev \
+      libzstd-dev \
       pkg-config \
       make && \
     rm -rf /var/lib/apt/lists/*
@@ -120,5 +101,29 @@ COPY --from=validator-builder /src/validator/c-libbpf/bin/bpfcompat-validator \
      /usr/libexec/bpfcompat/bpfcompat-validator
 USER nonroot:nonroot
 EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/bpfcompat"]
+CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
+
+#######################################
+# 3. Final image (default): Go binary only
+#######################################
+# Last stage in the file, so `docker build .` with no --target builds this
+# lean, validator-free image.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639 AS final
+
+# /data is the conventional mount point for the workdir. Override via
+#   docker run -v /host/path:/data/.bpfcompat ...
+# or via --workdir on the CLI.
+WORKDIR /data
+
+COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
+
+# distroless images carry an unprivileged 'nonroot' user (uid 65532) already.
+USER nonroot:nonroot
+
+EXPOSE 8080
+
+# Entry point is the binary; subcommand is passed via CMD so the typical
+# operator override is just `docker run bpfcompat:dev <subcommand>`.
 ENTRYPOINT ["/usr/local/bin/bpfcompat"]
 CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
