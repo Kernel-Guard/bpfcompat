@@ -154,6 +154,8 @@ sudo install -m 0755 bpfcompat-linux-amd64 /usr/local/bin/bpfcompat
 bpfcompat version
 ```
 
+![Installing bpfcompat from a prebuilt release binary](docs/images/install/install-release-binary.png)
+
 **2. From source.** Builds both the CLI and the validator and gives a binary
 stamped with the real version:
 
@@ -163,6 +165,8 @@ cd bpfcompat
 make build && make validator-static
 ./bin/bpfcompat version
 ```
+
+![Installing bpfcompat from source](docs/images/install/install-from-source.png)
 
 **3. `go install` (CLI only).** Note the module path is **lowercase** and the
 command **must** point at the `cmd/bpfcompat` subpackage — the module root has
@@ -177,6 +181,17 @@ This installs the orchestrator CLI only (it reports version `0.1.0-dev` because
 `go install` does not inject build-time ldflags). To run `bpfcompat test` you
 still need the validator binary (from a release or `make validator-static`) and
 a kernel matrix — use option 1 or 2 for that.
+
+![Installing bpfcompat with go install](docs/images/install/install-go-install.png)
+
+### What a run looks like
+
+Once installed, `bpfcompat test` boots each kernel in a disposable VM and reports
+a per-kernel pass/fail matrix — here the `ringbuf_modern` example across three
+kernels, correctly failing on 5.4 (ring buffer support lands in 5.8) and passing
+on 6.1 and 6.8:
+
+![A bpfcompat validation run across three kernels](docs/images/install/live-validation.png)
 
 ## Prerequisites
 
