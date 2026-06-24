@@ -134,6 +134,50 @@ If this repository is being prepared for public release, read
 changing GitHub visibility. Deleting private/generated files in a later commit
 does not remove them from git history.
 
+## Install
+
+There are three ways to get the CLI. Most users want the prebuilt release
+binary or the source build, because running `bpfcompat test` also needs the
+guest-side validator binary and the kernel matrices that ship in this repo.
+
+**1. Prebuilt release binary (recommended, Linux x86_64).** Ships the CLI *and*
+the static validator, checksum-verified:
+
+```bash
+VER=v0.1.6
+base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
+curl -fsSLO "$base/bpfcompat-linux-amd64"
+curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
+curl -fsSLO "$base/SHA256SUMS"
+sha256sum -c SHA256SUMS --ignore-missing
+sudo install -m 0755 bpfcompat-linux-amd64 /usr/local/bin/bpfcompat
+bpfcompat version
+```
+
+**2. From source.** Builds both the CLI and the validator and gives a binary
+stamped with the real version:
+
+```bash
+git clone https://github.com/Kernel-Guard/bpfcompat
+cd bpfcompat
+make build && make validator-static
+./bin/bpfcompat version
+```
+
+**3. `go install` (CLI only).** Note the module path is **lowercase** and the
+command **must** point at the `cmd/bpfcompat` subpackage — the module root has
+no `main` package, so `go install github.com/Kernel-Guard/bpfcompat@latest`
+fails with *"found, but does not contain package …"*:
+
+```bash
+go install github.com/kernel-guard/bpfcompat/cmd/bpfcompat@latest
+```
+
+This installs the orchestrator CLI only (it reports version `0.1.0-dev` because
+`go install` does not inject build-time ldflags). To run `bpfcompat test` you
+still need the validator binary (from a release or `make validator-static`) and
+a kernel matrix — use option 1 or 2 for that.
+
 ## Prerequisites
 
 For the main QEMU path:
