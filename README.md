@@ -44,6 +44,56 @@ CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
 `bpfcompat` answers the empirical question CO-RE leaves open: *does it actually
 load and attach here?* — by running the artifact in a real kernel.
 
+## How validation works: full VMs, not static analysis
+
+bpfcompat does **not** parse your object and guess. For every target it:
+
+1. boots the **real distro cloud image and its actual kernel** as a disposable
+   QEMU/KVM virtual machine (default `--runner vm`; `virtme-ng`, `firecracker`,
+   and `host` are also selectable);
+2. copies a **C/libbpf validator and your `.bpf.o` into the guest** over a
+   per-run SSH key;
+3. runs the **real `bpf()` load — and attach, in `load_attach` mode — inside
+   that kernel**, then copies a structured result back and throws the VM away.
+
+So a verdict is what the kernel itself accepted or rejected (verifier log, BTF,
+CO-RE relocation, map/program/attach support), not a heuristic. Each run leaves
+per-target evidence — `serial.log` (the guest kernel boot), `qemu.log`, and
+`validator-result.json`.
+
+### Distributions covered
+
+A curated, multi-distro, multi-architecture matrix of the kernels enterprises
+and cloud fleets actually run (full list in
+[docs/profile-catalog.md](docs/profile-catalog.md)):
+
+| Family | Versions / kernels |
+|---|---|
+| Ubuntu | 16.04 → 25.10 (5.4, 5.8, 5.15, 6.5, 6.8, 6.11, 6.14, 6.17) |
+| Debian | 11 · 12 · 13 |
+| RHEL¹ / AlmaLinux / Rocky / CentOS Stream | 8 (4.18) · 9 (5.14) · 10 (6.12) |
+| Oracle Linux (UEK) | UEK 7 · UEK 8 |
+| Amazon Linux | 2 (4.14, 5.10) · 2023 (6.1) |
+| SUSE / openSUSE Leap | 15.6 (6.4) |
+| Upstream mainline | kernel.org 5.x–6.x sweeps |
+
+Architectures: **x86_64 and ARM64**. ¹RHEL itself is a BYO subscription image;
+AlmaLinux/Rocky/CentOS Stream are the public, ABI-compatible rebuilds used as the
+reproducible RHEL stand-in.
+
+### Kernel version ≠ feature support (backports)
+
+Enterprise distros **heavily backport** eBPF features onto old kernel bases, so
+the version number alone predicts nothing. Because bpfcompat boots the real
+vendor kernel, this is tested directly instead of inferred:
+
+- A ring-buffer program **fails on Ubuntu's vanilla 5.4** (ring buffer lands
+  upstream in 5.8) yet **passes on AlmaLinux 8's backported 4.18**.
+- **Amazon Linux 2's 4.14 — with no embedded BTF — still loads and attaches.**
+
+This is proven across a 14/14 enterprise tier:
+[docs/case-study-enterprise-kernels.md](docs/case-study-enterprise-kernels.md).
+
 ## Try it in CI without your own KVM box
 
 GitHub-hosted Linux runners now expose `/dev/kvm`, so the full QEMU VM
