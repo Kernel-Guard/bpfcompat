@@ -71,6 +71,10 @@ Pinning to a release tag uses checksum-verified, attested prebuilt binaries
 
 ## 2. Run it locally (CLI)
 
+Install the CLI and validator first — see [Install](../README.md#install)
+(prebuilt release binary, source build, or `go install`). The from-source build
+is:
+
 ```bash
 make build && make validator-static
 ./bin/bpfcompat test \
