@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Embeddable library mode (`pkg/bpfcompat`). `ValidateBeforeLoad` /
+  `ValidateBytes` do a real load of a compiled eBPF object against the local
+  running kernel — no VM, no network — for use as a pre-load gate (e.g.
+  bpfman); `Validate` exposes the full VM matrix engine. Host-kernel loading is
+  gated behind the `hostload` build tag (default builds return
+  `ErrHostLoadNotEnabled`), the static validator is embedded via `go:embed`
+  (amd64/arm64; staged by `make pkg-embed-validator`, built by
+  `make lib-hostload`), and an internal provider seam keeps the public API
+  stable for a future in-process CGO validator. Pre-1.0 / experimental; see
+  `pkg/bpfcompat/README.md`.
 - Auto-type programs libbpf can't classify by section name: when a program is
   left `BPF_PROG_TYPE_UNSPEC` after open because its ELF section name isn't one
   libbpf recognizes, the validator sets the type the artifact's own loader
