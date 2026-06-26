@@ -16,9 +16,14 @@ import (
 )
 
 func main() {
+	// os.Exit only in main, with no pending defers (gocritic exitAfterDefer).
+	os.Exit(run())
+}
+
+func run() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: libmode <artifact.bpf.o>")
-		os.Exit(2)
+		return 2
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -28,7 +33,7 @@ func main() {
 	elapsed := time.Since(start)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	fmt.Printf("ValidateBeforeLoad -> OK=%v  (%.0fms)\n", res.OK(), float64(elapsed.Microseconds())/1000)
@@ -43,6 +48,7 @@ func main() {
 
 	// Exit code mirrors what a gate would do: 0 loadable, 1 not.
 	if !res.OK() {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
