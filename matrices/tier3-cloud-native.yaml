@@ -6,7 +6,7 @@ profiles:
     required: false
   - id: talos-6.6
     required: false
-  - id: fedora-coreos-stable-6.14
+  - id: fedora-coreos-stable-7.0
     required: false
   - id: rhcos-4.16-5.14
     required: false

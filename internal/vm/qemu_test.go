@@ -216,10 +216,10 @@ func TestExecutionTransport(t *testing.T) {
 		{name: "talos blocked", distro: "talos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "no ssh"},
 		{name: "bottlerocket blocked", distro: "bottlerocket", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ssh"},
 		{name: "flatcar blocked", distro: "flatcar", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
-		{name: "fedora-coreos blocked", distro: "fedora-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
-		{name: "fcos alias blocked", distro: "FCOS", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
-		{name: "rhcos blocked", distro: "rhcos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
-		{name: "rhel-coreos alias blocked", distro: "rhel-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
+		{name: "fedora-coreos supported", distro: "fedora-coreos", wantTransport: ExecutionTransportSSH, wantSupported: true},
+		{name: "fcos alias supported", distro: "FCOS", wantTransport: ExecutionTransportSSH, wantSupported: true},
+		{name: "rhcos blocked on image", distro: "rhcos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "pull-secret"},
+		{name: "rhel-coreos blocked on image", distro: "rhel-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "pull-secret"},
 	}
 
 	for _, tt := range tests {

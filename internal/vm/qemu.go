@@ -144,6 +144,7 @@ const (
 	seedDeliveryNoCloudNet         seedDeliveryMode = "nocloud-net"
 	seedDeliveryNoCloudConfigDrive seedDeliveryMode = "nocloud-configdrive"
 	seedDeliveryNoCloudConfigFS    seedDeliveryMode = "nocloud-configfs"
+	seedDeliveryIgnition           seedDeliveryMode = "ignition"
 )
 
 func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result ExecutionResult) {
@@ -216,21 +217,33 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 
+	seedMode := seedDeliveryForProfile(req.Profile)
 	seedDir := filepath.Join(vmRunDir, "seed")
-	if err := writeNoCloudSeed(seedDir, req.Profile.ID, publicKey); err != nil {
+	seedURL := ""
+	seedImagePath := ""
+
+	// CoreOS-family images boot via Ignition (fw_cfg), not a cloud-init NoCloud
+	// seed; write the Ignition config and skip the NoCloud seed entirely.
+	if seedMode == seedDeliveryIgnition {
+		seedImagePath = filepath.Join(vmRunDir, "config.ign")
+		if err := writeIgnitionSeed(seedImagePath, publicKey); err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+		result.Notes = append(result.Notes, "seed delivery: Ignition config via fw_cfg (opt/com.coreos/config)")
+	} else if err := writeNoCloudSeed(seedDir, req.Profile.ID, publicKey); err != nil {
 		result.InfraError = err.Error()
 		return
 	}
 
-	seedMode := seedDeliveryForProfile(req.Profile)
-	seedURL := ""
-	seedImagePath := ""
 	seedDirAbs, err := filepath.Abs(seedDir)
 	if err != nil {
 		result.InfraError = fmt.Sprintf("resolve seed directory: %v", err)
 		return
 	}
 	switch seedMode {
+	case seedDeliveryIgnition:
+		// config.ign already written; nothing more to stage here.
 	case seedDeliveryNoCloudConfigDrive:
 		seedImagePath = filepath.Join(vmRunDir, "seed-cidata.iso")
 		if err := createNoCloudSeedImage(ctx, seedDir, seedImagePath); err != nil {
@@ -635,6 +648,9 @@ func buildQEMUArgs(profile Profile, overlayPath, serialLogPath string, sshPort i
 	}
 	args = append(qemuMachineArgs(profile), args...)
 	switch seedMode {
+	case seedDeliveryIgnition:
+		// CoreOS reads the Ignition config from the qemu firmware config blob.
+		args = append(args, "-fw_cfg", fmt.Sprintf("name=opt/com.coreos/config,file=%s", seedImagePath))
 	case seedDeliveryNoCloudConfigDrive:
 		args = append(args, "-drive", fmt.Sprintf("file=%s,if=ide,media=cdrom,format=raw,readonly=on", seedImagePath))
 	case seedDeliveryNoCloudConfigFS:
@@ -722,6 +738,9 @@ func needsCIDATASeed(profile Profile) bool {
 }
 
 func seedDeliveryForProfile(profile Profile) seedDeliveryMode {
+	if isCoreOSIgnitionDistro(profile) {
+		return seedDeliveryIgnition
+	}
 	if needsCIDATASeed(profile) {
 		if commandAvailable("cloud-localds") {
 			return seedDeliveryNoCloudConfigDrive
@@ -808,7 +827,7 @@ func sshUserCandidates(profile Profile) []string {
 		candidates = append(candidates, "opensuse")
 	case "sles":
 		candidates = append(candidates, "ec2-user", "opensuse")
-	case "flatcar":
+	case "flatcar", "fedora-coreos", "fcos", "rhcos", "rhel-coreos":
 		candidates = append(candidates, "core")
 	case "centos", "centos-stream", "rhel", "redhat":
 		candidates = append(candidates, "cloud-user", "centos")

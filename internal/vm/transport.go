@@ -25,9 +25,15 @@ func ExecutionTransport(profile Profile) (transport string, supported bool, reas
 	case "flatcar":
 		return ExecutionTransportUnsupported, false, "Flatcar images in this matrix require Ignition-style bootstrap; current validator runner depends on cloud-init+SSH provisioning."
 	case "fedora-coreos", "fcos":
-		return ExecutionTransportUnsupported, false, "Fedora CoreOS boots via Ignition (not cloud-init); current validator runner depends on cloud-init+SSH provisioning."
+		// Boots via Ignition over fw_cfg (opt/com.coreos/config), then SSH as
+		// the core user — implemented in ignition.go and proven on FCOS stable.
+		return ExecutionTransportSSH, true, ""
 	case "rhcos", "rhel-coreos":
-		return ExecutionTransportUnsupported, false, "RHEL CoreOS (OpenShift) boots via Ignition and ships through the pull-secret-gated OpenShift release payload; current validator runner depends on cloud-init+SSH provisioning."
+		// Shares Fedora CoreOS's Ignition+SSH boot path (now implemented), but
+		// the RHCOS image ships only through the pull-secret-gated OpenShift
+		// release payload, so it cannot be fetched/verified here. Supply the
+		// image to enable it; until then it stays non-runnable.
+		return ExecutionTransportUnsupported, false, "RHEL CoreOS shares the Fedora CoreOS Ignition boot path (now supported), but its image is only available via the pull-secret-gated OpenShift release payload; supply the image to enable it."
 	default:
 		return ExecutionTransportSSH, true, ""
 	}

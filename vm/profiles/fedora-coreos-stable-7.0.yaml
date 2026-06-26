@@ -1,0 +1,33 @@
+# Fedora CoreOS (stable stream) — RUNNABLE via the Ignition boot path.
+#
+# FCOS is the freely-available cousin of RHEL CoreOS (RHCOS) and the proving
+# ground for the CoreOS boot path: same Ignition-based first boot, same
+# rpm-ostree immutable layout, no Red Hat pull secret required.
+#
+# Boot: FCOS boots via Ignition, not cloud-init. The executor writes a minimal
+# Ignition config (SSH key for the core user) and passes it via QEMU
+# -fw_cfg name=opt/com.coreos/config (see internal/vm/ignition.go);
+# ExecutionTransport() reports this profile as supported.
+#
+# Image: distributed as a versioned, xz-compressed qcow2 via the stream
+# metadata (https://builds.coreos.fedoraproject.org/streams/stable.json) or
+# `coreos-installer download -p qemu -s stable`. Decompress to the local_path
+# below; there is no stable plain-qcow2 "latest" URL, hence local_path only.
+#
+# kernel_family tracks the stable stream and moves with it (proven booting
+# 7.0.11-200.fc44 on FCOS 44); it is informational — the real kernel is
+# captured at runtime in the report.
+id: fedora-coreos-stable-7.0
+distro: fedora-coreos
+version: "stable"
+kernel_family: "7.0"
+arch: x86_64
+image:
+  local_path: "vm/cache/fedora-coreos-stable.qcow2"
+boot:
+  memory_mb: 2048
+  cpus: 2
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true
