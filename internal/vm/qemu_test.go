@@ -218,10 +218,11 @@ func TestExecutionTransport(t *testing.T) {
 		{name: "flatcar blocked", distro: "flatcar", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
 		{name: "fedora-coreos supported", distro: "fedora-coreos", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "fcos alias supported", distro: "FCOS", wantTransport: ExecutionTransportSSH, wantSupported: true},
-		{name: "rhcos blocked on image", distro: "rhcos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "pull-secret"},
-		{name: "rhel-coreos blocked on image", distro: "rhel-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "pull-secret"},
+		{name: "rhcos blocked on image", distro: "rhcos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "rhcos-image"},
+		{name: "rhel-coreos blocked on image", distro: "rhel-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "rhcos-image"},
 	}
 
+	t.Setenv("BPFCOMPAT_ENABLE_RHCOS", "") // ensure the default-off path for the table
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			transport, supported, reason := ExecutionTransport(Profile{ID: tt.id, Distro: tt.distro})
@@ -233,6 +234,18 @@ func TestExecutionTransport(t *testing.T) {
 			}
 			if tt.wantInMsg != "" && !strings.Contains(strings.ToLower(reason), strings.ToLower(tt.wantInMsg)) {
 				t.Fatalf("expected reason to contain %q, got %q", tt.wantInMsg, reason)
+			}
+		})
+	}
+}
+
+func TestExecutionTransportRHCOSOptIn(t *testing.T) {
+	for _, distro := range []string{"rhcos", "rhel-coreos"} {
+		t.Run(distro, func(t *testing.T) {
+			t.Setenv("BPFCOMPAT_ENABLE_RHCOS", "1")
+			transport, supported, reason := ExecutionTransport(Profile{Distro: distro})
+			if !supported || transport != ExecutionTransportSSH {
+				t.Fatalf("with opt-in, want supported ssh; got transport=%q supported=%t reason=%q", transport, supported, reason)
 			}
 		})
 	}

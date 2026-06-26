@@ -112,7 +112,12 @@ Optional licensed image source:
 - Current VM validator execution path is SSH-based.
 - `talos`, `bottlerocket`, `flatcar`, and `amazon-linux-2-4.14` are cataloged for planning/roadmap and are marked non-blocking in matrix definitions because the current executor cannot run validator payloads on them.
 - `fedora-coreos` boots via **Ignition**, not cloud-init: the executor writes a minimal Ignition config (SSH key for the `core` user) and passes it to QEMU via `-fw_cfg name=opt/com.coreos/config` (see `internal/vm/ignition.go`). This path is **runnable and proven** — FCOS stable boots and the validator load/attaches inside the guest (verified on kernel `7.0.11-200.fc44`). It needs the manual image staged at `vm/cache/fedora-coreos-stable.qcow2` (fetch + `xz -d` from the FCOS stable stream).
-- `rhcos` (RHEL CoreOS / OpenShift) shares that exact Ignition boot path, so it is **mechanically supported** — but its image ships only through the pull-secret-gated OpenShift release payload, so it cannot be fetched or verified here. `ExecutionTransport()` therefore still reports it unsupported until an operator supplies the image; the matching RHEL/AlmaLinux 9 (5.14) profile approximates the RHCOS kernel in the meantime.
+- `rhcos` (RHEL CoreOS / OpenShift) shares that exact Ignition boot path, so the boot is solved. The only difference from Fedora CoreOS is the image: RHCOS ships with an OpenShift release, not a public cloud-image URL, so the operator supplies it. To enable RHCOS:
+  1. Obtain the RHCOS qcow2 for your OpenShift version — e.g. `openshift-install coreos print-stream-json | jq -r '.architectures.x86_64.artifacts.qemu.formats["qcow2.gz"].disk.location'` — or use an internal mirror.
+  2. Stage it: `make rhcos-image RHCOS_IMAGE=/path/to/rhcos.qcow2` (or `RHCOS_IMAGE_URL=...`).
+  3. Opt in: `BPFCOMPAT_ENABLE_RHCOS=1 bpfcompat test --runner vm ...`.
+
+  Left unset, `ExecutionTransport()` keeps `rhcos` unsupported so it is never claimed runnable without a real image. The matching RHEL/AlmaLinux 9 (5.14) profile approximates the RHCOS kernel in the meantime.
 - `rhel-8-4.18` uses NoCloud config-drive bootstrap in the current SSH executor (prefers `cloud-localds` ISO; falls back to local `vvfat` seed).
 - `aarch64`/`arm64` profiles select `qemu-system-aarch64`; `x86_64`/`amd64` profiles select `qemu-system-x86_64`.
 - ARM64 validation requires a matching ARM64-capable self-hosted runner, KVM access, an ARM64 cloud image, and a validator binary built for the guest architecture. The default Azure demo VM is x86_64 and should not be presented as ARM64 validation proof.

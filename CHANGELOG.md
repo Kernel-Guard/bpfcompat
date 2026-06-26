@@ -14,9 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   (see `internal/vm/ignition.go`). Fedora CoreOS is now runnable and proven —
   FCOS stable boots and the validator load/attaches inside the guest (verified
   on kernel `7.0.11-200.fc44`); fetch the image with `make vm-image-fcos`. RHEL
-  CoreOS (`rhcos`) shares this boot path but its image is pull-secret-gated via
-  the OpenShift release payload, so it stays non-runnable until an operator
-  supplies the image.
+  CoreOS (`rhcos`) shares this boot path; because its image ships with an
+  OpenShift release rather than a public URL, the operator stages it with
+  `make rhcos-image RHCOS_IMAGE=... ` (or `RHCOS_IMAGE_URL=...`) and opts in with
+  `BPFCOMPAT_ENABLE_RHCOS=1`. Left off, `rhcos` stays unsupported so it is never
+  claimed runnable without a real image.
 - Embeddable library mode (`pkg/bpfcompat`). `ValidateBeforeLoad` /
   `ValidateBytes` do a real load of a compiled eBPF object against the local
   running kernel — no VM, no network — for use as a pre-load gate (e.g.

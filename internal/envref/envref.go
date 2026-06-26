@@ -294,6 +294,11 @@ var catalog = []Var{
 		Category:    "Validator",
 		Description: "Expected SHA-256 of the validator binary. When set, mismatched binaries are refused before exec.",
 	},
+	{
+		Name: "BPFCOMPAT_ENABLE_RHCOS", Default: "false",
+		Category:    "VM Runner",
+		Description: "Enable the RHEL CoreOS (rhcos) profile. RHCOS boots via the same Ignition path as Fedora CoreOS, but its image ships with an OpenShift release rather than a public URL. Stage the image with `make rhcos-image` and set this to 1/true once it is present; left off, rhcos stays unsupported so it is never claimed runnable without a real image.",
+	},
 
 	// ---------- HTTP server ----------
 	{

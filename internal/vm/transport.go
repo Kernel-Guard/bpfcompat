@@ -1,6 +1,22 @@
 package vm
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
+
+// rhcosOptIn reports whether an operator has explicitly enabled RHCOS
+// validation via BPFCOMPAT_ENABLE_RHCOS. RHCOS boots via the same Ignition path
+// as Fedora CoreOS (supported), but its image ships through the OpenShift
+// release payload and cannot be fetched here, so the operator must stage the
+// image (see `make rhcos-image`) and set this flag to assert it is present.
+func rhcosOptIn() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BPFCOMPAT_ENABLE_RHCOS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
 
 const (
 	ExecutionTransportSSH         = "ssh"
@@ -29,11 +45,15 @@ func ExecutionTransport(profile Profile) (transport string, supported bool, reas
 		// the core user — implemented in ignition.go and proven on FCOS stable.
 		return ExecutionTransportSSH, true, ""
 	case "rhcos", "rhel-coreos":
-		// Shares Fedora CoreOS's Ignition+SSH boot path (now implemented), but
-		// the RHCOS image ships only through the pull-secret-gated OpenShift
-		// release payload, so it cannot be fetched/verified here. Supply the
-		// image to enable it; until then it stays non-runnable.
-		return ExecutionTransportUnsupported, false, "RHEL CoreOS shares the Fedora CoreOS Ignition boot path (now supported), but its image is only available via the pull-secret-gated OpenShift release payload; supply the image to enable it."
+		// Shares Fedora CoreOS's Ignition+SSH boot path (implemented + proven on
+		// FCOS). The only missing piece is the image, which ships through the
+		// OpenShift release payload rather than a public cloud-image URL. An
+		// operator stages it (see `make rhcos-image`) and opts in explicitly so
+		// we never claim RHCOS works without a real image present.
+		if rhcosOptIn() {
+			return ExecutionTransportSSH, true, ""
+		}
+		return ExecutionTransportUnsupported, false, "RHEL CoreOS shares the Fedora CoreOS Ignition boot path (supported), but its image ships via the OpenShift release payload, not a public URL. Stage it with `make rhcos-image` and set BPFCOMPAT_ENABLE_RHCOS=1 to enable."
 	default:
 		return ExecutionTransportSSH, true, ""
 	}
