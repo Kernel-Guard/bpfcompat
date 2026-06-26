@@ -51,7 +51,9 @@ func writeIgnitionSeed(path, publicKey string) error {
 		return fmt.Errorf("marshal ignition config: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	// 0600: the Ignition config is read only by the QEMU process we launch as
+	// the same user; no need for it to be group/world readable.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write ignition config: %w", err)
 	}
 	return nil
