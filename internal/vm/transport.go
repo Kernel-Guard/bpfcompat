@@ -24,6 +24,10 @@ func ExecutionTransport(profile Profile) (transport string, supported bool, reas
 		return ExecutionTransportUnsupported, false, "Bottlerocket requires control/admin container workflows; current validator runner requires direct SSH transport."
 	case "flatcar":
 		return ExecutionTransportUnsupported, false, "Flatcar images in this matrix require Ignition-style bootstrap; current validator runner depends on cloud-init+SSH provisioning."
+	case "fedora-coreos", "fcos":
+		return ExecutionTransportUnsupported, false, "Fedora CoreOS boots via Ignition (not cloud-init); current validator runner depends on cloud-init+SSH provisioning."
+	case "rhcos", "rhel-coreos":
+		return ExecutionTransportUnsupported, false, "RHEL CoreOS (OpenShift) boots via Ignition and ships through the pull-secret-gated OpenShift release payload; current validator runner depends on cloud-init+SSH provisioning."
 	default:
 		return ExecutionTransportSSH, true, ""
 	}

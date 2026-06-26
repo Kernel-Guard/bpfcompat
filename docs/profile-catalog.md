@@ -38,6 +38,8 @@ This document defines the maintained profile matrices used for compatibility cam
    - `bottlerocket-aws-6.1` (manual image)
    - `flatcar-6.6` (URL-backed image)
    - `talos-6.6` (manual image)
+   - `fedora-coreos-stable-6.14` (manual image; Ignition boot — see below)
+   - `rhcos-4.16-5.14` (manual image, pull-secret gated; Ignition boot — see below)
    - `ubuntu-22.04-5.15-lockdown`
 4. Multi-architecture foundation:
    - `ubuntu-22.04-arm64-5.15` (`aarch64`, requires ARM64-capable runner)
@@ -107,6 +109,7 @@ Optional licensed image source:
 
 - Current VM validator execution path is SSH-based.
 - `talos`, `bottlerocket`, `flatcar`, and `amazon-linux-2-4.14` are cataloged for planning/roadmap and are marked non-blocking in matrix definitions because the current executor cannot run validator payloads on them.
+- `fedora-coreos` and `rhcos` (RHEL CoreOS / OpenShift) are cataloged but **not runnable yet**: both boot via Ignition rather than cloud-init, so the SSH executor cannot provision the validator (same gap as `flatcar`). RHCOS additionally ships through the pull-secret-gated OpenShift release payload. Enabling them needs an Ignition-config bootstrap path in the QEMU executor; until then, the matching RHEL/AlmaLinux 9 (5.14) profile approximates the RHCOS kernel, and Fedora CoreOS is the freely-available stand-in for proving the CoreOS boot path.
 - `rhel-8-4.18` uses NoCloud config-drive bootstrap in the current SSH executor (prefers `cloud-localds` ISO; falls back to local `vvfat` seed).
 - `aarch64`/`arm64` profiles select `qemu-system-aarch64`; `x86_64`/`amd64` profiles select `qemu-system-x86_64`.
 - ARM64 validation requires a matching ARM64-capable self-hosted runner, KVM access, an ARM64 cloud image, and a validator binary built for the guest architecture. The default Azure demo VM is x86_64 and should not be presented as ARM64 validation proof.

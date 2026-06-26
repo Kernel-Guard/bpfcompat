@@ -215,6 +215,11 @@ func TestExecutionTransport(t *testing.T) {
 		{name: "amazon-linux-2-4.14 supported", id: "amazon-linux-2-4.14", distro: "amazon-linux", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "talos blocked", distro: "talos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "no ssh"},
 		{name: "bottlerocket blocked", distro: "bottlerocket", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ssh"},
+		{name: "flatcar blocked", distro: "flatcar", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
+		{name: "fedora-coreos blocked", distro: "fedora-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
+		{name: "fcos alias blocked", distro: "FCOS", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
+		{name: "rhcos blocked", distro: "rhcos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
+		{name: "rhel-coreos alias blocked", distro: "rhel-coreos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
 	}
 
 	for _, tt := range tests {
