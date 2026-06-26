@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- CoreOS (Ignition) boot support. CoreOS-family images boot via Ignition, not
+  cloud-init, so the executor now writes a minimal Ignition config (SSH key for
+  the `core` user) and passes it to QEMU via `-fw_cfg name=opt/com.coreos/config`
+  (see `internal/vm/ignition.go`). Fedora CoreOS is now runnable and proven —
+  FCOS stable boots and the validator load/attaches inside the guest (verified
+  on kernel `7.0.11-200.fc44`); fetch the image with `make vm-image-fcos`. RHEL
+  CoreOS (`rhcos`) shares this boot path but its image is pull-secret-gated via
+  the OpenShift release payload, so it stays non-runnable until an operator
+  supplies the image.
 - Embeddable library mode (`pkg/bpfcompat`). `ValidateBeforeLoad` /
   `ValidateBytes` do a real load of a compiled eBPF object against the local
   running kernel — no VM, no network — for use as a pre-load gate (e.g.

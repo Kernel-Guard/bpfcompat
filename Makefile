@@ -13,7 +13,7 @@ LDFLAGS    ?= -X $(VERSION_PKG).Version=$(VERSION) \
               -X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 GO_BUILD_FLAGS ?= -trimpath -ldflags '$(LDFLAGS)'
 
-.PHONY: all deps vendor doctor doctor-virtme doctor-firecracker doctor-arm64-kvm firecracker-install firecracker-kernel-install firecracker-runnable firecracker-preflight arm64-kvm-preflight build test test-vendor tidy validator validator-dynamic validator-static pkg-embed-validator lib-hostload examples examples-arm64 oss-examples oss-evidence compatibility-site clean vm-ubuntu-22 vm-ubuntu-22-arm64 vm-images vm-images-tier1 vm-images-extended vm-images-expanded-2026 vm-images-expanded-2026-dry-run vm-images-latest-kernel matrix-runnable matrix-runnable-strict matrix-runnable-keep-manual latest-kernel-runnable upstream-kernel-runnable manual-image-check manual-image-check-strict profile-catalog-audit matrix-readiness runtime-selector-proof runtime-delivery-proof production-runtime-drill beta-tech-check tech-stability production-tech-check acceptance-dev-one acceptance-functional-dev-one acceptance-suite-dev-one acceptance-arm64-smoke acceptance-latest-kernel acceptance-upstream-kernel acceptance-firecracker-dev-one acceptance acceptance-expanded-runnable acceptance-evidence serve azure-provision-vm azure-bootstrap-vm azure-provision-foundation azure-production-boundary-proof azure-configure-tls azure-rotate-registry-secret
+.PHONY: all deps vendor doctor doctor-virtme doctor-firecracker doctor-arm64-kvm firecracker-install firecracker-kernel-install firecracker-runnable firecracker-preflight arm64-kvm-preflight build test test-vendor tidy validator validator-dynamic validator-static pkg-embed-validator lib-hostload examples examples-arm64 oss-examples oss-evidence compatibility-site clean vm-ubuntu-22 vm-ubuntu-22-arm64 vm-image-fcos vm-images vm-images-tier1 vm-images-extended vm-images-expanded-2026 vm-images-expanded-2026-dry-run vm-images-latest-kernel matrix-runnable matrix-runnable-strict matrix-runnable-keep-manual latest-kernel-runnable upstream-kernel-runnable manual-image-check manual-image-check-strict profile-catalog-audit matrix-readiness runtime-selector-proof runtime-delivery-proof production-runtime-drill beta-tech-check tech-stability production-tech-check acceptance-dev-one acceptance-functional-dev-one acceptance-suite-dev-one acceptance-arm64-smoke acceptance-latest-kernel acceptance-upstream-kernel acceptance-firecracker-dev-one acceptance acceptance-expanded-runnable acceptance-evidence serve azure-provision-vm azure-bootstrap-vm azure-provision-foundation azure-production-boundary-proof azure-configure-tls azure-rotate-registry-secret
 
 all: build validator
 
@@ -167,6 +167,11 @@ vm-ubuntu-22:
 	bash vm/scripts/fetch-cloud-image.sh \
 	  "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img" \
 	  "vm/cache/ubuntu-22.04.qcow2"
+
+# Fetch + decompress the current Fedora CoreOS stable qemu image for the
+# fedora-coreos-stable-7.0 profile (CoreOS boots via Ignition; see ignition.go).
+vm-image-fcos:
+	bash vm/scripts/fetch-fcos-image.sh vm/cache/fedora-coreos-stable.qcow2
 
 vm-ubuntu-22-arm64:
 	bash vm/scripts/fetch-cloud-image.sh \
