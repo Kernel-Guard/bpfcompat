@@ -41,6 +41,24 @@ jobs:
       - name: Build C validator dynamically
         run: make validator-dynamic
 
+      - name: Build + stage static validator for arm64 (hostload embed)
+        # uname -m is aarch64 here, so LIB_EMBED_ARCH resolves to arm64 and the
+        # binary lands at pkg/bpfcompat/validators/bpfcompat-validator-arm64.
+        run: make pkg-embed-validator
+
+      - name: Build embeddable library (hostload, arm64)
+        run: make lib-hostload
+
+      - name: Run hostload library tests (arm64)
+        run: go test -tags hostload ./pkg/bpfcompat/...
+
+      - name: Upload arm64 validator (for multi-arch embed / release)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bpfcompat-validator-arm64
+          path: pkg/bpfcompat/validators/bpfcompat-validator-arm64
+          if-no-files-found: error
+
       - name: Build ARM64 BPF examples
         run: make examples-arm64
 

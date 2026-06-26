@@ -1,0 +1,4 @@
+# Embedded static validator binaries are build artifacts, staged by
+# `make pkg-embed-validator` before a `-tags hostload` build. Do not commit them.
+bpfcompat-validator-*
+!.gitignore
