@@ -95,6 +95,8 @@ This document defines the maintained profile matrices used for compatibility cam
   - `vm/cache/linux-mainline-5.6.qcow2`
   - `vm/cache/bottlerocket-aws-6.1.qcow2`
   - `vm/cache/talos-6.6.qcow2`
+  - `vm/cache/fedora-coreos-stable.qcow2` (also Ignition-gated — see Transport Notes)
+  - `vm/cache/rhcos-4.16.qcow2` (pull-secret + Ignition-gated — see Transport Notes)
 
 Strict commands can run now:
 
