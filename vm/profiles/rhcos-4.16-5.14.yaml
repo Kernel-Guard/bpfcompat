@@ -1,0 +1,31 @@
+# RHEL CoreOS (OpenShift 4.16) — cataloged / roadmap, NOT runnable today.
+#
+# RHCOS is the immutable node OS for OpenShift. Its kernel is the RHEL 9.4
+# kernel (5.14, heavily backported), so for pure BPF-load questions a RHEL-9 /
+# AlmaLinux-9 profile already approximates it closely. RHCOS is the requested
+# "tricky target" because of how it boots and ships, not because of the kernel.
+#
+# Why it's not runnable yet (two gaps):
+#   1. Boot: RHCOS boots via Ignition, not cloud-init — same executor gap as
+#      Fedora CoreOS / Flatcar. ExecutionTransport() reports it unsupported.
+#   2. Image: RHCOS qcow2 is distributed through the OpenShift release payload
+#      and is pull-secret gated; obtain it via the matching openshift-install /
+#      `oc adm release` for the 4.16 release, then stage at the local_path below.
+#
+# Pragmatic interim: validate against the matching RHEL/AlmaLinux 9 (5.14)
+# profile, which shares the kernel + backports. A true RHCOS boot is the
+# differentiated follow-up once the Ignition bootstrap path lands.
+id: rhcos-4.16-5.14
+distro: rhcos
+version: "4.16"
+kernel_family: "5.14"
+arch: x86_64
+image:
+  local_path: "vm/cache/rhcos-4.16.qcow2"
+boot:
+  memory_mb: 2048
+  cpus: 2
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true
