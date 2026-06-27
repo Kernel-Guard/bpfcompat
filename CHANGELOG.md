@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- RHCOS evidence matrix: profiles for OpenShift 4.14 / 4.16 / 4.18 (`matrices/rhcos.yaml`)
+  and a recorded multi-version, multi-artifact run in `docs/evidence-rhcos.md` —
+  baseline load and ring-buffer load+attach pass on every release (RHEL 9.2 and
+  9.4 backported 5.14 kernels), and a CO-RE failure is correctly rejected on
+  every release (the discriminator). `make rhcos-image` takes `RHCOS_VERSION` to
+  stage per-version images. x86_64 only; opt-in via `BPFCOMPAT_ENABLE_RHCOS=1`.
 - CoreOS (Ignition) boot support. CoreOS-family images boot via Ignition, not
   cloud-init, so the executor now writes a minimal Ignition config (SSH key for
   the `core` user) and passes it to QEMU via `-fw_cfg name=opt/com.coreos/config`

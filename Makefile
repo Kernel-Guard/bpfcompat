@@ -175,13 +175,15 @@ vm-image-fcos:
 
 # Stage an operator-supplied RHEL CoreOS (OpenShift) image for the rhcos-4.16
 # profile. RHCOS ships with an OpenShift release, not a public cloud-image URL,
-# so the operator provides it:
+# so the operator provides it. RHCOS_VERSION picks the profile/cache slot
+# (default 4.16); the image staged at vm/cache/rhcos-$(RHCOS_VERSION).qcow2:
 #   make rhcos-image RHCOS_IMAGE=/path/to/rhcos-qemu.x86_64.qcow2
-#   make rhcos-image RHCOS_IMAGE_URL=https://internal-mirror/rhcos.qcow2.gz
+#   make rhcos-image RHCOS_VERSION=4.18 RHCOS_IMAGE_URL=https://mirror/rhcos.qcow2.gz
 # Then run with BPFCOMPAT_ENABLE_RHCOS=1 to enable the profile.
+RHCOS_VERSION ?= 4.16
 rhcos-image:
 	RHCOS_IMAGE='$(RHCOS_IMAGE)' RHCOS_IMAGE_URL='$(RHCOS_IMAGE_URL)' \
-	  bash vm/scripts/fetch-rhcos-image.sh vm/cache/rhcos-4.16.qcow2
+	  bash vm/scripts/fetch-rhcos-image.sh vm/cache/rhcos-$(RHCOS_VERSION).qcow2
 
 vm-ubuntu-22-arm64:
 	bash vm/scripts/fetch-cloud-image.sh \
