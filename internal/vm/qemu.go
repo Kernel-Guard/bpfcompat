@@ -690,20 +690,22 @@ func firstExistingPath(candidates ...string) string {
 		if c == "" {
 			continue
 		}
-		if _, err := os.Stat(c); err == nil {
+		if _, err := os.Stat(c); err == nil { // #nosec G703 -- operator-supplied firmware path, not untrusted input
 			return c
 		}
 	}
 	return ""
 }
 
+// copyRegularFile copies src to dst. src/dst are operator-controlled firmware
+// paths (env-overridable defaults under /usr/share), not untrusted input.
 func copyRegularFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) // #nosec G703 -- operator-supplied firmware path
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.Create(dst) // #nosec G703 -- staged under the run's private dir
 	if err != nil {
 		return err
 	}
