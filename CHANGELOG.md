@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- `examples/preload-gate`: a complete, runnable example of using the
+  `pkg/bpfcompat` library — `ValidateBeforeLoad` as a bpfman-style pre-load gate
+  (real load on the node's own kernel, no VM). README gains a "Library mode"
+  section with the example and a real pass/blocked run.
+
+### Fixed
+- README install snippet pinned the stale `v0.1.6` release; bumped to `v0.2.0`.
+
 ## [0.2.0] - 2026-06-27
 
 ### Added

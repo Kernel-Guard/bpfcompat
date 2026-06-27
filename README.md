@@ -127,6 +127,33 @@ different bootstrap. bpfcompat implements it (Ignition config over QEMU
   image, the **RHEL / AlmaLinux 9 (5.14)** profiles are the interim kernel
   approximation. Full guide: [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
 
+## Library mode: embed the pre-load gate
+
+Beyond the CLI and the GitHub Action, bpfcompat is an embeddable Go library
+([`pkg/bpfcompat`](https://github.com/Kernel-Guard/bpfcompat/tree/main/pkg/bpfcompat)).
+`ValidateBeforeLoad` does a real `bpf()` load against the node's **own running
+kernel** — no VM, no network — so a loader (e.g. bpfman) can refuse an object
+that won't verify *before* it loads it. Host loading is gated behind the
+`hostload` build tag and needs `CAP_BPF`/`CAP_SYS_ADMIN`.
+
+A complete, real example is [`examples/preload-gate`](examples/preload-gate):
+
+![preload-gate.go — a real program using ValidateBeforeLoad](docs/images/library/library-code.png)
+
+```sh
+go get github.com/kernel-guard/bpfcompat@v0.2.0
+go build -tags hostload -o preload-gate ./examples/preload-gate
+sudo ./preload-gate probe.bpf.o
+```
+
+A compatible object passes; an incompatible one is blocked with the kernel's own
+verdict and a stable classification code — exit 0 vs 1:
+
+![preload-gate real run: a good object loads, a CO-RE failure is blocked](docs/images/library/library-run.png)
+
+See [`pkg/bpfcompat/README.md`](pkg/bpfcompat/README.md) for the full API.
+(Pre-1.0 / experimental.)
+
 ## Try it in CI without your own KVM box
 
 GitHub-hosted Linux runners now expose `/dev/kvm`, so the full QEMU VM
@@ -227,7 +254,7 @@ guest-side validator binary and the kernel matrices that ship in this repo.
 the static validator, checksum-verified:
 
 ```bash
-VER=v0.1.6
+VER=v0.2.0
 base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
