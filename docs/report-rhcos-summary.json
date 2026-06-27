@@ -1,0 +1,218 @@
+{
+  "schema": "bpfcompat.rhcos-evidence-summary.v1",
+  "generated_for": "bpfcompat v0.2.0",
+  "note": "Sanitized summary of real bpfcompat runs inside booted RHEL CoreOS guests. Host paths, per-run SSH keys, and raw logs are intentionally excluded; see docs/evidence-rhcos.md for the narrative and provenance.",
+  "image_source": "https://mirror.openshift.com/pub/openshift-v4/<arch>/dependencies/rhcos/<ver>/latest/ (public boot images; pull secret not required)",
+  "releases": [
+    {
+      "openshift": "4.14",
+      "arch": "x86_64",
+      "rhcos": "414.92.202407091253",
+      "kernel": "5.14.0-284.73.1.el9_2.x86_64"
+    },
+    {
+      "openshift": "4.16",
+      "arch": "x86_64",
+      "rhcos": "416.94.202510081640",
+      "kernel": "5.14.0-427.93.1.el9_4.x86_64"
+    },
+    {
+      "openshift": "4.18",
+      "arch": "x86_64",
+      "rhcos": "418.94.202510081222",
+      "kernel": "5.14.0-427.93.1.el9_4.x86_64"
+    },
+    {
+      "openshift": "4.16",
+      "arch": "aarch64",
+      "rhcos": "416.94.202501270445",
+      "kernel": "5.14.0-427.50.1.el9_4.aarch64"
+    }
+  ],
+  "x86_64_matrix": [
+    {
+      "artifact": "simple-pass",
+      "description": "baseline program load",
+      "artifact_sha256": "416a492899e8713c8a84678940a11bb01b34dd6b8e758a885efa590cc8565967",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        }
+      }
+    },
+    {
+      "artifact": "ringbuf-modern",
+      "description": "tracepoint + ring buffer (upstream >=5.8)",
+      "artifact_sha256": "569df5541ad1246f17fb288c41cf3435e240da3b1ce254a348e4e0ffec021728",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        }
+      }
+    },
+    {
+      "artifact": "perfbuf-fallback",
+      "description": "tracepoint + perf-event buffer",
+      "artifact_sha256": "fdebfa1a8b98cdf9890b4ac21fc40dd5e016e672b875b5e46f356d333f6e6e2f",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        }
+      }
+    },
+    {
+      "artifact": "attach-warn",
+      "description": "kprobe to a missing symbol",
+      "artifact_sha256": "3c2d83d12c2d6357213cbf0a9ebbc1ba4b53d3565e9536cf4190dfe4d2fc1531",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "warn",
+          "attach_passed": null,
+          "attach_attempted": 1
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "warn",
+          "attach_passed": null,
+          "attach_attempted": 1
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "warn",
+          "attach_passed": null,
+          "attach_attempted": 1
+        }
+      }
+    },
+    {
+      "artifact": "aegis",
+      "description": "BPF-LSM (4 hooks) + tracepoint",
+      "artifact_sha256": "83aa9d2620e6459a960768045af60a5d35936b7b2be4da25f689a44abff42819",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "fail",
+          "load": "fail",
+          "attach": "skipped",
+          "load_errno": -13,
+          "classification": "CAPABILITY_FAILURE"
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 4,
+          "attach_attempted": 4
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 4,
+          "attach_attempted": 4
+        }
+      }
+    },
+    {
+      "artifact": "core-relocation-fail",
+      "description": "CO-RE relocation to a non-existent type (negative control)",
+      "artifact_sha256": "b9b4f3942a64fe9a8f789a574cb1958b445a18af37881c9ecce05791865dd8f5",
+      "by_release": {
+        "openshift-4.14-x86_64": {
+          "target_status": "fail",
+          "load": "fail",
+          "attach": "skipped",
+          "load_errno": -22,
+          "classification": "CORE_RELOCATION_FAILURE"
+        },
+        "openshift-4.16-x86_64": {
+          "target_status": "fail",
+          "load": "fail",
+          "attach": "skipped",
+          "load_errno": -22,
+          "classification": "CORE_RELOCATION_FAILURE"
+        },
+        "openshift-4.18-x86_64": {
+          "target_status": "fail",
+          "load": "fail",
+          "attach": "skipped",
+          "load_errno": -22,
+          "classification": "CORE_RELOCATION_FAILURE"
+        }
+      }
+    }
+  ],
+  "aarch64_matrix": [
+    {
+      "artifact": "ringbuf-modern",
+      "description": "tracepoint + ring buffer (upstream >=5.8)",
+      "artifact_sha256": "569df5541ad1246f17fb288c41cf3435e240da3b1ce254a348e4e0ffec021728",
+      "by_release": {
+        "openshift-4.16-aarch64": {
+          "target_status": "pass",
+          "load": "pass",
+          "attach": "pass",
+          "attach_passed": 1,
+          "attach_attempted": 1
+        }
+      }
+    }
+  ]
+}

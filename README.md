@@ -114,15 +114,17 @@ different bootstrap. bpfcompat implements it (Ignition config over QEMU
     -matrix matrices/rhcos.yaml -runner vm -out report.json
   ```
 
-  Recorded evidence matrix: **3 OpenShift releases (4.14 / 4.16 / 4.18) × 6
-  artifacts on x86_64, plus a real aarch64 boot** —
-  [docs/evidence-rhcos.md](docs/evidence-rhcos.md). Highlights: ring-buffer and
-  perf-buffer load+attach pass everywhere; a **BPF-LSM** program is rejected on
-  4.14 (RHEL 9.2) but loads+attaches all hooks on 4.16/4.18 (RHEL 9.4) — a real
-  backport boundary; and a CO-RE failure is correctly rejected on every release.
-  Without an image, the **RHEL / AlmaLinux 9 (5.14)** profiles are the interim
-  kernel approximation. Full guide:
-  [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
+  Recorded evidence — real boots, not claims, and not just 4.16: **OpenShift
+  4.14, 4.16, and 4.18 on x86_64 (6 artifacts each), plus OpenShift 4.16 on
+  aarch64** — [docs/evidence-rhcos.md](docs/evidence-rhcos.md), with a
+  machine-readable [docs/report-rhcos-summary.json](docs/report-rhcos-summary.json).
+  Highlights: ring-buffer and perf-buffer load+attach pass on every release; a
+  **BPF-LSM** program is rejected on 4.14 (RHEL 9.2) but loads+attaches all hooks
+  on 4.16/4.18 (RHEL 9.4) — a real backport boundary; a CO-RE failure is
+  correctly rejected everywhere; and the aarch64 boot
+  (`5.14.0-427.50.1.el9_4.aarch64`) load+attaches under emulation. Without an
+  image, the **RHEL / AlmaLinux 9 (5.14)** profiles are the interim kernel
+  approximation. Full guide: [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
 
 ## Try it in CI without your own KVM box
 

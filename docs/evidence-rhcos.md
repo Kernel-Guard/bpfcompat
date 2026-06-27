@@ -7,7 +7,9 @@ Reproduce with the steps at the bottom.
 
 > Raw run artifacts (full `report.json`, `validator-result.json`, serial logs)
 > are written under `evidence/rhcos/` locally; that path is git-ignored as
-> high-churn output, so the decisive fields are inlined here.
+> high-churn output, so the decisive fields are inlined here and in a
+> machine-readable [`report-rhcos-summary.json`](report-rhcos-summary.json)
+> (sanitized: no host paths, keys, or raw logs).
 
 ## Releases under test
 
