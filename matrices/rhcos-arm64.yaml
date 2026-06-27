@@ -1,0 +1,9 @@
+# RHEL CoreOS (OpenShift) aarch64 — opt-in, operator-supplied image.
+# Separate from matrices/rhcos.yaml because an aarch64 run needs an aarch64
+# validator binary (and qemu-system-aarch64; KVM on an ARM64 host, else TCG).
+# Stage: make rhcos-image RHCOS_VERSION=4.16-arm64 RHCOS_IMAGE_URL=<aarch64 .gz>
+# Run with BPFCOMPAT_ENABLE_RHCOS=1. See docs/evidence-rhcos.md.
+name: rhcos-arm64
+profiles:
+  - id: rhcos-4.16-arm64
+    required: false

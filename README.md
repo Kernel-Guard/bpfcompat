@@ -114,11 +114,14 @@ different bootstrap. bpfcompat implements it (Ignition config over QEMU
     -matrix matrices/rhcos.yaml -runner vm -out report.json
   ```
 
-  Recorded evidence matrix: **3 OpenShift releases (4.14 / 4.16 / 4.18)** × 3
-  artifacts, real boots — baseline + ring-buffer load+attach **pass**, and a
-  CO-RE failure correctly **rejected** on every release —
-  [docs/evidence-rhcos.md](docs/evidence-rhcos.md). Without an image, the **RHEL /
-  AlmaLinux 9 (5.14)** profiles are the interim kernel approximation. Full guide:
+  Recorded evidence matrix: **3 OpenShift releases (4.14 / 4.16 / 4.18) × 6
+  artifacts on x86_64, plus a real aarch64 boot** —
+  [docs/evidence-rhcos.md](docs/evidence-rhcos.md). Highlights: ring-buffer and
+  perf-buffer load+attach pass everywhere; a **BPF-LSM** program is rejected on
+  4.14 (RHEL 9.2) but loads+attaches all hooks on 4.16/4.18 (RHEL 9.4) — a real
+  backport boundary; and a CO-RE failure is correctly rejected on every release.
+  Without an image, the **RHEL / AlmaLinux 9 (5.14)** profiles are the interim
+  kernel approximation. Full guide:
   [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
 
 ## Try it in CI without your own KVM box
@@ -583,7 +586,7 @@ Reference matrices (real, reproducible artifacts):
 - [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
 - [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
 - [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config
-- [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.14·4.16·4.18 matrix, load + attach inside real RHCOS guests
+- [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.14·4.16·4.18 × 6 artifacts (x86_64) + a real aarch64 boot
 
 Internal evidence and program docs (acceptance records, runbooks, and
 planning notes — useful for contributors, not needed to use the tool):
