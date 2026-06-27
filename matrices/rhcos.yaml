@@ -1,0 +1,7 @@
+# RHEL CoreOS (OpenShift) — opt-in, operator-supplied image.
+# Stage the image with `make rhcos-image RHCOS_IMAGE=... ` (or RHCOS_IMAGE_URL=...)
+# and run with BPFCOMPAT_ENABLE_RHCOS=1. See docs/rhcos-openshift.md.
+name: rhcos
+profiles:
+  - id: rhcos-4.16-5.14
+    required: false
