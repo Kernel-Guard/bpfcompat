@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest          # exposes /dev/kvm for KVM acceleration
     steps:
       - uses: actions/checkout@v4
-      - uses: Kernel-Guard/bpfcompat@v0.1.6
+      - uses: Kernel-Guard/bpfcompat@v0.2.0
         with:
           artifact: build/program.bpf.o     # your compiled object
           matrix: matrices/mvp.yaml          # the kernels you support
@@ -57,7 +57,7 @@ What you get:
 Shipping a whole product? Use **suite mode** to gate a collection in one run:
 
 ```yaml
-      - uses: Kernel-Guard/bpfcompat@v0.1.6
+      - uses: Kernel-Guard/bpfcompat@v0.2.0
         with:
           suite: suites/project.yaml
           suite-out: reports/suite.json
