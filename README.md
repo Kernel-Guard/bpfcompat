@@ -114,11 +114,11 @@ different bootstrap. bpfcompat implements it (Ignition config over QEMU
     -matrix matrices/rhcos.yaml -runner vm -out report.json
   ```
 
-  Recorded run: RHCOS `416.94…` on kernel `5.14.0-427.93.1.el9_4` (OpenShift
-  4.16), ring-buffer artifact load + attach **pass** —
+  Recorded evidence matrix: **3 OpenShift releases (4.14 / 4.16 / 4.18)** × 3
+  artifacts, real boots — baseline + ring-buffer load+attach **pass**, and a
+  CO-RE failure correctly **rejected** on every release —
   [docs/evidence-rhcos.md](docs/evidence-rhcos.md). Without an image, the **RHEL /
-  AlmaLinux 9 (5.14)** profiles are the interim kernel approximation (RHCOS for
-  4.16 is the RHEL 9.4 kernel). Full guide:
+  AlmaLinux 9 (5.14)** profiles are the interim kernel approximation. Full guide:
   [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
 
 ## Try it in CI without your own KVM box
@@ -583,7 +583,7 @@ Reference matrices (real, reproducible artifacts):
 - [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
 - [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
 - [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config
-- [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.16, load + attach inside a real RHCOS guest
+- [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.14·4.16·4.18 matrix, load + attach inside real RHCOS guests
 
 Internal evidence and program docs (acceptance records, runbooks, and
 planning notes — useful for contributors, not needed to use the tool):

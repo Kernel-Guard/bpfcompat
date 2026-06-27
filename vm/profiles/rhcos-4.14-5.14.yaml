@@ -1,0 +1,23 @@
+# RHEL CoreOS (OpenShift 4.14) — runnable with an operator-supplied image.
+#
+# Part of the RHCOS evidence matrix (see docs/evidence-rhcos.md). Same Ignition
+# boot path as Fedora CoreOS (internal/vm/ignition.go); off by default, enable
+# with BPFCOMPAT_ENABLE_RHCOS=1 once the image is staged with
+#   make rhcos-image RHCOS_IMAGE_URL=.../rhcos-4.14...-qemu.x86_64.qcow2.gz \
+#     <or> RHCOS_IMAGE=/path  (stage target: vm/cache/rhcos-4.14.qcow2)
+# RHCOS for OpenShift 4.14 is a RHEL 9.x kernel (5.14, heavily backported); the
+# real booted kernel is captured at runtime in the report.
+id: rhcos-4.14-5.14
+distro: rhcos
+version: "4.14"
+kernel_family: "5.14"
+arch: x86_64
+image:
+  local_path: "vm/cache/rhcos-4.14.qcow2"
+boot:
+  memory_mb: 2048
+  cpus: 2
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

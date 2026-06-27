@@ -1,7 +1,12 @@
-# RHEL CoreOS (OpenShift) — opt-in, operator-supplied image.
-# Stage the image with `make rhcos-image RHCOS_IMAGE=... ` (or RHCOS_IMAGE_URL=...)
-# and run with BPFCOMPAT_ENABLE_RHCOS=1. See docs/rhcos-openshift.md.
+# RHEL CoreOS (OpenShift) evidence matrix — opt-in, operator-supplied images.
+# Stage each image with `make rhcos-image RHCOS_IMAGE_URL=...` (one per version,
+# staged at vm/cache/rhcos-<ver>.qcow2) and run with BPFCOMPAT_ENABLE_RHCOS=1.
+# See docs/rhcos-openshift.md and docs/evidence-rhcos.md.
 name: rhcos
 profiles:
+  - id: rhcos-4.14-5.14
+    required: false
   - id: rhcos-4.16-5.14
+    required: false
+  - id: rhcos-4.18-5.14
     required: false
