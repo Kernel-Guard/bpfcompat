@@ -309,7 +309,8 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 			result.InfraError = err.Error()
 			return
 		}
-		cmd = newCmd
+		// newCmd is the post-reboot QEMU process; only qemuProc is read
+		// afterward (for cleanup), so we don't reassign cmd here.
 		qemuProc = newCmd.Process
 
 		rebootCtx, cancelReboot := context.WithTimeout(ctx, req.Timeout)

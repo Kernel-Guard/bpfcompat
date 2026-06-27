@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kernel-guard/bpfcompat/internal/safepath"
 )
 
 const (
@@ -192,7 +194,13 @@ func PersistDecisionTrace(workDir string, trace DecisionTrace) (DecisionPersistR
 	if err := os.MkdirAll(traceDir, 0o755); err != nil {
 		return DecisionPersistResult{}, fmt.Errorf("create runtime decision directory: %w", err)
 	}
-	tracePath := filepath.Join(traceDir, trace.DecisionID+".json")
+	// DecisionID can arrive from the caller (including the network-facing
+	// API), so contain the derived filename to a single component under
+	// traceDir before writing.
+	tracePath, err := safepath.LocalJoin(traceDir, trace.DecisionID+".json")
+	if err != nil {
+		return DecisionPersistResult{}, fmt.Errorf("resolve decision trace path: %w", err)
+	}
 	payload, err := json.MarshalIndent(trace, "", "  ")
 	if err != nil {
 		return DecisionPersistResult{}, fmt.Errorf("marshal decision trace: %w", err)
@@ -219,9 +227,12 @@ func PersistDecisionTrace(workDir string, trace DecisionTrace) (DecisionPersistR
 	if err != nil {
 		return DecisionPersistResult{}, fmt.Errorf("open runtime decision event stream: %w", err)
 	}
-	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
 		return DecisionPersistResult{}, fmt.Errorf("append runtime decision event: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return DecisionPersistResult{}, fmt.Errorf("close runtime decision event stream: %w", err)
 	}
 
 	return DecisionPersistResult{
