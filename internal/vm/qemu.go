@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -619,6 +621,17 @@ func startQEMU(ctx context.Context, profile Profile, overlayPath, serialLogPath,
 
 	args := buildQEMUArgs(profile, overlayPath, serialLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath)
 
+	// aarch64 "virt" has no built-in firmware (unlike x86 SeaBIOS), so a UEFI
+	// build must be supplied as pflash or the guest never boots. Resolve and
+	// stage it next to the overlay (vmRunDir).
+	if normalizeArch(profile.Arch) == "aarch64" {
+		fwArgs, err := aarch64FirmwareArgs(filepath.Dir(overlayPath))
+		if err != nil {
+			return nil, "", err
+		}
+		args = append(args, fwArgs...)
+	}
+
 	qemuBinary := qemuSystemBinary(profile)
 	cmd := exec.CommandContext(ctx, qemuBinary, args...)
 	cmd.Stdout = qemuLog
@@ -631,6 +644,76 @@ func startQEMU(ctx context.Context, profile Profile, overlayPath, serialLogPath,
 
 	commandText := qemuBinary + " " + strings.Join(args, " ")
 	return cmd, commandText, nil
+}
+
+// aarch64FirmwareArgs resolves a UEFI firmware pair and stages a per-VM writable
+// copy of the vars store under vmRunDir, returning the QEMU pflash args. Paths
+// are overridable for non-Debian layouts via BPFCOMPAT_AARCH64_UEFI_CODE /
+// BPFCOMPAT_AARCH64_UEFI_VARS.
+func aarch64FirmwareArgs(vmRunDir string) ([]string, error) {
+	code := firstExistingPath(
+		os.Getenv("BPFCOMPAT_AARCH64_UEFI_CODE"),
+		"/usr/share/AAVMF/AAVMF_CODE.fd",
+		"/usr/share/qemu/edk2-aarch64-code.fd",
+		"/usr/share/edk2/aarch64/QEMU_EFI-silent-pflash.raw",
+	)
+	if code == "" {
+		return nil, fmt.Errorf("aarch64 UEFI firmware not found; install qemu-efi-aarch64 or set BPFCOMPAT_AARCH64_UEFI_CODE")
+	}
+	varsTemplate := firstExistingPath(
+		os.Getenv("BPFCOMPAT_AARCH64_UEFI_VARS"),
+		"/usr/share/AAVMF/AAVMF_VARS.fd",
+		"/usr/share/qemu/edk2-arm-vars.fd",
+	)
+	if varsTemplate == "" {
+		return nil, fmt.Errorf("aarch64 UEFI vars template not found; install qemu-efi-aarch64 or set BPFCOMPAT_AARCH64_UEFI_VARS")
+	}
+	varsCopy := filepath.Join(vmRunDir, "AAVMF_VARS.fd")
+	if err := copyRegularFile(varsTemplate, varsCopy); err != nil {
+		return nil, fmt.Errorf("stage UEFI vars: %w", err)
+	}
+	return aarch64PflashArgs(code, varsCopy), nil
+}
+
+// aarch64PflashArgs is the pure pflash-arg shape: read-only CODE on unit 0 and a
+// writable VARS store on unit 1.
+func aarch64PflashArgs(codePath, varsPath string) []string {
+	return []string{
+		"-drive", fmt.Sprintf("if=pflash,format=raw,unit=0,readonly=on,file=%s", codePath),
+		"-drive", fmt.Sprintf("if=pflash,format=raw,unit=1,file=%s", varsPath),
+	}
+}
+
+func firstExistingPath(candidates ...string) string {
+	for _, c := range candidates {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, err := os.Stat(c); err == nil { // #nosec G703 -- operator-supplied firmware path, not untrusted input
+			return c
+		}
+	}
+	return ""
+}
+
+// copyRegularFile copies src to dst. src/dst are operator-controlled firmware
+// paths (env-overridable defaults under /usr/share), not untrusted input.
+func copyRegularFile(src, dst string) error {
+	in, err := os.Open(src) // #nosec G703 -- operator-supplied firmware path
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst) // #nosec G703 -- staged under the run's private dir
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func buildQEMUArgs(profile Profile, overlayPath, serialLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) []string {
@@ -675,7 +758,12 @@ func qemuSystemBinary(profile Profile) string {
 }
 
 func qemuMachineArgs(profile Profile) []string {
-	return machineArgsFor(normalizeArch(profile.Arch), kvmAvailable())
+	guest := normalizeArch(profile.Arch)
+	// KVM can only accelerate a guest whose arch matches the host: /dev/kvm on an
+	// x86_64 host cannot run an aarch64 guest. Use KVM only for a same-arch guest;
+	// otherwise fall back to TCG software emulation (slow but correct).
+	kvm := kvmAvailable() && guest == normalizeArch(runtime.GOARCH)
+	return machineArgsFor(guest, kvm)
 }
 
 // machineArgsFor is the pure acceleration decision: with KVM it pins -cpu host

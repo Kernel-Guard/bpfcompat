@@ -1,0 +1,20 @@
+# RHEL CoreOS (OpenShift 4.16), aarch64 — runnable with an operator-supplied image.
+#
+# Same Ignition boot path as x86_64 RHCOS (internal/vm/ignition.go); off by
+# default, enable with BPFCOMPAT_ENABLE_RHCOS=1. Boots qemu-system-aarch64; uses
+# KVM on an ARM64 host or TCG software emulation elsewhere (slow but correct).
+# Stage the image: vm/cache/rhcos-4.16-arm64.qcow2 (from the aarch64 mirror).
+id: rhcos-4.16-arm64
+distro: rhcos
+version: "4.16"
+kernel_family: "5.14"
+arch: arm64
+image:
+  local_path: "vm/cache/rhcos-4.16-arm64.qcow2"
+boot:
+  memory_mb: 2048
+  cpus: 2
+validator:
+  path: "/usr/local/bin/bpfcompat-validator"
+capabilities:
+  expected_btf: true

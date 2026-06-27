@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- aarch64 VM support: the QEMU executor now supplies aarch64 UEFI firmware
+  (AAVMF pflash; `BPFCOMPAT_AARCH64_UEFI_CODE`/`_VARS`) and uses TCG software
+  emulation for a guest whose arch differs from the host (KVM only accelerates a
+  same-arch guest). This makes aarch64 cloud-image profiles actually boot.
+- RHCOS evidence matrix expanded to 6 artifacts × 3 OpenShift releases on x86_64
+  plus a real aarch64 boot (OpenShift 4.16, `5.14.0-427.50.1.el9_4.aarch64`).
+  New: `aegis` BPF-LSM shows a real backport boundary (rejected on RHEL 9.2,
+  load+attach all hooks on 9.4); profiles `rhcos-4.16-arm64`, matrices
+  `rhcos-arm64.yaml`; `make rhcos-image RHCOS_VERSION=` stages per-version/arch.
 - RHCOS evidence matrix: profiles for OpenShift 4.14 / 4.16 / 4.18 (`matrices/rhcos.yaml`)
   and a recorded multi-version, multi-artifact run in `docs/evidence-rhcos.md` —
   baseline load and ring-buffer load+attach pass on every release (RHEL 9.2 and

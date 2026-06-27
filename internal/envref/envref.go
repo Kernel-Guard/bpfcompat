@@ -299,6 +299,16 @@ var catalog = []Var{
 		Category:    "VM Runner",
 		Description: "Enable the RHEL CoreOS (rhcos) profile. RHCOS boots via the same Ignition path as Fedora CoreOS, but its image ships with an OpenShift release rather than a public URL. Stage the image with `make rhcos-image` and set this to 1/true once it is present; left off, rhcos stays unsupported so it is never claimed runnable without a real image.",
 	},
+	{
+		Name: "BPFCOMPAT_AARCH64_UEFI_CODE", Default: "/usr/share/AAVMF/AAVMF_CODE.fd",
+		Category:    "VM Runner",
+		Description: "Path to the aarch64 UEFI firmware CODE image (pflash). aarch64 `virt` has no built-in firmware, so VM boots need it; install qemu-efi-aarch64 or point this at your distro's edk2 build. Ignored on x86_64.",
+	},
+	{
+		Name: "BPFCOMPAT_AARCH64_UEFI_VARS", Default: "/usr/share/AAVMF/AAVMF_VARS.fd",
+		Category:    "VM Runner",
+		Description: "Path to the aarch64 UEFI vars template (pflash). A per-VM writable copy is staged from it so guest NVRAM writes don't touch the shared template. Ignored on x86_64.",
+	},
 
 	// ---------- HTTP server ----------
 	{
