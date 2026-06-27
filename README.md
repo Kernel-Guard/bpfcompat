@@ -5,6 +5,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kernel-Guard/bpfcompat/badge)](https://scorecard.dev/viewer/?uri=github.com/Kernel-Guard/bpfcompat)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13230/badge)](https://www.bestpractices.dev/projects/13230)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+<img width="1672" height="941" alt="ChatGPT Image Jun 27, 2026, 04_40_42 PM" src="https://github.com/user-attachments/assets/697ee208-15e2-4725-9066-c30cb81f753b" />
 
 `bpfcompat` is an open-source compatibility validator for compiled eBPF
 artifacts. **Test your eBPF across real kernels — locally or in CI.** It boots
