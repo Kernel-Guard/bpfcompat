@@ -17,7 +17,7 @@ that compatibility failures block CI with `rc=2`.
   - <https://github.com/ErenAri/bpfcompat-external-ci-proof/blob/main/.github/workflows/external-negative.yml>
   - <https://github.com/ErenAri/bpfcompat-external-ci-proof/blob/main/.github/workflows/external-suite.yml>
 
-Public repositories can reference `Kernel-Guard/bpfcompat@v0.1.3` directly.
+Public repositories can reference `Kernel-Guard/bpfcompat@v0.2.0` directly.
 
 ## Source Refs Validated
 

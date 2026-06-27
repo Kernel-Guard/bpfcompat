@@ -49,7 +49,7 @@ That is the difference between "❌ it broke" and "❌ ring buffer isn't availab
 
 ```bash
 # In CI (GitHub Action), against your kernel matrix:
-- uses: Kernel-Guard/bpfcompat@v0.1.6
+- uses: Kernel-Guard/bpfcompat@v0.2.0
   with:
     artifact: build/bpf_probe.o
     matrix: matrices/mvp.yaml
