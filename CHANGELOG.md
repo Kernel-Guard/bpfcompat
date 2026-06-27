@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-27
+
 ### Added
 - aarch64 VM support: the QEMU executor now supplies aarch64 UEFI firmware
   (AAVMF pflash; `BPFCOMPAT_AARCH64_UEFI_CODE`/`_VARS`) and uses TCG software
