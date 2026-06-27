@@ -94,6 +94,33 @@ vendor kernel, this is tested directly instead of inferred:
 This is proven across a 14/14 enterprise tier:
 [docs/case-study-enterprise-kernels.md](docs/case-study-enterprise-kernels.md).
 
+### CoreOS / OpenShift (Ignition boot)
+
+CoreOS-family nodes boot via **Ignition**, not cloud-init, so they need a
+different bootstrap. bpfcompat implements it (Ignition config over QEMU
+`-fw_cfg`), and the two cases differ only by image availability:
+
+- **Fedora CoreOS — supported, image is public.** Fetch with
+  `make vm-image-fcos` and run; proven booting FCOS stable (kernel `7.0.11`) with
+  load + attach inside the guest.
+- **RHCOS / OpenShift — opt-in, operator-supplied image.** RHCOS ships with an
+  OpenShift release rather than an evergreen public cloud image, so it is **off
+  by default** and never claimed runnable without a real image. Stage your image
+  and opt in:
+
+  ```sh
+  make rhcos-image RHCOS_IMAGE=/path/to/rhcos-qemu.x86_64.qcow2   # or RHCOS_IMAGE_URL=...
+  BPFCOMPAT_ENABLE_RHCOS=1 bpfcompat test -artifact build/probe.bpf.o \
+    -matrix matrices/rhcos.yaml -runner vm -out report.json
+  ```
+
+  Recorded run: RHCOS `416.94…` on kernel `5.14.0-427.93.1.el9_4` (OpenShift
+  4.16), ring-buffer artifact load + attach **pass** —
+  [docs/evidence-rhcos.md](docs/evidence-rhcos.md). Without an image, the **RHEL /
+  AlmaLinux 9 (5.14)** profiles are the interim kernel approximation (RHCOS for
+  4.16 is the RHEL 9.4 kernel). Full guide:
+  [docs/rhcos-openshift.md](docs/rhcos-openshift.md).
+
 ## Try it in CI without your own KVM box
 
 GitHub-hosted Linux runners now expose `/dev/kvm`, so the full QEMU VM
@@ -548,6 +575,7 @@ User guide — start here:
 - [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
 - [`docs/upstream-kernel-virtme-ng.md`](docs/upstream-kernel-virtme-ng.md)
 - [`docs/firecracker-backend.md`](docs/firecracker-backend.md)
+- [`docs/rhcos-openshift.md`](docs/rhcos-openshift.md) — RHCOS/OpenShift (Ignition boot, operator-supplied image)
 - [`docs/api-web-ui.md`](docs/api-web-ui.md)
 
 Reference matrices (real, reproducible artifacts):
@@ -555,6 +583,7 @@ Reference matrices (real, reproducible artifacts):
 - [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
 - [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
 - [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config
+- [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.16, load + attach inside a real RHCOS guest
 
 Internal evidence and program docs (acceptance records, runbooks, and
 planning notes — useful for contributors, not needed to use the tool):
