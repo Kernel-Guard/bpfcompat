@@ -112,6 +112,14 @@ const (
 	envSourceCompileTimeout             = "BPFCOMPAT_API_SOURCE_COMPILE_TIMEOUT"
 	envSourceCompileAllowExtraFlags     = "BPFCOMPAT_API_SOURCE_COMPILE_ALLOW_EXTRA_FLAGS"
 	envAllowAnonymousRead               = "BPFCOMPAT_API_ALLOW_ANONYMOUS_READ"
+	// envGitHubMarketplaceWebhookSecret holds the shared secret configured on
+	// the GitHub Marketplace listing's webhook. Deliveries are authenticated by
+	// their HMAC-SHA256 signature against this secret; when unset the endpoint
+	// returns 503 (it can never be left open without a secret).
+	envGitHubMarketplaceWebhookSecret = "BPFCOMPAT_GITHUB_MARKETPLACE_WEBHOOK_SECRET"
+	// maxMarketplaceWebhookBytes caps the webhook body. Marketplace payloads
+	// are a few KiB; 1 MiB is a generous hard ceiling against a hostile sender.
+	maxMarketplaceWebhookBytes = 1 << 20
 
 	headerAPIKey           = "X-API-Key"
 	headerIdentityToken    = "X-API-Identity-Token"
@@ -526,6 +534,10 @@ func (s *Server) serve(ctx context.Context) error {
 	mux.HandleFunc("/results", s.handleDemoResult)
 	mux.HandleFunc("/demo-result", s.handleDemoResult)
 	mux.HandleFunc("/badge/", s.handleBadge)
+	// GitHub Marketplace purchase webhook. Lives at a top-level path (not under
+	// /api) to match the URL configured on the Marketplace listing, and is
+	// authenticated by the delivery's HMAC signature rather than an API key.
+	mux.HandleFunc("/github/marketplace/webhook", s.handleGitHubMarketplaceWebhook)
 	if metricsEnabled() {
 		mux.Handle("/metrics", s.handleMetrics())
 	}
