@@ -422,9 +422,9 @@ func TestMapFixupArgs(t *testing.T) {
 		{Name: "auxiliary_maps", MaxEntries: "cpus"},
 		{Name: "ringbuf_maps", MaxEntries: "16", InnerRingbufBytes: 8388608},
 	}
-	want := " --set-map-max-entries auxiliary_maps=cpus" +
-		" --set-map-max-entries ringbuf_maps=16" +
-		" --set-map-inner-ringbuf ringbuf_maps=8388608"
+	want := " --set-map-max-entries 'auxiliary_maps=cpus'" +
+		" --set-map-max-entries 'ringbuf_maps=16'" +
+		" --set-map-inner-ringbuf 'ringbuf_maps=8388608'"
 	if got := mapFixupArgs(fixups); got != want {
 		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
 	}
@@ -434,7 +434,7 @@ func TestMapFixupArgsInnerMap(t *testing.T) {
 	fixups := []MapFixup{
 		{Name: "kubearmor_visibility", InnerMapType: "hash", InnerKeySize: 4, InnerValueSize: 4, InnerMaxEntries: 64},
 	}
-	want := " --set-map-inner-map kubearmor_visibility=hash:4:4:64"
+	want := " --set-map-inner-map 'kubearmor_visibility=hash:4:4:64'"
 	if got := mapFixupArgs(fixups); got != want {
 		t.Fatalf("unexpected inner-map args:\n got %q\nwant %q", got, want)
 	}
@@ -448,7 +448,7 @@ func TestProgVariantArgs(t *testing.T) {
 			{Name: "recvmmsg_old_x"},
 		},
 	}}
-	want := " --prog-variants recvmmsg_x=recvmmsg_x:181,recvmmsg_old_x:0"
+	want := " --prog-variants 'recvmmsg_x=recvmmsg_x:181,recvmmsg_old_x:0'"
 	if got := progVariantArgs(groups); got != want {
 		t.Fatalf("unexpected args:\n got %q\nwant %q", got, want)
 	}
@@ -481,8 +481,29 @@ func TestProgTypeArgs(t *testing.T) {
 		{Selector: "socket1", Type: "socket_filter"},
 		{Selector: "ig_trace_dns", Type: "socket_filter"},
 	})
-	want := " --set-prog-type socket1=socket_filter --set-prog-type ig_trace_dns=socket_filter"
+	want := " --set-prog-type 'socket1=socket_filter' --set-prog-type 'ig_trace_dns=socket_filter'"
 	if got != want {
 		t.Fatalf("unexpected prog-type args:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"plain", "'plain'"},
+		{"with space", "'with space'"},
+		{"name=value:1:2:3", "'name=value:1:2:3'"},
+		// An embedded single quote must be broken out and re-quoted so the
+		// value cannot terminate the surrounding quoting and inject syntax.
+		{"a'b", `'a'"'"'b'`},
+		{"$(rm -rf /)", "'$(rm -rf /)'"},
+		{"; reboot #", "'; reboot #'"},
+	}
+	for _, tc := range cases {
+		if got := shellQuote(tc.in); got != tc.want {
+			t.Fatalf("shellQuote(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

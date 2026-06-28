@@ -240,6 +240,11 @@ func shellSafeWord(value string) string {
 	return value
 }
 
+// shellQuote wraps value in POSIX single quotes, escaping any embedded single
+// quote, so it survives intact as a single argument when an assembled command
+// string is run by a remote shell (sshRun) or the in-guest validator. Manifest
+// and profile values are validated upstream; quoting here is defense-in-depth
+// so a validation gap can never turn an interpolated value into shell syntax.
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

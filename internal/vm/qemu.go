@@ -64,14 +64,14 @@ func mapFixupArgs(fixups []MapFixup) string {
 	var b strings.Builder
 	for _, fixup := range fixups {
 		if fixup.MaxEntries != "" {
-			fmt.Fprintf(&b, " --set-map-max-entries %s=%s", fixup.Name, fixup.MaxEntries)
+			fmt.Fprintf(&b, " --set-map-max-entries %s", shellQuote(fmt.Sprintf("%s=%s", fixup.Name, fixup.MaxEntries)))
 		}
 		if fixup.InnerRingbufBytes > 0 {
-			fmt.Fprintf(&b, " --set-map-inner-ringbuf %s=%d", fixup.Name, fixup.InnerRingbufBytes)
+			fmt.Fprintf(&b, " --set-map-inner-ringbuf %s", shellQuote(fmt.Sprintf("%s=%d", fixup.Name, fixup.InnerRingbufBytes)))
 		}
 		if fixup.InnerMapType != "" {
-			fmt.Fprintf(&b, " --set-map-inner-map %s=%s:%d:%d:%d", fixup.Name,
-				fixup.InnerMapType, fixup.InnerKeySize, fixup.InnerValueSize, fixup.InnerMaxEntries)
+			fmt.Fprintf(&b, " --set-map-inner-map %s", shellQuote(fmt.Sprintf("%s=%s:%d:%d:%d", fixup.Name,
+				fixup.InnerMapType, fixup.InnerKeySize, fixup.InnerValueSize, fixup.InnerMaxEntries)))
 		}
 	}
 	return b.String()
@@ -88,7 +88,7 @@ type ProgTypeOverride struct {
 func progTypeArgs(overrides []ProgTypeOverride) string {
 	var b strings.Builder
 	for _, ov := range overrides {
-		fmt.Fprintf(&b, " --set-prog-type %s=%s", ov.Selector, ov.Type)
+		fmt.Fprintf(&b, " --set-prog-type %s", shellQuote(fmt.Sprintf("%s=%s", ov.Selector, ov.Type)))
 	}
 	return b.String()
 }
@@ -96,17 +96,19 @@ func progTypeArgs(overrides []ProgTypeOverride) string {
 func progVariantArgs(groups []ProgVariantGroup) string {
 	var b strings.Builder
 	for _, group := range groups {
-		fmt.Fprintf(&b, " --prog-variants %s=", group.Group)
+		var operand strings.Builder
+		fmt.Fprintf(&operand, "%s=", group.Group)
 		for i, variant := range group.Variants {
 			if i > 0 {
-				b.WriteByte(',')
+				operand.WriteByte(',')
 			}
 			if variant.TrialProbe {
-				fmt.Fprintf(&b, "%s:trial", variant.Name)
+				fmt.Fprintf(&operand, "%s:trial", variant.Name)
 			} else {
-				fmt.Fprintf(&b, "%s:%d", variant.Name, variant.HelperID)
+				fmt.Fprintf(&operand, "%s:%d", variant.Name, variant.HelperID)
 			}
 		}
+		fmt.Fprintf(&b, " --prog-variants %s", shellQuote(operand.String()))
 	}
 	return b.String()
 }
@@ -116,7 +118,7 @@ func progVariantArgs(groups []ProgVariantGroup) string {
 func validatorTuningArgs(req ExecutionRequest) string {
 	args := mapFixupArgs(req.MapFixups) + progTypeArgs(req.ProgTypes) + progVariantArgs(req.ProgVariants)
 	if len(req.ProbeCompanions) > 0 {
-		args += " --probe-companions " + strings.Join(req.ProbeCompanions, ",")
+		args += " --probe-companions " + shellQuote(strings.Join(req.ProbeCompanions, ","))
 	}
 	return args
 }
@@ -362,7 +364,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 			result.InfraError = err.Error()
 			return
 		}
-		manifestArg = fmt.Sprintf(" --manifest %s", manifestRemotePath)
+		manifestArg = fmt.Sprintf(" --manifest %s", shellQuote(manifestRemotePath))
 	}
 
 	functionalPlanArg := ""
@@ -372,7 +374,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 			result.InfraError = err.Error()
 			return
 		}
-		functionalPlanArg = fmt.Sprintf(" --functional-plan %s", functionalPlanRemotePath)
+		functionalPlanArg = fmt.Sprintf(" --functional-plan %s", shellQuote(functionalPlanRemotePath))
 	}
 
 	remoteResultPath := filepath.ToSlash(filepath.Join(remoteRoot, "out", "result.json"))
@@ -383,17 +385,18 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	if attachMode == "" {
 		attachMode = "best-effort"
 	}
-	runCmd := fmt.Sprintf("sudo %s --artifact %s%s%s%s --attach-mode %s --out %s --log-dir %s/out 2>%s; code=$?; echo \"$code\" > %s; exit 0",
-		validatorRemotePath,
-		artifactRemotePath,
+	remoteLogDir := filepath.ToSlash(filepath.Join(remoteRoot, "out"))
+	runCmd := fmt.Sprintf("sudo %s --artifact %s%s%s%s --attach-mode %s --out %s --log-dir %s 2>%s; code=$?; echo \"$code\" > %s; exit 0",
+		shellQuote(validatorRemotePath),
+		shellQuote(artifactRemotePath),
 		manifestArg,
 		functionalPlanArg,
 		validatorTuningArgs(req),
-		attachMode,
-		remoteResultPath,
-		remoteRoot,
-		remoteErrPath,
-		remoteExitPath,
+		shellQuote(attachMode),
+		shellQuote(remoteResultPath),
+		shellQuote(remoteLogDir),
+		shellQuote(remoteErrPath),
+		shellQuote(remoteExitPath),
 	)
 	if err := sshRun(ctx, target, runCmd); err != nil {
 		result.InfraError = fmt.Sprintf("run validator: %v", err)
@@ -480,16 +483,16 @@ func guestKernelInstallCmd(release string, packageURLs []string) string {
 	if len(packageURLs) > 0 {
 		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
 		for i, pkg := range packageURLs {
-			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.deb '%s'; ", i, pkg)
+			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.deb %s; ", i, shellQuote(pkg))
 		}
 		b.WriteString("sudo -E dpkg -i pkg*.deb; ")
 	} else {
 		b.WriteString("sudo -E apt-get -o DPkg::Lock::Timeout=180 -q update; ")
-		fmt.Fprintf(&b, "sudo -E apt-get -o DPkg::Lock::Timeout=180 -q -y --no-install-recommends install linux-image-%s; ", release)
+		fmt.Fprintf(&b, "sudo -E apt-get -o DPkg::Lock::Timeout=180 -q -y --no-install-recommends install %s; ", shellQuote("linux-image-"+release))
 	}
 	b.WriteString("sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub; ")
 	b.WriteString("sudo update-grub; ")
-	fmt.Fprintf(&b, "sudo grub-set-default 'Advanced options for Ubuntu>Ubuntu, with Linux %s'", release)
+	fmt.Fprintf(&b, "sudo grub-set-default %s", shellQuote("Advanced options for Ubuntu>Ubuntu, with Linux "+release))
 	return b.String()
 }
 
