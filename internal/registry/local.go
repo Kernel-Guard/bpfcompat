@@ -74,16 +74,20 @@ func appendRegistryJSONL(workDir string, record RunRecord) error {
 	if err != nil {
 		return fmt.Errorf("open registry index: %w", err)
 	}
-	defer f.Close()
 
 	line, err := json.Marshal(record)
 	if err != nil {
+		_ = f.Close()
 		return fmt.Errorf("marshal registry record: %w", err)
 	}
 	line = append(line, '\n')
 
 	if _, err := f.Write(line); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("append registry record: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close registry index: %w", err)
 	}
 	return nil
 }

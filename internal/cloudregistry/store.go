@@ -824,9 +824,12 @@ func (s Store) AppendAudit(event AuditEvent) (AuditEvent, error) {
 	if err != nil {
 		return AuditEvent{}, fmt.Errorf("open cloud registry audit stream: %w", err)
 	}
-	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
 		return AuditEvent{}, fmt.Errorf("append cloud registry audit event: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return AuditEvent{}, fmt.Errorf("close cloud registry audit stream: %w", err)
 	}
 	return event, nil
 }

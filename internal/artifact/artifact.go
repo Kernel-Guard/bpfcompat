@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/kernel-guard/bpfcompat/internal/safepath"
 )
 
 func Stage(srcPath, dstDir string) (string, error) {
@@ -27,7 +29,12 @@ func Stage(srcPath, dstDir string) (string, error) {
 	}
 	defer src.Close()
 
-	dstPath := filepath.Join(dstDirAbs, filepath.Base(srcAbs))
+	// The destination filename is derived from the source basename; contain
+	// it to a single component under the destination directory.
+	dstPath, err := safepath.LocalJoin(dstDirAbs, filepath.Base(srcAbs))
+	if err != nil {
+		return "", fmt.Errorf("resolve staged artifact path: %w", err)
+	}
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		return "", fmt.Errorf("create staged artifact: %w", err)

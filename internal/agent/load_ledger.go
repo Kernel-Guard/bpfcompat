@@ -96,13 +96,17 @@ func AppendLoadLedgerEntry(workDir string, entry LoadLedgerEntry) (string, error
 	if err != nil {
 		return "", fmt.Errorf("open load ledger: %w", err)
 	}
-	defer f.Close()
 	raw, err := json.Marshal(entry)
 	if err != nil {
+		_ = f.Close()
 		return "", fmt.Errorf("encode load ledger entry: %w", err)
 	}
 	if _, err := f.Write(append(raw, '\n')); err != nil {
+		_ = f.Close()
 		return "", fmt.Errorf("write load ledger entry: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("close load ledger: %w", err)
 	}
 	return path, nil
 }

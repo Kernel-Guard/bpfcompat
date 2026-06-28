@@ -101,15 +101,19 @@ func PersistArtifactVersion(workDir string, record ArtifactVersionRecord) error 
 	if err != nil {
 		return fmt.Errorf("open artifact history index: %w", err)
 	}
-	defer f.Close()
 
 	line, err := json.Marshal(record)
 	if err != nil {
+		_ = f.Close()
 		return fmt.Errorf("marshal artifact history record: %w", err)
 	}
 	line = append(line, '\n')
 	if _, err := f.Write(line); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("append artifact history record: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close artifact history index: %w", err)
 	}
 	return nil
 }

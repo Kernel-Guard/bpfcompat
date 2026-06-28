@@ -17,6 +17,7 @@ import (
 
 	"github.com/kernel-guard/bpfcompat/internal/artifact"
 	"github.com/kernel-guard/bpfcompat/internal/registry"
+	"github.com/kernel-guard/bpfcompat/internal/safepath"
 )
 
 const fetchSchemaVersion = "runtime_fetch.v0.1"
@@ -56,7 +57,12 @@ func FetchArtifact(record registry.ArtifactVersionRecord, outDir string) (FetchR
 	if ext == "" {
 		ext = ".bpf.o"
 	}
-	targetPath := filepath.Join(outDir, sanitizeFragment(targetName)+ext)
+	// targetName/ext derive from registry record fields, so contain the
+	// resulting filename to a single component under outDir.
+	targetPath, err := safepath.LocalJoin(outDir, sanitizeFragment(targetName)+ext)
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("resolve artifact target path: %w", err)
+	}
 
 	stagedPath := targetPath
 	if remote {
