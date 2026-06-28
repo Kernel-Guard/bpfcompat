@@ -471,6 +471,13 @@ var catalog = []Var{
 		Description: "Allow file:// artifact URIs. Off by default; enable only for trusted on-host caches.",
 	},
 
+	// ---------- GitHub Marketplace ----------
+	{
+		Name: "BPFCOMPAT_GITHUB_MARKETPLACE_WEBHOOK_SECRET", Default: "",
+		Category:    "GitHub Marketplace",
+		Description: "Shared secret for the GitHub Marketplace listing webhook. Deliveries to /github/marketplace/webhook are authenticated by their HMAC-SHA256 signature against this value. When unset, the endpoint returns 503 (never runs open).",
+	},
+
 	// ---------- Signing ----------
 	{
 		Name: "BPFCOMPAT_SIGNING_MODE", Default: "local",
