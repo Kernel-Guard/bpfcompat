@@ -126,7 +126,7 @@ func ParseEvent(body []byte) (Event, error) {
 	// adds more over time, so we must NOT DisallowUnknownFields here.
 	var event Event
 	if err := json.Unmarshal(body, &event); err != nil {
-		return Event{}, fmt.Errorf("%w: %v", ErrInvalidPayload, err)
+		return Event{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 	}
 	if strings.TrimSpace(event.Action) == "" {
 		return Event{}, fmt.Errorf("%w: missing action", ErrInvalidPayload)

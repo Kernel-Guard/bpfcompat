@@ -144,7 +144,7 @@ func TestMarketplaceWebhookMethodNotAllowed(t *testing.T) {
 	t.Setenv(envGitHubMarketplaceWebhookSecret, "whsec")
 	s := &Server{cfg: Config{WorkDir: t.TempDir()}}
 
-	req := httptest.NewRequest(http.MethodGet, "/github/marketplace/webhook", nil)
+	req := httptest.NewRequest(http.MethodGet, "/github/marketplace/webhook", http.NoBody)
 	rec := httptest.NewRecorder()
 	s.handleGitHubMarketplaceWebhook(rec, req)
 

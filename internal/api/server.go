@@ -116,7 +116,7 @@ const (
 	// the GitHub Marketplace listing's webhook. Deliveries are authenticated by
 	// their HMAC-SHA256 signature against this secret; when unset the endpoint
 	// returns 503 (it can never be left open without a secret).
-	envGitHubMarketplaceWebhookSecret = "BPFCOMPAT_GITHUB_MARKETPLACE_WEBHOOK_SECRET"
+	envGitHubMarketplaceWebhookSecret = "BPFCOMPAT_GITHUB_MARKETPLACE_WEBHOOK_SECRET" //nolint:gosec // G101 false positive: this is the env-var NAME, not a secret value
 	// maxMarketplaceWebhookBytes caps the webhook body. Marketplace payloads
 	// are a few KiB; 1 MiB is a generous hard ceiling against a hostile sender.
 	maxMarketplaceWebhookBytes = 1 << 20

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -155,5 +154,4 @@ func TestAppendLedger(t *testing.T) {
 	if lines != 2 {
 		t.Fatalf("ledger has %d lines, want 2", lines)
 	}
-	_ = filepath.Dir(path)
 }
