@@ -35,6 +35,40 @@ On the GitHub side (listing → *Webhook*):
 - **Secret:** the same value as the env var above
 - **SSL verification:** enabled
 
+## Hosting via Cloudflare Tunnel
+
+The webhook is pure ingestion and does **not** need the KVM/QEMU demo host — it
+can run on any always-on Linux box. Because `kernelguard.net` is already on
+Cloudflare, the lowest-friction way to publish `api.kernelguard.net` is a
+Cloudflare Tunnel: the box dials *out* to Cloudflare, so there are no inbound
+ports to open, no public IP, and no Let's Encrypt on the box (TLS terminates at
+the Cloudflare edge).
+
+On the box that runs `bpfcompat serve` (bound to `127.0.0.1:8080`):
+
+```bash
+# 1. Make sure the server is up with the secret set:
+#    /etc/bpfcompat/serve.env -> BPFCOMPAT_GITHUB_MARKETPLACE_WEBHOOK_SECRET=<value>
+#    sudo systemctl restart bpfcompat-serve
+
+# 2. Install cloudflared, then run the helper (interactive browser login):
+./scripts/cloudflared-setup.sh
+```
+
+`scripts/cloudflared-setup.sh` logs in, creates a `bpfcompat-api` tunnel, routes
+`api.kernelguard.net` to it (creating the proxied CNAME in Cloudflare DNS),
+writes `/etc/cloudflared/config.yml` from
+`packaging/cloudflared/config.yml.example`, and installs the `cloudflared`
+system service. After it finishes:
+
+```bash
+curl -i https://api.kernelguard.net/livez                      # 200 = tunnel + server up
+curl -i -X POST https://api.kernelguard.net/github/marketplace/webhook  # 401 = webhook live & verifying
+```
+
+Then on the GitHub listing webhook page → **Recent Deliveries → Redeliver** the
+ping; expect a `200`.
+
 ## Response contract
 
 | Status | When |
