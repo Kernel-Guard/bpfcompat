@@ -208,7 +208,11 @@ failing.
 ## Proof: a real Falco probe catches a real regression
 
 `bpfcompat` validates Falco's `modern_bpf` probe (`bpf_probe.o`, ~64 programs)
-exactly as Falco's own loader runs it, across a 5-kernel matrix:
+**the way Falco's `libpman` loads it** — runtime-sized maps, helper-gated program
+variants, and trial-probed BPF iterators, declared in a manifest so a plain
+libbpf load doesn't undercount support. (This *mirrors* libpman's loader
+contract; it is not Falco's loader binary itself — to run that exact binary, use
+[command mode](docs/command-validation.md).) Across a 5-kernel matrix:
 
 | Profile | Host kernel | Status | Why |
 |---|---|---|---|
@@ -248,8 +252,17 @@ not a production runtime loader and it is not a production multi-tenant SaaS.
 Implemented:
 
 - VM-backed `.bpf.o` validation through QEMU/KVM cloud images.
+- **Command/binary validation** (`bpfcompat test --command`) — run *your own*
+  loader binary/command inside each kernel VM and take its **exit code** as the
+  per-kernel verdict. The bundled validator is **not** used in this mode; this
+  tests the real userspace loader path. See
+  [docs/command-validation.md](docs/command-validation.md).
+- **Library of known-tricky vendor kernels** (`matrices/quirk-library.yaml`) —
+  the kernels where "version ≠ feature support" bites; run a `.bpf.o` or your
+  own loader against the whole set. See
+  [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md).
 - C/libbpf validator that records load, attach, BTF, CO-RE, map, program, and
-  capability evidence.
+  capability evidence (the default `.bpf.o` flow).
 - Failure classification for common compatibility cases such as missing BTF,
   CO-RE relocation failures, unsupported map types, unsupported attach types,
   and unsupported program types.
