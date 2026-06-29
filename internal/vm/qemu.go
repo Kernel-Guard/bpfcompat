@@ -28,6 +28,14 @@ type ExecutionRequest struct {
 	AttachMode         string
 	Timeout            time.Duration
 	KeepVMOnFailure    bool
+
+	// Command-mode validation. When Command is non-empty the validator is not
+	// run; instead Command is executed inside the guest (as root) and the
+	// per-kernel verdict is its exit code. CommandBinary, when set, is a local
+	// executable shipped into the guest and exposed to Command as $BPFCOMPAT_BIN;
+	// ArtifactPath, when set, is staged and exposed as $BPFCOMPAT_ARTIFACT.
+	Command       string
+	CommandBinary string
 }
 
 // ProgVariantGroup mirrors a manifest program-variant group for the
@@ -135,6 +143,14 @@ type ExecutionResult struct {
 	Notes               []string
 	StartedAt           time.Time
 	FinishedAt          time.Time
+
+	// Command-mode outputs (populated only when ExecutionRequest.Command is set).
+	CommandMode       bool
+	CommandExitCode   int
+	CommandStdoutTail string
+	CommandStderrTail string
+	HostRelease       string
+	HostMachine       string
 }
 
 const (
@@ -341,9 +357,17 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 
-	artifactRemotePath := filepath.ToSlash(filepath.Join(remoteRoot, "input", filepath.Base(req.ArtifactPath)))
-	if err := scpToGuest(ctx, target, req.ArtifactPath, artifactRemotePath); err != nil {
-		result.InfraError = err.Error()
+	artifactRemotePath := ""
+	if strings.TrimSpace(req.ArtifactPath) != "" {
+		artifactRemotePath = filepath.ToSlash(filepath.Join(remoteRoot, "input", filepath.Base(req.ArtifactPath)))
+		if err := scpToGuest(ctx, target, req.ArtifactPath, artifactRemotePath); err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+	}
+
+	if strings.TrimSpace(req.Command) != "" {
+		runGuestCommand(ctx, req, target, vmRunDir, remoteRoot, artifactRemotePath, &result)
 		return
 	}
 
@@ -431,6 +455,90 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	result.ValidatorResultPath = localResultPath
 	result.Notes = append(result.Notes, "Validator executed inside VM and result was copied back.")
 	return
+}
+
+const commandTailBytes = 4096
+
+// guestCommandLine builds the in-guest shell line for command-mode validation.
+// The user command is arbitrary shell (the artifact's own loader) run as root;
+// it is single-quoted as one `bash -lc` operand and the artifact/bin/root paths
+// are passed as quoted env assignments. The wrapper always exits 0 so a non-zero
+// command exit is captured in the exit file rather than read as an SSH error.
+func guestCommandLine(command, artifactRemotePath, binRemotePath, remoteRoot, stdoutPath, stderrPath, exitPath string) string {
+	return fmt.Sprintf(
+		"sudo BPFCOMPAT_ARTIFACT=%s BPFCOMPAT_BIN=%s BPFCOMPAT_REMOTE_ROOT=%s bash -lc %s >%s 2>%s; code=$?; echo \"$code\" > %s; exit 0",
+		shellQuote(artifactRemotePath),
+		shellQuote(binRemotePath),
+		shellQuote(remoteRoot),
+		shellQuote(command),
+		shellQuote(stdoutPath),
+		shellQuote(stderrPath),
+		shellQuote(exitPath),
+	)
+}
+
+// runGuestCommand performs command-mode validation inside an already-booted
+// guest: it ships the optional command binary, runs req.Command as root with
+// $BPFCOMPAT_ARTIFACT/$BPFCOMPAT_BIN/$BPFCOMPAT_REMOTE_ROOT exported, and
+// records the command's exit code plus bounded stdout/stderr tails. A command
+// that *executes* — whatever its exit code — is an infra success (Status=pass);
+// the runner turns the exit code into the per-kernel compatibility verdict.
+func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget, vmRunDir, remoteRoot, artifactRemotePath string, result *ExecutionResult) {
+	result.CommandMode = true
+
+	binRemotePath := ""
+	if strings.TrimSpace(req.CommandBinary) != "" {
+		binRemotePath = filepath.ToSlash(filepath.Join(remoteRoot, "bin", filepath.Base(req.CommandBinary)))
+		if err := scpToGuest(ctx, target, req.CommandBinary, binRemotePath); err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+		if err := sshRun(ctx, target, fmt.Sprintf("chmod +x %s", shellQuote(binRemotePath))); err != nil {
+			result.InfraError = err.Error()
+			return
+		}
+	}
+
+	// Record the kernel the command ran against (best-effort; not fatal).
+	if release, err := sshOutput(ctx, target, "uname -r"); err == nil {
+		result.HostRelease = release
+	}
+	if machine, err := sshOutput(ctx, target, "uname -m"); err == nil {
+		result.HostMachine = machine
+	}
+
+	remoteStdoutPath := filepath.ToSlash(filepath.Join(remoteRoot, "out", "command.stdout"))
+	remoteStderrPath := filepath.ToSlash(filepath.Join(remoteRoot, "out", "command.stderr"))
+	remoteExitPath := filepath.ToSlash(filepath.Join(remoteRoot, "out", "command-exit-code"))
+
+	runCmd := guestCommandLine(req.Command, artifactRemotePath, binRemotePath, remoteRoot, remoteStdoutPath, remoteStderrPath, remoteExitPath)
+	if err := sshRun(ctx, target, runCmd); err != nil {
+		result.InfraError = fmt.Sprintf("run command: %v", err)
+		return
+	}
+
+	localStdoutPath := filepath.Join(vmRunDir, "command.stdout")
+	localStderrPath := filepath.Join(vmRunDir, "command.stderr")
+	localExitPath := filepath.Join(vmRunDir, "command-exit-code")
+
+	if err := scpFromGuest(ctx, target, remoteExitPath, localExitPath); err != nil {
+		result.InfraError = fmt.Sprintf("retrieve command exit code: %v", err)
+		return
+	}
+	exitCode, err := parseExitCodeFile(localExitPath)
+	if err != nil {
+		result.InfraError = fmt.Sprintf("parse command exit code: %v", err)
+		return
+	}
+	result.CommandExitCode = exitCode
+
+	_ = scpFromGuest(ctx, target, remoteStdoutPath, localStdoutPath)
+	_ = scpFromGuest(ctx, target, remoteStderrPath, localStderrPath)
+	result.CommandStdoutTail = readFileTail(localStdoutPath, commandTailBytes)
+	result.CommandStderrTail = readFileTail(localStderrPath, commandTailBytes)
+
+	result.Status = "pass"
+	result.Notes = append(result.Notes, fmt.Sprintf("command executed inside VM (exit code %d)", exitCode))
 }
 
 // installGuestKernelAndReboot installs profile.install_kernel inside the

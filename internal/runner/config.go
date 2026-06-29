@@ -40,7 +40,18 @@ type Config struct {
 	ArtifactVersion string
 	ArtifactVariant string
 	ValidationMode  string
-	MatrixPath      string
+	// Command, when set, switches the run to command/binary validation mode:
+	// instead of loading a .bpf.o with the bundled validator, the command is
+	// executed inside each matrix kernel VM and the per-kernel verdict is its
+	// exit code. This exercises the artifact's real userspace loader path and
+	// needs no manifest kept in sync with that loader.
+	Command string
+	// CommandBinary is an optional local executable shipped into each guest and
+	// exposed to Command as $BPFCOMPAT_BIN (chmod +x in the guest).
+	CommandBinary string
+	// CommandExpectExit is the exit code that counts as a pass in command mode.
+	CommandExpectExit int
+	MatrixPath        string
 	// Quick selects the built-in quick-check kernel set (matrix.Quick) when no
 	// MatrixPath is given — a fast local "does it load?" check.
 	Quick                 bool
@@ -85,8 +96,28 @@ func NormalizeValidationMode(mode string) string {
 }
 
 func (c Config) Validate() error {
-	if c.ArtifactPath == "" {
-		return errors.New("--artifact is required")
+	commandMode := strings.TrimSpace(c.Command) != ""
+	if !commandMode {
+		if c.ArtifactPath == "" {
+			return errors.New("--artifact is required (or pass --command to validate via a binary/command)")
+		}
+		if strings.TrimSpace(c.CommandBinary) != "" {
+			return errors.New("--command-binary requires --command")
+		}
+		if c.CommandExpectExit != 0 {
+			return errors.New("--command-expect-exit requires --command")
+		}
+	} else {
+		if c.CommandExpectExit < 0 || c.CommandExpectExit > 255 {
+			return fmt.Errorf("--command-expect-exit must be in [0,255] (got %d)", c.CommandExpectExit)
+		}
+		runner := c.Runner
+		if runner == "" {
+			runner = RunnerVM
+		}
+		if runner != RunnerVM {
+			return fmt.Errorf("--command validation currently supports --runner %q only (got %q)", RunnerVM, c.Runner)
+		}
 	}
 	if c.MatrixPath == "" && !c.Quick {
 		return errors.New("--matrix is required (or pass --quick for the default kernel set)")

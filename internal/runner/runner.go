@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,36 +85,46 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		Message: "Inspecting artifact",
 	})
 
-	artifactPath := cfg.ArtifactPath
-	if artifact.IsOCISource(artifactPath) {
+	commandMode := strings.TrimSpace(cfg.Command) != ""
+	hasArtifact := strings.TrimSpace(cfg.ArtifactPath) != ""
+
+	var meta artifact.Metadata
+	if hasArtifact {
+		artifactPath := cfg.ArtifactPath
+		if artifact.IsOCISource(artifactPath) {
+			emitProgress(cfg.Progress, ProgressUpdate{
+				Stage:   ProgressStageInspectArtifact,
+				Message: "Extracting eBPF object from OCI source",
+			})
+			ociDir, err := os.MkdirTemp("", "bpfcompat-oci-")
+			if err != nil {
+				return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
+			}
+			defer os.RemoveAll(ociDir)
+			extracted, err := artifact.ExtractEBPFFromOCI(artifactPath, ociDir)
+			if err != nil {
+				return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
+			}
+			artifactPath = extracted
+		}
+
+		meta, err = artifact.Inspect(artifactPath)
+		if err != nil {
+			return RunResult{}, err
+		}
+
 		emitProgress(cfg.Progress, ProgressUpdate{
-			Stage:   ProgressStageInspectArtifact,
-			Message: "Extracting eBPF object from OCI source",
+			Stage:   ProgressStageStageArtifact,
+			Message: "Staging artifact",
 		})
-		ociDir, err := os.MkdirTemp("", "bpfcompat-oci-")
-		if err != nil {
-			return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
+
+		if _, err := artifact.Stage(meta.AbsolutePath, runPaths.InputDir); err != nil {
+			return RunResult{}, err
 		}
-		defer os.RemoveAll(ociDir)
-		extracted, err := artifact.ExtractEBPFFromOCI(artifactPath, ociDir)
-		if err != nil {
-			return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
-		}
-		artifactPath = extracted
-	}
-
-	meta, err := artifact.Inspect(artifactPath)
-	if err != nil {
-		return RunResult{}, err
-	}
-
-	emitProgress(cfg.Progress, ProgressUpdate{
-		Stage:   ProgressStageStageArtifact,
-		Message: "Staging artifact",
-	})
-
-	if _, err := artifact.Stage(meta.AbsolutePath, runPaths.InputDir); err != nil {
-		return RunResult{}, err
+	} else {
+		// Command mode with no .bpf.o: synthesize artifact identity from the
+		// command so reports and version history still have a stable key.
+		meta = commandArtifactMetadata(cfg)
 	}
 
 	var stagedManifest string
@@ -181,21 +193,28 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		attachMode = "disabled"
 	}
 
-	stagedArtifact := filepath.Join(runPaths.InputDir, filepath.Base(meta.AbsolutePath))
-	validatorBinPath, err := filepath.Abs("validator/c-libbpf/bin/bpfcompat-validator")
-	if err != nil {
-		return RunResult{}, fmt.Errorf("resolve validator path: %w", err)
+	stagedArtifact := ""
+	if hasArtifact {
+		stagedArtifact = filepath.Join(runPaths.InputDir, filepath.Base(meta.AbsolutePath))
 	}
-	if _, err := os.Stat(validatorBinPath); err != nil {
-		return RunResult{}, fmt.Errorf("validator binary not found at %s; run `make validator-static` first", validatorBinPath)
-	}
-	if runner == RunnerVM {
-		dynamic, err := validatorIsDynamicallyLinked(validatorBinPath)
+
+	validatorBinPath := ""
+	if !commandMode {
+		validatorBinPath, err = filepath.Abs("validator/c-libbpf/bin/bpfcompat-validator")
 		if err != nil {
-			return RunResult{}, fmt.Errorf("inspect validator binary: %w", err)
+			return RunResult{}, fmt.Errorf("resolve validator path: %w", err)
 		}
-		if dynamic {
-			return RunResult{}, fmt.Errorf("validator binary at %s is dynamically linked; VM-backed runs require a static build (run `make validator-static`)", validatorBinPath)
+		if _, err := os.Stat(validatorBinPath); err != nil {
+			return RunResult{}, fmt.Errorf("validator binary not found at %s; run `make validator-static` first", validatorBinPath)
+		}
+		if runner == RunnerVM {
+			dynamic, err := validatorIsDynamicallyLinked(validatorBinPath)
+			if err != nil {
+				return RunResult{}, fmt.Errorf("inspect validator binary: %w", err)
+			}
+			if dynamic {
+				return RunResult{}, fmt.Errorf("validator binary at %s is dynamically linked; VM-backed runs require a static build (run `make validator-static`)", validatorBinPath)
+			}
 		}
 	}
 
@@ -212,7 +231,11 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		attachMode,
 		cfg.Progress,
 	)
-	notes = append(notes, validationModeNotes(validationMode)...)
+	if commandMode {
+		notes = append(notes, commandModeNote(cfg))
+	} else {
+		notes = append(notes, validationModeNotes(validationMode)...)
+	}
 	notes = append(notes, targetNotes...)
 
 	status := "pass"
@@ -525,6 +548,15 @@ func executeTarget(
 		return target, false, matrixProfile.RequiredBool()
 	}
 
+	commandBinaryAbs := ""
+	if strings.TrimSpace(cfg.Command) != "" && strings.TrimSpace(cfg.CommandBinary) != "" {
+		if abs, absErr := filepath.Abs(cfg.CommandBinary); absErr == nil {
+			commandBinaryAbs = abs
+		} else {
+			commandBinaryAbs = cfg.CommandBinary
+		}
+	}
+
 	targetCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	execResult := executor(targetCtx, vm.ExecutionRequest{
 		Profile:            profile,
@@ -540,8 +572,14 @@ func executeTarget(
 		AttachMode:         attachMode,
 		Timeout:            cfg.Timeout,
 		KeepVMOnFailure:    cfg.KeepVMOnFailure,
+		Command:            cfg.Command,
+		CommandBinary:      commandBinaryAbs,
 	})
 	cancel()
+
+	if strings.TrimSpace(cfg.Command) != "" {
+		return evaluateCommandTarget(target, execResult, matrixProfile, cfg, profile)
+	}
 
 	target.Status = execResult.Status
 	target.StartedAt = execResult.StartedAt.Format(time.RFC3339)
@@ -1101,6 +1139,108 @@ func shouldRunFunctionalTests(validationMode string, mf manifest.Manifest) bool 
 		// explicitly selected a narrower validation mode.
 		return true
 	}
+}
+
+// commandArtifactMetadata synthesizes an artifact identity for command-mode
+// runs that have no .bpf.o, so reports and version history still carry a stable
+// key. The SHA256 is computed over the command string (and binary basename when
+// present) — a content-addressed handle for "this validation command".
+func commandArtifactMetadata(cfg Config) artifact.Metadata {
+	base := "command"
+	seed := strings.TrimSpace(cfg.Command)
+	if b := strings.TrimSpace(cfg.CommandBinary); b != "" {
+		base = filepath.Base(b)
+		seed = base + "\x00" + seed
+	}
+	sum := sha256.Sum256([]byte(seed))
+	return artifact.Metadata{
+		AbsolutePath: "command://" + base,
+		BaseName:     base,
+		SHA256:       hex.EncodeToString(sum[:]),
+		SizeBytes:    0,
+	}
+}
+
+func commandModeNote(cfg Config) string {
+	return fmt.Sprintf(
+		"validation mode: command (per-kernel verdict = command exit code == %d; libbpf load/attach skipped)",
+		cfg.CommandExpectExit,
+	)
+}
+
+// evaluateCommandTarget turns a command-mode VM execution into a target verdict:
+// the kernel passes iff the command exited with the expected code. The result is
+// recorded in the Functional section as a single synthetic "command" test so the
+// existing report/markdown surfaces render it without special-casing.
+func evaluateCommandTarget(
+	target schema.Target,
+	execResult vm.ExecutionResult,
+	matrixProfile matrix.MatrixProfile,
+	cfg Config,
+	profile vm.Profile,
+) (schema.Target, bool, bool) {
+	target.StartedAt = execResult.StartedAt.Format(time.RFC3339)
+	target.FinishedAt = execResult.FinishedAt.Format(time.RFC3339)
+	target.DurationMs = execResult.FinishedAt.Sub(execResult.StartedAt).Milliseconds()
+	target.VMRunDir = execResult.VMRunDir
+	target.QEMUCommand = execResult.QEMUCommand
+	target.SerialLog = execResult.SerialLogPath
+	target.Notes = append(target.Notes, execResult.Notes...)
+
+	if execResult.Status == "infra_error" {
+		target.Status = "infra_error"
+		target.FailedStage = "infra"
+		target.InfraError = execResult.InfraError
+		return target, true, false
+	}
+
+	target.Host = &schema.TargetEnv{
+		Distro:       profile.Distro,
+		Version:      profile.Version,
+		KernelFamily: profile.KernelFamily,
+		Kernel:       execResult.HostRelease,
+		Arch:         execResult.HostMachine,
+	}
+	target.ValidatorExit = execResult.CommandExitCode
+	target.Validation = &schema.Validation{LoadStatus: "skipped"}
+
+	expected := cfg.CommandExpectExit
+	pass := execResult.CommandExitCode == expected
+	status := "fail"
+	if pass {
+		status = "pass"
+	}
+	target.Functional = &schema.Functional{
+		Status: status,
+		Tests: []schema.FunctionalTest{{
+			Name:             "command",
+			Required:         true,
+			Status:           status,
+			Command:          cfg.Command,
+			ExpectedExitCode: expected,
+			ExitCode:         execResult.CommandExitCode,
+			StdoutTail:       execResult.CommandStdoutTail,
+			StderrTail:       execResult.CommandStderrTail,
+		}},
+	}
+
+	if pass {
+		target.Status = "pass"
+		target.FailedStage = ""
+		target.Notes = append(target.Notes, fmt.Sprintf("command validation passed (exit code %d)", execResult.CommandExitCode))
+		return target, false, false
+	}
+
+	target.Status = "fail"
+	target.FailedStage = "command"
+	target.ClassificationCode = "COMMAND_VALIDATION_FAILURE"
+	target.ClassificationConfidence = "high"
+	target.ClassificationReason = fmt.Sprintf("Command exited %d (expected %d) on this kernel.", execResult.CommandExitCode, expected)
+	target.Notes = append(target.Notes,
+		fmt.Sprintf("classification: %s (%s)", target.ClassificationCode, target.ClassificationConfidence),
+		"remediation: inspect the command stdout/stderr tails; the artifact's loader/command failed on this kernel.",
+	)
+	return target, false, matrixProfile.RequiredBool()
 }
 
 func validationModeNotes(validationMode string) []string {

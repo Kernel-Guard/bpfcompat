@@ -164,6 +164,9 @@ func runTest(args []string) int {
 
 	var cfg runner.Config
 	fs.StringVar(&cfg.ArtifactPath, "artifact", "", "Compiled .bpf.o artifact: a local ELF file, an OCI gadget (registry ref e.g. ghcr.io/org/gadget:tag), or an OCI image archive/layout")
+	fs.StringVar(&cfg.Command, "command", "", "Command-mode validation: shell command run inside each kernel VM (verdict = exit code). Exposes $BPFCOMPAT_BIN/$BPFCOMPAT_ARTIFACT. Use instead of --artifact to validate via a real loader binary/command.")
+	fs.StringVar(&cfg.CommandBinary, "command-binary", "", "Command mode: local executable shipped into each guest and exposed to --command as $BPFCOMPAT_BIN")
+	fs.IntVar(&cfg.CommandExpectExit, "command-expect-exit", 0, "Command mode: exit code that counts as a pass (default 0)")
 	fs.StringVar(&cfg.ArtifactURI, "artifact-uri", "", "Optional remote URI for artifact retrieval metadata (http|https|file)")
 	fs.StringVar(&cfg.ArtifactName, "artifact-name", "", "Logical artifact family name for version history (optional)")
 	fs.StringVar(&cfg.ArtifactVersion, "artifact-version", "", "Artifact version label for version history (optional)")
@@ -182,7 +185,7 @@ func runTest(args []string) int {
 	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat test --artifact <file> --matrix <file> --out <file> [flags]\n\n")
+		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat test --artifact <file> --matrix <file> --out <file> [flags]\n  bpfcompat test --command <cmd> --matrix <file> --out <file> [--command-binary <file>] [flags]\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -1353,6 +1356,7 @@ func printRootUsage() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  bpfcompat test --artifact <file> --matrix <file> --out <file> [flags]")
+	fmt.Println("  bpfcompat test --command <cmd> --matrix <file> --out <file> [--command-binary <file>] [flags]")
 	fmt.Println("  bpfcompat suite --suite <file> --out <file> [flags]")
 	fmt.Println("  bpfcompat profile list --matrix <file>")
 	fmt.Println("  bpfcompat history list [flags]")

@@ -1,0 +1,55 @@
+# Library of known-tricky vendor kernels.
+#
+# A curated matrix of real distro kernels where "kernel version != eBPF feature
+# support" bites hardest: upstream feature boundaries, enterprise backports that
+# carry new features onto old bases, no-BTF kernels, vendor rebases, and
+# program-variant fallback bands. Each profile boots the real vendor cloud image.
+#
+# Run a .bpf.o or your own loader (command mode) against the whole library:
+#   bpfcompat test --artifact build/probe.bpf.o --matrix matrices/quirk-library.yaml --out report.json
+#   bpfcompat test --command '$BPFCOMPAT_BIN --self-test' --command-binary ./build/loader \
+#     --matrix matrices/quirk-library.yaml --out report.json
+#
+# Per-kernel quirks and expected behavior are documented in
+# docs/kernel-quirk-library.md. `required: false` marks kernels whose pass/fail
+# is artifact-dependent (feature boundaries) so the library doesn't force a
+# verdict the kernel itself decides.
+name: quirk-library
+profiles:
+  # Upstream ring-buffer boundary: ringbuf maps require >= 5.8. A ringbuf
+  # artifact fails here with UNSUPPORTED_MAP_TYPE (high) — correct, not a bug.
+  - id: ubuntu-20.04-5.4
+    required: false
+  # First upstream kernel with ring buffer support — the other side of the line.
+  - id: ubuntu-20.10-5.8
+    required: false
+  # The "version lies" case: RHEL-family 4.18 BACKPORTS ring buffer, so a
+  # ringbuf artifact that fails on upstream 5.4 PASSES on this older-numbered 4.18.
+  - id: almalinux-8-4.18
+    required: true
+  - id: rocky-8-4.18
+    required: true
+  # RHEL 9 backport base (5.14 carrying many 6.x features).
+  - id: centos-stream-9-5.14
+    required: true
+  # Backports are not uniform: Amazon's 4.14 (no embedded BTF) loads SIMPLE
+  # programs but does NOT carry the ring-buffer backport RHEL put in 4.18 — so a
+  # ringbuf probe fails here while it passes on almalinux-8-4.18. Per-vendor.
+  - id: amazon-linux-2-4.14
+    required: false
+  - id: amazon-linux-2-5.10
+    required: true
+  # Oracle UEK rebases onto a newer kernel than the EL base implies (uname shows
+  # a 6.12 uek build on an EL9 userspace) — a version-string trap.
+  - id: oracle-linux-9-uek7-5.15
+    required: true
+  # SUSE backport tier.
+  - id: opensuse-leap-15.6-6.4
+    required: true
+  # Program-variant fallback band: on 5.15 the loader must pick the *_old_x
+  # syscall variants and dump_task is unsupported (see Falco modern_bpf study).
+  - id: ubuntu-22.04-5.15
+    required: true
+  # Newer band: bpf_loop variants + both BPF iterators available.
+  - id: debian-12-6.1
+    required: true

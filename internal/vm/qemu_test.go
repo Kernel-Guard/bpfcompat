@@ -507,3 +507,38 @@ func TestShellQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestGuestCommandLine(t *testing.T) {
+	got := guestCommandLine(
+		"$BPFCOMPAT_BIN --obj $BPFCOMPAT_ARTIFACT",
+		"/tmp/bpfcompat/input/probe.bpf.o",
+		"/tmp/bpfcompat/bin/loader",
+		"/tmp/bpfcompat",
+		"/tmp/bpfcompat/out/command.stdout",
+		"/tmp/bpfcompat/out/command.stderr",
+		"/tmp/bpfcompat/out/command-exit-code",
+	)
+	want := "sudo BPFCOMPAT_ARTIFACT='/tmp/bpfcompat/input/probe.bpf.o' " +
+		"BPFCOMPAT_BIN='/tmp/bpfcompat/bin/loader' " +
+		"BPFCOMPAT_REMOTE_ROOT='/tmp/bpfcompat' " +
+		"bash -lc '$BPFCOMPAT_BIN --obj $BPFCOMPAT_ARTIFACT' " +
+		">'/tmp/bpfcompat/out/command.stdout' 2>'/tmp/bpfcompat/out/command.stderr'; " +
+		"code=$?; echo \"$code\" > '/tmp/bpfcompat/out/command-exit-code'; exit 0"
+	if got != want {
+		t.Fatalf("guestCommandLine mismatch:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// A malicious/odd command must stay a single quoted operand — it cannot break
+// out of the bash -lc argument to inject host-side shell syntax.
+func TestGuestCommandLineQuotesHostileCommand(t *testing.T) {
+	got := guestCommandLine("'; reboot #", "", "", "/tmp/bpfcompat",
+		"/o/out", "/o/err", "/o/exit")
+	if !strings.Contains(got, `bash -lc ''"'"'; reboot #'`) {
+		t.Fatalf("hostile command not safely quoted: %s", got)
+	}
+	// Empty artifact/bin paths render as empty quoted strings, not bare gaps.
+	if !strings.Contains(got, "BPFCOMPAT_ARTIFACT='' BPFCOMPAT_BIN=''") {
+		t.Fatalf("empty env paths not quoted: %s", got)
+	}
+}
