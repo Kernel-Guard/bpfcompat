@@ -22,3 +22,17 @@ func parseExitCodeFile(path string) (int, error) {
 	}
 	return code, nil
 }
+
+// readFileTail returns the trailing up-to-maxBytes of a file (best-effort:
+// missing/unreadable files yield ""), trimmed of surrounding whitespace. Used
+// to capture bounded stdout/stderr from command-mode validation runs.
+func readFileTail(path string, maxBytes int) string {
+	data, err := os.ReadFile(path) // #nosec G304 -- path is a run-dir file we wrote.
+	if err != nil {
+		return ""
+	}
+	if maxBytes > 0 && len(data) > maxBytes {
+		data = data[len(data)-maxBytes:]
+	}
+	return strings.TrimSpace(string(data))
+}

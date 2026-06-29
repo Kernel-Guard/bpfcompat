@@ -79,3 +79,57 @@ func TestConfigValidateRejectsUnknownRunner(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestConfigValidateRequiresArtifactOrCommand(t *testing.T) {
+	cfg := validConfigForTest()
+	cfg.ArtifactPath = ""
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--command") {
+		t.Fatalf("expected error hinting at --command, got %v", err)
+	}
+}
+
+func TestConfigValidateAllowsCommandWithoutArtifact(t *testing.T) {
+	cfg := validConfigForTest()
+	cfg.ArtifactPath = ""
+	cfg.Command = "$BPFCOMPAT_BIN --self-test"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected command mode without artifact to pass, got %v", err)
+	}
+}
+
+func TestConfigValidateCommandRejectsNonVMRunner(t *testing.T) {
+	cfg := validConfigForTest()
+	cfg.ArtifactPath = ""
+	cfg.Command = "loader"
+	cfg.Runner = RunnerVirtmeNG
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--runner") {
+		t.Fatalf("expected command mode to reject non-vm runner, got %v", err)
+	}
+}
+
+func TestConfigValidateCommandExpectExitRange(t *testing.T) {
+	cfg := validConfigForTest()
+	cfg.ArtifactPath = ""
+	cfg.Command = "loader"
+	cfg.CommandExpectExit = 300
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "command-expect-exit") {
+		t.Fatalf("expected out-of-range exit code rejection, got %v", err)
+	}
+}
+
+func TestConfigValidateCommandBinaryRequiresCommand(t *testing.T) {
+	cfg := validConfigForTest()
+	cfg.CommandBinary = "/tmp/loader"
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--command-binary requires --command") {
+		t.Fatalf("expected --command-binary to require --command, got %v", err)
+	}
+}

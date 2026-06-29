@@ -62,6 +62,42 @@ CO-RE relocation, map/program/attach support), not a heuristic. Each run leaves
 per-target evidence — `serial.log` (the guest kernel boot), `qemu.log`, and
 `validator-result.json`.
 
+### Validate via your own loader (command mode)
+
+The bundled validator answers "does this `.bpf.o` load/attach?" Sometimes you
+want to answer "does **my project's actual loader** come up on this kernel?" —
+which also exercises your userspace path and needs no manifest kept in sync with
+that loader. Command mode does exactly that: it runs a command (optionally a
+binary you ship in) **inside each matrix kernel VM**, and the per-kernel verdict
+is its exit code.
+
+```bash
+# Run your statically-built loader across the matrix; pass == exit 0 per kernel.
+bpfcompat test --command '$BPFCOMPAT_BIN --self-test' \
+  --command-binary ./build/myloader --matrix matrices/mvp.yaml --out report.json
+
+# Or drive an already-installed tool against a shipped .bpf.o.
+bpfcompat test --command '$BPFCOMPAT_BIN --obj $BPFCOMPAT_ARTIFACT' \
+  --command-binary ./build/loader --artifact ./build/probe.bpf.o \
+  --matrix matrices/mvp.yaml --out report.json
+```
+
+The command runs as root in the disposable guest with `$BPFCOMPAT_BIN` (your
+shipped binary), `$BPFCOMPAT_ARTIFACT` (a staged `.bpf.o`, if given), and
+`$BPFCOMPAT_REMOTE_ROOT` exported. See
+[docs/command-validation.md](docs/command-validation.md).
+
+Point either flow at the **library of known-tricky vendor kernels** — the ones
+where "version ≠ feature support" bites (ring-buffer boundary, enterprise
+backports, no-BTF, vendor rebases, variant bands):
+
+```bash
+bpfcompat test --command '$BPFCOMPAT_BIN --self-test' --command-binary ./build/loader \
+  --matrix matrices/quirk-library.yaml --out report.json
+```
+
+See [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md).
+
 ### Distributions covered
 
 A curated, multi-distro, multi-architecture matrix of the kernels enterprises
@@ -604,6 +640,8 @@ User guide — start here:
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/project-compatibility-suite.md`](docs/project-compatibility-suite.md) — suites and collection matrices
 - [`docs/validator.md`](docs/validator.md) — what the in-guest validator checks
+- [`docs/command-validation.md`](docs/command-validation.md) — validate via your own loader binary/command (exit-code verdict)
+- [`docs/kernel-quirk-library.md`](docs/kernel-quirk-library.md) — curated library of known-tricky vendor kernels (version ≠ feature support)
 - [`docs/profile-catalog.md`](docs/profile-catalog.md) — kernel/distro profiles and image maintenance
 - [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
 - [`docs/upstream-kernel-virtme-ng.md`](docs/upstream-kernel-virtme-ng.md)
