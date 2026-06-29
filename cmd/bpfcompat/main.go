@@ -37,6 +37,8 @@ func run(args []string) int {
 	switch args[0] {
 	case "test":
 		return runTest(args[1:])
+	case "test-command":
+		return runTestCommand(args[1:])
 	case "suite":
 		return runSuite(args[1:])
 	case "profile":
@@ -210,6 +212,70 @@ func runTest(args []string) int {
 	cfg.KeepVMOnFailure = *keepVMOnFailure
 	cfg.UnsafeAllowHostRunner = unsafeAllowHostRunner
 
+	return executeTestConfig(cfg)
+}
+
+// runTestCommand is command/binary validation as an explicit verb: provide your
+// own loader command (and optionally a binary to ship in), and bpfcompat runs it
+// inside each matrix kernel VM, taking the exit code as the per-kernel verdict.
+// It is a thin, discoverable front for `bpfcompat test --command` — the bundled
+// validator is not used, so this tests the real userspace loader path.
+func runTestCommand(args []string) int {
+	fs := flag.NewFlagSet("test-command", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var cfg runner.Config
+	fs.StringVar(&cfg.Command, "cmd", "", "Loader command run as root inside each kernel VM (verdict = exit code). Exposes $BPFCOMPAT_BIN/$BPFCOMPAT_ARTIFACT/$BPFCOMPAT_REMOTE_ROOT")
+	fs.StringVar(&cfg.CommandBinary, "bin", "", "Local loader executable shipped into each guest and exposed to --cmd as $BPFCOMPAT_BIN")
+	fs.IntVar(&cfg.CommandExpectExit, "expect-exit", 0, "Exit code that counts as a pass (default 0)")
+	fs.StringVar(&cfg.ArtifactPath, "artifact", "", "Optional .bpf.o staged into each guest and exposed as $BPFCOMPAT_ARTIFACT")
+	fs.StringVar(&cfg.ArtifactName, "artifact-name", "", "Logical artifact family name for version history (optional)")
+	fs.StringVar(&cfg.ArtifactVersion, "artifact-version", "", "Artifact version label for version history (optional)")
+	fs.StringVar(&cfg.ArtifactVariant, "artifact-variant", "", "Artifact variant label (optional)")
+	fs.StringVar(&cfg.MatrixPath, "matrix", "", "Path to matrix YAML")
+	fs.BoolVar(&cfg.Quick, "quick", false, "Use the built-in quick-check kernel set instead of --matrix")
+	fs.StringVar(&cfg.OutPath, "out", "", "Path to JSON report output")
+	fs.StringVar(&cfg.MarkdownPath, "markdown", "", "Path to Markdown report output (optional)")
+	fs.StringVar(&cfg.WorkDir, "workdir", ".bpfcompat", "Working directory root")
+	fs.IntVar(&cfg.Concurrency, "concurrency", 2, "Maximum concurrent VM jobs")
+	timeoutText := fs.String("timeout", "180s", "Per-target timeout duration")
+	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
+
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat test-command --cmd <loader cmd> --matrix <file> --out <file> [--bin <file>] [--artifact <file>] [flags]\n\n")
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return runner.ExitToolError
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(os.Stderr, "unexpected positional arguments: %v\n", fs.Args())
+		return runner.ExitToolError
+	}
+	if strings.TrimSpace(cfg.Command) == "" {
+		fmt.Fprintln(os.Stderr, "--cmd is required")
+		return runner.ExitToolError
+	}
+
+	timeout, err := time.ParseDuration(*timeoutText)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid --timeout value %q: %v\n", *timeoutText, err)
+		return runner.ExitToolError
+	}
+	cfg.Timeout = timeout
+	cfg.KeepVMOnFailure = *keepVMOnFailure
+	cfg.Runner = runner.RunnerVM
+
+	return executeTestConfig(cfg)
+}
+
+// executeTestConfig validates a built test Config and runs it, printing the
+// summary. Shared by `test` and `test-command`.
+func executeTestConfig(cfg runner.Config) int {
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid arguments: %v\n", err)
 		return runner.ExitToolError
@@ -1357,6 +1423,7 @@ func printRootUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  bpfcompat test --artifact <file> --matrix <file> --out <file> [flags]")
 	fmt.Println("  bpfcompat test --command <cmd> --matrix <file> --out <file> [--command-binary <file>] [flags]")
+	fmt.Println("  bpfcompat test-command --cmd <loader cmd> --matrix <file> --out <file> [--bin <file>] [--artifact <file>] [flags]")
 	fmt.Println("  bpfcompat suite --suite <file> --out <file> [flags]")
 	fmt.Println("  bpfcompat profile list --matrix <file>")
 	fmt.Println("  bpfcompat history list [flags]")

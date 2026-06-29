@@ -67,20 +67,28 @@ per-target evidence — `serial.log` (the guest kernel boot), `qemu.log`, and
 The bundled validator answers "does this `.bpf.o` load/attach?" Sometimes you
 want to answer "does **my project's actual loader** come up on this kernel?" —
 which also exercises your userspace path and needs no manifest kept in sync with
-that loader. Command mode does exactly that: it runs a command (optionally a
-binary you ship in) **inside each matrix kernel VM**, and the per-kernel verdict
-is its exit code.
+that loader. Command mode does exactly that: it runs your loader command
+(optionally a binary you ship in) **inside each matrix kernel VM**, and the
+per-kernel verdict is its **exit code**. The bundled validator is *not* used, so
+this tests the real userspace loader path.
 
 ```bash
-# Run your statically-built loader across the matrix; pass == exit 0 per kernel.
-bpfcompat test --command '$BPFCOMPAT_BIN --self-test' \
-  --command-binary ./build/myloader --matrix matrices/mvp.yaml --out report.json
+# Dedicated verb: ship your loader, run it on every kernel, exit code = verdict.
+bpfcompat test-command --cmd '$BPFCOMPAT_BIN --self-test' \
+  --bin ./build/myloader --matrix matrices/mvp.yaml --out report.json
 
-# Or drive an already-installed tool against a shipped .bpf.o.
+# Equivalent flag form on `test`, e.g. driving a loader against a shipped .bpf.o:
 bpfcompat test --command '$BPFCOMPAT_BIN --obj $BPFCOMPAT_ARTIFACT' \
   --command-binary ./build/loader --artifact ./build/probe.bpf.o \
   --matrix matrices/mvp.yaml --out report.json
 ```
+
+A real run, shipping a libbpf loader and pointing it at the
+[known-tricky kernel library](docs/kernel-quirk-library.md) — the loader's exit
+code catches the ring-buffer incompatibility on 5.4 and passes 5.15, with no
+validator load in between:
+
+![bpfcompat test-command running a loader across kernels; ubuntu-20.04-5.4 fails (loader exit 2, ring buffer needs >= 5.8) and ubuntu-22.04-5.15 passes (loader exit 0), with libbpf load/attach skipped](docs/images/test-command-demo.png)
 
 The command runs as root in the disposable guest with `$BPFCOMPAT_BIN` (your
 shipped binary), `$BPFCOMPAT_ARTIFACT` (a staged `.bpf.o`, if given), and
@@ -252,10 +260,10 @@ not a production runtime loader and it is not a production multi-tenant SaaS.
 Implemented:
 
 - VM-backed `.bpf.o` validation through QEMU/KVM cloud images.
-- **Command/binary validation** (`bpfcompat test --command`) — run *your own*
-  loader binary/command inside each kernel VM and take its **exit code** as the
-  per-kernel verdict. The bundled validator is **not** used in this mode; this
-  tests the real userspace loader path. See
+- **Command/binary validation** (`bpfcompat test-command` / `test --command`) —
+  run *your own* loader binary/command inside each kernel VM and take its **exit
+  code** as the per-kernel verdict. The bundled validator is **not** used in this
+  mode; this tests the real userspace loader path. See
   [docs/command-validation.md](docs/command-validation.md).
 - **Library of known-tricky vendor kernels** (`matrices/quirk-library.yaml`) —
   the kernels where "version ≠ feature support" bites; run a `.bpf.o` or your
