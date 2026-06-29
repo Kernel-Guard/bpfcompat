@@ -25,9 +25,20 @@ that the `.bpf.o` flow uses.
 
 ## Usage
 
+There are two equivalent front-ends: the dedicated `test-command` verb (shorter
+flags: `--cmd`, `--bin`, `--expect-exit`) and `test --command` (the same flags
+prefixed with `--command`). Use whichever reads better.
+
 ```bash
-# Ship a statically-linked loader and run it on every matrix kernel.
-# Pass == exit 0 (override with --command-expect-exit N).
+# Dedicated verb — ship a statically-linked loader, run it on every matrix kernel.
+# Pass == exit 0 (override with --expect-exit N).
+bpfcompat test-command \
+  --cmd '$BPFCOMPAT_BIN --self-test' \
+  --bin ./build/myloader \
+  --matrix matrices/mvp.yaml \
+  --out report.json
+
+# Equivalent flag form on `test`:
 bpfcompat test \
   --command '$BPFCOMPAT_BIN --self-test' \
   --command-binary ./build/myloader \
