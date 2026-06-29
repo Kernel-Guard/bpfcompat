@@ -13,9 +13,12 @@ recognizable artifact: Falco's `modern_bpf` probe (`bpf_probe.o`).
   sha256 `4895177ced5618d22fd40c1d69be80c7f16fc28f9552f0eff5fdbf682bbd2722`.
 - **Validation mode:** load + attach, inside disposable QEMU/KVM VMs running each
   exact kernel.
-- **Loaded exactly as libpman does** — runtime-sized maps, helper-gated program
-  variants, trial-probed BPF iterators (declared in a manifest) — so a generic
-  libbpf load does not undercount support.
+- **Loaded mirroring libpman's loader contract** — runtime-sized maps,
+  helper-gated program variants, trial-probed BPF iterators (declared in a
+  manifest) — so a generic libbpf load does not undercount support. This
+  reproduces *how* libpman loads the object; it is not Falco's loader binary
+  itself (for that, use command mode — see
+  [command-validation.md](command-validation.md)).
 
 ## Result
 
