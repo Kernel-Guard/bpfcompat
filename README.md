@@ -284,23 +284,6 @@ Implemented:
 Keep the runtime track framed as decisioning/proof unless you are running it in
 a controlled environment. Host loading stays disabled/gated by default.
 
-## Repository Hygiene
-
-Generated runtime outputs are intentionally not committed:
-
-- `.bpfcompat/`
-- `reports/`
-- `evidence/`
-- `vm/cache/`
-- generated `.bpf.o` files
-
-Recreate proof artifacts locally with the commands below.
-
-If this repository is being prepared for public release, read
-[`docs/public-release-checklist.md`](docs/public-release-checklist.md) before
-changing GitHub visibility. Deleting private/generated files in a later commit
-does not remove them from git history.
-
 ## Install
 
 There are three ways to get the CLI. Most users want the prebuilt release
