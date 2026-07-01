@@ -7,6 +7,12 @@ no-BTF kernels, vendor rebases, and program-variant fallback bands.
 
 Every entry is a kernel bpfcompat **actually boots** (real vendor cloud image in
 a disposable VM) and has evidence for — not a version string we inferred from.
+
+**Public matrix:** the library is re-validated weekly against a contrast pair of
+artifacts and published at
+[kernel-guard.github.io/bpfcompat](https://kernel-guard.github.io/bpfcompat/)
+(the `compatibility-matrix-publish` workflow).
+
 Run the whole library against a `.bpf.o` *or* your own loader (command mode):
 
 ```bash

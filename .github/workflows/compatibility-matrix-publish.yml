@@ -1,15 +1,29 @@
 name: compatibility-matrix-publish
 
-# Publishes release-style compatibility evidence from a self-hosted KVM runner.
-# This is intentionally separate from cheap PR CI because it boots real VMs.
+# Publishes the public compatibility matrix: the library of known-tricky
+# vendor kernels (matrices/quirk-library.yaml) validated against a contrast
+# pair of artifacts, regenerated weekly and deployed to GitHub Pages.
+#
+# The pair is chosen to make the "kernel version != eBPF feature support"
+# story visible in one table:
+#   - ringbuf-modern: fails upstream < 5.8 but PASSES AlmaLinux 8's 4.18
+#     (RHEL backport) while FAILING Amazon Linux 2's 4.14 (no backport);
+#   - simple-pass: loads everywhere, proving the failures above are feature
+#     gaps, not broken kernels.
+#
+# Runs on a stock GitHub-hosted runner (/dev/kvm is exposed; TCG fallback
+# otherwise). Non-blocking by design: scheduled + manually dispatched.
 
 on:
   workflow_dispatch:
     inputs:
       deploy_pages:
-        description: Deploy generated compatibility site to GitHub Pages. Requires Pages to be enabled for the repo.
+        description: Deploy generated compatibility site to GitHub Pages.
         required: false
-        default: "false"
+        default: "true"
+  schedule:
+    # Weekly, Tuesday 06:00 UTC
+    - cron: "0 6 * * 2"
 
 # Least privilege at the top; write scopes are granted per-job below.
 permissions:
@@ -22,8 +36,8 @@ concurrency:
 jobs:
   publish-compatibility-matrix:
     name: Publish compatibility matrix
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write  # attach matrix assets to tag releases
       pages: write     # deploy the compatibility site to GitHub Pages
@@ -32,11 +46,28 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Verify KVM availability
+      - name: Report KVM acceleration status
         shell: bash
         run: |
           set -euo pipefail
-          test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
+          if [[ -e /dev/kvm ]]; then
+            echo "::notice::/dev/kvm present - VM validation is hardware-accelerated."
+            # Some hosted images expose /dev/kvm but the runner user is not in
+            # the kvm group; loosen perms so QEMU can open it.
+            sudo chmod 0666 /dev/kvm || true
+            ls -l /dev/kvm || true
+          else
+            echo "::warning::/dev/kvm not found - falling back to TCG software emulation (slower, still correct)."
+          fi
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils clang llvm libbpf-dev libelf-dev zlib1g-dev \
+            pkg-config jq
 
       - name: Build validator and fixture artifacts
         shell: bash
@@ -45,23 +76,30 @@ jobs:
           make validator-static
           make examples
 
-      - name: Fetch dev VM image
-        shell: bash
-        run: |
-          set -euo pipefail
-          make vm-ubuntu-22
-
-      - name: Run bpfcompat action
+      - name: Validate ringbuf-modern across the quirk library
         uses: ./
         with:
-          artifact: examples/functional-execve/functional_execve.bpf.o
-          manifest: examples/functional-execve/manifest-dev-one.yaml
-          matrix: matrices/dev-one.yaml
-          out: reports/release-functional-execve.json
-          markdown: reports/release-functional-execve.md
-          timeout: 8m
-          concurrency: "1"
+          artifact: examples/ringbuf-modern/ringbuf_modern.bpf.o
+          matrix: matrices/quirk-library.yaml
+          validation-mode: load_attach
+          out: reports/quirk-library-ringbuf-modern.json
+          markdown: reports/quirk-library-ringbuf-modern.md
+          timeout: 12m
+          concurrency: "2"
           build: "true"
+
+      - name: Validate simple-pass across the quirk library
+        # Images are cached from the first run, so this pass is much faster.
+        uses: ./
+        with:
+          artifact: examples/simple-pass/simple_pass.bpf.o
+          matrix: matrices/quirk-library.yaml
+          validation-mode: load_attach
+          out: reports/quirk-library-simple-pass.json
+          markdown: reports/quirk-library-simple-pass.md
+          timeout: 12m
+          concurrency: "2"
+          build: "false"
 
       - name: Generate static compatibility index
         if: always()
@@ -71,7 +109,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             version="${GITHUB_REF_NAME}"
           else
-            version="manual-${GITHUB_RUN_ID}"
+            version="$(date -u +%Y%m%d)-run${GITHUB_RUN_ID}"
           fi
           export BPFCOMPAT_COMPATIBILITY_VERSION="$version"
           bash scripts/publish-compatibility-site.sh reports public/compatibility
@@ -82,11 +120,15 @@ jobs:
         with:
           name: bpfcompat-compatibility-matrix-${{ github.run_id }}
           if-no-files-found: warn
+          # Allowlist only — never `.bpfcompat/runs/**` wholesale: the per-run
+          # dir also holds the generated SSH private key (id_ed25519), the
+          # cloud-init seed, and the disk overlay, none of which belong in a
+          # downloadable artifact.
           path: |
             public/compatibility/index.html
             public/compatibility/index.md
-            reports/release-functional-execve.json
-            reports/release-functional-execve.md
+            reports/quirk-library-*.json
+            reports/quirk-library-*.md
             .bpfcompat/runs/**/targets/**/serial.log
             .bpfcompat/runs/**/targets/**/libbpf.log
             .bpfcompat/runs/**/targets/**/validator-result.json
@@ -99,8 +141,10 @@ jobs:
           set -euo pipefail
           tar -czf "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" \
             public/compatibility \
-            reports/release-functional-execve.json \
-            reports/release-functional-execve.md
+            reports/quirk-library-ringbuf-modern.json \
+            reports/quirk-library-ringbuf-modern.md \
+            reports/quirk-library-simple-pass.json \
+            reports/quirk-library-simple-pass.md
 
       - name: Attach compatibility evidence to GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -115,15 +159,15 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" --clobber
 
       - name: Configure Pages
-        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: public/compatibility
 
       - name: Deploy Pages
-        if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
