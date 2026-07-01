@@ -100,6 +100,28 @@ inside it freely: pipes, `&&`, redirects.
   artifact identity is content-addressed from the command string
   (`command://<name>`), so `compare`/history still work.
 
+## GitHub Action
+
+The composite action supports command mode directly, so a project can gate CI
+on its own loader with one step. A bare `matrix` name resolves to the
+`matrices/` directory shipped with the action — `quirk-library` gives you the
+[library of known-tricky vendor kernels](kernel-quirk-library.md) with no file
+to copy:
+
+```yaml
+- uses: Kernel-Guard/bpfcompat@v0.2.0
+  with:
+    command: $BPFCOMPAT_BIN --self-test
+    command-binary: build/myloader
+    command-expect-exit: "0"   # optional, default 0
+    matrix: quirk-library
+    out: reports/bpfcompat.json
+```
+
+The `command` string is passed to the runner through the environment (never
+interpolated into the action's shell), and inside the guest it is executed as a
+single quoted `bash -lc` operand, exactly as in the CLI flow.
+
 ## Scope / limitations (first cut)
 
 - Command mode currently supports the **`vm`** runner only (the default). It is
