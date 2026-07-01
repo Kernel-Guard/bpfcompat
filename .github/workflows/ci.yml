@@ -137,3 +137,6 @@ jobs:
       # exercise the Go side so the CI gate stays portable.
       - name: go build
         run: go build ./...
+      # Standalone example module (own go.mod, so `go build ./...` skips it).
+      - name: go build (examples/ebpf-go-loader)
+        run: cd examples/ebpf-go-loader && CGO_ENABLED=0 go build ./...
