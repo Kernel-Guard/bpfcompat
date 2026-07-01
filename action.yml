@@ -11,8 +11,20 @@ inputs:
     description: Path to compiled .bpf.o artifact.
     required: false
     default: ""
+  command:
+    description: "Command-mode validation: shell command run as root inside each kernel VM; the per-kernel verdict is its exit code. Use instead of (or alongside) artifact to validate via your project's own loader binary. Exposes $BPFCOMPAT_BIN, $BPFCOMPAT_ARTIFACT, and $BPFCOMPAT_REMOTE_ROOT."
+    required: false
+    default: ""
+  command-binary:
+    description: Local loader executable shipped into each guest and exposed to command as $BPFCOMPAT_BIN.
+    required: false
+    default: ""
+  command-expect-exit:
+    description: Exit code that counts as a pass in command mode.
+    required: false
+    default: "0"
   matrix:
-    description: Path to matrix YAML.
+    description: "Path to matrix YAML. A bare name (for example quirk-library) that does not exist in the caller repository resolves to the matching matrices/<name>.yaml shipped with the action."
     required: false
     default: ""
   out:
@@ -125,6 +137,12 @@ runs:
 
     - name: Run bpfcompat
       shell: bash
+      env:
+        # Free-text inputs go through the environment, never inline
+        # interpolation, so they cannot inject host-side shell syntax.
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_COMMAND_BINARY: ${{ inputs.command-binary }}
+        INPUT_COMMAND_EXPECT_EXIT: ${{ inputs.command-expect-exit }}
       run: |
         set -euo pipefail
 
@@ -146,6 +164,19 @@ runs:
 
         artifact_path="$(resolve_path "${{ inputs.artifact }}")"
         matrix_path="$(resolve_path "${{ inputs.matrix }}")"
+        command_binary_path="$(resolve_path "$INPUT_COMMAND_BINARY")"
+
+        # Built-in matrix convenience: a bare name (e.g. quirk-library) that
+        # does not exist in the caller repo resolves to the matrices/ directory
+        # shipped with the action.
+        if [[ -n "$matrix_path" && ! -f "$matrix_path" ]]; then
+          matrix_input="${{ inputs.matrix }}"
+          if [[ "$matrix_input" != /* && -f "$action_root/matrices/${matrix_input}.yaml" ]]; then
+            matrix_path="$action_root/matrices/${matrix_input}.yaml"
+          elif [[ "$matrix_input" != /* && -f "$action_root/$matrix_input" ]]; then
+            matrix_path="$action_root/$matrix_input"
+          fi
+        fi
         out_path="$(resolve_path "${{ inputs.out }}")"
         manifest_path="$(resolve_path "${{ inputs.manifest }}")"
         markdown_path="$(resolve_path "${{ inputs.markdown }}")"
@@ -218,8 +249,8 @@ runs:
           exit "$status"
         fi
 
-        if [[ -z "$artifact_path" ]]; then
-          echo "::error::artifact is required unless suite is set"
+        if [[ -z "$artifact_path" && -z "$INPUT_COMMAND" ]]; then
+          echo "::error::artifact or command is required unless suite is set"
           exit 1
         fi
         if [[ -z "$matrix_path" ]]; then
@@ -231,8 +262,16 @@ runs:
           exit 1
         fi
 
-        if [[ ! -f "$artifact_path" ]]; then
+        if [[ -n "$artifact_path" && ! -f "$artifact_path" ]]; then
           echo "::error::artifact not found: $artifact_path"
+          exit 1
+        fi
+        if [[ -n "$command_binary_path" && ! -f "$command_binary_path" ]]; then
+          echo "::error::command-binary not found: $command_binary_path"
+          exit 1
+        fi
+        if [[ -n "$command_binary_path" && -z "$INPUT_COMMAND" ]]; then
+          echo "::error::command-binary requires command"
           exit 1
         fi
         if [[ ! -f "$matrix_path" ]]; then
@@ -249,7 +288,6 @@ runs:
         cmd=(
           "$binary_path"
           test
-          --artifact "$artifact_path"
           --matrix "$matrix_path"
           --out "$out_path"
           --timeout "${{ inputs.timeout }}"
@@ -257,6 +295,18 @@ runs:
           --concurrency "${{ inputs.concurrency }}"
         )
 
+        if [[ -n "$artifact_path" ]]; then
+          cmd+=(--artifact "$artifact_path")
+        fi
+        if [[ -n "$INPUT_COMMAND" ]]; then
+          cmd+=(--command "$INPUT_COMMAND")
+          if [[ -n "$command_binary_path" ]]; then
+            cmd+=(--command-binary "$command_binary_path")
+          fi
+          if [[ -n "$INPUT_COMMAND_EXPECT_EXIT" && "$INPUT_COMMAND_EXPECT_EXIT" != "0" ]]; then
+            cmd+=(--command-expect-exit "$INPUT_COMMAND_EXPECT_EXIT")
+          fi
+        fi
         if [[ -n "$manifest_path" ]]; then
           cmd+=(--manifest "$manifest_path")
         fi

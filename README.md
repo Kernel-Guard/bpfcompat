@@ -576,10 +576,25 @@ Single artifact:
     timeout: 8m
 ```
 
+Command mode — run your project's own loader on every matrix kernel (the
+per-kernel verdict is the loader's exit code), against the built-in
+[library of known-tricky vendor kernels](docs/kernel-quirk-library.md):
+
+```yaml
+- uses: Kernel-Guard/bpfcompat@v0.2.0
+  with:
+    command: $BPFCOMPAT_BIN --self-test
+    command-binary: build/myloader   # static or fully self-contained binary
+    matrix: quirk-library            # bare name -> matrices/ shipped with the action
+    out: reports/bpfcompat.json
+```
+
 Marketplace quick start:
 
-1. Add a self-hosted Linux runner with KVM enabled.
-2. Commit compiled `.bpf.o` artifacts, manifests, and a matrix YAML.
+1. Use a stock `ubuntu-latest` runner (it exposes `/dev/kvm`); a self-hosted
+   KVM runner is only needed for wide matrices or ARM64.
+2. Commit compiled `.bpf.o` artifacts (or point `command` at your loader),
+   plus a matrix YAML — or use a built-in matrix name like `quirk-library`.
 3. Use the action in CI to produce JSON, Markdown, and job-summary evidence.
 4. Treat exit code `2` as a compatibility gate failure.
 
