@@ -95,6 +95,11 @@ shipped binary), `$BPFCOMPAT_ARTIFACT` (a staged `.bpf.o`, if given), and
 `$BPFCOMPAT_REMOTE_ROOT` exported. See
 [docs/command-validation.md](docs/command-validation.md).
 
+If your project loads with **ebpf-go** (cilium/ebpf) rather than libbpf, ship an
+ebpf-go loader the same way — ebpf-go is a separate loader implementation, so a
+libbpf pass does not guarantee an ebpf-go pass. A complete static-loader recipe
+lives in [docs/ebpf-go-validation.md](docs/ebpf-go-validation.md).
+
 Point either flow at the **library of known-tricky vendor kernels** — the ones
 where "version ≠ feature support" bites (ring-buffer boundary, enterprise
 backports, no-BTF, vendor rebases, variant bands):
@@ -645,6 +650,7 @@ User guide — start here:
 - [`docs/project-compatibility-suite.md`](docs/project-compatibility-suite.md) — suites and collection matrices
 - [`docs/validator.md`](docs/validator.md) — what the in-guest validator checks
 - [`docs/command-validation.md`](docs/command-validation.md) — validate via your own loader binary/command (exit-code verdict)
+- [`docs/ebpf-go-validation.md`](docs/ebpf-go-validation.md) — validate through ebpf-go (cilium/ebpf): a libbpf pass ≠ an ebpf-go pass
 - [`docs/kernel-quirk-library.md`](docs/kernel-quirk-library.md) — curated library of known-tricky vendor kernels (version ≠ feature support)
 - [`docs/profile-catalog.md`](docs/profile-catalog.md) — kernel/distro profiles and image maintenance
 - [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
