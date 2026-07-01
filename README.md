@@ -104,7 +104,9 @@ bpfcompat test --command '$BPFCOMPAT_BIN --self-test' --command-binary ./build/l
   --matrix matrices/quirk-library.yaml --out report.json
 ```
 
-See [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md).
+See [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md). The library
+is re-validated weekly and the resulting matrix is published at
+[kernel-guard.github.io/bpfcompat](https://kernel-guard.github.io/bpfcompat/).
 
 ### Distributions covered
 
