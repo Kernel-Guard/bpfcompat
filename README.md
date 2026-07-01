@@ -283,13 +283,11 @@ Implemented:
   and unsupported program types.
 - Multi-artifact suite support for collections of BPF objects/programs.
 - JSON, Markdown, GitHub Action summary, and static compatibility-site output.
-- Experimental `virtme-ng` upstream-kernel lane.
-- Experimental Firecracker generated-initramfs backend.
-- Experimental runtime probe/select/fetch/agent flow for verified artifact
-  decisioning.
 
-Keep the runtime track framed as decisioning/proof unless you are running it in
-a controlled environment. Host loading stays disabled/gated by default.
+Experimental tracks (virtme-ng upstream lane, Firecracker backend, Web UI/API,
+runtime decisioning) are consolidated in
+[docs/experimental.md](docs/experimental.md) — kept as controlled proofs, not
+the project's focus.
 
 ## Install
 
@@ -515,25 +513,10 @@ make oss-evidence
 
 ## Backend Lanes
 
-QEMU/KVM distro profiles:
+QEMU/KVM distro profiles (the default and supported lane):
 
 ```bash
 make acceptance-dev-one
-```
-
-Upstream-mainline smoke through `virtme-ng`:
-
-```bash
-make doctor-virtme
-make upstream-kernel-runnable
-make acceptance-upstream-kernel
-```
-
-Firecracker generated-initramfs proof:
-
-```bash
-make firecracker-preflight
-make acceptance-firecracker-dev-one
 ```
 
 ARM64 smoke:
@@ -545,6 +528,10 @@ make acceptance-arm64-smoke
 
 The ARM64 workflow is wired, but real ARM64 VM compatibility proof requires a
 native ARM64 KVM runner.
+
+The experimental backends — upstream-mainline via `virtme-ng` and the
+Firecracker generated-initramfs proof — live in
+[docs/experimental.md](docs/experimental.md).
 
 ## GitHub Action
 
@@ -605,59 +592,13 @@ Marketplace quick start:
 3. Use the action in CI to produce JSON, Markdown, and job-summary evidence.
 4. Treat exit code `2` as a compatibility gate failure.
 
-## Web UI / API
+## Web UI / API and Runtime Decisioning (experimental)
 
-The embedded UI is useful for demos and local inspection:
-
-```bash
-make serve
-```
-
-Open:
-
-- `http://127.0.0.1:8080/`
-- `http://127.0.0.1:8080/results`
-
-The API has `/api/v1/...` routes with legacy `/api/...` compatibility. For
-route details, see:
-
-- [`docs/openapi.yaml`](docs/openapi.yaml)
-- [`docs/api-web-ui.md`](docs/api-web-ui.md)
-- [`docs/env-reference.md`](docs/env-reference.md)
-
-Public demo mode can allow anonymous validation/read/runtime-select/fetch
-without enabling host execution. Runtime execute remains separately gated by
-`BPFCOMPAT_API_ENABLE_RUNTIME_EXECUTE` and an approval token.
-
-## Runtime Decisioning
-
-> **Status:** experimental, and not the project's current focus. Active
-> development centers on the CI compatibility workflow: suites, kernel
-> matrices, and reports. This track is kept as a controlled proof and may
-> change or be removed.
-
-The runtime path is experimental and should be treated as a controlled proof:
-
-```bash
-make runtime-selector-proof
-make runtime-delivery-proof
-```
-
-The safer product boundary is:
-
-1. validate artifact variants in CI/VMs;
-2. store signed compatibility metadata;
-3. probe a target host;
-4. select and fetch the best verified artifact;
-5. leave host loading to an explicitly approved local agent path.
-
-Relevant docs:
-
-- [`docs/runtime-selector-simulation.md`](docs/runtime-selector-simulation.md)
-- [`docs/production-runtime-agent-alpha.md`](docs/production-runtime-agent-alpha.md)
-- [`docs/runtime-execute-policy.md`](docs/runtime-execute-policy.md)
-- [`docs/security-model.md`](docs/security-model.md)
-- [`docs/threat-model.md`](docs/threat-model.md)
+Both tracks are kept as controlled proofs, not the product surface — the
+supported product is the **CLI + GitHub Action in CI**. The embedded demo UI
+(`make serve`), the HTTP API, and the frozen runtime probe/select/fetch/agent
+flow (host loading disabled/gated by default) are documented together in
+[docs/experimental.md](docs/experimental.md).
 
 ## Documentation Map
 
@@ -671,10 +612,8 @@ User guide — start here:
 - [`docs/kernel-quirk-library.md`](docs/kernel-quirk-library.md) — curated library of known-tricky vendor kernels (version ≠ feature support)
 - [`docs/profile-catalog.md`](docs/profile-catalog.md) — kernel/distro profiles and image maintenance
 - [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
-- [`docs/upstream-kernel-virtme-ng.md`](docs/upstream-kernel-virtme-ng.md)
-- [`docs/firecracker-backend.md`](docs/firecracker-backend.md)
 - [`docs/rhcos-openshift.md`](docs/rhcos-openshift.md) — RHCOS/OpenShift (Ignition boot, operator-supplied image)
-- [`docs/api-web-ui.md`](docs/api-web-ui.md)
+- [`docs/experimental.md`](docs/experimental.md) — virtme-ng lane, Firecracker backend, Web UI/API, runtime decisioning
 
 Reference matrices (real, reproducible artifacts):
 
