@@ -7,14 +7,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-02
+
 ### Added
+- **Command/binary validation mode**: `bpfcompat test-command` (and
+  `test --command`) runs *your own* loader binary/command inside each matrix
+  kernel VM; the per-kernel verdict is its exit code and the bundled validator
+  is not used. Guest env exposes `$BPFCOMPAT_BIN`, `$BPFCOMPAT_ARTIFACT`,
+  `$BPFCOMPAT_REMOTE_ROOT`. See `docs/command-validation.md`.
+- **Library of known-tricky vendor kernels** (`matrices/quirk-library.yaml` +
+  `docs/kernel-quirk-library.md`): 11 evidenced kernels where "version ≠
+  feature support" bites (ring-buffer boundary, enterprise backports, no-BTF,
+  vendor rebases, program-variant bands).
+- **GitHub Action command mode**: new `command`, `command-binary`, and
+  `command-expect-exit` inputs (`artifact` becomes optional when `command` is
+  set); free-text inputs pass through the step environment, never inline
+  interpolation. A bare `matrix` name (e.g. `quirk-library`) resolves to the
+  `matrices/` directory shipped with the action.
+- **Public compatibility matrix**: `compatibility-matrix-publish` now runs
+  weekly on a hosted runner and deploys the quirk-library matrix (validated
+  against a ringbuf/simple-pass contrast pair) to GitHub Pages:
+  <https://kernel-guard.github.io/bpfcompat/>.
+- **ebpf-go validation recipe**: `examples/ebpf-go-loader` (standalone module,
+  static ~50-line cilium/ebpf loader) + `docs/ebpf-go-validation.md` — a libbpf
+  load-pass does not guarantee an ebpf-go load-pass on the same kernel.
+- GitHub Marketplace purchase webhook (ingestion-only, HMAC-verified JSONL
+  ledger) with a Cloudflare Tunnel on-ramp.
 - `examples/preload-gate`: a complete, runnable example of using the
   `pkg/bpfcompat` library — `ValidateBeforeLoad` as a bpfman-style pre-load gate
   (real load on the node's own kernel, no VM). README gains a "Library mode"
   section with the example and a real pass/blocked run.
 
+### Changed
+- Experimental tracks (virtme-ng lane, Firecracker backend, Web UI/API, runtime
+  decisioning) consolidated into `docs/experimental.md`; the README leads with
+  the CI gate, command mode, and the quirk library.
+- README no longer claims modern_bpf is validated "exactly as Falco's loader
+  runs it" — reworded to "mirrors libpman's loader contract", pointing at
+  command mode as the way to run the real loader binary.
+
+### Security
+- Shell-quote interpolated values in guest command strings.
+- Harden data-derived file paths and check writable `Close()` errors.
+
 ### Fixed
 - README install snippet pinned the stale `v0.1.6` release; bumped to `v0.2.0`.
+- Readable contrast in the `test-command` README screenshot.
 
 ## [0.2.0] - 2026-06-27
 
