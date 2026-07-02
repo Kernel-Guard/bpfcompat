@@ -65,9 +65,14 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
+          # cloud-image-utils provides cloud-localds: the RHEL-family/Amazon/
+          # Oracle/SUSE profiles deliver cloud-init via a cidata seed ISO, and
+          # without cloud-localds bpfcompat falls back to a vvfat config drive
+          # that those guests never boot from (0-byte serial, SSH timeout) —
+          # exactly the 7 infra_errors in runs 28555255212 / 28584050911.
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils clang llvm libbpf-dev libelf-dev zlib1g-dev \
-            pkg-config jq
+            qemu-system-x86 qemu-utils cloud-image-utils clang llvm libbpf-dev \
+            libelf-dev zlib1g-dev pkg-config jq
 
       - name: Free hosted-runner disk space
         # The 11 quirk-library images total ~11 GB; the stock runner has ~14 GB
@@ -163,6 +168,7 @@ jobs:
             reports/quirk-library-*.json
             reports/quirk-library-*.md
             .bpfcompat/runs/**/targets/**/serial.log
+            .bpfcompat/runs/**/targets/**/qemu.log
             .bpfcompat/runs/**/targets/**/libbpf.log
             .bpfcompat/runs/**/targets/**/validator-result.json
             .bpfcompat/runs/**/targets/**/validator.stderr
