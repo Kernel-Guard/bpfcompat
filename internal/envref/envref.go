@@ -300,6 +300,11 @@ var catalog = []Var{
 		Description: "Enable the RHEL CoreOS (rhcos) profile. RHCOS boots via the same Ignition path as Fedora CoreOS, but its image ships with an OpenShift release rather than a public URL. Stage the image with `make rhcos-image` and set this to 1/true once it is present; left off, rhcos stays unsupported so it is never claimed runnable without a real image.",
 	},
 	{
+		Name: "BPFCOMPAT_ALLOW_VVFAT_SEED", Default: "false",
+		Category:    "VM Runner",
+		Description: "Re-enable the legacy vvfat config-drive seed for RHEL-family/Amazon/Oracle/SUSE profiles when cloud-localds is missing. Off by default: those guests are known not to boot from the vvfat fallback on some hosts (0-byte serial, then an SSH timeout), so seed selection fails fast with an install hint instead. Prefer installing cloud-image-utils (provides cloud-localds).",
+	},
+	{
 		Name: "BPFCOMPAT_AARCH64_UEFI_CODE", Default: "/usr/share/AAVMF/AAVMF_CODE.fd",
 		Category:    "VM Runner",
 		Description: "Path to the aarch64 UEFI firmware CODE image (pflash). aarch64 `virt` has no built-in firmware, so VM boots need it; install qemu-efi-aarch64 or point this at your distro's edk2 build. Ignored on x86_64.",

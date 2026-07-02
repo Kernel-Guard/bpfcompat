@@ -48,8 +48,8 @@ func TestIsCoreOSIgnitionDistro(t *testing.T) {
 }
 
 func TestSeedDeliveryForCoreOS(t *testing.T) {
-	if got := seedDeliveryForProfile(Profile{Distro: "fedora-coreos"}); got != seedDeliveryIgnition {
-		t.Errorf("fedora-coreos seed delivery = %q, want %q", got, seedDeliveryIgnition)
+	if got, err := seedDeliveryForProfile(Profile{Distro: "fedora-coreos"}); err != nil || got != seedDeliveryIgnition {
+		t.Errorf("fedora-coreos seed delivery = %q (err %v), want %q", got, err, seedDeliveryIgnition)
 	}
 }
 

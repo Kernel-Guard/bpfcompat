@@ -395,22 +395,54 @@ func TestParseFirecrackerMarkedOutput(t *testing.T) {
 }
 
 func TestSeedDeliveryForProfile(t *testing.T) {
-	if got := seedDeliveryForProfile(Profile{ID: "rhel-8-4.18"}); got != seedDeliveryNoCloudConfigDrive && got != seedDeliveryNoCloudConfigFS {
-		t.Fatalf("expected rhel-8-4.18 seed delivery %q or %q, got %q", seedDeliveryNoCloudConfigDrive, seedDeliveryNoCloudConfigFS, got)
+	if got, err := seedDeliveryForProfile(Profile{ID: "ubuntu-22.04-5.15", Distro: "ubuntu"}); err != nil || got != seedDeliveryNoCloudNet {
+		t.Fatalf("expected default seed delivery %q, got %q (err %v)", seedDeliveryNoCloudNet, got, err)
 	}
-	if got := seedDeliveryForProfile(Profile{ID: "ubuntu-22.04-5.15", Distro: "ubuntu"}); got != seedDeliveryNoCloudNet {
-		t.Fatalf("expected default seed delivery %q, got %q", seedDeliveryNoCloudNet, got)
-	}
-	if got := seedDeliveryForProfile(Profile{ID: "debian-12-6.1", Distro: "debian"}); got != seedDeliveryNoCloudNet {
-		t.Fatalf("expected debian seed delivery %q, got %q", seedDeliveryNoCloudNet, got)
+	if got, err := seedDeliveryForProfile(Profile{ID: "debian-12-6.1", Distro: "debian"}); err != nil || got != seedDeliveryNoCloudNet {
+		t.Fatalf("expected debian seed delivery %q, got %q (err %v)", seedDeliveryNoCloudNet, got, err)
 	}
 	// EL-family / Amazon / SUSE must use the CIDATA disk seed (SMBIOS-net is
-	// ignored by their cloud-init).
+	// ignored by their cloud-init). With cloud-localds present that is the
+	// seed ISO; without it, selection must error rather than fall back.
 	for _, distro := range []string{"almalinux", "rocky", "rhel", "centos-stream", "oracle", "amazon-linux", "sles", "opensuse"} {
-		got := seedDeliveryForProfile(Profile{ID: distro + "-x", Distro: distro})
-		if got != seedDeliveryNoCloudConfigDrive && got != seedDeliveryNoCloudConfigFS {
-			t.Fatalf("expected CIDATA seed for distro %q, got %q", distro, got)
+		got, err := seedDeliveryForProfile(Profile{ID: distro + "-x", Distro: distro})
+		if err != nil {
+			continue // host without cloud-localds: covered by the fail-fast test below
 		}
+		if got != seedDeliveryNoCloudConfigDrive {
+			t.Fatalf("expected CIDATA seed ISO for distro %q, got %q", distro, got)
+		}
+	}
+}
+
+// Without cloud-localds on PATH, cidata profiles must fail fast with the
+// actionable install hint — the vvfat fallback boots to a 0-byte serial on
+// some hosts and only surfaces as an SSH timeout much later.
+func TestSeedDeliveryFailsFastWithoutCloudLocalds(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // no cloud-localds resolvable
+	t.Setenv("BPFCOMPAT_ALLOW_VVFAT_SEED", "")
+
+	_, err := seedDeliveryForProfile(Profile{ID: "almalinux-8-4.18", Distro: "almalinux"})
+	if err == nil {
+		t.Fatal("expected error for cidata profile without cloud-localds")
+	}
+	for _, want := range []string{"cloud-localds", "cloud-image-utils", "BPFCOMPAT_ALLOW_VVFAT_SEED"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing actionable hint %q", err.Error(), want)
+		}
+	}
+
+	// Explicit opt-in re-enables the legacy vvfat fallback.
+	t.Setenv("BPFCOMPAT_ALLOW_VVFAT_SEED", "1")
+	got, err := seedDeliveryForProfile(Profile{ID: "almalinux-8-4.18", Distro: "almalinux"})
+	if err != nil || got != seedDeliveryNoCloudConfigFS {
+		t.Fatalf("expected vvfat fallback with opt-in, got %q (err %v)", got, err)
+	}
+
+	// Ubuntu/Debian (NoCloud net seed) are unaffected by the missing tool.
+	got, err = seedDeliveryForProfile(Profile{ID: "ubuntu-22.04-5.15", Distro: "ubuntu"})
+	if err != nil || got != seedDeliveryNoCloudNet {
+		t.Fatalf("expected NoCloud net seed for ubuntu, got %q (err %v)", got, err)
 	}
 }
 
