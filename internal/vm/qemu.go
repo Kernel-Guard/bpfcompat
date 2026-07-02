@@ -237,7 +237,11 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 
-	seedMode := seedDeliveryForProfile(req.Profile)
+	seedMode, err := seedDeliveryForProfile(req.Profile)
+	if err != nil {
+		result.InfraError = err.Error()
+		return
+	}
 	seedDir := filepath.Join(vmRunDir, "seed")
 	seedURL := ""
 	seedImagePath := ""
@@ -272,7 +276,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		}
 		result.Notes = append(result.Notes, "seed delivery: local NoCloud config drive image (cloud-localds)")
 	case seedDeliveryNoCloudConfigFS:
-		result.Notes = append(result.Notes, "seed delivery: local NoCloud config drive (vvfat, label=cidata)")
+		result.Notes = append(result.Notes, "seed delivery: local NoCloud config drive (vvfat, label=cidata) — legacy fallback enabled via BPFCOMPAT_ALLOW_VVFAT_SEED; if this guest never reaches SSH, install cloud-image-utils instead")
 	default:
 		seedSrv, err := startSeedServer(seedDir)
 		if err != nil {
@@ -937,17 +941,40 @@ func needsCIDATASeed(profile Profile) bool {
 	return strings.EqualFold(strings.TrimSpace(profile.ID), "rhel-8-4.18")
 }
 
-func seedDeliveryForProfile(profile Profile) seedDeliveryMode {
+func seedDeliveryForProfile(profile Profile) (seedDeliveryMode, error) {
 	if isCoreOSIgnitionDistro(profile) {
-		return seedDeliveryIgnition
+		return seedDeliveryIgnition, nil
 	}
 	if needsCIDATASeed(profile) {
 		if commandAvailable("cloud-localds") {
-			return seedDeliveryNoCloudConfigDrive
+			return seedDeliveryNoCloudConfigDrive, nil
 		}
-		return seedDeliveryNoCloudConfigFS
+		// The vvfat config-drive fallback is known NOT to boot RHEL-family/
+		// Amazon/Oracle/SUSE guests on some hosts (0-byte serial, SSH
+		// timeout) — and because the guest simply never comes up, the
+		// failure surfaces 15 minutes later as an opaque SSH timeout.
+		// Fail fast with the actionable fix instead; the legacy fallback
+		// stays reachable behind an explicit opt-in.
+		if allowVVFATSeedFallback() {
+			return seedDeliveryNoCloudConfigFS, nil
+		}
+		return "", fmt.Errorf("profile %s needs a cloud-init cidata seed ISO but cloud-localds is not installed; "+
+			"install cloud-image-utils (Debian/Ubuntu: apt-get install cloud-image-utils), "+
+			"or set BPFCOMPAT_ALLOW_VVFAT_SEED=1 to try the legacy vvfat config-drive fallback "+
+			"(known not to boot RHEL-family/Amazon/Oracle/SUSE guests on some hosts)", profile.ID)
 	}
-	return seedDeliveryNoCloudNet
+	return seedDeliveryNoCloudNet, nil
+}
+
+// allowVVFATSeedFallback reports whether the operator explicitly re-enabled
+// the legacy vvfat config-drive seed for cidata profiles when cloud-localds
+// is missing.
+func allowVVFATSeedFallback() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BPFCOMPAT_ALLOW_VVFAT_SEED"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func commandAvailable(name string) bool {
