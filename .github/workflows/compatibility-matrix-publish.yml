@@ -69,12 +69,45 @@ jobs:
             qemu-system-x86 qemu-utils clang llvm libbpf-dev libelf-dev zlib1g-dev \
             pkg-config jq
 
+      - name: Free hosted-runner disk space
+        # The 11 quirk-library images total ~11 GB; the stock runner has ~14 GB
+        # free on /. Dropping the unused Android/.NET/GHC toolchains frees
+        # another ~14 GB so image downloads + overlays never hit ENOSPC.
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h / | tail -1
+
       - name: Build validator and fixture artifacts
         shell: bash
         run: |
           set -euo pipefail
           make validator-static
           make examples
+
+      - name: Prefetch quirk-library images
+        # Downloads happen here, in parallel, NOT inside each target's
+        # validation window. The first publish run proved why: the 1.4-2 GB
+        # enterprise images (AlmaLinux/Rocky/CentOS/Amazon/Oracle) blew the
+        # per-target timeout on a cold runner ("wait for SSH: not ready"),
+        # while the small Ubuntu/Debian images validated fine.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/quirk-images.txt
+          import yaml
+          m = yaml.safe_load(open('matrices/quirk-library.yaml'))
+          for p in m['profiles']:
+              prof = yaml.safe_load(open(f"vm/profiles/{p['id']}.yaml"))
+              img = prof.get('image', {})
+              if img.get('source_url') and img.get('local_path'):
+                  print(img['source_url'], img['local_path'])
+          PY
+          cat /tmp/quirk-images.txt
+          xargs -a /tmp/quirk-images.txt -n2 -P6 bash vm/scripts/fetch-cloud-image.sh
+          ls -lh vm/cache/
+          df -h / | tail -1
 
       - name: Validate ringbuf-modern across the quirk library
         uses: ./
@@ -84,12 +117,12 @@ jobs:
           validation-mode: load_attach
           out: reports/quirk-library-ringbuf-modern.json
           markdown: reports/quirk-library-ringbuf-modern.md
-          timeout: 12m
+          timeout: 15m
           concurrency: "2"
           build: "true"
 
       - name: Validate simple-pass across the quirk library
-        # Images are cached from the first run, so this pass is much faster.
+        # Images are already prefetched, so this pass only boots VMs.
         uses: ./
         with:
           artifact: examples/simple-pass/simple_pass.bpf.o
@@ -97,7 +130,7 @@ jobs:
           validation-mode: load_attach
           out: reports/quirk-library-simple-pass.json
           markdown: reports/quirk-library-simple-pass.md
-          timeout: 12m
+          timeout: 15m
           concurrency: "2"
           build: "false"
 
