@@ -5,6 +5,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Kernel-Guard/bpfcompat/badge)](https://scorecard.dev/viewer/?uri=github.com/Kernel-Guard/bpfcompat)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13230/badge)](https://www.bestpractices.dev/projects/13230)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/ErenAri?logo=githubsponsors&label=Sponsor)](https://github.com/sponsors/ErenAri)
 <img width="1672" height="941" alt="ChatGPT Image Jun 27, 2026, 04_40_42 PM" src="https://github.com/user-attachments/assets/697ee208-15e2-4725-9066-c30cb81f753b" />
 
 `bpfcompat` is an open-source compatibility validator for compiled eBPF
@@ -631,6 +632,31 @@ planning notes — useful for contributors, not needed to use the tool):
 - [`docs/backend-execution-proof.md`](docs/backend-execution-proof.md)
 - [`docs/external-ci-proof.md`](docs/external-ci-proof.md)
 - remaining `docs/*.md` proof, runbook, and checklist documents
+
+## Community and governance
+
+- [Contributing](CONTRIBUTING.md) — development workflow and review
+  expectations
+- [Code of Conduct](CODE_OF_CONDUCT.md) — participation and enforcement
+  standards
+- [Governance](GOVERNANCE.md) — roles, decisions, releases, and conflicts of
+  interest
+- [Maintainers](MAINTAINERS.md) — active maintainers and the path to
+  maintainership
+- [Roadmap](ROADMAP.md) — outcome-based priorities and 1.0 readiness criteria
+- [Adopters](ADOPTERS.md) — confirmed users and clearly separated public
+  evaluations
+
+## Support bpfcompat
+
+Financial and infrastructure support keeps the public kernel matrix current,
+expands native architecture coverage, and funds upstream loader integrations.
+See [FUNDING.md](FUNDING.md) or support the project through
+[GitHub Sponsors](https://github.com/sponsors/ErenAri).
+Organizations can also use the concise [sponsor brief](docs/sponsor-brief.md).
+
+Sponsors fund coverage and maintenance, never a favorable compatibility
+verdict. Confirmed supporters are recorded in [SPONSORS.md](SPONSORS.md).
 
 ## Development
 

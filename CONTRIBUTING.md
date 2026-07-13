@@ -3,17 +3,23 @@
 Thanks for your interest in bpfcompat. This document is the short,
 opinionated version of how to work with the codebase.
 
+By participating, you agree to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Project roles and decision-making are
+described in [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Ground rules
 
-1. **Security disclosures go through `SECURITY.md`, not public issues.** If
+1. **Treat other contributors professionally.** Follow the Code of Conduct in
+   project spaces and when representing the project elsewhere.
+2. **Security disclosures go through `SECURITY.md`, not public issues.** If
    you've found a vulnerability, please email the address listed there and
    wait for a coordinated disclosure window before publishing.
-2. **Tests are mandatory** for behavior changes. The CI gate runs
+3. **Tests are mandatory** for behavior changes. The CI gate runs
    `go test -race`, `go vet`, `golangci-lint`, and `govulncheck`. Bench/fuzz
    additions are welcome but not required for every PR.
-3. **No `panic()` in production code.** The only acceptable
+4. **No `panic()` in production code.** The only acceptable
    process-terminating call is `os.Exit` from `cmd/bpfcompat/main.go`.
-4. **Don't loosen the JSON body cap or DisallowUnknownFields.** They're load
+5. **Don't loosen the JSON body cap or DisallowUnknownFields.** They're load
    bearing for the API version contract (see `docs/openapi.yaml` and the
    `/api/v1/` move). Changes that need a richer wire shape should ride a
    `v2` route, not relax the v1 one.
