@@ -122,6 +122,13 @@ The `command` string is passed to the runner through the environment (never
 interpolated into the action's shell), and inside the guest it is executed as a
 single quoted `bash -lc` operand, exactly as in the CLI flow.
 
+Real-world example: `falcosecurity/libs` runs exactly this flow in its
+scheduled CI — it builds Falco's `scap-open` loader statically (modern_bpf
+probe skeleton embedded) and validates it per kernel with
+`command: $BPFCOMPAT_BIN --modern_bpf --num_events 10`
+([falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024),
+[workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+
 ## Scope / limitations (first cut)
 
 - Command mode currently supports the **`vm`** runner only (the default). It is

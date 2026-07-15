@@ -32,6 +32,12 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
+**Runs upstream:** [falcosecurity/libs](https://github.com/falcosecurity/libs)
+merged a scheduled bpfcompat compatibility lane for Falco's `modern_bpf` probe,
+driven by Falco's real loader binary
+([falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024),
+[workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+
 ## Why not just rely on CO-RE / BTFHub?
 
 CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
@@ -242,6 +248,15 @@ The red `5.4` row is the point: a kernel below Falco's real floor is flagged
 *before* shipping, with the exact mechanism (`ringbuf_maps` create returns
 `-EINVAL`) and remediation — not a generic "it broke." Reproduce this matrix
 locally; see [`docs/falco-parity.md`](docs/falco-parity.md).
+
+This proof graduated to upstream CI:
+[falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024)
+merged a scheduled lane into `falcosecurity/libs` that builds Falco's real
+userspace loader (`scap-open`, statically linked, modern_bpf probe embedded)
+from the tree under test and runs it inside each matrix kernel VM via
+[command mode](docs/command-validation.md) — the loader's exit code is the
+per-kernel verdict, with no manifest to keep in sync
+([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
 
 ## Validate a published gadget in one command
 

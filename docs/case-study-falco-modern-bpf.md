@@ -48,11 +48,26 @@ act on:
 That is the difference between "❌ it broke" and "❌ ring buffer isn't available on
 5.4 — ship a non-ringbuf fallback for that band." The output is a decision, not a log.
 
+## Upstream: this check now runs in falcosecurity/libs CI
+
+On 2026-07-15, [falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024)
+merged a scheduled bpfcompat compatibility lane into `falcosecurity/libs`
+([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+It goes one step further than the manifest-mirror approach documented above:
+it builds Falco's real userspace loader (`scap-open`, statically linked with
+the modern_bpf probe skeleton embedded) from the tree under test and runs it
+inside each matrix kernel VM via [command mode](command-validation.md)
+(`scap-open --modern_bpf --num_events 10`). The loader's exit code is the
+per-kernel verdict — `scap_open()` exercises libpman's full load path
+(runtime-sized maps, helper-gated program variants, trial-probed iterators,
+attach), then captures a bounded number of events — so there is no manifest to
+keep in sync with the loader: the loader is the contract.
+
 ## Reproduce it
 
 ```bash
 # In CI (GitHub Action), against your kernel matrix:
-- uses: Kernel-Guard/bpfcompat@v0.2.0
+- uses: Kernel-Guard/bpfcompat@v0.3.0
   with:
     artifact: build/bpf_probe.o
     matrix: matrices/mvp.yaml
