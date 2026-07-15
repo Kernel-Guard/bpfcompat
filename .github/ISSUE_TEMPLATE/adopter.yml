@@ -1,0 +1,70 @@
+name: Share bpfcompat adoption
+description: Tell us how your project uses or evaluates bpfcompat.
+title: "[Adopter]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us document real-world use. A public evaluation is welcome even if you are not ready to be listed as a confirmed adopter.
+
+  - type: input
+    id: project
+    attributes:
+      label: Organization or project
+      description: The name that may appear in ADOPTERS.md.
+      placeholder: Example project
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: Public URL
+      description: Project, organization, workflow, or repository URL.
+      placeholder: https://github.com/example/project
+    validations:
+      required: true
+
+  - type: dropdown
+    id: usage
+    attributes:
+      label: How do you use bpfcompat?
+      multiple: true
+      options:
+        - GitHub Action
+        - CLI artifact validation
+        - Command mode with our loader
+        - Go library
+        - Scheduled compatibility evaluation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Usage and compatibility scope
+      description: Describe whether this is production, release gating, CI, or evaluation, and which artifacts, kernels, distributions, or architectures matter.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: listing
+    attributes:
+      label: Public listing permission
+      description: A logo always requires separate explicit permission.
+      options:
+        - Yes, list the name and public details in ADOPTERS.md
+        - No, treat this only as public evaluation feedback
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I am authorized to share this information for the named project or organization.
+          required: true
+        - label: I understand that listing does not create an endorsement, support agreement, or compatibility guarantee.
+          required: true

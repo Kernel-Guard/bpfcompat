@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- Project governance and sustainability documents: Code of Conduct,
+  governance, maintainers, roadmap, adopters, funding, and sponsor ledger.
+- GitHub Sponsors repository funding configuration and sponsor badge.
+- Structured adopter issue form for confirmed use and public evaluations.
+- Sponsor brief and explicit review ownership for external outreach and project
+  accountability.
+
 ## [0.3.0] - 2026-07-02
 
 ### Added
