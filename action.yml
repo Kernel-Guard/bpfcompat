@@ -72,7 +72,7 @@ inputs:
     required: false
     default: "true"
   prebuilt:
-    description: Use prebuilt release binaries when the action is pinned to a release tag ("auto"), or always build from source ("never"). Downloads are checksum-verified against the release SHA256SUMS.
+    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-verified against the release SHA256SUMS.
     required: false
     default: "auto"
   binary:
@@ -89,10 +89,30 @@ runs:
       shell: bash
       env:
         ACTION_REF: ${{ github.action_ref }}
+        GITHUB_API_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         echo "resolved=false" >> "$GITHUB_OUTPUT"
         ref="${ACTION_REF:-}"
+        if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && command -v jq >/dev/null 2>&1; then
+          # Pinned by commit SHA (the recommended way to pin third-party
+          # actions). Resolve the commit to the release tag that points at it
+          # so SHA-pinned consumers still get prebuilt binaries instead of
+          # silently requiring libbpf build deps on the runner. Any API
+          # hiccup or no matching tag falls through to the source build.
+          tags_json="$(curl -fsSL --retry 2 \
+            -H "Authorization: Bearer ${GITHUB_API_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Kernel-Guard/bpfcompat/tags?per_page=100" || true)"
+          resolved_tag="$(printf '%s' "$tags_json" \
+            | jq -r --arg sha "$ref" \
+              '[.[] | select(.commit.sha == $sha) | .name | select(test("^v[0-9]"))][0] // empty' \
+            2>/dev/null || true)"
+          if [[ -n "$resolved_tag" ]]; then
+            echo "Commit ${ref} is release ${resolved_tag}; using its prebuilt binaries."
+            ref="$resolved_tag"
+          fi
+        fi
         if [[ ! "$ref" =~ ^v[0-9] ]]; then
           echo "Action not pinned to a release tag (ref: ${ref:-none}); building from source."
           exit 0

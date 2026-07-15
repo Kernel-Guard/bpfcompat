@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest          # exposes /dev/kvm for KVM acceleration
     steps:
       - uses: actions/checkout@v4
-      - uses: Kernel-Guard/bpfcompat@v0.2.0
+      - uses: Kernel-Guard/bpfcompat@v0.3.0
         with:
           artifact: build/program.bpf.o     # your compiled object
           matrix: matrices/mvp.yaml          # the kernels you support
@@ -57,7 +57,7 @@ What you get:
 Shipping a whole product? Use **suite mode** to gate a collection in one run:
 
 ```yaml
-      - uses: Kernel-Guard/bpfcompat@v0.2.0
+      - uses: Kernel-Guard/bpfcompat@v0.3.0
         with:
           suite: suites/project.yaml
           suite-out: reports/suite.json
@@ -66,8 +66,11 @@ Shipping a whole product? Use **suite mode** to gate a collection in one run:
 
 The Action is on the
 [GitHub Marketplace](https://github.com/marketplace/actions/bpfcompat-ebpf-compatibility-gate).
-Pinning to a release tag uses checksum-verified, attested prebuilt binaries
-([verifying releases](verifying-releases.md)); otherwise it builds from source.
+Pinning to a release tag — or to the commit SHA a release tag points at — uses
+checksum-verified, attested prebuilt binaries
+([verifying releases](verifying-releases.md)); otherwise it builds from source,
+which needs `libbpf-dev`, `libelf-dev`, `zlib1g-dev`, and `pkg-config` on the
+runner.
 
 ## 2. Run it locally (CLI)
 
