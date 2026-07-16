@@ -1989,6 +1989,22 @@ programs:
     byId("intentLoadAttach").addEventListener("click", () => switchTestIntent("load_attach"));
     byId("intentLoadOnly").addEventListener("click", () => switchTestIntent("load_only"));
 
+    // Inline note under the sample button (created on demand, cleared with "").
+    function setTrySampleNote(text) {
+      let note = byId("trySampleNote");
+      if (!text) {
+        if (note) note.remove();
+        return;
+      }
+      if (!note) {
+        note = document.createElement("div");
+        note.id = "trySampleNote";
+        note.className = "meta";
+        byId("trySampleHint").appendChild(note);
+      }
+      note.textContent = text;
+    }
+
     // "Try our aegis sample": load the bundled artifact into the form and run a
     // real validation across a kernel spread that crosses aegis's 5.16 boundary
     // (it uses a bloom-filter map). One click -> artifact filled below -> run.
@@ -2009,28 +2025,38 @@ programs:
         input.dispatchEvent(new Event("change", { bubbles: true }));
         byId("artifactName").value = "aegis";
 
-        // Reset to a clean slate so only the boundary spread runs (no arm64 /
-        // kernel-sweep variants from the default selection).
-        document.querySelectorAll("input[data-kind='include']").forEach((x) => { x.checked = false; });
-        document.querySelectorAll("input[data-kind='required']").forEach((x) => { x.checked = false; x.disabled = true; });
+        // Honor an explicit target selection: the curated boundary spread is
+        // a teaching default, not an override. Only apply it when the target
+        // list is still the untouched default preset (or nothing is checked).
+        const picks = selectedProfiles();
+        const userCustomizedTargets = selectedPreset !== "ubuntu-lts" && picks.include.length > 0;
+        if (userCustomizedTargets) {
+          setTrySampleNote("Running the aegis sample on your selected targets. aegis uses a bloom-filter map (kernel >= 5.16), so older kernels are expected to fail - include a 6.x target to see it pass.");
+        } else {
+          setTrySampleNote("");
+          // Reset to a clean slate so only the boundary spread runs (no arm64 /
+          // kernel-sweep variants from the default selection).
+          document.querySelectorAll("input[data-kind='include']").forEach((x) => { x.checked = false; });
+          document.querySelectorAll("input[data-kind='required']").forEach((x) => { x.checked = false; x.disabled = true; });
 
-        // Boundary spread: 5.4/5.15 fail (no bloom map), 6.1/6.8 pass (required).
-        const include = ["ubuntu-20.04-5.4", "ubuntu-22.04-5.15", "debian-12-6.1", "ubuntu-24.04-6.8"];
-        const required = ["debian-12-6.1", "ubuntu-24.04-6.8"];
-        include.forEach((id) => {
-          const inc = document.querySelector("input[data-kind='include'][data-id='" + id + "']");
-          if (!inc || inc.disabled) return;
-          inc.checked = true;
-          inc.dispatchEvent(new Event("change", { bubbles: true }));
-          if (required.includes(id)) {
-            const req = document.querySelector("input[data-kind='required'][data-id='" + id + "']");
-            if (req) {
-              req.disabled = false;
-              req.checked = true;
-              req.dispatchEvent(new Event("change", { bubbles: true }));
+          // Boundary spread: 5.4/5.15 fail (no bloom map), 6.1/6.8 pass (required).
+          const include = ["ubuntu-20.04-5.4", "ubuntu-22.04-5.15", "debian-12-6.1", "ubuntu-24.04-6.8"];
+          const required = ["debian-12-6.1", "ubuntu-24.04-6.8"];
+          include.forEach((id) => {
+            const inc = document.querySelector("input[data-kind='include'][data-id='" + id + "']");
+            if (!inc || inc.disabled) return;
+            inc.checked = true;
+            inc.dispatchEvent(new Event("change", { bubbles: true }));
+            if (required.includes(id)) {
+              const req = document.querySelector("input[data-kind='required'][data-id='" + id + "']");
+              if (req) {
+                req.disabled = false;
+                req.checked = true;
+                req.dispatchEvent(new Event("change", { bubbles: true }));
+              }
             }
-          }
-        });
+          });
+        }
 
         btn.textContent = original;
         btn.disabled = false;
