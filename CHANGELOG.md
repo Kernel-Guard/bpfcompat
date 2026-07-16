@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-16
+
+### Fixed
+- **Release pipeline: pin the cosign CLI to v2.** The v0.3.1 tag build failed
+  at the signing step because the cosign installer fetched the new cosign v3,
+  which ignores `--output-signature`/`--output-certificate` in favor of the
+  bundle format. As a result **v0.3.1 has no release binaries** — it remains a
+  valid Go module version, but Action/tag consumers should use v0.3.2, which
+  is content-identical plus this pipeline fix.
+
 ## [0.3.1] - 2026-07-16
 
 ### Added

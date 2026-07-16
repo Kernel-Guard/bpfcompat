@@ -50,7 +50,7 @@ Or in CI with the GitHub Action:
 
 ```yaml
 - run: cd examples/ebpf-go-loader && CGO_ENABLED=0 go build -o ebpf-go-loader .
-- uses: Kernel-Guard/bpfcompat@v0.3.1
+- uses: Kernel-Guard/bpfcompat@v0.3.2
   with:
     command: $BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT
     command-binary: examples/ebpf-go-loader/ebpf-go-loader
