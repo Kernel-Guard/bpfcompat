@@ -199,7 +199,7 @@ A complete, real example is [`examples/preload-gate`](examples/preload-gate):
 ![preload-gate.go — a real program using ValidateBeforeLoad](docs/images/library/library-code.png)
 
 ```sh
-go get github.com/kernel-guard/bpfcompat@v0.3.0
+go get github.com/kernel-guard/bpfcompat@v0.3.1
 go build -tags hostload -o preload-gate ./examples/preload-gate
 sudo ./preload-gate probe.bpf.o
 ```
@@ -315,7 +315,7 @@ guest-side validator binary and the kernel matrices that ship in this repo.
 the static validator, checksum-verified:
 
 ```bash
-VER=v0.3.0
+VER=v0.3.1
 base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
@@ -561,7 +561,7 @@ or the Firecracker lane. See
 Suite mode (recommended — gates the whole collection):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.0
+- uses: Kernel-Guard/bpfcompat@v0.3.1
   with:
     suite: suites/project.yaml
     suite-out: reports/suite.json
@@ -575,7 +575,7 @@ are alive and adds the result to the suite-level collection matrix.
 Single artifact:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.0
+- uses: Kernel-Guard/bpfcompat@v0.3.1
   with:
     artifact: path/to/program.bpf.o
     manifest: path/to/manifest.yaml
@@ -591,7 +591,7 @@ per-kernel verdict is the loader's exit code), against the built-in
 [library of known-tricky vendor kernels](docs/kernel-quirk-library.md):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.0
+- uses: Kernel-Guard/bpfcompat@v0.3.1
   with:
     command: $BPFCOMPAT_BIN --self-test
     command-binary: build/myloader   # static or fully self-contained binary

@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-16
+
 ### Added
 - Project governance and sustainability documents: Code of Conduct,
   governance, maintainers, roadmap, adopters, funding, and sponsor ledger.
@@ -14,6 +16,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - Structured adopter issue form for confirmed use and public evaluations.
 - Sponsor brief and explicit review ownership for external outreach and project
   accountability.
+- Docs: bpfcompat now runs upstream — `falcosecurity/libs` merged a scheduled
+  compatibility lane that validates Falco's real loader (`scap-open`) per
+  kernel via command mode (falcosecurity/libs#3024); README, the Falco case
+  study, and `docs/command-validation.md` document it.
+
+### Fixed
+- **GitHub Action: commit-SHA pins now use prebuilt release binaries.** The
+  prebuilt resolution only matched `v*` tag refs, so pinning the action by
+  full commit SHA (the recommended practice for third-party actions) silently
+  fell back to building the validator from source — failing on runners
+  without `libbpf-dev`. A 40-hex action ref is now resolved to the release
+  tag pointing at that commit via the GitHub API (authenticated with the
+  workflow's `github.token`) and the release's checksum-verified binaries are
+  used; any API failure or unknown SHA still falls back to the source build,
+  and `prebuilt: never` still forces it.
+- **VM runner: fail fast when a cidata-seed distro lacks `cloud-localds`.**
+  RHEL-family, Amazon Linux, Oracle, and SUSE guests need a cidata seed ISO;
+  without `cloud-image-utils` installed the runner previously fell back to a
+  vvfat config drive those images never boot from (0-byte serial, SSH
+  timeout reported as an infra error). This is now a clear pre-boot error
+  naming the missing tool; set `BPFCOMPAT_ALLOW_VVFAT_SEED=1` to restore the
+  old fallback.
+
+### Security
+- Release binaries are built with Go 1.25.12, picking up the fix for
+  GO-2026-5856 (Encrypted Client Hello privacy leak in `crypto/tls`).
 
 ## [0.3.0] - 2026-07-02
 

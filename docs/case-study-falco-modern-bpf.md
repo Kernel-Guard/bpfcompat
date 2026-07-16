@@ -67,7 +67,7 @@ keep in sync with the loader: the loader is the contract.
 
 ```bash
 # In CI (GitHub Action), against your kernel matrix:
-- uses: Kernel-Guard/bpfcompat@v0.3.0
+- uses: Kernel-Guard/bpfcompat@v0.3.1
   with:
     artifact: build/bpf_probe.o
     matrix: matrices/mvp.yaml
