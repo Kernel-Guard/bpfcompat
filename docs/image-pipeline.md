@@ -115,8 +115,11 @@ publishes weekly ([per-arch `list.json`](https://falcosecurity.github.io/kernel-
   show up as `uncovered` until one is added.
 - `.github/workflows/kernel-freshness.yml` runs the comparison weekly
   (after kernel-crawler's own Monday refresh) as a non-blocking signal
-  lane: a red run means "refresh the image, re-run the matrix, update the
-  baselines", never a blocked merge.
+  lane. Stale profiles keep the run green and file (or refresh) a single
+  "Stale kernel baselines" tracking issue that closes itself once
+  everything is fresh again; a red run is reserved for the oracle itself
+  breaking (crawler unreachable, invalid baselines file). Never a blocked
+  merge either way.
 - Statuses are honest about coverage limits: `uncovered` (kernel-crawler
   publishes no Debian entries, for example), `no-entries` (EOL series the
   archive dropped), and `no-kernel` (profile never validated) are reported

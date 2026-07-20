@@ -2,10 +2,16 @@ name: kernel-freshness
 
 # Weekly freshness oracle for the image pipeline: compares the kernel each
 # profile last validated (vm/kernel-baselines.yaml) against the per-distro
-# kernel inventory published by falcosecurity/kernel-crawler. A red run means
-# at least one distro ships a kernel newer than the one our cached image
-# evidence covers — refresh the image and re-run the matrix, then update the
-# baselines with `bpfcompat kernel-freshness --update-from-report`.
+# kernel inventory published by falcosecurity/kernel-crawler.
+#
+# Staleness is a maintenance chore, not a failure: when profiles are behind,
+# the run stays green and files (or refreshes) a single tracking issue with
+# the current table; the issue closes itself once everything is fresh again.
+# A red run is reserved for the oracle itself breaking (crawler unreachable,
+# baseline file invalid), so red always means "investigate", never "chore
+# pending". To refresh a stale profile: re-fetch its image, re-run the
+# matrix, then update the baselines with
+# `bpfcompat kernel-freshness --update-from-report`.
 #
 # This is a non-blocking signal lane: nothing gates on it and it cannot
 # break merges. kernel-crawler refreshes its inventory weekly (Mondays), so
@@ -18,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  issues: write   # file/refresh/close the stale-baselines tracking issue
 
 concurrency:
   group: ${{ github.workflow }}
@@ -43,8 +50,39 @@ jobs:
           ./bin/bpfcompat kernel-freshness \
             --baselines vm/kernel-baselines.yaml \
             --markdown freshness.md \
-            --json freshness.json \
-            --fail-on-stale
+            --json freshness.json
+
+      - name: File, refresh, or close the stale-baselines issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Stale kernel baselines (weekly freshness report)"
+          stale="$(jq '[.[] | select(.status=="stale")] | length' freshness.json)"
+          num="$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)"
+          if [[ "$stale" -eq 0 ]]; then
+            if [[ -n "$num" ]]; then
+              gh issue close "$num" --comment "All baselines fresh again as of $RUN_URL."
+            fi
+            echo "No stale baselines."
+            exit 0
+          fi
+          {
+            echo "The weekly freshness oracle found **$stale** profile(s) whose last-validated kernel is behind the newest shipping kernel in its series. Latest run: $RUN_URL"
+            echo
+            cat freshness.md
+            echo
+            echo "To refresh a profile: re-fetch its image, re-run the matrix, then update the baselines with \`bpfcompat kernel-freshness --update-from-report <report.json>\` (see docs/image-pipeline.md)."
+            echo
+            echo "_Filed and refreshed automatically by the kernel-freshness workflow; closes itself when all baselines are fresh._"
+          } > issue-body.md
+          if [[ -n "$num" ]]; then
+            gh issue edit "$num" --body-file issue-body.md
+            echo "Updated issue #$num ($stale stale)."
+          else
+            gh issue create --title "$title" --body-file issue-body.md
+          fi
 
       - name: Publish summary
         if: always()
