@@ -55,10 +55,18 @@ const DefaultArch = "x86_64"
 const (
 	StatusFresh     = "fresh"      // baseline >= newest shipping kernel in the series
 	StatusStale     = "stale"      // distro ships a newer kernel than last validated
+	StatusCovered   = "covered"    // this image lags, but a sweep profile validated the newest kernel
 	StatusUncovered = "uncovered"  // no crawler mapping for this profile
 	StatusNoEntries = "no-entries" // mapping matched nothing (typically an EOL series)
 	StatusNoKernel  = "no-kernel"  // baseline has a mapping but no recorded kernel yet
 )
+
+// derivedSeparator joins a base profile id to the kernel release a
+// kernel-sweep profile pins (ubuntu-22.04-5.15-k5.15.0-186). Matching on the
+// full "<base>-k" prefix keeps sibling profiles distinct: the lockdown
+// variant's derivatives start with "ubuntu-22.04-5.15-lockdown-k", so they
+// never register as derivatives of "ubuntu-22.04-5.15".
+const derivedSeparator = "-k"
 
 // Result is the freshness verdict for one baseline entry.
 type Result struct {
@@ -67,6 +75,9 @@ type Result struct {
 	Newest   string `json:"newest,omitempty"`
 	Status   string `json:"status"`
 	Reason   string `json:"reason,omitempty"`
+	// CoveredBy names the sweep profile that validated the newest kernel,
+	// set only when Status is StatusCovered.
+	CoveredBy string `json:"covered_by,omitempty"`
 }
 
 // Evaluate compares every baseline against the crawler inventory for its
@@ -108,11 +119,23 @@ func Evaluate(b Baselines, fetch func(arch string) (Inventory, error)) ([]Result
 				break
 			}
 			res.Newest = newest
-			if CompareKernelReleases(newest, entry.Kernel) > 0 {
+			switch {
+			case CompareKernelReleases(newest, entry.Kernel) <= 0:
+				res.Status = StatusFresh
+			default:
+				// The stock image lags the newest package, which is normal:
+				// vendors do not rebake cloud images for every point release.
+				// If a kernel-sweep profile in this family already installed
+				// and validated that kernel, the series is covered and there
+				// is nothing to act on.
+				if by, ok := familyCovers(b.Baselines, entry.Profile, newest); ok {
+					res.Status = StatusCovered
+					res.CoveredBy = by
+					res.Reason = "image lags, but " + by + " validated the newest kernel"
+					break
+				}
 				res.Status = StatusStale
 				res.Reason = "distro ships a newer kernel than the last validated image"
-			} else {
-				res.Status = StatusFresh
 			}
 		}
 		results = append(results, res)
@@ -120,11 +143,43 @@ func Evaluate(b Baselines, fetch func(arch string) (Inventory, error)) ([]Result
 	return results, nil
 }
 
-// StaleCount returns how many results are actionable.
+// familyCovers reports whether a kernel-sweep profile derived from base has
+// already validated a kernel at least as new as newest, and names the first
+// such profile. Derived ids are "<base>-k<release>"; the release must start
+// with a digit so unrelated ids that merely contain "-k" cannot match.
+func familyCovers(baselines []Baseline, base, newest string) (string, bool) {
+	prefix := base + derivedSeparator
+	best := ""
+	for _, candidate := range baselines {
+		if candidate.Kernel == "" || !strings.HasPrefix(candidate.Profile, prefix) {
+			continue
+		}
+		release := candidate.Profile[len(prefix):]
+		if release == "" || release[0] < '0' || release[0] > '9' {
+			continue
+		}
+		if CompareKernelReleases(candidate.Kernel, newest) < 0 {
+			continue
+		}
+		// Deterministic pick when several derivatives qualify.
+		if best == "" || candidate.Profile < best {
+			best = candidate.Profile
+		}
+	}
+	return best, best != ""
+}
+
+// StaleCount returns how many results are actionable. Covered profiles are
+// deliberately excluded: their series has been validated on the newest kernel
+// by a sweep profile, so there is no refresh to perform.
 func StaleCount(results []Result) int {
+	return countStatus(results, StatusStale)
+}
+
+func countStatus(results []Result, status string) int {
 	n := 0
 	for _, r := range results {
-		if r.Status == StatusStale {
+		if r.Status == status {
 			n++
 		}
 	}
@@ -227,6 +282,9 @@ func Markdown(results []Result) string {
 		b.WriteString("All covered profiles are validated against the newest kernel their distro ships.\n\n")
 	} else {
 		fmt.Fprintf(&b, "**%d profile(s) are behind what their distro currently ships.** Refresh the cached image and re-run the matrix to update evidence.\n\n", stale)
+	}
+	if covered := countStatus(results, StatusCovered); covered > 0 {
+		fmt.Fprintf(&b, "%d profile(s) are marked `covered`: the stock image lags the newest package, but a `kernel-sweep` profile in the same family already installed and validated that kernel, so there is nothing to refresh.\n\n", covered)
 	}
 	b.WriteString("| Profile | Last validated | Newest shipping | Status | Notes |\n")
 	b.WriteString("|---|---|---|---|---|\n")
