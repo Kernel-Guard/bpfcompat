@@ -169,13 +169,21 @@ verifies `uname -r`, and only then validates. The overlay is grown +4G
 before boot — cloud images ship near-full rootfs, and cloud-init's
 growpart expands the partition to fit the kernel install.
 
-Direct pool URLs matter: apt only indexes the *current* ABI per pocket, so
+Direct pool URLs matter: package indexes only carry the *current* ABI, so
 superseded kernel releases remain downloadable in the archive pool but are
-invisible to `apt-get install`. The kernel-crawler inventory records pool
-URLs per release, which is exactly what makes dense sweeps possible — the
-generator derives the image/modules `.deb` URLs from the crawler's headers
-URLs. The base image stays an unmodified vendor image; the kernel packages
-come from the distro's own archive.
+invisible to `apt-get install` / `dnf install <name>`. The kernel-crawler
+inventory records pool URLs per release, which is exactly what makes dense
+sweeps possible — the generator derives the real package URLs from the
+crawler's headers URLs. The base image stays an unmodified vendor image;
+the kernel packages come from the distro's own archive.
+
+The derivation differs per family. Ubuntu's headers `.deb` sits in the same
+pool directory as the image and modules `.deb`s, so only the file name
+changes. RHEL-family crawler entries publish `kernel-devel` from
+**AppStream**, while the packages that actually boot (`kernel-core` plus
+modules) live in **BaseOS**, so the component is swapped too — the mirror,
+repository version, architecture and any per-letter subdirectory
+(Rocky's `Packages/k/`) are inherited from the headers URL.
 
 Generate the profiles and matrix from the crawler inventory:
 
@@ -188,11 +196,22 @@ Generate the profiles and matrix from the crawler inventory:
 
 This writes `vm/profiles/<base>-k<release>.yaml` per release (newest
 first) plus `matrices/kernel-sweep-<base>.yaml`. Targets need generous
-timeouts: the apt download and reboot add minutes per kernel.
+timeouts: the package download and reboot add minutes per kernel.
 
-Current limits: Ubuntu only (apt package naming and grub menu titles are
-distro-specific), and the release must still be published in the apt
-indexes — which the crawler inventory guarantees at generation time.
+The crawler mapping (distro key, target flavor, release prefix, and the
+`release_contains` that separates `el9` from `el10`) is read from
+`vm/kernel-baselines.yaml` for the base profile, so a sweep of
+`ubuntu-22.04-minimal-5.15` correctly uses the `ubuntu-kvm` flavor rather
+than `ubuntu-generic`. `--target` and `--series` override it.
+
+Supported families: **Debian** (`apt`/`dpkg`, boot selected via grub menu
+titles) and **RHEL** — AlmaLinux, Rocky, CentOS Stream — (`dnf`, boot
+selected with `grubby --set-default`, which matches on the vmlinuz path
+rather than a menu string). Deliberately unsupported: Oracle Linux (UEK
+ships from its own repositories, not BaseOS), Amazon Linux (kernels are
+not published in a browsable pool the crawler maps to), and the
+immutable/image-based systems (RHCOS, Fedora CoreOS, Flatcar, Bottlerocket,
+Talos), whose kernels are part of the image rather than packages.
 
 ## Adding a profile (checklist)
 

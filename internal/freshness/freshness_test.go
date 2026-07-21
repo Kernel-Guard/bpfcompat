@@ -314,3 +314,56 @@ func TestEvaluateFamilyCoverage(t *testing.T) {
 		t.Errorf("StaleCount = %d, want 3", n)
 	}
 }
+
+func TestRHELKernelRPMs(t *testing.T) {
+	// AlmaLinux: packages sit directly under Packages/.
+	alma := Entry{
+		KernelRelease: "5.14.0-687.26.1.el9_8.x86_64",
+		Target:        "almalinux",
+		Headers: []string{
+			"http://repo.almalinux.org/almalinux/9.8/AppStream/x86_64/os/Packages/kernel-devel-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		},
+	}
+	got, err := RHELKernelRPMs(alma)
+	if err != nil {
+		t.Fatalf("RHELKernelRPMs: %v", err)
+	}
+	want := []string{
+		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-687.26.1.el9_8.x86_64.rpm",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d urls, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("url %d = %s, want %s", i, got[i], want[i])
+		}
+	}
+
+	// Rocky mirrors add a per-letter subdirectory, which must be preserved.
+	rocky := Entry{
+		KernelRelease: "5.14.0-687.12.1.el9_8.x86_64",
+		Target:        "rocky",
+		Headers: []string{
+			"http://dl.rockylinux.org/pub/rocky/9.8/AppStream/x86_64/os/Packages/k/kernel-devel-5.14.0-687.12.1.el9_8.x86_64.rpm",
+		},
+	}
+	got, err = RHELKernelRPMs(rocky)
+	if err != nil {
+		t.Fatalf("RHELKernelRPMs(rocky): %v", err)
+	}
+	wantFirst := "http://dl.rockylinux.org/pub/rocky/9.8/BaseOS/x86_64/os/Packages/k/kernel-core-5.14.0-687.12.1.el9_8.x86_64.rpm"
+	if got[0] != wantFirst {
+		t.Errorf("rocky url = %s, want %s", got[0], wantFirst)
+	}
+
+	// A headers URL for a different release must not be used.
+	if _, err := RHELKernelRPMs(Entry{
+		KernelRelease: "5.14.0-999.el9_8.x86_64",
+		Headers:       []string{alma.Headers[0]},
+	}); err == nil {
+		t.Error("expected an error when no headers URL matches the release")
+	}
+}

@@ -26,10 +26,11 @@ import (
 func runKernelSweep(args []string) int {
 	fs := flag.NewFlagSet("kernel-sweep", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	profileID := fs.String("profile", "", "Base profile id (ubuntu profiles only)")
+	profileID := fs.String("profile", "", "Base profile id (debian- and rhel-family profiles)")
 	count := fs.Int("count", 4, "Number of most-recent kernel releases to include")
-	series := fs.String("series", "", "Kernel release prefix (default: <kernel_family>.0-)")
-	crawlerTarget := fs.String("target", "ubuntu-generic", "kernel-crawler target flavor")
+	series := fs.String("series", "", "Kernel release prefix (default: from the baseline mapping, else <kernel_family>.0-)")
+	crawlerTarget := fs.String("target", "", "kernel-crawler target flavor (default: from the baseline mapping, else the distro default)")
+	baselinesPath := fs.String("baselines", "vm/kernel-baselines.yaml", "Baselines file supplying the profile's kernel-crawler mapping")
 	crawlerBase := fs.String("crawler-base", freshness.DefaultCrawlerBase, "Base URL publishing <arch>/list.json inventories")
 	crawlerFile := fs.String("crawler-file", "", "Local kernel-crawler list.json (skips download)")
 	profileDir := fs.String("profile-dir", "vm/profiles", "Directory for generated profiles")
@@ -64,8 +65,9 @@ func runKernelSweep(args []string) int {
 		fmt.Fprintf(os.Stderr, "load base profile: %v\n", err)
 		return runner.ExitToolError
 	}
-	if !strings.EqualFold(base.Distro, "ubuntu") {
-		fmt.Fprintf(os.Stderr, "kernel-sweep supports ubuntu profiles only (got distro %q)\n", base.Distro)
+	family := vm.KernelInstallFamily(base.Distro)
+	if family == "" {
+		fmt.Fprintf(os.Stderr, "kernel-sweep supports debian- and rhel-family profiles only (got distro %q)\n", base.Distro)
 		return runner.ExitToolError
 	}
 	if base.InstallKernel != "" {
@@ -73,11 +75,31 @@ func runKernelSweep(args []string) int {
 		return runner.ExitToolError
 	}
 
-	prefix := *series
-	if prefix == "" {
-		prefix = base.KernelFamily + ".0-"
+	// The committed baselines already carry each profile's crawler mapping
+	// (distro key, target flavor, release prefix, and the release_contains
+	// that keeps el9 and el10 apart under one distro key), so prefer it and
+	// fall back to distro defaults only for profiles not yet listed.
+	ref := defaultCrawlerRef(base.Distro, base.KernelFamily)
+	if mapped, err := baselineCrawlerRef(*baselinesPath, base.ID); err != nil {
+		fmt.Fprintf(os.Stderr, "read baselines: %v\n", err)
+		return runner.ExitToolError
+	} else if mapped != nil {
+		ref = *mapped
 	}
-	ref := freshness.CrawlerRef{Distro: "ubuntu", Target: *crawlerTarget, ReleasePrefix: prefix}
+	if ref.Distro == "" {
+		fmt.Fprintf(os.Stderr, "no kernel-crawler mapping for distro %q; add one to %s\n", base.Distro, *baselinesPath)
+		return runner.ExitToolError
+	}
+	// Explicit flags win over both sources.
+	if *crawlerTarget != "" {
+		ref.Target = *crawlerTarget
+	}
+	if *series != "" {
+		ref.ReleasePrefix = *series
+	}
+	if ref.ReleasePrefix == "" {
+		ref.ReleasePrefix = base.KernelFamily + ".0-"
+	}
 
 	var inv freshness.Inventory
 	if *crawlerFile != "" {
@@ -112,9 +134,16 @@ func runKernelSweep(args []string) int {
 	written := 0
 	for _, entry := range entries {
 		release := entry.KernelRelease
-		// Direct pool URLs, because apt only indexes the current ABI:
-		// superseded releases are downloadable but not installable by name.
-		debs, err := freshness.UbuntuKernelDebs(entry)
+		// Direct pool URLs, because the package indexes only carry the
+		// current ABI: superseded releases stay downloadable but are not
+		// installable by name.
+		var debs []string
+		var err error
+		if family == vm.KernelFamilyRHEL {
+			debs, err = freshness.RHELKernelRPMs(entry)
+		} else {
+			debs, err = freshness.UbuntuKernelDebs(entry)
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "skip %s: %v\n", release, err)
 			continue
@@ -163,5 +192,54 @@ func runKernelSweep(args []string) int {
 func sweepProfileID(baseID, release string) string {
 	short := strings.TrimSuffix(release, "-generic")
 	short = strings.TrimSuffix(short, "-kvm")
+	// RHEL-family releases carry the arch (5.14.0-687.26.1.el9_8.x86_64);
+	// it is redundant in the id because the profile already pins arch.
+	short = strings.TrimSuffix(short, ".x86_64")
+	short = strings.TrimSuffix(short, ".aarch64")
 	return baseID + "-k" + short
+}
+
+// defaultCrawlerRef supplies the kernel-crawler mapping for profiles that are
+// not yet listed in the baselines file. The crawler groups RHEL rebuilds
+// under their own distro key with the same value as the target flavor.
+func defaultCrawlerRef(distro, kernelFamily string) freshness.CrawlerRef {
+	prefix := ""
+	if kernelFamily != "" {
+		prefix = kernelFamily + ".0-"
+	}
+	switch strings.ToLower(strings.TrimSpace(distro)) {
+	case "ubuntu":
+		return freshness.CrawlerRef{Distro: "ubuntu", Target: "ubuntu-generic", ReleasePrefix: prefix}
+	case "almalinux":
+		return freshness.CrawlerRef{Distro: "almalinux", Target: "almalinux", ReleasePrefix: prefix}
+	case "rocky":
+		return freshness.CrawlerRef{Distro: "rocky", Target: "rocky", ReleasePrefix: prefix}
+	case "centos-stream":
+		return freshness.CrawlerRef{Distro: "centos", Target: "centos", ReleasePrefix: prefix}
+	default:
+		return freshness.CrawlerRef{}
+	}
+}
+
+// baselineCrawlerRef returns the committed crawler mapping for profileID, or
+// nil when the file has no entry (or no mapping) for it. A missing baselines
+// file is not an error: the caller falls back to distro defaults.
+func baselineCrawlerRef(path, profileID string) (*freshness.CrawlerRef, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- operator-supplied path by design
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	baselines, err := freshness.LoadBaselines(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range baselines.Baselines {
+		if entry.Profile == profileID {
+			return entry.Crawler, nil
+		}
+	}
+	return nil, nil
 }

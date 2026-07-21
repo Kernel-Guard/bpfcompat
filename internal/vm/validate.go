@@ -44,15 +44,20 @@ func ValidateProfile(p Profile) error {
 		if runner != "vm" {
 			return fmt.Errorf("profile.install_kernel requires runner %q (got %q)", "vm", runner)
 		}
-		if !strings.EqualFold(p.Distro, "ubuntu") {
-			return fmt.Errorf("profile.install_kernel is only supported for ubuntu profiles (got distro %q)", p.Distro)
+		family := KernelInstallFamily(p.Distro)
+		if family == "" {
+			return fmt.Errorf("profile.install_kernel is only supported for debian- and rhel-family profiles (got distro %q)", p.Distro)
 		}
 		if !validKernelRelease(p.InstallKernel) {
 			return fmt.Errorf("profile.install_kernel must match [A-Za-z0-9._+-]+ (got %q)", p.InstallKernel)
 		}
+		wantExt := ".deb"
+		if family == KernelFamilyRHEL {
+			wantExt = ".rpm"
+		}
 		for _, pkg := range p.KernelPackages {
-			if !validKernelPackageURL(pkg) {
-				return fmt.Errorf("profile.kernel_packages entry must be a plain http(s) .deb URL (got %q)", pkg)
+			if !validKernelPackageURL(pkg, wantExt) {
+				return fmt.Errorf("profile.kernel_packages entry must be a plain http(s) %s URL (got %q)", wantExt, pkg)
 			}
 		}
 	}
@@ -75,11 +80,11 @@ func ValidateProfile(p Profile) error {
 // validKernelPackageURL keeps kernel_packages shell-safe: the URLs are
 // interpolated into guest curl command lines, so only plain URL characters
 // are allowed (no quotes, spaces, or shell metacharacters).
-func validKernelPackageURL(value string) bool {
+func validKernelPackageURL(value, ext string) bool {
 	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 		return false
 	}
-	if !strings.HasSuffix(value, ".deb") || len(value) > 512 {
+	if !strings.HasSuffix(value, ext) || len(value) > 512 {
 		return false
 	}
 	for _, r := range value {

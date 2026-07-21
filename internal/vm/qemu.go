@@ -552,13 +552,14 @@ func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget
 // overlay with the requested kernel selected. Returns the new QEMU command;
 // the caller re-establishes SSH and verifies uname -r.
 //
-// Ubuntu-only by validation: the release string is package-exact
-// (linux-image-<release>) and the grub menu titles are Ubuntu's.
+// Debian- and RHEL-family only by validation: the release string is
+// package-exact and the boot-default selection is distro specific (grub menu
+// titles on Ubuntu, grubby on RHEL).
 func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, req ExecutionRequest, target sshTarget, qemuCmd *exec.Cmd,
 	overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*exec.Cmd, error) {
 	release := req.Profile.InstallKernel
 
-	installCmd := guestKernelInstallCmd(release, req.Profile.KernelPackages)
+	installCmd := guestKernelInstallCmd(req.Profile.Distro, release, req.Profile.KernelPackages)
 	if err := sshRun(ctx, target, installCmd); err != nil {
 		return nil, fmt.Errorf("install kernel %s in guest: %w", release, err)
 	}
@@ -589,7 +590,14 @@ func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, r
 // timeout rides out cloud-init/unattended-upgrades holding the apt lock
 // right after first boot. All interpolated values are validated at profile
 // load (validKernelRelease / validKernelPackageURL), so they are shell-safe.
-func guestKernelInstallCmd(release string, packageURLs []string) string {
+func guestKernelInstallCmd(distro, release string, packageURLs []string) string {
+	if KernelInstallFamily(distro) == KernelFamilyRHEL {
+		return guestKernelInstallCmdRHEL(release, packageURLs)
+	}
+	return guestKernelInstallCmdDebian(release, packageURLs)
+}
+
+func guestKernelInstallCmdDebian(release string, packageURLs []string) string {
 	var b strings.Builder
 	b.WriteString("set -e; export DEBIAN_FRONTEND=noninteractive; ")
 	if len(packageURLs) > 0 {
@@ -605,6 +613,26 @@ func guestKernelInstallCmd(release string, packageURLs []string) string {
 	b.WriteString("sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub; ")
 	b.WriteString("sudo update-grub; ")
 	fmt.Fprintf(&b, "sudo grub-set-default %s", shellQuote("Advanced options for Ubuntu>Ubuntu, with Linux "+release))
+	return b.String()
+}
+
+// guestKernelInstallCmdRHEL installs a specific kernel on a RHEL-family
+// guest. dnf resolves any dependency the supplied RPMs do not carry from the
+// guest's enabled repositories, and grubby selects the new kernel by its
+// vmlinuz path — no menu-title matching, unlike Debian's grub.
+func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
+	var b strings.Builder
+	b.WriteString("set -e; ")
+	if len(packageURLs) > 0 {
+		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
+		for i, pkg := range packageURLs {
+			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
+		}
+		b.WriteString("sudo dnf -y --nogpgcheck install ./pkg*.rpm; ")
+	} else {
+		fmt.Fprintf(&b, "sudo dnf -y install %s; ", shellQuote("kernel-core-"+release))
+	}
+	fmt.Fprintf(&b, "sudo grubby --set-default %s", shellQuote("/boot/vmlinuz-"+release))
 	return b.String()
 }
 
