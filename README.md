@@ -643,6 +643,7 @@ User guide — start here:
 
 Reference matrices (real, reproducible artifacts):
 
+- [`docs/integrations/`](docs/integrations/) — copy-paste templates: Go loader, Rust/Aya, OCI gadgets, and an in-process pre-load gate
 - [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
 - [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
 - [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config

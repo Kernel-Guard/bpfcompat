@@ -1,0 +1,75 @@
+# Template: kernel compatibility matrix for a Rust/Aya eBPF loader.
+#
+# For projects loading eBPF from Rust with Aya. Copy into .github/workflows/.
+#
+# Aya matters here for a reason worth knowing: it is a pure-Rust loader, not a
+# libbpf wrapper. A "loads under libbpf" result therefore does not transfer —
+# Aya implements its own relocation and map-creation logic and can diverge on
+# older kernels. That is precisely why this validates *your* binary rather than
+# re-loading the object with libbpf: your loader is the contract.
+name: kernel-compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly; a drift detector, not a merge gate
+
+permissions:
+  contents: read
+
+jobs:
+  kernel-matrix:
+    name: loader kernel compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust with a static target
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          # musl gives a fully static binary that runs on every guest,
+          # regardless of the guest's glibc.
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install VM dependencies
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM
+        run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
+
+      - name: Build the loader (static, musl)
+        run: |
+          set -euo pipefail
+          # Build the eBPF objects first if your project uses a separate
+          # bpf crate, e.g.:  cargo xtask build-ebpf --release
+          cargo build --release --target x86_64-unknown-linux-musl
+          file target/x86_64-unknown-linux-musl/release/loader
+
+      - name: Validate the loader across kernels
+        # Pinned by commit SHA; a SHA matching a release resolves to prebuilt,
+        # checksum-verified binaries.
+        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        with:
+          # Exit 0 means Aya loaded and attached on this kernel; anything else
+          # is the verdict, with the guest's stderr captured in the report.
+          command: $BPFCOMPAT_BIN --self-test
+          command-binary: target/x86_64-unknown-linux-musl/release/loader
+          matrix: quirk-library
+          out: reports/kernel-compat.json
+          markdown: reports/kernel-compat.md
+          timeout: 15m
+          concurrency: "2"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: kernel-compatibility-report
+          path: reports/
+          if-no-files-found: warn
