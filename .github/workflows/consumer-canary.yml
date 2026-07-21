@@ -73,7 +73,14 @@ jobs:
       - name: Validate via the published action (pinned to a release commit)
         uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
         with:
-          artifact: examples/simple-pass/simple_pass.bpf.o
+          # Command mode with no artifact and no shipped binary, so this job
+          # needs no compiler at all: the example .bpf.o objects are built,
+          # not committed, and building them would drag in the toolchain this
+          # job exists to prove is unnecessary. The command runs in-guest and
+          # its exit code is the verdict, which exercises the whole consumer
+          # path — resolve the pin to a release, download and checksum the
+          # assets, boot, execute, report.
+          command: uname -r && test -d /sys/fs/bpf
           matrix: matrices/canary.yaml
           out: reports/canary-prebuilt.json
           markdown: reports/canary-prebuilt.md
@@ -117,13 +124,17 @@ jobs:
             echo "::warning::/dev/kvm absent - falling back to TCG (slower, still correct)."
           fi
 
-      - name: Build a loader binary to ship into the guests
+      - name: Build a loader binary and the fixture object
         run: |
           set -euo pipefail
           # Statically linked: the same binary has to run unchanged on every
           # guest in the matrix, whose libc is older than the runner's.
           make validator-static
           file validator/c-libbpf/bin/bpfcompat-validator
+          # The example .bpf.o objects are gitignored build outputs, so a
+          # fresh checkout has to compile them before they can be validated.
+          make examples
+          test -s examples/simple-pass/simple_pass.bpf.o
 
       - name: Validate via the published action (command mode, source build)
         uses: Kernel-Guard/bpfcompat@main
