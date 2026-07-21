@@ -103,11 +103,24 @@ func UbuntuKernelDebs(entry Entry) ([]string, error) {
 		dir := headerURL[:strings.LastIndex(headerURL, "/")+1]
 		version, arch := versionArch[0], versionArch[1]
 		return []string{
-			fmt.Sprintf("%slinux-modules-%s_%s_%s.deb", dir, release, version, arch),
-			fmt.Sprintf("%slinux-image-unsigned-%s_%s_%s.deb", dir, release, version, arch),
+			httpsURL(fmt.Sprintf("%slinux-modules-%s_%s_%s.deb", dir, release, version, arch)),
+			httpsURL(fmt.Sprintf("%slinux-image-unsigned-%s_%s_%s.deb", dir, release, version, arch)),
 		}, nil
 	}
 	return nil, fmt.Errorf("no flavor-specific headers URL for %s to derive package URLs from", release)
+}
+
+// httpsURL upgrades a package URL to https. kernel-crawler publishes plain
+// http mirror URLs, but every mirror we derive from serves the same paths
+// over TLS, and these packages are installed as a kernel inside the guest —
+// so the download must not be modifiable in transit. Distro package
+// signatures are still verified at install time; this is defence in depth,
+// not a replacement for them.
+func httpsURL(raw string) string {
+	if strings.HasPrefix(raw, "http://") {
+		return "https://" + strings.TrimPrefix(raw, "http://")
+	}
+	return raw
 }
 
 // RHELKernelRPMs derives the bootable kernel RPM URLs for a RHEL-family
@@ -139,9 +152,9 @@ func RHELKernelRPMs(entry Entry) ([]string, error) {
 		// drivers a guest needs to boot. Any remaining dependency is
 		// resolved by dnf from the guest's enabled repositories.
 		return []string{
-			dir + "kernel-core-" + release + ".rpm",
-			dir + "kernel-modules-core-" + release + ".rpm",
-			dir + "kernel-modules-" + release + ".rpm",
+			httpsURL(dir + "kernel-core-" + release + ".rpm"),
+			httpsURL(dir + "kernel-modules-core-" + release + ".rpm"),
+			httpsURL(dir + "kernel-modules-" + release + ".rpm"),
 		}, nil
 	}
 	return nil, fmt.Errorf("no kernel-devel headers URL for %s to derive package URLs from", release)

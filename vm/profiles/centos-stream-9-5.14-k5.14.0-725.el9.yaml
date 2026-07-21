@@ -6,9 +6,9 @@ kernel_family: "5.14"
 arch: x86_64
 install_kernel: 5.14.0-725.el9.x86_64
 kernel_packages:
-    - http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-725.el9.x86_64.rpm
-    - http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-725.el9.x86_64.rpm
-    - http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-725.el9.x86_64.rpm
+    - https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-725.el9.x86_64.rpm
+    - https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-725.el9.x86_64.rpm
+    - https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-725.el9.x86_64.rpm
 image:
     source_url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-9-latest.x86_64.qcow2
     local_path: vm/cache/centos-stream-9.qcow2

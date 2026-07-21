@@ -57,7 +57,7 @@ func ValidateProfile(p Profile) error {
 		}
 		for _, pkg := range p.KernelPackages {
 			if !validKernelPackageURL(pkg, wantExt) {
-				return fmt.Errorf("profile.kernel_packages entry must be a plain http(s) %s URL (got %q)", wantExt, pkg)
+				return fmt.Errorf("profile.kernel_packages entry must be a plain https %s URL (got %q)", wantExt, pkg)
 			}
 		}
 	}
@@ -81,7 +81,10 @@ func ValidateProfile(p Profile) error {
 // interpolated into guest curl command lines, so only plain URL characters
 // are allowed (no quotes, spaces, or shell metacharacters).
 func validKernelPackageURL(value, ext string) bool {
-	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+	// https only: these packages are installed as the guest's kernel, so the
+	// download must not be modifiable in transit. Every mirror the generator
+	// derives from serves the same paths over TLS.
+	if !strings.HasPrefix(value, "https://") {
 		return false
 	}
 	if !strings.HasSuffix(value, ext) || len(value) > 512 {

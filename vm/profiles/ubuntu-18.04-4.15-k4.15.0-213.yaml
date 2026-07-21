@@ -6,8 +6,8 @@ kernel_family: "4.15"
 arch: x86_64
 install_kernel: 4.15.0-213-generic
 kernel_packages:
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-modules-4.15.0-213-generic_4.15.0-213.224_amd64.deb
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-image-unsigned-4.15.0-213-generic_4.15.0-213.224_amd64.deb
+    - https://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-4.15.0-213-generic_4.15.0-213.224_amd64.deb
+    - https://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-4.15.0-213-generic_4.15.0-213.224_amd64.deb
 image:
     source_url: https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img
     local_path: vm/cache/ubuntu-18.04.qcow2

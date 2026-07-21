@@ -249,9 +249,12 @@ func TestUbuntuKernelDebs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UbuntuKernelDebs: %v", err)
 	}
+	// The crawler publishes http mirror URLs; derived package URLs are
+	// upgraded to https so a kernel installed into the guest cannot be
+	// modified in transit.
 	want := []string{
-		"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
-		"http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
+		"https://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
+		"https://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.15.0-184-generic_5.15.0-184.194_amd64.deb",
 	}
 	if len(debs) != 2 || debs[0] != want[0] || debs[1] != want[1] {
 		t.Errorf("UbuntuKernelDebs = %v, want %v", debs, want)
@@ -329,9 +332,9 @@ func TestRHELKernelRPMs(t *testing.T) {
 		t.Fatalf("RHELKernelRPMs: %v", err)
 	}
 	want := []string{
-		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
-		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
-		"http://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		"https://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		"https://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-687.26.1.el9_8.x86_64.rpm",
+		"https://repo.almalinux.org/almalinux/9.8/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-687.26.1.el9_8.x86_64.rpm",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d urls, want %d: %v", len(got), len(want), got)
@@ -354,7 +357,7 @@ func TestRHELKernelRPMs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RHELKernelRPMs(rocky): %v", err)
 	}
-	wantFirst := "http://dl.rockylinux.org/pub/rocky/9.8/BaseOS/x86_64/os/Packages/k/kernel-core-5.14.0-687.12.1.el9_8.x86_64.rpm"
+	wantFirst := "https://dl.rockylinux.org/pub/rocky/9.8/BaseOS/x86_64/os/Packages/k/kernel-core-5.14.0-687.12.1.el9_8.x86_64.rpm"
 	if got[0] != wantFirst {
 		t.Errorf("rocky url = %s, want %s", got[0], wantFirst)
 	}

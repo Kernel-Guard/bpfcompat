@@ -620,6 +620,11 @@ func guestKernelInstallCmdDebian(release string, packageURLs []string) string {
 // guest. dnf resolves any dependency the supplied RPMs do not carry from the
 // guest's enabled repositories, and grubby selects the new kernel by its
 // vmlinuz path — no menu-title matching, unlike Debian's grub.
+//
+// The downloaded RPMs are signature-checked before installation. dnf skips
+// GPG verification for local package files unless localpkg_gpgcheck is set,
+// so it is set explicitly: these packages become the guest's kernel, and the
+// vendor cloud images already carry the distro signing keys.
 func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	var b strings.Builder
 	b.WriteString("set -e; ")
@@ -628,7 +633,15 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 		for i, pkg := range packageURLs {
 			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
 		}
-		b.WriteString("sudo dnf -y --nogpgcheck install ./pkg*.rpm; ")
+		// Import the distro signing keys shipped in the image before
+		// verifying. AlmaLinux pre-imports them into the rpm keyring, but
+		// Rocky and CentOS Stream cloud images only place them on disk, so
+		// an unprimed keyring reports "SIGNATURES NOT OK" for perfectly
+		// good packages. The keys come from the vendor image itself, which
+		// is the same trust anchor dnf uses for the configured repos.
+		b.WriteString("sudo sh -c 'for k in /etc/pki/rpm-gpg/RPM-GPG-KEY-*; do [ -f \"$k\" ] && rpm --import \"$k\"; done'; ")
+		b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
+		b.WriteString("sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
 	} else {
 		fmt.Fprintf(&b, "sudo dnf -y install %s; ", shellQuote("kernel-core-"+release))
 	}

@@ -6,8 +6,8 @@ kernel_family: "5.15"
 arch: x86_64
 install_kernel: 5.15.0-186-generic
 kernel_packages:
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-modules-5.15.0-186-generic_5.15.0-186.196_amd64.deb
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-image-unsigned-5.15.0-186-generic_5.15.0-186.196_amd64.deb
+    - https://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.15.0-186-generic_5.15.0-186.196_amd64.deb
+    - https://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.15.0-186-generic_5.15.0-186.196_amd64.deb
 image:
     source_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
     local_path: vm/cache/ubuntu-22.04-lockdown.qcow2

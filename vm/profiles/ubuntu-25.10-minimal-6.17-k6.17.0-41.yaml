@@ -6,8 +6,8 @@ kernel_family: "6.17"
 arch: x86_64
 install_kernel: 6.17.0-41-generic
 kernel_packages:
-    - http://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-6.17.0-41-generic_6.17.0-41.41_amd64.deb
-    - http://security.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-6.17.0-41-generic_6.17.0-41.41_amd64.deb
+    - https://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-modules-6.17.0-41-generic_6.17.0-41.41_amd64.deb
+    - https://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-image-unsigned-6.17.0-41-generic_6.17.0-41.41_amd64.deb
 image:
     source_url: https://cloud-images.ubuntu.com/minimal/daily/questing/current/questing-minimal-cloudimg-amd64.img
     local_path: vm/cache/ubuntu-25.10-minimal.qcow2
