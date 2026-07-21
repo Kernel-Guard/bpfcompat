@@ -1,0 +1,10 @@
+# Two-kernel matrix for the consumer canary. Deliberately small: this lane
+# exists to catch action/release plumbing breakage before a downstream
+# consumer does, not to prove kernel coverage (the quirk library does that).
+# Mirrors two of the three kernels falcosecurity/libs pins.
+name: consumer-canary
+profiles:
+  - id: ubuntu-22.04-5.15
+    required: true
+  - id: debian-12-6.1
+    required: true

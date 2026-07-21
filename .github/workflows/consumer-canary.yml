@@ -1,0 +1,149 @@
+name: consumer-canary
+
+# Consumes the *published* action exactly the way a downstream project does,
+# so we break before they do.
+#
+# Every other lane in this repo runs the action from the working tree
+# (`uses: ./`), which never exercises what an external consumer actually
+# hits: resolving a pinned ref to a release, downloading and checksum-
+# verifying the release assets, or building the in-guest validator from
+# source on a runner that only has the documented dependencies. Both of
+# those paths have broken in the past without a single red check here —
+# the first scheduled run of the falcosecurity/libs lane failed that way.
+#
+# Two jobs, one per resolution path:
+#
+#   prebuilt      pins the v0.3.2 release commit, like falcosecurity/libs.
+#                 A SHA that matches a release tag must resolve to prebuilt,
+#                 checksum-verified binaries — so this job deliberately does
+#                 NOT install libbpf-dev. If resolution regresses and it
+#                 falls back to a source build, the compile fails here.
+#
+#   source-build  pins @main, which is not a release, forcing the source
+#                 path with exactly the dependencies we document. If a
+#                 future change needs another package, this job goes red
+#                 before a consumer's does.
+#
+# Scheduled ahead of the falcosecurity/libs lane (Mondays 06:00 UTC) to
+# leave a working day of lead time.
+
+# Schedule and manual dispatch only, deliberately. Both jobs resolve the
+# action from a published ref (a release commit and @main), so a
+# pull_request trigger would test those refs and not the PR's own changes —
+# a green run that proves nothing about the change under review. To exercise
+# a working-tree change to the action, use bpfcompat-example-hosted, which
+# runs `uses: ./`. Dispatch this lane by hand before cutting a release.
+on:
+  schedule:
+    # Sundays 18:00 UTC — ~12h before the downstream lane runs.
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prebuilt:
+    name: Consumer canary (prebuilt release assets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install consumer dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # Intentionally minimal: no libbpf-dev, no compiler toolchain. A
+          # release-commit pin must not need them. cloud-image-utils supplies
+          # cloud-localds, which RHEL-family guests require for their seed ISO.
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM on the hosted runner
+        run: |
+          set -euo pipefail
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm || true
+            ls -l /dev/kvm
+          else
+            echo "::warning::/dev/kvm absent - falling back to TCG (slower, still correct)."
+          fi
+
+      - name: Validate via the published action (pinned to a release commit)
+        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        with:
+          artifact: examples/simple-pass/simple_pass.bpf.o
+          matrix: matrices/canary.yaml
+          out: reports/canary-prebuilt.json
+          markdown: reports/canary-prebuilt.md
+          timeout: 10m
+          concurrency: "2"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canary-prebuilt-${{ github.run_id }}
+          if-no-files-found: warn
+          path: reports/
+
+  source-build:
+    name: Consumer canary (source build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install consumer dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # The dependency set we document for source-built consumers, and
+          # the one falcosecurity/libs installs. Drift here is the failure
+          # this job exists to catch.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang llvm pkg-config autoconf automake \
+            libtool libelf-dev libbpf-dev zlib1g-dev \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM on the hosted runner
+        run: |
+          set -euo pipefail
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm || true
+            ls -l /dev/kvm
+          else
+            echo "::warning::/dev/kvm absent - falling back to TCG (slower, still correct)."
+          fi
+
+      - name: Build a loader binary to ship into the guests
+        run: |
+          set -euo pipefail
+          # Statically linked: the same binary has to run unchanged on every
+          # guest in the matrix, whose libc is older than the runner's.
+          make validator-static
+          file validator/c-libbpf/bin/bpfcompat-validator
+
+      - name: Validate via the published action (command mode, source build)
+        uses: Kernel-Guard/bpfcompat@main
+        with:
+          # Command mode with a shipped binary, mirroring how
+          # falcosecurity/libs drives its own loader: the per-kernel verdict
+          # is the command's exit code.
+          artifact: examples/simple-pass/simple_pass.bpf.o
+          command: $BPFCOMPAT_BIN --artifact $BPFCOMPAT_ARTIFACT --out /tmp/validator-result.json
+          command-binary: validator/c-libbpf/bin/bpfcompat-validator
+          matrix: matrices/canary.yaml
+          out: reports/canary-source.json
+          markdown: reports/canary-source.md
+          timeout: 10m
+          concurrency: "2"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canary-source-${{ github.run_id }}
+          if-no-files-found: warn
+          path: reports/
