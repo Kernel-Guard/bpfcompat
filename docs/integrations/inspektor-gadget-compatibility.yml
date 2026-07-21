@@ -1,0 +1,73 @@
+# Template: kernel compatibility matrix for published Inspektor Gadget gadgets.
+#
+# Copy into .github/workflows/ of a repository that publishes gadgets as OCI
+# images. It pulls each gadget by reference, extracts the eBPF object, and
+# loads it on unmodified vendor cloud images in disposable QEMU/KVM VMs.
+#
+# Nothing to build and no manifest to maintain: bpfcompat auto-sizes
+# runtime-sized maps (a gadget's ig_build_id ships with max_entries=0, sized
+# by IG's loader at runtime) and reports per-kernel load/attach results.
+#
+# Modelled on the lane running in falcosecurity/libs:
+# https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml
+name: gadget-kernel-compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly. Vendor images and kernels move underneath already-published
+    # gadgets, so this is a drift detector rather than a build gate.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  gadget-matrix:
+    name: gadget kernel compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        gadget:
+          - ghcr.io/inspektor-gadget/gadget/trace_open:latest
+          - ghcr.io/inspektor-gadget/gadget/trace_exec:latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install VM dependencies
+        run: |
+          sudo apt-get update
+          # cloud-image-utils provides cloud-localds: RHEL-family guests only
+          # boot from a genuine cloud-init seed ISO.
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM on the hosted runner
+        run: |
+          if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; ls -l /dev/kvm; fi
+
+      - name: Validate the published gadget across kernels
+        # Pinned by commit SHA; a SHA that matches a release resolves to
+        # prebuilt, checksum-verified binaries, so no toolchain is needed.
+        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        with:
+          # An OCI reference: bpfcompat pulls it and extracts the eBPF layer.
+          artifact: ${{ matrix.gadget }}
+          # Vendor kernels where "kernel version" stops predicting behaviour:
+          # RHEL 4.18 backports the ring buffer, so a gadget passes there
+          # while failing on Ubuntu's newer vanilla 5.4.
+          matrix: quirk-library
+          out: reports/gadget-compat.json
+          markdown: reports/gadget-compat.md
+          timeout: 15m
+          concurrency: "2"
+
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: gadget-compatibility-${{ strategy.job-index }}
+          path: reports/
+          if-no-files-found: warn
