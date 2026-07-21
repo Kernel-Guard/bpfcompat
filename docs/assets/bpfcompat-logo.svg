@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="bpfcompat">
+  <title>bpfcompat</title>
+  <!-- Mark only, no text: listing guidelines (CNCF landscape, ebpf.io) reject
+       font-rendered text, which does not render identically off-machine.
+       Shield = the CI gate; the stacked bars = kernel profiles, the lowest one
+       broken = the incompatible kernel the gate catches. -->
+  <path fill="#1d4ed8"
+        d="M128 16 32 52v76c0 58 41 97 96 112 55-15 96-54 96-112V52L128 16z"/>
+  <path fill="#3b82f6"
+        d="M128 16v224c55-15 96-54 96-112V52L128 16z"/>
+  <g fill="#ffffff">
+    <rect x="74" y="96"  width="108" height="16" rx="8"/>
+    <rect x="74" y="128" width="108" height="16" rx="8"/>
+    <!-- broken bar: the kernel that fails -->
+    <rect x="74" y="160" width="42"  height="16" rx="8"/>
+    <rect x="140" y="160" width="42" height="16" rx="8"/>
+  </g>
+</svg>
