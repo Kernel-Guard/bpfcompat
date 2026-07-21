@@ -32,11 +32,14 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
-**Runs upstream:** [falcosecurity/libs](https://github.com/falcosecurity/libs)
+**Runs upstream, weekly, green:** [falcosecurity/libs](https://github.com/falcosecurity/libs)
 merged a scheduled bpfcompat compatibility lane for Falco's `modern_bpf` probe,
 driven by Falco's real loader binary
 ([falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024),
 [workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+Its first scheduled run passed on every kernel in the matrix
+([run](https://github.com/falcosecurity/libs/actions/runs/29723206181)) — running
+unattended every week in a CNCF project's CI, on GitHub-hosted runners.
 
 ## Why not just rely on CO-RE / BTFHub?
 
@@ -257,6 +260,13 @@ from the tree under test and runs it inside each matrix kernel VM via
 [command mode](docs/command-validation.md) — the loader's exit code is the
 per-kernel verdict, with no manifest to keep in sync
 ([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+
+That lane is now running unattended: its **first scheduled run passed on every
+kernel in the matrix**
+([2026-07-20 run](https://github.com/falcosecurity/libs/actions/runs/29723206181)),
+building `scap-open` from `master` and validating it on Ubuntu 22.04 (5.15),
+Debian 12 (6.1) and Ubuntu 24.04 (6.8) in ~5 minutes on a GitHub-hosted runner,
+publishing the per-kernel matrix as a job summary and report artifact.
 
 ## Validate a published gadget in one command
 

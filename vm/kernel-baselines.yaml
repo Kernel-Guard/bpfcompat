@@ -134,6 +134,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 4.15.0-
+  - profile: ubuntu-18.04-4.15-k4.15.0-213
+    kernel: 4.15.0-213-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-20.04-5.4
     kernel: 5.4.0-216-generic
     recorded: "2026-06-11"
@@ -141,6 +144,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 5.4.0-
+  - profile: ubuntu-20.04-5.4-k5.4.0-218
+    kernel: 5.4.0-218-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-20.04-minimal-5.4
     kernel: 5.4.0-1133-kvm
     recorded: "2026-05-19"
@@ -162,6 +168,12 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 5.15.0-
+  - profile: ubuntu-22.04-5.15-k5.15.0-181
+    kernel: 5.15.0-181-generic
+    recorded: "2026-07-20"
+  - profile: ubuntu-22.04-5.15-k5.15.0-186
+    kernel: 5.15.0-186-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-22.04-5.15-lockdown
     kernel: 5.15.0-185-generic
     recorded: "2026-07-20"
@@ -169,6 +181,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 5.15.0-
+  - profile: ubuntu-22.04-5.15-lockdown-k5.15.0-186
+    kernel: 5.15.0-186-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-22.04-minimal-5.15
     kernel: 5.15.0-1104-kvm
     recorded: "2026-07-20"
@@ -190,6 +205,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 6.8.0-
+  - profile: ubuntu-24.04-6.8-k6.8.0-136
+    kernel: 6.8.0-136-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-24.04-minimal-6.8
     kernel: 6.8.0-136-generic
     recorded: "2026-07-20"
@@ -218,6 +236,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 6.17.0-
+  - profile: ubuntu-25.10-6.17-k6.17.0-41
+    kernel: 6.17.0-41-generic
+    recorded: "2026-07-20"
   - profile: ubuntu-25.10-minimal-6.17
     kernel: 6.17.0-40-generic
     recorded: "2026-07-20"
@@ -225,3 +246,6 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 6.17.0-
+  - profile: ubuntu-25.10-minimal-6.17-k6.17.0-41
+    kernel: 6.17.0-41-generic
+    recorded: "2026-07-20"
