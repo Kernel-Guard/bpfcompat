@@ -103,11 +103,61 @@ func UbuntuKernelDebs(entry Entry) ([]string, error) {
 		dir := headerURL[:strings.LastIndex(headerURL, "/")+1]
 		version, arch := versionArch[0], versionArch[1]
 		return []string{
-			fmt.Sprintf("%slinux-modules-%s_%s_%s.deb", dir, release, version, arch),
-			fmt.Sprintf("%slinux-image-unsigned-%s_%s_%s.deb", dir, release, version, arch),
+			httpsURL(fmt.Sprintf("%slinux-modules-%s_%s_%s.deb", dir, release, version, arch)),
+			httpsURL(fmt.Sprintf("%slinux-image-unsigned-%s_%s_%s.deb", dir, release, version, arch)),
 		}, nil
 	}
 	return nil, fmt.Errorf("no flavor-specific headers URL for %s to derive package URLs from", release)
+}
+
+// httpsURL upgrades a package URL to https. kernel-crawler publishes plain
+// http mirror URLs, but every mirror we derive from serves the same paths
+// over TLS, and these packages are installed as a kernel inside the guest —
+// so the download must not be modifiable in transit. Distro package
+// signatures are still verified at install time; this is defence in depth,
+// not a replacement for them.
+func httpsURL(raw string) string {
+	if strings.HasPrefix(raw, "http://") {
+		return "https://" + strings.TrimPrefix(raw, "http://")
+	}
+	return raw
+}
+
+// RHELKernelRPMs derives the bootable kernel RPM URLs for a RHEL-family
+// release from its crawler entry. The crawler publishes only the
+// kernel-devel RPM, which lives in AppStream; the packages that actually
+// provide a bootable kernel (vmlinuz plus modules) sit in BaseOS under the
+// same repository layout, so the AppStream URL pins the mirror, repository
+// version and architecture, and swapping the component and package name
+// yields the rest. The per-letter subdirectory some mirrors use (Rocky's
+// Packages/k/) is preserved because only the file name is replaced.
+func RHELKernelRPMs(entry Entry) ([]string, error) {
+	release := entry.KernelRelease
+	for _, headerURL := range entry.Headers {
+		slash := strings.LastIndex(headerURL, "/")
+		if slash < 0 {
+			continue
+		}
+		base := headerURL[slash+1:]
+		want := "kernel-devel-" + release + ".rpm"
+		if base != want {
+			continue
+		}
+		dir := headerURL[:slash+1]
+		if !strings.Contains(dir, "/AppStream/") {
+			return nil, fmt.Errorf("headers URL for %s is not under AppStream: %s", release, headerURL)
+		}
+		dir = strings.Replace(dir, "/AppStream/", "/BaseOS/", 1)
+		// kernel-core carries vmlinuz; the modules packages carry the
+		// drivers a guest needs to boot. Any remaining dependency is
+		// resolved by dnf from the guest's enabled repositories.
+		return []string{
+			httpsURL(dir + "kernel-core-" + release + ".rpm"),
+			httpsURL(dir + "kernel-modules-core-" + release + ".rpm"),
+			httpsURL(dir + "kernel-modules-" + release + ".rpm"),
+		}, nil
+	}
+	return nil, fmt.Errorf("no kernel-devel headers URL for %s to derive package URLs from", release)
 }
 
 // ParseInventory decodes a kernel-crawler list.json stream.

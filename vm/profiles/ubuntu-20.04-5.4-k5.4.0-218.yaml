@@ -6,8 +6,8 @@ kernel_family: "5.4"
 arch: x86_64
 install_kernel: 5.4.0-218-generic
 kernel_packages:
-    - http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.4.0-218-generic_5.4.0-218.238_amd64.deb
-    - http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.4.0-218-generic_5.4.0-218.238_amd64.deb
+    - https://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-modules-5.4.0-218-generic_5.4.0-218.238_amd64.deb
+    - https://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-image-unsigned-5.4.0-218-generic_5.4.0-218.238_amd64.deb
 image:
     source_url: https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img
     local_path: vm/cache/ubuntu-20.04.qcow2

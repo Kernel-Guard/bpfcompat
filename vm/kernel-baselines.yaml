@@ -21,6 +21,9 @@ baselines:
       target: almalinux
       release_prefix: 5.14.0-
       release_contains: el9
+  - profile: almalinux-9-5.14-k5.14.0-687.26.1.el9_8
+    kernel: 5.14.0-687.26.1.el9_8.x86_64
+    recorded: "2026-07-21"
   - profile: amazon-linux-2-5.10
     kernel: 5.10.259-258.1046.amzn2.x86_64
     recorded: "2026-07-20"
@@ -51,6 +54,9 @@ baselines:
       target: centos
       release_prefix: 5.14.0-
       release_contains: el9
+  - profile: centos-stream-9-5.14-k5.14.0-725.el9
+    kernel: 5.14.0-725.el9.x86_64
+    recorded: "2026-07-21"
   - profile: debian-11-5.10
     kernel: 5.10.0-42-cloud-amd64
     recorded: "2026-05-22"
@@ -112,6 +118,9 @@ baselines:
       target: rocky
       release_prefix: 5.14.0-
       release_contains: el9
+  - profile: rocky-9-5.14-k5.14.0-687.26.1.el9_8
+    kernel: 5.14.0-687.26.1.el9_8.x86_64
+    recorded: "2026-07-21"
   - profile: sles-15.6-6.4
     kernel: 6.4.0-150600.23.100-default
     recorded: "2026-05-19"

@@ -6,8 +6,8 @@ kernel_family: "6.8"
 arch: x86_64
 install_kernel: 6.8.0-136-generic
 kernel_packages:
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-modules-6.8.0-136-generic_6.8.0-136.136_amd64.deb
-    - http://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-image-unsigned-6.8.0-136-generic_6.8.0-136.136_amd64.deb
+    - https://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-modules-6.8.0-136-generic_6.8.0-136.136_amd64.deb
+    - https://mirrors.edge.kernel.org/ubuntu/pool/main/l/linux/linux-image-unsigned-6.8.0-136-generic_6.8.0-136.136_amd64.deb
 image:
     source_url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
     local_path: vm/cache/ubuntu-24.04.qcow2
