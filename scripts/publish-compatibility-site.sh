@@ -95,6 +95,10 @@ markdown_link() {
   echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "Version: \`$version_label\`"
   echo
+  echo "Runs upstream: [falcosecurity/libs](https://github.com/falcosecurity/libs) runs bpfcompat"
+  echo "weekly in CI to validate Falco's \`modern_bpf\` probe through its real loader"
+  echo "([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml))."
+  echo
   echo "| Artifact | Run | Status | Required pass/fail | Failure classes | JSON | Markdown |"
   echo "|---|---|---|---|---|---|---|"
   for report in "${reports[@]}"; do
@@ -125,6 +129,8 @@ markdown_link() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ | html_escape)" \
     "${#reports[@]}" \
     "$(printf '%s' "$version_label" | html_escape)"
+  # Static text only — no report-derived values are interpolated here.
+  echo '<p>Runs upstream: <a href="https://github.com/falcosecurity/libs">falcosecurity/libs</a> runs bpfcompat weekly in CI to validate Falco&#39;s <code>modern_bpf</code> probe through its real loader (<a href="https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml">workflow</a>).</p>'
   echo '<table><thead><tr><th>Artifact</th><th>Run</th><th>Status</th><th>Required pass/fail</th><th>Failure classes</th><th>JSON</th><th>Markdown</th></tr></thead><tbody>'
   for report in "${reports[@]}"; do
     artifact="$(report_field "$report" '.artifact.basename')"
