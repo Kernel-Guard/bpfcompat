@@ -1,0 +1,84 @@
+# Template: kernel compatibility matrix for a Go eBPF loader.
+#
+# For projects that load eBPF from Go — libbpfgo (Tracee), ebpf-go/cilium
+# (Cilium, Beyla, Parca) or anything wrapping libbpf. Copy into
+# .github/workflows/.
+#
+# The contract is your own binary. bpfcompat builds nothing and parses no
+# manifest: it ships the loader you built into each guest, runs it, and takes
+# the exit code as the per-kernel verdict. Nothing to keep in sync, because
+# there is no second description of what your loader does.
+#
+# This is the shape running in falcosecurity/libs:
+# https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml
+name: kernel-compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly; a drift detector, not a merge gate
+
+permissions:
+  contents: read
+
+jobs:
+  kernel-matrix:
+    name: loader kernel compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install VM dependencies
+        run: |
+          sudo apt-get update
+          # cloud-image-utils supplies cloud-localds; RHEL-family guests only
+          # boot from a real cloud-init seed ISO.
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM
+        run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
+
+      - name: Build the loader (static)
+        env:
+          CGO_ENABLED: "0" # cgo-free builds are static by default
+        run: |
+          set -euo pipefail
+          # Static matters: one binary runs unchanged on every guest, and the
+          # runner's glibc is newer than the RHEL-family guests'. With
+          # libbpfgo (cgo required) use instead:
+          #   CGO_ENABLED=1 go build -tags netgo \
+          #     -ldflags '-extldflags "-static"' -o bin/loader ./cmd/loader
+          go build -o bin/loader ./cmd/loader
+          file bin/loader
+
+      - name: Validate the loader across kernels
+        # Pinned by commit SHA. A SHA matching a release resolves to prebuilt,
+        # checksum-verified binaries, so no toolchain is needed for bpfcompat.
+        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        with:
+          # $BPFCOMPAT_BIN is your binary inside the guest. Give it whatever
+          # flags make it load, do a bounded amount of work, and exit.
+          command: $BPFCOMPAT_BIN --self-test
+          command-binary: bin/loader
+          # Built-in matrix of vendor kernels where the version number stops
+          # predicting behaviour (RHEL 4.18 backports the ring buffer, so it
+          # passes where a newer vanilla 5.4 fails). Swap for your own file.
+          matrix: quirk-library
+          out: reports/kernel-compat.json
+          markdown: reports/kernel-compat.md
+          timeout: 15m
+          concurrency: "2"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: kernel-compatibility-report
+          path: reports/
+          if-no-files-found: warn
