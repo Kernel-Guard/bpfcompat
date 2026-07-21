@@ -1,0 +1,101 @@
+# Template: prove your eBPF agent loads on RHEL CoreOS (OpenShift nodes).
+#
+# For ISVs shipping an eBPF agent to OpenShift customers. Copy into
+# .github/workflows/.
+#
+# Why this is its own template: OpenShift nodes do not run a distro you can
+# approximate. RHCOS is immutable, boots via Ignition rather than cloud-init,
+# and carries a heavily backported RHEL kernel whose version number does not
+# tell you what eBPF features are present. Two findings from the committed
+# evidence make the point:
+#
+#   * BPF-LSM is active on OCP 4.16/4.18 (RHEL 9.4) and REJECTED on 4.14
+#     (RHEL 9.2) -- the same 5.14 kernel line, opposite answers.
+#   * The RHCOS version string encodes the RHEL base, not the kernel:
+#     414.92 -> RHEL 9.2, 416.94 and 418.94 -> RHEL 9.4.
+#
+# So "we tested on RHEL 9" is not evidence for OpenShift, and neither is a
+# kernel version. Booting the actual node image is.
+#
+# The boot images are PUBLIC: a pull secret gates the OpenShift release
+# payload, not the RHCOS qcow2. No subscription is needed for this workflow.
+name: openshift-node-compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly: OpenShift z-streams move the node image underneath you.
+    - cron: "0 6 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  rhcos-matrix:
+    name: agent compatibility on RHCOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # Track the OpenShift releases your customers actually run.
+        ocp: ["4.14", "4.16", "4.18"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Enable KVM
+        run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
+
+      - name: Build your agent (static)
+        run: |
+          set -euo pipefail
+          # One binary has to run unchanged inside the RHCOS guest, whose
+          # glibc is older than the runner's. Replace with your build.
+          make agent-static
+
+      - name: Stage the RHCOS boot image
+        env:
+          OCP: ${{ matrix.ocp }}
+        run: |
+          set -euo pipefail
+          # Public mirror; no pull secret. Pinning the exact z-stream is
+          # better than "latest" if you want reproducible evidence.
+          base="https://mirror.openshift.com/pub/openshift-v4/x86_64/dependencies/rhcos/${OCP}/latest"
+          url="$(curl -fsSL "$base/" \
+            | grep -oE 'rhcos-[0-9.]+-x86_64-qemu\.x86_64\.qcow2\.gz' \
+            | head -1)"
+          test -n "$url"
+          git clone --depth 1 https://github.com/Kernel-Guard/bpfcompat /tmp/bpfcompat
+          make -C /tmp/bpfcompat rhcos-image \
+            RHCOS_VERSION="${OCP}" RHCOS_IMAGE_URL="${base}/${url}"
+          mkdir -p vm/cache
+          cp /tmp/bpfcompat/vm/cache/rhcos-${OCP}.qcow2 vm/cache/
+
+      - name: Validate the agent on the OpenShift node OS
+        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        env:
+          # RHCOS is opt-in: without a staged image it stays unsupported
+          # rather than being silently claimed runnable.
+          BPFCOMPAT_ENABLE_RHCOS: "1"
+        with:
+          command: $BPFCOMPAT_BIN --self-test
+          command-binary: bin/agent
+          matrix: rhcos
+          out: reports/openshift-${{ matrix.ocp }}.json
+          markdown: reports/openshift-${{ matrix.ocp }}.md
+          timeout: 25m
+          concurrency: "1"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: openshift-${{ matrix.ocp }}-compatibility
+          path: reports/
+          if-no-files-found: warn
