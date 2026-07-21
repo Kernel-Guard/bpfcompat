@@ -9,6 +9,7 @@ your project loads eBPF, not by what it does.
 | Loads eBPF from **Rust** (Aya) | [`rust-aya-compatibility.yml`](rust-aya-compatibility.yml) |
 | Publishes eBPF as **OCI artifacts** (Inspektor Gadget gadgets) | [`inspektor-gadget-compatibility.yml`](inspektor-gadget-compatibility.yml) |
 | Loads eBPF **at runtime** in a daemon or agent | [`library-gate.go.md`](library-gate.go.md) |
+| Ships an agent to **OpenShift** customers | [`openshift-rhcos-compatibility.yml`](openshift-rhcos-compatibility.yml) |
 | Loads eBPF from **C/libbpf** | Use the Go template and swap the build step; the contract is the binary, not the language. A live example is the [falcosecurity/libs lane](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml), which builds `scap-open` and runs it. |
 
 ## The one idea behind all of them
@@ -33,7 +34,11 @@ enterprise kernels the version number stops predicting behaviour:
 
 - RHEL-family **4.18** backports the BPF ring buffer, so an object using it
   passes there and fails on Ubuntu's *newer* vanilla **5.4**.
-- BPF-LSM is active in RHEL **9.4** but not **9.2** — the same 5.14 line.
+- BPF-LSM is active in RHEL **9.4** but not **9.2** — the same 5.14 line. On
+  OpenShift that is the difference between OCP 4.16/4.18 and 4.14, and the
+  RHCOS version string encodes the RHEL base rather than the kernel
+  (`414.92` → RHEL 9.2, `416.94`/`418.94` → RHEL 9.4), so neither the OCP
+  number nor the kernel version tells you the answer.
 
 Test images built from upstream kernel versions structurally cannot show you
 either of those. Real vendor images can.
