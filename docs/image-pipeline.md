@@ -124,6 +124,16 @@ publishes weekly ([per-arch `list.json`](https://falcosecurity.github.io/kernel-
   publishes no Debian entries, for example), `no-entries` (EOL series the
   archive dropped), and `no-kernel` (profile never validated) are reported
   distinctly from `stale`.
+- `covered` is the family-aware status. A stock cloud image can never ship
+  a kernel newer than itself, while the crawler tracks the newest *package*,
+  so an image-based profile would otherwise be flagged `stale` forever
+  through no fault of ours. When a
+  [kernel-sweep](#dense-kernel-sweeps-one-image-many-kernels)
+  profile in the same family (`<base>-k<release>`) has already installed and
+  validated the newest kernel, the base profile reports `covered` — naming
+  the profile that proves it — and is not counted as stale. Sibling variants
+  stay independent: `ubuntu-22.04-5.15-lockdown` is only covered by its own
+  `…-lockdown-k…` derivatives, never by plain `ubuntu-22.04-5.15` ones.
 
 The crawler indexes header packages, not bootable images, so it serves as
 a freshness oracle only — the boot substrate stays unmodified vendor cloud

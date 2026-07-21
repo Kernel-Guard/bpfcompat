@@ -263,3 +263,54 @@ func TestUbuntuKernelDebs(t *testing.T) {
 		t.Error("expected error without flavor-specific headers URL")
 	}
 }
+
+func TestEvaluateFamilyCoverage(t *testing.T) {
+	fetch := func(string) (Inventory, error) {
+		return Inventory{"ubuntu": {
+			{KernelRelease: "5.15.0-184-generic", Target: "ubuntu-generic"},
+		}}, nil
+	}
+	jammyCrawler := func() *CrawlerRef {
+		return &CrawlerRef{Distro: "ubuntu", Target: "ubuntu-generic", ReleasePrefix: "5.15.0-"}
+	}
+	baselines := Baselines{Baselines: []Baseline{
+		// Stock image lags; a sweep profile validated the newest kernel.
+		{Profile: "ubuntu-22.04-5.15", Kernel: "5.15.0-173-generic", Crawler: jammyCrawler()},
+		{Profile: "ubuntu-22.04-5.15-k5.15.0-184", Kernel: "5.15.0-184-generic"},
+		// Sibling variant: the base profile's derivative must not cover it.
+		{Profile: "ubuntu-22.04-5.15-lockdown", Kernel: "5.15.0-173-generic", Crawler: jammyCrawler()},
+		// Derivative that only reached an older kernel does not cover.
+		{Profile: "ubuntu-22.04-minimal-5.15", Kernel: "5.15.0-173-generic", Crawler: jammyCrawler()},
+		{Profile: "ubuntu-22.04-minimal-5.15-k5.15.0-181", Kernel: "5.15.0-181-generic"},
+		// "-k" not followed by a digit is not a derived profile.
+		{Profile: "ubuntu-23.10-5.15", Kernel: "5.15.0-173-generic", Crawler: jammyCrawler()},
+		{Profile: "ubuntu-23.10-5.15-kvm-extra", Kernel: "5.15.0-184-generic"},
+	}}
+
+	results, err := Evaluate(baselines, fetch)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	got := map[string]Result{}
+	for _, r := range results {
+		got[r.Profile] = r
+	}
+
+	if s := got["ubuntu-22.04-5.15"]; s.Status != StatusCovered {
+		t.Errorf("base: status %q, want %q", s.Status, StatusCovered)
+	} else if s.CoveredBy != "ubuntu-22.04-5.15-k5.15.0-184" {
+		t.Errorf("base: covered_by %q", s.CoveredBy)
+	}
+	for _, profile := range []string{
+		"ubuntu-22.04-5.15-lockdown",
+		"ubuntu-22.04-minimal-5.15",
+		"ubuntu-23.10-5.15",
+	} {
+		if s := got[profile]; s.Status != StatusStale {
+			t.Errorf("%s: status %q, want %q", profile, s.Status, StatusStale)
+		}
+	}
+	if n := StaleCount(results); n != 3 {
+		t.Errorf("StaleCount = %d, want 3", n)
+	}
+}
