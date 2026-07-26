@@ -55,6 +55,12 @@ jobs:
         # unquoted colon in a description) breaks every consumer at "Set up
         # job" with no way to patch the tag. Catch it before release.
         run: python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in ['action.yml'] + glob.glob('.github/workflows/*.yml')]; print('ok')"
+      - name: Action OCI-artifact detection regression
+        # Guards the fix that lets the action accept remote OCI references
+        # (ghcr.io/...) as `artifact`. Extracts is_remote_artifact() from
+        # action.yml and asserts its classification, so the v0.3.2 regression
+        # (OCI refs rejected as missing local files) cannot silently return.
+        run: bash scripts/action-artifact-ref-detection_test.sh
       - name: go vet
         run: go vet ./...
       - name: go test
