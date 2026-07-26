@@ -34,9 +34,12 @@ fi
 os="$(uname -s)"; arch="$(uname -m)"
 [ "$os" = "Linux" ] || die "unsupported OS '$os' (only Linux is published today)"
 case "$arch" in
-  x86_64|amd64) ;;
-  *) die "unsupported arch '$arch' (only x86_64 is published today; build from source: https://github.com/$REPO)";;
+  x86_64|amd64) GOARCH=amd64 ;;
+  aarch64|arm64) GOARCH=arm64 ;;
+  *) die "unsupported arch '$arch' (published: x86_64, arm64; build from source: https://github.com/$REPO)";;
 esac
+CLI_ASSET="bpfcompat-linux-$GOARCH"
+VALIDATOR_ASSET="bpfcompat-validator-static-linux-$GOARCH"
 
 VERSION="${BPFCOMPAT_VERSION:-latest}"
 if [ "$VERSION" = "latest" ]; then
@@ -45,20 +48,31 @@ if [ "$VERSION" = "latest" ]; then
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
 base="https://github.com/$REPO/releases/download/$VERSION"
-err "installing bpfcompat $VERSION (linux/x86_64)"
+err "installing bpfcompat $VERSION (linux/$GOARCH)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
 
-DL_FILES="bpfcompat-linux-amd64"
-curl -fsSLO "$base/bpfcompat-linux-amd64" || die "download failed: bpfcompat-linux-amd64 ($VERSION)"
+DL_FILES="$CLI_ASSET"
+curl -fsSLO "$base/$CLI_ASSET" || die "download failed: $CLI_ASSET ($VERSION)"
 curl -fsSLO "$base/SHA256SUMS" || die "download failed: SHA256SUMS ($VERSION)"
 install_validator=1
 [ "${BPFCOMPAT_NO_VALIDATOR:-0}" = "1" ] && install_validator=0
+# The static C validator is published for amd64 only today. If this release has
+# no validator for the current arch, install the CLI without it rather than
+# failing - VM artifact validation then needs `make validator-static` locally or
+# command mode. (SHA256SUMS is integrity-checked below regardless.)
 if [ "$install_validator" = "1" ]; then
-  curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64" || die "download failed: validator ($VERSION)"
-  DL_FILES="$DL_FILES bpfcompat-validator-static-linux-amd64"
+  if grep -qE "^[0-9a-fA-F]{64}  ${VALIDATOR_ASSET}\$" SHA256SUMS; then
+    curl -fsSLO "$base/$VALIDATOR_ASSET" || die "download failed: $VALIDATOR_ASSET ($VERSION)"
+    DL_FILES="$DL_FILES $VALIDATOR_ASSET"
+  else
+    install_validator=0
+    err "note: no prebuilt validator for $GOARCH in $VERSION - installing the CLI only."
+    err "      artifact-mode VM validation needs the validator: build it with"
+    err "      'make validator-static' on an $GOARCH host, or use command mode."
+  fi
 fi
 
 # 1. Cryptographic verification first. Checksums come from the same origin as
@@ -104,12 +118,12 @@ if [ ! -w "$(dirname "$BIN_DIR")" ] || { [ -d "$BIN_DIR" ] && [ ! -w "$BIN_DIR" 
 fi
 
 $SUDO install -d "$BIN_DIR"
-$SUDO install -m 0755 bpfcompat-linux-amd64 "$BIN_DIR/bpfcompat"
+$SUDO install -m 0755 "$CLI_ASSET" "$BIN_DIR/bpfcompat"
 err "installed $BIN_DIR/bpfcompat"
 
 if [ "$install_validator" = "1" ]; then
   $SUDO install -d "$LIBEXEC_DIR"
-  $SUDO install -m 0755 bpfcompat-validator-static-linux-amd64 "$LIBEXEC_DIR/bpfcompat-validator"
+  $SUDO install -m 0755 "$VALIDATOR_ASSET" "$LIBEXEC_DIR/bpfcompat-validator"
   err "installed $LIBEXEC_DIR/bpfcompat-validator (auto-discovered by 'bpfcompat test')"
 fi
 

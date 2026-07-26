@@ -334,10 +334,12 @@ guest-side validator (the installer and the prebuilt option set it up where the
 CLI discovers it) plus the kernel matrices in this repo, and a KVM-capable Linux
 host with `qemu-system-x86_64` for VM-backed runs.
 
-**0. One-command install (quickest, Linux x86_64).** Downloads the CLI and the
-static guest validator, verifies them against the release `SHA256SUMS` (and the
-cosign signature when `cosign` is present), and installs the validator where
-`bpfcompat test` finds it automatically:
+**0. One-command install (quickest, Linux x86_64 / arm64).** Downloads the CLI
+and the static guest validator, verifies them against the release `SHA256SUMS`
+(and the cosign signature when `cosign` is present), and installs the validator
+where `bpfcompat test` finds it automatically. On arm64 the CLI installs but the
+static validator is not published yet, so artifact-mode VM validation there
+needs `make validator-static` or command mode:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
@@ -346,11 +348,13 @@ curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts
 Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`, and
 `BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)).
 
-**1. Prebuilt release binary (Linux x86_64).** Installs the CLI *and* the static
-validator (to a location the CLI auto-discovers), checksum-verified:
+**1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and* the
+static validator (to a location the CLI auto-discovers), checksum-verified. The
+validator is currently published for amd64 only; on arm64 use the CLI plus
+`make validator-static` or command mode:
 
 ```bash
-VER=v0.3.5
+VER=v0.3.6
 base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
@@ -393,16 +397,16 @@ a kernel matrix — use option 1 or 2 for that.
 ![Installing bpfcompat with go install](docs/images/install/install-go-install.png)
 
 **4. Container image (GHCR).** The CLI and `serve` API as a distroless,
-cosign-signed image (amd64), published per release:
+cosign-signed multi-arch image (amd64 + arm64), published per release:
 
 ```bash
-docker run --rm ghcr.io/kernel-guard/bpfcompat:v0.3.5 version
+docker run --rm ghcr.io/kernel-guard/bpfcompat:v0.3.6 version
 ```
 
 The image is the lean CLI/API build (no bundled qemu), so VM-backed validation
 still needs a KVM host — use option 0 or the GitHub Action for the kernel
 matrix. Verify provenance with
-`cosign verify ghcr.io/kernel-guard/bpfcompat:v0.3.5 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+`cosign verify ghcr.io/kernel-guard/bpfcompat:v0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 ### What a run looks like
 

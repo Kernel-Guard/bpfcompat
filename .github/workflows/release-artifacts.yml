@@ -84,6 +84,12 @@ jobs:
             -X github.com/kernel-guard/bpfcompat/internal/version.BuildDate=${BUILD_DATE}"
           go build -trimpath -ldflags "$LDFLAGS" -o dist/bpfcompat ./cmd/bpfcompat
           cp dist/bpfcompat dist/bpfcompat-linux-amd64
+          # arm64 CLI, cross-compiled (the orchestrator is pure Go). The static
+          # C validator is NOT cross-built here (see #103): artifact-mode VM
+          # validation on arm64 needs `make validator-static` on an arm64 host,
+          # or use command mode which ships no host-side validator.
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "$LDFLAGS" -o dist/bpfcompat-linux-arm64 ./cmd/bpfcompat
       - name: Build static validator
         run: |
           set -euo pipefail
@@ -96,7 +102,7 @@ jobs:
           set -euo pipefail
           cd dist
           sha256sum bpfcompat > bpfcompat.sha256
-          sha256sum bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 > SHA256SUMS
+          sha256sum bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 > SHA256SUMS
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -113,6 +119,7 @@ jobs:
         with:
           subject-path: |
             dist/bpfcompat-linux-amd64
+            dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
       - name: Attest SBOM (tag releases only)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -147,6 +154,7 @@ jobs:
             dist/bpfcompat
             dist/bpfcompat.sha256
             dist/bpfcompat-linux-amd64
+            dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
             dist/SHA256SUMS
             dist/SHA256SUMS.sig
@@ -166,6 +174,7 @@ jobs:
         with:
           files: |
             dist/bpfcompat-linux-amd64
+            dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
             dist/SHA256SUMS
             dist/SHA256SUMS.sig
