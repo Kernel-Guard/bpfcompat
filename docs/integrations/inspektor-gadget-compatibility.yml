@@ -51,7 +51,7 @@ jobs:
       - name: Validate the published gadget across kernels
         # Pinned by commit SHA; a SHA that matches a release resolves to
         # prebuilt, checksum-verified binaries, so no toolchain is needed.
-        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        uses: Kernel-Guard/bpfcompat@a91b25568563d322220f8fea8fa1ee26d231c8fd # v0.3.3
         with:
           # An OCI reference: bpfcompat pulls it and extracts the eBPF layer.
           artifact: ${{ matrix.gadget }}
