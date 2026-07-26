@@ -400,13 +400,14 @@ a kernel matrix — use option 1 or 2 for that.
 cosign-signed multi-arch image (amd64 + arm64), published per release:
 
 ```bash
-docker run --rm ghcr.io/kernel-guard/bpfcompat:v0.3.6 version
+docker run --rm ghcr.io/kernel-guard/bpfcompat:latest version
 ```
 
-The image is the lean CLI/API build (no bundled qemu), so VM-backed validation
-still needs a KVM host — use option 0 or the GitHub Action for the kernel
-matrix. Verify provenance with
-`cosign verify ghcr.io/kernel-guard/bpfcompat:v0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+Tags follow the release without the `v` prefix (`0.3.6`, `0.3`, `latest`). The
+image is the lean CLI/API build (no bundled qemu), so VM-backed validation still
+needs a KVM host — use option 0 or the GitHub Action for the kernel matrix.
+Verify provenance with
+`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 ### What a run looks like
 
