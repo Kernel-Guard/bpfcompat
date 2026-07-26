@@ -51,33 +51,51 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
 
+DL_FILES="bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-linux-amd64" || die "download failed: bpfcompat-linux-amd64 ($VERSION)"
 curl -fsSLO "$base/SHA256SUMS" || die "download failed: SHA256SUMS ($VERSION)"
 install_validator=1
 [ "${BPFCOMPAT_NO_VALIDATOR:-0}" = "1" ] && install_validator=0
 if [ "$install_validator" = "1" ]; then
   curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64" || die "download failed: validator ($VERSION)"
+  DL_FILES="$DL_FILES bpfcompat-validator-static-linux-amd64"
 fi
 
-err "verifying checksums"
-$SHACHK --ignore-missing SHA256SUMS >/dev/null 2>&1 || $SHACHK SHA256SUMS 2>/dev/null \
-  || die "checksum verification failed"
-
-# Optional but preferred: verify the cosign signature over SHA256SUMS.
+# 1. Cryptographic verification first. Checksums come from the same origin as
+#    the binaries, so they catch corruption but not a malicious mirror; the
+#    Sigstore signature over SHA256SUMS is what makes tampering detectable. When
+#    cosign is available we REQUIRE it to pass - a failed or unfetchable
+#    signature aborts the install (fail closed).
 if have cosign; then
-  if curl -fsSLO "$base/SHA256SUMS.sig" && curl -fsSLO "$base/SHA256SUMS.crt"; then
-    if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-        --certificate-identity-regexp "github.com/$REPO" \
-        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-        SHA256SUMS >/dev/null 2>&1; then
-      err "cosign signature verified"
-    else
-      err "warning: cosign signature check did not pass; continuing on checksum verification only"
-    fi
+  curl -fsSLO "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
+  curl -fsSLO "$base/SHA256SUMS.crt" || die "cannot fetch SHA256SUMS.crt for signature verification"
+  if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
+      --certificate-identity-regexp "^https://github.com/$REPO/" \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      SHA256SUMS >/dev/null 2>&1; then
+    err "cosign signature over SHA256SUMS verified"
+  else
+    die "cosign signature verification FAILED for SHA256SUMS - refusing to install"
   fi
 else
-  err "cosign not found; verified via SHA256SUMS only (install cosign for signature verification)"
+  err "WARNING: cosign not installed - cannot cryptographically verify this release."
+  err "         Falling back to checksum-only integrity, which does NOT defend"
+  err "         against a malicious mirror. Install cosign and re-run for full"
+  err "         supply-chain verification."
 fi
+
+# 2. Strict checksum check, scoped to exactly the files being installed. Every
+#    required file must have a matching entry in SHA256SUMS or we abort - no
+#    --ignore-missing, no error suppression, no silent pass.
+err "verifying checksums"
+: > .install-checklist
+for f in $DL_FILES; do
+  line="$(grep -E "^[0-9a-fA-F]{64}  ${f}\$" SHA256SUMS || true)"
+  [ -n "$line" ] || die "no SHA256SUMS entry for '$f' - refusing to install"
+  printf '%s\n' "$line" >> .install-checklist
+done
+$SHACHK .install-checklist >/dev/null || die "checksum verification failed for: $DL_FILES"
+err "checksums verified: $DL_FILES"
 
 # Install, using sudo only when the target dirs are not writable.
 SUDO=""
