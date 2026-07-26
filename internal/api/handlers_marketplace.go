@@ -50,8 +50,11 @@ func (s *Server) handleGitHubMarketplaceWebhook(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	deliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
-	eventType := strings.TrimSpace(r.Header.Get("X-GitHub-Event"))
+	// Both come straight from request headers, so strip line breaks before they
+	// reach any log sink (CWE-117); the sanitized values are also what we switch
+	// on and persist, which is harmless for well-formed GitHub deliveries.
+	deliveryID := sanitizeLogValue(strings.TrimSpace(r.Header.Get("X-GitHub-Delivery")))
+	eventType := sanitizeLogValue(strings.TrimSpace(r.Header.Get("X-GitHub-Event")))
 
 	if err := marketplace.VerifySignature(secret, r.Header.Get("X-Hub-Signature-256"), body); err != nil {
 		// Log the precise reason server-side; return a coarse message so the
@@ -107,19 +110,19 @@ func (s *Server) handleGitHubMarketplaceWebhook(w http.ResponseWriter, r *http.R
 		s.log().Error("persist github marketplace event failed",
 			slog.String("error", err.Error()),
 			slog.String("delivery", deliveryID),
-			slog.String("action", event.Action),
+			slog.String("action", sanitizeLogValue(event.Action)),
 		)
 		writeError(w, http.StatusInternalServerError, "failed to record marketplace event")
 		return
 	}
 
 	s.log().Info("github marketplace event recorded",
-		slog.String("action", event.Action),
+		slog.String("action", sanitizeLogValue(event.Action)),
 		slog.Bool("action_known", marketplace.KnownActions[event.Action]),
 		slog.String("delivery", deliveryID),
-		slog.String("account", event.MarketplacePurchase.Account.Login),
+		slog.String("account", sanitizeLogValue(event.MarketplacePurchase.Account.Login)),
 		slog.Int64("account_id", event.MarketplacePurchase.Account.ID),
-		slog.String("plan", event.MarketplacePurchase.Plan.Name),
+		slog.String("plan", sanitizeLogValue(event.MarketplacePurchase.Plan.Name)),
 		slog.String("ledger", filepath.Base(path)),
 	)
 

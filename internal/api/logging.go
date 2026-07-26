@@ -253,6 +253,9 @@ func withRequestLogging(next http.Handler, logger *slog.Logger) http.Handler {
 		if requestID == "" {
 			requestID = generateRequestID()
 		}
+		// Echoed from a request header, so it is user-controllable; strip line
+		// breaks before it reaches a log sink or a response header.
+		requestID = sanitizeLogValue(requestID)
 		w.Header().Set(headerRequestID, requestID)
 		ctx := contextWithRequestID(r.Context(), requestID)
 
@@ -269,6 +272,10 @@ func withRequestLogging(next http.Handler, logger *slog.Logger) http.Handler {
 
 		lw := &loggingResponseWriter{ResponseWriter: w}
 		start := time.Now()
+		// Sanitize user-controlled request fields once for the log sinks below
+		// (method/path can contain attacker-chosen bytes; strip line breaks).
+		logMethod := sanitizeLogValue(r.Method)
+		logPath := sanitizeLogValue(r.URL.Path)
 		defer func() {
 			if rec := recover(); rec != nil {
 				if lw.status == 0 {
@@ -276,8 +283,8 @@ func withRequestLogging(next http.Handler, logger *slog.Logger) http.Handler {
 				}
 				attrs := []slog.Attr{
 					slog.String("request_id", requestID),
-					slog.String("method", r.Method),
-					slog.String("path", r.URL.Path),
+					slog.String("method", logMethod),
+					slog.String("path", logPath),
 					slog.Any("panic", rec),
 				}
 				attrs = appendTraceAttrs(attrs, tc, ok)
@@ -297,13 +304,13 @@ func withRequestLogging(next http.Handler, logger *slog.Logger) http.Handler {
 			}
 			attrs := []slog.Attr{
 				slog.String("request_id", requestID),
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("method", logMethod),
+				slog.String("path", logPath),
 				slog.Int("status", status),
 				slog.Int("response_bytes", lw.bytes),
 				slog.Duration("duration", time.Since(start)),
-				slog.String("remote", r.RemoteAddr),
-				slog.String("client_ip", clientIP(r)),
+				slog.String("remote", sanitizeLogValue(r.RemoteAddr)),
+				slog.String("client_ip", sanitizeLogValue(clientIP(r))),
 			}
 			attrs = appendTraceAttrs(attrs, tc, ok)
 			logger.LogAttrs(ctx, level, "http request", attrs...)
@@ -320,4 +327,15 @@ func appendTraceAttrs(attrs []slog.Attr, tc traceContext, ok bool) []slog.Attr {
 		return attrs
 	}
 	return append(attrs, slog.String("trace_id", tc.TraceID), slog.String("span_id", tc.SpanID))
+}
+
+// sanitizeLogValue strips carriage returns and newlines from a user-controlled
+// string before it is written to a log (CWE-117 / log injection): without this
+// an attacker-chosen request field could forge extra log lines. Replacing the
+// line-break characters is the barrier CodeQL's go/log-injection query
+// recognizes as a sanitizer.
+func sanitizeLogValue(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }
