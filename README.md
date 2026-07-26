@@ -328,21 +328,37 @@ the project's focus.
 
 ## Install
 
-There are three ways to get the CLI. Most users want the prebuilt release
-binary or the source build, because running `bpfcompat test` also needs the
-guest-side validator binary and the kernel matrices that ship in this repo.
+The quickest path is the one-command installer. Prebuilt binaries, a source
+build, and `go install` are also available. Running `bpfcompat test` needs the
+guest-side validator (the installer and the prebuilt option set it up where the
+CLI discovers it) plus the kernel matrices in this repo, and a KVM-capable Linux
+host with `qemu-system-x86_64` for VM-backed runs.
 
-**1. Prebuilt release binary (recommended, Linux x86_64).** Ships the CLI *and*
-the static validator, checksum-verified:
+**0. One-command install (quickest, Linux x86_64).** Downloads the CLI and the
+static guest validator, verifies them against the release `SHA256SUMS` (and the
+cosign signature when `cosign` is present), and installs the validator where
+`bpfcompat test` finds it automatically:
 
 ```bash
-VER=v0.3.2
+curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
+```
+
+Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`, and
+`BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)).
+
+**1. Prebuilt release binary (Linux x86_64).** Installs the CLI *and* the static
+validator (to a location the CLI auto-discovers), checksum-verified:
+
+```bash
+VER=v0.3.5
 base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
 curl -fsSLO "$base/SHA256SUMS"
 sha256sum -c SHA256SUMS --ignore-missing
 sudo install -m 0755 bpfcompat-linux-amd64 /usr/local/bin/bpfcompat
+sudo install -D -m 0755 bpfcompat-validator-static-linux-amd64 \
+  /usr/local/libexec/bpfcompat/bpfcompat-validator
 bpfcompat version
 ```
 
@@ -375,6 +391,18 @@ still need the validator binary (from a release or `make validator-static`) and
 a kernel matrix — use option 1 or 2 for that.
 
 ![Installing bpfcompat with go install](docs/images/install/install-go-install.png)
+
+**4. Container image (GHCR).** The CLI and `serve` API as a distroless,
+cosign-signed image (amd64), published per release:
+
+```bash
+docker run --rm ghcr.io/kernel-guard/bpfcompat:v0.3.5 version
+```
+
+The image is the lean CLI/API build (no bundled qemu), so VM-backed validation
+still needs a KVM host — use option 0 or the GitHub Action for the kernel
+matrix. Verify provenance with
+`cosign verify ghcr.io/kernel-guard/bpfcompat:v0.3.5 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 ### What a run looks like
 

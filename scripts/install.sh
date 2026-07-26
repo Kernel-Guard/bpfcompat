@@ -1,0 +1,103 @@
+#!/bin/sh
+# bpfcompat one-command installer.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
+#
+# Downloads the prebuilt bpfcompat CLI and its static guest validator from the
+# GitHub release, verifies both against the release SHA256SUMS (and, if cosign is
+# present, the signature over SHA256SUMS), and installs them. The validator goes
+# to a location the CLI discovers automatically, so `bpfcompat test` works from
+# any directory.
+#
+# Environment overrides:
+#   BPFCOMPAT_VERSION      release tag to install (default: latest)
+#   BPFCOMPAT_BIN_DIR      CLI install dir       (default: /usr/local/bin)
+#   BPFCOMPAT_LIBEXEC_DIR  validator install dir (default: /usr/local/libexec/bpfcompat)
+#   BPFCOMPAT_NO_VALIDATOR set to 1 to install the CLI only
+#
+# Only Linux/x86_64 is published today; the script exits clearly on anything else.
+set -eu
+
+REPO="Kernel-Guard/bpfcompat"
+BIN_DIR="${BPFCOMPAT_BIN_DIR:-/usr/local/bin}"
+LIBEXEC_DIR="${BPFCOMPAT_LIBEXEC_DIR:-/usr/local/libexec/bpfcompat}"
+
+err() { printf 'bpfcompat-install: %s\n' "$*" >&2; }
+die() { err "$*"; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+have curl || die "curl is required"
+if have sha256sum; then SHACHK="sha256sum -c"; elif have shasum; then SHACHK="shasum -a 256 -c"; else
+  die "need sha256sum or shasum to verify downloads"
+fi
+
+os="$(uname -s)"; arch="$(uname -m)"
+[ "$os" = "Linux" ] || die "unsupported OS '$os' (only Linux is published today)"
+case "$arch" in
+  x86_64|amd64) ;;
+  *) die "unsupported arch '$arch' (only x86_64 is published today; build from source: https://github.com/$REPO)";;
+esac
+
+VERSION="${BPFCOMPAT_VERSION:-latest}"
+if [ "$VERSION" = "latest" ]; then
+  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+  [ -n "$VERSION" ] || die "could not resolve the latest release tag"
+fi
+base="https://github.com/$REPO/releases/download/$VERSION"
+err "installing bpfcompat $VERSION (linux/x86_64)"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cd "$tmp"
+
+curl -fsSLO "$base/bpfcompat-linux-amd64" || die "download failed: bpfcompat-linux-amd64 ($VERSION)"
+curl -fsSLO "$base/SHA256SUMS" || die "download failed: SHA256SUMS ($VERSION)"
+install_validator=1
+[ "${BPFCOMPAT_NO_VALIDATOR:-0}" = "1" ] && install_validator=0
+if [ "$install_validator" = "1" ]; then
+  curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64" || die "download failed: validator ($VERSION)"
+fi
+
+err "verifying checksums"
+$SHACHK --ignore-missing SHA256SUMS >/dev/null 2>&1 || $SHACHK SHA256SUMS 2>/dev/null \
+  || die "checksum verification failed"
+
+# Optional but preferred: verify the cosign signature over SHA256SUMS.
+if have cosign; then
+  if curl -fsSLO "$base/SHA256SUMS.sig" && curl -fsSLO "$base/SHA256SUMS.crt"; then
+    if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
+        --certificate-identity-regexp "github.com/$REPO" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        SHA256SUMS >/dev/null 2>&1; then
+      err "cosign signature verified"
+    else
+      err "warning: cosign signature check did not pass; continuing on checksum verification only"
+    fi
+  fi
+else
+  err "cosign not found; verified via SHA256SUMS only (install cosign for signature verification)"
+fi
+
+# Install, using sudo only when the target dirs are not writable.
+SUDO=""
+if [ ! -w "$(dirname "$BIN_DIR")" ] || { [ -d "$BIN_DIR" ] && [ ! -w "$BIN_DIR" ]; }; then
+  have sudo && SUDO="sudo" || die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
+fi
+
+$SUDO install -d "$BIN_DIR"
+$SUDO install -m 0755 bpfcompat-linux-amd64 "$BIN_DIR/bpfcompat"
+err "installed $BIN_DIR/bpfcompat"
+
+if [ "$install_validator" = "1" ]; then
+  $SUDO install -d "$LIBEXEC_DIR"
+  $SUDO install -m 0755 bpfcompat-validator-static-linux-amd64 "$LIBEXEC_DIR/bpfcompat-validator"
+  err "installed $LIBEXEC_DIR/bpfcompat-validator (auto-discovered by 'bpfcompat test')"
+fi
+
+printf '\n'
+"$BIN_DIR/bpfcompat" version || true
+printf '\nNext:\n'
+printf '  bpfcompat test --artifact <your.bpf.o> --quick        # needs a KVM-capable Linux host (qemu-system-x86_64)\n'
+printf '  bpfcompat test --artifact ghcr.io/org/gadget:tag --quick   # validate a published OCI gadget\n'
+printf 'Docs: https://github.com/%s\n' "$REPO"

@@ -200,12 +200,9 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 
 	validatorBinPath := ""
 	if !commandMode {
-		validatorBinPath, err = filepath.Abs("validator/c-libbpf/bin/bpfcompat-validator")
+		validatorBinPath, err = resolveValidatorBinary()
 		if err != nil {
-			return RunResult{}, fmt.Errorf("resolve validator path: %w", err)
-		}
-		if _, err := os.Stat(validatorBinPath); err != nil {
-			return RunResult{}, fmt.Errorf("validator binary not found at %s; run `make validator-static` first", validatorBinPath)
+			return RunResult{}, err
 		}
 		if runner == RunnerVM {
 			dynamic, err := validatorIsDynamicallyLinked(validatorBinPath)
@@ -1351,4 +1348,35 @@ func summarizeTargets(targets []schema.Target) (supportedProfiles []string, fail
 	sort.Strings(failedProfiles)
 	sort.Strings(classificationCodes)
 	return supportedProfiles, failedProfiles, requiredPassed, requiredFailed, classificationCodes
+}
+
+// resolveValidatorBinary locates the guest-side static validator that the VM
+// flow ships into each kernel VM. It checks, in order: $BPFCOMPAT_VALIDATOR_BIN,
+// the standard installed locations (so a prebuilt / one-command install works
+// from any directory), and finally the repo-relative build output for source
+// checkouts. This mirrors the agent host-load resolver so both paths agree.
+func resolveValidatorBinary() (string, error) {
+	candidates := []string{}
+	if env := strings.TrimSpace(os.Getenv("BPFCOMPAT_VALIDATOR_BIN")); env != "" {
+		candidates = append(candidates, env)
+	}
+	candidates = append(candidates,
+		"/usr/local/libexec/bpfcompat/bpfcompat-validator",
+		"/usr/libexec/bpfcompat/bpfcompat-validator",
+		"validator/c-libbpf/bin/bpfcompat-validator",
+	)
+	var lastErr error
+	for _, c := range candidates {
+		abs, absErr := filepath.Abs(filepath.Clean(c))
+		if absErr != nil {
+			lastErr = absErr
+			continue
+		}
+		if _, statErr := os.Stat(abs); statErr == nil {
+			return abs, nil
+		} else {
+			lastErr = statErr
+		}
+	}
+	return "", fmt.Errorf("validator binary not found: set $BPFCOMPAT_VALIDATOR_BIN, install it to /usr/local/libexec/bpfcompat/bpfcompat-validator, or run `make validator-static` in a source checkout (last error: %v)", lastErr)
 }
