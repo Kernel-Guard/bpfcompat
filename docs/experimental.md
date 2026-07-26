@@ -28,6 +28,11 @@ An alternative microVM backend that builds a minimal initramfs instead of
 booting a cloud image. Faster per-boot, but it does not run *vendor* kernels —
 which is the product's differentiator — so it stays a proof.
 
+**Status: local proof only, not exercised in CI.** The `firecracker-preflight.yml`
+workflow is defined but has **not been run in CI** (0 runs to date), so treat
+this lane as unproven in automation — it is validated by the local `make`
+targets below, nothing more.
+
 ```bash
 make firecracker-preflight
 make acceptance-firecracker-dev-one

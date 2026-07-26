@@ -41,6 +41,15 @@ Its first scheduled run passed on every kernel in the matrix
 ([run](https://github.com/falcosecurity/libs/actions/runs/29723206181)) — running
 unattended every week in a CNCF project's CI, on GitHub-hosted runners.
 
+**Trust & provenance at a glance:** CI, CodeQL, and OpenSSF Scorecard run on
+every change (badges above); every tagged release ships checksums, cosign
+keyless signatures, a CycloneDX SBOM, and SLSA Build L3 build-provenance; the
+action verifies checksums and hard-fails on mismatch; vulnerabilities go through
+a private policy. What's runnable today is a generated, CI-checked page, not a
+prose claim. Details: [supply-chain posture](#supply-chain-posture) ·
+[verifying releases](docs/verifying-releases.md) ·
+[support matrix](docs/support-matrix.md) · [security policy](SECURITY.md).
+
 ## Why not just rely on CO-RE / BTFHub?
 
 CO-RE makes a `.bpf.o` *portable in principle*; it does not guarantee it will
