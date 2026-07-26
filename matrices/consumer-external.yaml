@@ -1,0 +1,10 @@
+# Small kernel set for the external-consumer canary: one modern mainline kernel
+# and one RHEL-family backport kernel. Both support the ring buffer / modern_bpf
+# and both build KubeArmor's BPF on-target, so all three independent consumers
+# (Inspektor Gadget, KubeArmor, Falco) are expected to pass on both.
+name: consumer-external
+profiles:
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: almalinux-8-4.18
+    required: true
