@@ -169,6 +169,7 @@ func runTest(args []string) int {
 	fs.StringVar(&cfg.Command, "command", "", "Command-mode validation: shell command run inside each kernel VM (verdict = exit code). Exposes $BPFCOMPAT_BIN/$BPFCOMPAT_ARTIFACT. Use instead of --artifact to validate via a real loader binary/command.")
 	fs.StringVar(&cfg.CommandBinary, "command-binary", "", "Command mode: local executable shipped into each guest and exposed to --command as $BPFCOMPAT_BIN")
 	fs.IntVar(&cfg.CommandExpectExit, "command-expect-exit", 0, "Command mode: exit code that counts as a pass (default 0)")
+	fs.IntVar(&cfg.DiskResizeGB, "disk-resize", 0, "Grow each guest overlay disk by N GiB before boot (cloud-init growpart expands it). Use for command-mode lanes that install a toolchain or build inside near-full cloud images.")
 	fs.StringVar(&cfg.ArtifactURI, "artifact-uri", "", "Optional remote URI for artifact retrieval metadata (http|https|file)")
 	fs.StringVar(&cfg.ArtifactName, "artifact-name", "", "Logical artifact family name for version history (optional)")
 	fs.StringVar(&cfg.ArtifactVersion, "artifact-version", "", "Artifact version label for version history (optional)")

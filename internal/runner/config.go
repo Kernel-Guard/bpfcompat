@@ -51,7 +51,11 @@ type Config struct {
 	CommandBinary string
 	// CommandExpectExit is the exit code that counts as a pass in command mode.
 	CommandExpectExit int
-	MatrixPath        string
+	// DiskResizeGB, when > 0, grows each guest overlay by that many GiB before
+	// boot (cloud-init growpart expands the partition). Needed for command-mode
+	// lanes that build/install inside near-full stock cloud images.
+	DiskResizeGB int
+	MatrixPath   string
 	// Quick selects the built-in quick-check kernel set (matrix.Quick) when no
 	// MatrixPath is given — a fast local "does it load?" check.
 	Quick                 bool

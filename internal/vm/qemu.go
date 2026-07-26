@@ -36,6 +36,12 @@ type ExecutionRequest struct {
 	// ArtifactPath, when set, is staged and exposed as $BPFCOMPAT_ARTIFACT.
 	Command       string
 	CommandBinary string
+
+	// DiskResizeGB, when > 0, grows the overlay's virtual disk by that many
+	// GiB before boot (cloud-init growpart expands the partition at boot).
+	// Command-mode lanes that install a heavy toolchain or build inside the
+	// guest overflow the near-full stock cloud-image rootfs without this.
+	DiskResizeGB int
 }
 
 // ProgVariantGroup mirrors a manifest program-variant group for the
@@ -204,15 +210,23 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		result.InfraError = err.Error()
 		return
 	}
-	if req.Profile.InstallKernel != "" {
-		// Cloud images ship near-full rootfs; a kernel install plus
-		// initramfs generation overflows it. Grow the overlay's virtual
-		// disk — cloud-init's growpart expands the partition at boot.
-		if err := resizeOverlayImage(ctx, overlayPath, "+4G"); err != nil {
+	if req.Profile.InstallKernel != "" || req.DiskResizeGB > 0 {
+		// Cloud images ship near-full rootfs; a kernel install plus initramfs
+		// generation, or an in-guest toolchain build, overflows it. Grow the
+		// overlay's virtual disk — cloud-init's growpart expands the partition
+		// at boot. An explicit --disk-resize wins over the kernel-install
+		// default so command-mode lanes can request more headroom.
+		amount := "+4G"
+		note := "overlay grown +4G for in-guest kernel install"
+		if req.DiskResizeGB > 0 {
+			amount = fmt.Sprintf("+%dG", req.DiskResizeGB)
+			note = fmt.Sprintf("overlay grown %s (disk-resize)", amount)
+		}
+		if err := resizeOverlayImage(ctx, overlayPath, amount); err != nil {
 			result.InfraError = err.Error()
 			return
 		}
-		result.Notes = append(result.Notes, "overlay grown +4G for in-guest kernel install")
+		result.Notes = append(result.Notes, note)
 	}
 	// Register the overlay-removal defer immediately so we don't leak the
 	// qcow2 if any of the steps between here and startQEMU fail (SSH key

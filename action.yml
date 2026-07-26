@@ -23,6 +23,10 @@ inputs:
     description: Exit code that counts as a pass in command mode.
     required: false
     default: "0"
+  disk-resize:
+    description: "Grow each guest overlay disk by N GiB before boot (cloud-init growpart expands it). Use for command-mode lanes that install a toolchain or build inside near-full cloud images. 0 (default) leaves the image size unchanged."
+    required: false
+    default: "0"
   matrix:
     description: "Path to matrix YAML. A bare name (for example quirk-library) that does not exist in the caller repository resolves to the matching matrices/<name>.yaml shipped with the action."
     required: false
@@ -359,6 +363,9 @@ runs:
         fi
         if [[ -n "$manifest_path" ]]; then
           cmd+=(--manifest "$manifest_path")
+        fi
+        if [[ -n "${{ inputs.disk-resize }}" && "${{ inputs.disk-resize }}" != "0" ]]; then
+          cmd+=(--disk-resize "${{ inputs.disk-resize }}")
         fi
         if [[ -n "${{ inputs.validation-mode }}" ]]; then
           cmd+=(--validation-mode "${{ inputs.validation-mode }}")

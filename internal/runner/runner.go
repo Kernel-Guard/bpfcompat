@@ -574,6 +574,7 @@ func executeTarget(
 		KeepVMOnFailure:    cfg.KeepVMOnFailure,
 		Command:            cfg.Command,
 		CommandBinary:      commandBinaryAbs,
+		DiskResizeGB:       cfg.DiskResizeGB,
 	})
 	cancel()
 
