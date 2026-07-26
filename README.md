@@ -127,7 +127,9 @@ is re-validated weekly and the resulting matrix is published at
 
 A curated, multi-distro, multi-architecture matrix of the kernels enterprises
 and cloud fleets actually run (full list in
-[docs/profile-catalog.md](docs/profile-catalog.md)):
+[docs/profile-catalog.md](docs/profile-catalog.md); what is runnable today vs.
+manual-image or generated-lane in
+[docs/support-matrix.md](docs/support-matrix.md)):
 
 | Family | Versions / kernels |
 |---|---|
@@ -637,6 +639,7 @@ User guide — start here:
 - [`docs/ebpf-go-validation.md`](docs/ebpf-go-validation.md) — validate through ebpf-go (cilium/ebpf): a libbpf pass ≠ an ebpf-go pass
 - [`docs/kernel-quirk-library.md`](docs/kernel-quirk-library.md) — curated library of known-tricky vendor kernels (version ≠ feature support)
 - [`docs/profile-catalog.md`](docs/profile-catalog.md) — kernel/distro profiles and image maintenance
+- [`docs/support-matrix.md`](docs/support-matrix.md) — generated single source of truth: runnable vs. manual-image vs. generated-lane vs. cataloged-not-runnable
 - [`docs/image-pipeline.md`](docs/image-pipeline.md) — where images come from, integrity, adding profiles
 - [`docs/rhcos-openshift.md`](docs/rhcos-openshift.md) — RHCOS/OpenShift (Ignition boot, operator-supplied image)
 - [`docs/experimental.md`](docs/experimental.md) — virtme-ng lane, Firecracker backend, Web UI/API, runtime decisioning

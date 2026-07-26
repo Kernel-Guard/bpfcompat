@@ -1,0 +1,38 @@
+name: docs-consistency
+
+# Guards against documentation drift — the class of problem where the repo
+# ships one reality but a committed doc still claims another. Generated support
+# docs (docs/support-matrix.md) are regenerated from their source of truth
+# (vm/profiles/*.yaml) and the build fails if the committed copy is stale, so a
+# profile can never be added, removed, or reclassified without the published
+# support surface following it in the same PR.
+#
+# Cheap and fast: pure shell, no build, runs on the default hosted runner so it
+# never depends on the KVM fleet.
+#
+# Security note: no ${{ github.event.* }}, head_ref, or commit-message fields are
+# interpolated into any run: block, so PR-title/commit workflow injection does
+# not apply here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generated-docs-in-sync:
+    name: Generated support docs in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Check for support-matrix drift
+        run: make check-docs-drift

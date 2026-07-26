@@ -2,6 +2,12 @@
 
 This document defines the maintained profile matrices used for compatibility campaigns beyond the MVP baseline.
 
+> **Which of these can actually run?** [`support-matrix.md`](support-matrix.md)
+> is the generated single source of truth — every committed profile classified as
+> runnable (auto-download), manual-image-required, generated-lane, or
+> cataloged-but-not-runnable. It is regenerated from `vm/profiles/*.yaml` and
+> checked in CI, so it never drifts from this catalog.
+
 ## Matrices
 
 - Fast acceptance matrix (8 profiles): `matrices/mvp.yaml`

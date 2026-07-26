@@ -22,7 +22,7 @@ endorsement:
 
 | Project | Public evidence | Status |
 |---|---|---|
-| Falco | [Compatibility case study](docs/case-study-falco-modern-bpf.md) and [falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024) | Proposed scheduled validation using Falco's loader path; upstream pull request under review |
+| Falco | [falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024) (merged 2026-07-15) and [compatibility case study](docs/case-study-falco-modern-bpf.md) | Merged, non-blocking weekly scheduled CI lane in `falcosecurity/libs` validating Falco's own `scap-open` loader path; first scheduled run succeeded 2026-07-20. The lane was contributed by the bpfcompat maintainer, so this is upstream scheduled CI — not an independent production-adoption or endorsement claim. Follow-ups in flight: [#3061](https://github.com/falcosecurity/libs/pull/3061) (vendor-kernel matrix) and [#3062](https://github.com/falcosecurity/libs/issues/3062) (release-body / Pages visibility). |
 | KubeArmor | [KubeArmor#2683](https://github.com/kubearmor/KubeArmor/issues/2683) | Public discussion of bpfcompat and VM-test scope; no adoption claim |
 | Inspektor Gadget | [OCI gadget case study](docs/case-study-inspektor-gadget.md) | bpfcompat-maintained validation of published gadgets; no adoption claim |
 
