@@ -8,7 +8,7 @@ inputs:
     required: false
     default: ""
   artifact:
-    description: Path to compiled .bpf.o artifact.
+    description: "Local path to a compiled .bpf.o artifact, or a remote OCI reference the CLI pulls (for example ghcr.io/org/gadget:latest, host:port/repo, or an @sha256: digest)."
     required: false
     default: ""
   command:
@@ -182,7 +182,37 @@ runs:
           fi
         }
 
-        artifact_path="$(resolve_path "${{ inputs.artifact }}")"
+        # An artifact is either a local .bpf.o path or a remote OCI reference
+        # the CLI pulls itself (ghcr.io/org/gadget:latest, host:port/repo,
+        # localhost/..., or an @sha256: digest). A remote ref must bypass path
+        # resolution and the local-file existence check below — otherwise it is
+        # mangled into "$workspace/ghcr.io/..." and rejected as "not found".
+        # Host detection follows the OCI/Docker rule: the segment before the
+        # first "/" is a registry host if it contains "." or ":" or is localhost.
+        is_remote_artifact() {
+          local a="$1"
+          case "$a" in
+            *://* | *@sha256:*) return 0 ;;
+          esac
+          local first="${a%%/*}"
+          case "$first" in
+            "" | "." | "..") return 1 ;;
+            localhost | localhost:*) return 0 ;;
+          esac
+          if [[ "$a" == */* && ( "$first" == *.* || "$first" == *:* ) ]]; then
+            return 0
+          fi
+          return 1
+        }
+
+        artifact_input="${{ inputs.artifact }}"
+        artifact_is_remote=false
+        if [[ -n "$artifact_input" ]] && is_remote_artifact "$artifact_input"; then
+          artifact_path="$artifact_input"
+          artifact_is_remote=true
+        else
+          artifact_path="$(resolve_path "$artifact_input")"
+        fi
         matrix_path="$(resolve_path "${{ inputs.matrix }}")"
         command_binary_path="$(resolve_path "$INPUT_COMMAND_BINARY")"
 
@@ -282,7 +312,7 @@ runs:
           exit 1
         fi
 
-        if [[ -n "$artifact_path" && ! -f "$artifact_path" ]]; then
+        if [[ -n "$artifact_path" && "$artifact_is_remote" != true && ! -f "$artifact_path" ]]; then
           echo "::error::artifact not found: $artifact_path"
           exit 1
         fi
