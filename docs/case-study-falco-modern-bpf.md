@@ -63,6 +63,17 @@ per-kernel verdict — `scap_open()` exercises libpman's full load path
 attach), then captures a bounded number of events — so there is no manifest to
 keep in sync with the loader: the loader is the contract.
 
+The loader-based approach reflects the drivers maintainers' own stated
+preference on that PR. Andrea Terzolo (`Andreagit97`) wrote that "if i had to
+choose one approach i would just use the one with the binary (`scap-open`). It
+seems more maintainable over time and allow us to test also the loader"
+([comment](https://github.com/falcosecurity/libs/pull/3024#issuecomment-4867747185)),
+and drivers maintainer `ekoops` added "I strongly prefer the binary-based
+approach"
+([comment](https://github.com/falcosecurity/libs/pull/3024#issuecomment-4890348176)).
+These are public review comments quoted verbatim — technical preferences
+expressed during review, not an endorsement of the project.
+
 ## Reproduce it
 
 ```bash
