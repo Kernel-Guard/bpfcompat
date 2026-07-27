@@ -63,6 +63,13 @@ per-kernel verdict — `scap_open()` exercises libpman's full load path
 attach), then captures a bounded number of events — so there is no manifest to
 keep in sync with the loader: the loader is the contract.
 
+On 2026-07-27 the maintainers reviewed and merged a follow-up,
+[falcosecurity/libs#3061](https://github.com/falcosecurity/libs/pull/3061),
+which switches the lane to the prebuilt (checksum-verified) action path and
+**expands the matrix to RHEL-family vendor kernels** — where backported eBPF
+features make "kernel version" least predictive. That second merge is upstream
+investment in the lane, not a one-time contribution.
+
 The loader-based approach reflects the drivers maintainers' own stated
 preference on that PR. Andrea Terzolo (`Andreagit97`) wrote that "if i had to
 choose one approach i would just use the one with the binary (`scap-open`). It

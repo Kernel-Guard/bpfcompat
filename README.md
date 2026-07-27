@@ -39,7 +39,10 @@ driven by Falco's real loader binary
 [workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
 Its first scheduled run passed on every kernel in the matrix
 ([run](https://github.com/falcosecurity/libs/actions/runs/29723206181)) — running
-unattended every week in a CNCF project's CI, on GitHub-hosted runners.
+unattended every week in a CNCF project's CI, on GitHub-hosted runners. The
+maintainers later reviewed and merged a second PR
+([#3061](https://github.com/falcosecurity/libs/pull/3061)) expanding the lane to
+RHEL-family vendor kernels on the prebuilt action path.
 
 **Trust & provenance at a glance:** CI, CodeQL, and OpenSSF Scorecard run on
 every change (badges above); every tagged release ships checksums, cosign
