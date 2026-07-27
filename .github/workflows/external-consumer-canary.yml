@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install VM dependencies
         run: |
           sudo apt-get update
@@ -42,7 +42,7 @@ jobs:
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
       - name: Validate the published gadget across kernels
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
         with:
           artifact: ghcr.io/inspektor-gadget/gadget/trace_open:latest
           matrix: matrices/consumer-external.yaml
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install VM dependencies
         run: |
           sudo apt-get update
@@ -72,7 +72,7 @@ jobs:
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
       - name: Build system_monitor on each kernel and load it
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
         with:
           command: |
             set -e
@@ -125,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install build and VM dependencies
         run: |
           sudo apt-get update
@@ -150,7 +150,7 @@ jobs:
           make scap-open -j"$(nproc)"
           file libscap/examples/01-open/scap-open
       - name: Validate scap-open across kernels (its real loader path)
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
         with:
           command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
           command-binary: libs/build/libscap/examples/01-open/scap-open
