@@ -326,7 +326,10 @@ func appendTraceAttrs(attrs []slog.Attr, tc traceContext, ok bool) []slog.Attr {
 	if !ok {
 		return attrs
 	}
-	return append(attrs, slog.String("trace_id", tc.TraceID), slog.String("span_id", tc.SpanID))
+	// trace_id/span_id come from the caller's traceparent header, so strip line
+	// breaks before they reach the log sink (CWE-117), same as other
+	// request-derived fields.
+	return append(attrs, slog.String("trace_id", sanitizeLogValue(tc.TraceID)), slog.String("span_id", sanitizeLogValue(tc.SpanID)))
 }
 
 // sanitizeLogValue strips carriage returns and newlines from a user-controlled
