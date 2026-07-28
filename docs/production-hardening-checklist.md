@@ -4,12 +4,12 @@ Production-safe runtime loading and production multi-tenant SaaS require the sep
 
 ## Runtime and Isolation
 
-- [ ] Host execution (`runtime execute --allow-host-load`) disabled by default in automation contexts.
-- [ ] API runtime execute route disabled by default (`BPFCOMPAT_API_ENABLE_RUNTIME_EXECUTE=false`) on public demos.
+- [x] Host execution (`runtime execute --allow-host-load`) disabled by default in automation contexts.
+- [x] API runtime execute route disabled by default (`BPFCOMPAT_API_ENABLE_RUNTIME_EXECUTE=false`) on public demos.
 - [ ] Runtime execute is performed by isolated workers/agents, not the public API process.
 - [x] Runtime loading kill-switch is implemented and tested (`BPFCOMPAT_API_RUNTIME_EXECUTE_KILL_SWITCH` + API security test).
-- [ ] VM runner remains default execution path.
-- [ ] Resource bounds (CPU/RAM) enforced and reviewed for campaign scale.
+- [x] VM runner remains default execution path.
+- [x] Resource bounds (CPU/RAM and per-target timeout) are enforced by profiles and workflows.
 
 ## Registry and Signing
 
@@ -19,7 +19,9 @@ Production-safe runtime loading and production multi-tenant SaaS require the sep
   - `external-cmd` for production key-management integration.
 - [ ] External signer health monitored when enabled.
 - [ ] KMS/HSM-backed signer integration and key rotation tested before production claims.
-- [x] Build provenance generated for `bpfcompat` and validator binaries before production claims (SLSA Build L3 via `actions/attest-build-provenance` on tag releases; see `docs/verifying-releases.md`).
+- [x] Build provenance generated for `bpfcompat` and validator binaries before
+  production claims (`actions/attest-build-provenance` on tag releases; see
+  `docs/verifying-releases.md`).
 - [ ] Registry auth secret rotated on schedule (`make azure-rotate-registry-secret` when using Azure Key Vault).
 - [ ] Artifact storage is private and versioned (`make azure-provision-foundation` storage account baseline).
 
@@ -38,9 +40,14 @@ Production-safe runtime loading and production multi-tenant SaaS require the sep
 - [ ] `make beta-tech-check` executed regularly.
 - [ ] `scripts/tech-stability-report.sh` shows consecutive ready reports.
 - [ ] OSS validation reports refreshed on release cadence.
+- [x] Primary production-smoke VM image uses an immutable URL and pinned SHA-256.
+- [x] Command-mode reports identify exact loader bytes.
 
 ## Change Management
 
 - [ ] Upgrade playbook executed before promotion.
 - [ ] Rollback procedure tested in staging.
 - [ ] Production-tech gate report archived per release candidate.
+- [x] Release metadata consistency is checked in required CI.
+- [x] Candidate binary positive and classified-negative VM tests gate publication.
+- [x] Release binary, container, checksums, SBOM, signatures, and attestations share one promotion graph.

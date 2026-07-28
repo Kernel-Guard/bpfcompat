@@ -48,7 +48,9 @@ either of those. Real vendor images can.
 Every template pins the action by commit SHA. A SHA that matches a release tag
 resolves to prebuilt, checksum-verified binaries, so your runner needs no
 toolchain; any other ref builds from source and needs `libbpf-dev` and
-`zlib1g-dev`. Releases are cosign-signed with SBOM and SLSA provenance.
+`zlib1g-dev`. The current source also verifies release-workflow attestations;
+templates will gain that enforcement when their pin advances beyond v0.3.6.
+Releases are cosign-signed with SBOM and SLSA provenance.
 
 ## Running it somewhere real
 

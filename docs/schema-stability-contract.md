@@ -46,3 +46,4 @@ For any schema change:
 |---|---|---|---|
 | 2026-05-15 | v0.1 | Initial | Baseline run/report schema for MVP validation and CI gating |
 | 2026-05-19 | v0.1 | Backward-compatible additive | Added optional `targets[].profile`, `targets[].host`, `targets[].validation`, and `targets[].failed_stage` fields for richer technical output without breaking existing consumers. |
+| 2026-07-28 | v0.1 | Backward-compatible additive | Added optional top-level `command` and `validator` provenance fields; command text remains omitted. |

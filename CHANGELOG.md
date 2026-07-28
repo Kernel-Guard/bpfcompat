@@ -7,6 +7,85 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.1] - 2026-07-29
+
+### Added
+- Added a mandatory tagged-release candidate gate that exercises the exact
+  release CLI and validator in a pinned Ubuntu VM with both a compatible
+  artifact and a classified incompatible artifact.
+- Added native ARM64 execution of the exact attested release candidate before
+  draft staging or container promotion.
+- Added command-mode provenance for the exact loader binary and invocation, a
+  release metadata consistency gate, and an explicit production support
+  boundary for the CLI, Action, and disposable VM validator.
+- Added the original OCI reference to JSON, Markdown, and Action evidence while
+  retaining the extracted ELF SHA-256 as the immutable content identity.
+- Added scheduled hosted-runner compatibility evidence and a pull-request gate
+  that freezes experimental runtime, agent, API, registry, and SaaS surfaces
+  unless a maintainer explicitly approves a maintenance or security change.
+
+### Changed
+- Unified binary, container, signing, attestation, VM verification, and release
+  publication into one release promotion workflow.
+- Removed dormant release-creation code and write permission from the scheduled
+  compatibility-site workflow; published releases now have one exclusive
+  writer, and reruns refuse to mutate an already-public release.
+- Made the upstream-kernel experiment manual-only until it has a reliable
+  virtualization runner; the supported latest-vendor-kernel lane now runs on a
+  GitHub-hosted KVM runner.
+- Container targets now default to CLI help instead of starting the frozen
+  experimental API server.
+
+### Security
+- Release downloads now require a release-workflow GitHub attestation or an
+  exact-workflow Sigstore signature in addition to checksums; partial Action
+  downloads verify an explicit asset allowlist instead of the entire checksum
+  manifest.
+- VM image downloads now have cancellation, timeout, and size limits; cached
+  images are rehashed on every run, and the release-gate Ubuntu image is pinned
+  to immutable vendor bytes.
+- OCI pulls now have a deadline, extracted eBPF layers and archive expansion
+  are size-bounded, and incomplete output is removed on failure.
+- Run inputs, cloud-init seed data, downloads, and extracted artifacts now use
+  owner-only directories and files.
+- `BPFCOMPAT_VALIDATOR_SHA256` is now enforced before a guest validator is
+  used.
+
+## [0.3.6] - 2026-07-26
+
+### Added
+- Published the CLI as multi-architecture `linux/amd64` and `linux/arm64`
+  release assets and published a matching multi-architecture container image.
+- Added a scheduled external-consumer canary covering Falco, Inspektor Gadget,
+  and KubeArmor integration paths.
+
+### Security
+- Made installer checksum/signature verification fail closed when verification
+  is available.
+
+## [0.3.5] - 2026-07-26
+
+### Added
+- Added the one-command installer, GHCR image, and installed-validator
+  discovery.
+
+## [0.3.4] - 2026-07-26
+
+### Added
+- Added command-mode guest disk resizing for loaders that build or install
+  dependencies inside constrained cloud images.
+
+## [0.3.3] - 2026-07-26
+
+### Added
+- Added the canonical generated support matrix and documentation-drift guard.
+- Added Ubuntu and RHEL-family kernel-sweep profiles, consumer canaries, and
+  integration templates for common loader architectures.
+
+### Fixed
+- Accepted remote OCI references in the GitHub Action without treating them as
+  workspace-relative paths.
+
 ## [0.3.2] - 2026-07-16
 
 ### Fixed

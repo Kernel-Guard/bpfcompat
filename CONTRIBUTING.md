@@ -59,6 +59,10 @@ checks for them.
    summary of your change. Categorize as Added / Changed / Fixed / Security.
 5. If you touch `docs/openapi.yaml`, run `make openapi-sync` and commit the
    updated `internal/api/openapi_spec.yaml`. CI fails on drift.
+6. The API, cloud registry, runtime decisioning, and agent surfaces are frozen.
+   Changes require explicit maintainer review and the
+   `experimental-change-approved` pull-request label; see
+   `docs/production-support-boundary.md`.
 
 ## Code style
 

@@ -6,6 +6,12 @@ workflow: `.bpf.o` and command-mode validation, kernel matrices (including the
 [quirk library](kernel-quirk-library.md)), suites, and reports. The tracks
 below are kept as controlled proofs; interfaces may change or be removed.
 
+Feature development on the API, registry, runtime decisioning, and agent paths
+is frozen. Pull requests touching those paths require the
+`experimental-change-approved` label and should be limited to security fixes,
+dependency maintenance, deletion, or work needed to keep the proof buildable.
+The freeze is enforced by `.github/workflows/experimental-freeze.yml`.
+
 ## virtme-ng upstream-kernel lane
 
 Boots **upstream mainline kernels** (kernel.org builds, not vendor images)

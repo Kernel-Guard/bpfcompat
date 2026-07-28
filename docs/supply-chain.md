@@ -16,13 +16,29 @@ GitHub repository UI/API (they cannot be set from committed files).
 | SBOM (CycloneDX) | `.github/workflows/release-artifacts.yml` | push to `main`, tags, manual |
 | Keyless signing (cosign / Sigstore OIDC) | `.github/workflows/release-artifacts.yml` | tag releases (`v*`) |
 | SHA256 checksums | `.github/workflows/release-artifacts.yml` | all builds |
+| Candidate VM positive/negative gate | `.github/workflows/release-artifacts.yml` | tag releases (`v*`) |
+| Binary and container provenance | `.github/workflows/release-artifacts.yml` | tag releases (`v*`) |
+| Attested candidate promotion record | `.github/workflows/release-artifacts.yml` | tag releases (`v*`) |
+| Release-channel alias isolation | `scripts/promote-release.sh` | tag releases (`v*`) |
+| Protected-environment preflight | `scripts/check-production-environment.sh` | tag releases (`v*`) |
+
+The tagged-release workflow is the sole production promotion path. It builds
+candidate binaries once, tests those bytes in a pinned vendor VM, builds and
+verifies the candidate image, stages a draft release, promotes the verified
+image digest, and only then publishes the release. Promotion pauses at the
+`production-release` environment. The workflow refuses tag processing if that
+environment does not require the release reviewer, prevent self-review,
+disable admin bypass, and restrict deployments to `v*` tags.
+
+Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
+(`X.Y`, `latest`) are reachable only through the stable release channel.
 
 ### Verifying a signed release
 
 ```bash
 cosign verify-blob \
   --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-  --certificate-identity-regexp 'https://github.com/Kernel-Guard/bpfcompat/.*' \
+  --certificate-identity-regexp '^https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 sha256sum -c SHA256SUMS
@@ -32,13 +48,15 @@ sha256sum -c SHA256SUMS
 
 These are not files in the repo. Track their status here.
 
-- [x] **Branch protection on `main`** (wired 2026-06-14): blocks force-pushes
-      and deletions, requires conversation resolution, and requires the CI
-      checks `Test (-race)`, `golangci-lint`, `govulncheck`, `Build (Go side)`.
-      `enforce_admins` is off (solo-maintainer bypass) and no review count is
-      required. Add `Analyze (Go)` to the required contexts once `codeql.yml`
-      is on `main`. Set via:
+- [ ] **Production branch protection on `main`**: block force-pushes and
+      deletions, require conversation resolution and an up-to-date branch,
+      enforce checks for admins, dismiss stale reviews, and require one
+      non-author approval plus the documented production checks. Set via:
       `gh api -X PUT repos/Kernel-Guard/bpfcompat/branches/main/protection --input -`
+- [ ] **Protected `production-release` environment**: after the selected
+      reviewer accepts the duty in writing, require that reviewer, prevent
+      self-review, disable admin bypass, and allow only `v*` tag deployments.
+      Tag releases fail closed until this configuration exists.
 - [x] **Secret scanning + push protection** (wired 2026-06-14): enabled via
       `gh api -X PATCH repos/Kernel-Guard/bpfcompat` with
       `security_and_analysis.secret_scanning` + `secret_scanning_push_protection`.
