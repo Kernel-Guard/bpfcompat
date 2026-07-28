@@ -1,14 +1,22 @@
 package vm
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
+	"time"
 )
+
+const (
+	imageDownloadTimeout  = 45 * time.Minute
+	maxImageDownloadBytes = int64(20 << 30)
+)
+
+var imageHTTPClient = &http.Client{Timeout: imageDownloadTimeout}
 
 func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path) // #nosec G304 -- path comes from trusted profile configuration.
@@ -23,19 +31,11 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// ensureImageChecksum returns the image's sha256, computing and caching it
-// in a "<path>.sha256" sidecar on first use so later runs don't re-hash
-// multi-hundred-MB images. The sidecar makes every run attributable to
-// exact image bytes — vendor "current" cloud-image URLs mutate over time,
-// so the URL alone does not identify what was tested.
+// ensureImageChecksum returns the digest of the image bytes used by this run.
+// The sidecar is evidence for operators, not a trust source: the image is
+// re-hashed every time so replacing both files cannot forge run provenance.
 func ensureImageChecksum(imagePath string) (string, error) {
 	sidecarPath := imagePath + ".sha256"
-	if data, err := os.ReadFile(sidecarPath); err == nil { // #nosec G304 -- derived from trusted profile path.
-		sum := strings.TrimSpace(strings.Fields(string(data))[0])
-		if len(sum) == 64 {
-			return sum, nil
-		}
-	}
 	sum, err := fileSHA256(imagePath)
 	if err != nil {
 		return "", err
@@ -47,8 +47,16 @@ func ensureImageChecksum(imagePath string) (string, error) {
 	return sum, nil
 }
 
-func downloadFile(url, outPath string) error {
-	resp, err := http.Get(url) // #nosec G107 -- URL comes from trusted profile configuration in this MVP.
+func downloadFile(ctx context.Context, url, outPath string) error {
+	return downloadFileWithLimit(ctx, imageHTTPClient, url, outPath, maxImageDownloadBytes)
+}
+
+func downloadFileWithLimit(ctx context.Context, client *http.Client, url, outPath string, maxBytes int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody) // #nosec G107 -- URL comes from trusted profile configuration.
+	if err != nil {
+		return fmt.Errorf("create request for %q: %w", url, err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("http get %q: %w", url, err)
 	}
@@ -57,18 +65,35 @@ func downloadFile(url, outPath string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected HTTP status %d for %s", resp.StatusCode, url)
 	}
+	if resp.ContentLength > maxBytes {
+		return fmt.Errorf("download %s is %d bytes, exceeds limit %d", url, resp.ContentLength, maxBytes)
+	}
 
-	out, err := os.Create(outPath)
+	out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- outPath is a runner-owned temporary path.
 	if err != nil {
 		return fmt.Errorf("create %s: %w", outPath, err)
 	}
-	defer out.Close()
+	complete := false
+	defer func() {
+		_ = out.Close()
+		if !complete {
+			_ = os.Remove(outPath)
+		}
+	}()
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	written, err := io.Copy(out, io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
 		return fmt.Errorf("copy response to %s: %w", outPath, err)
+	}
+	if written > maxBytes {
+		return fmt.Errorf("download %s exceeds limit %d", url, maxBytes)
 	}
 	if err := out.Sync(); err != nil {
 		return fmt.Errorf("sync %s: %w", outPath, err)
 	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", outPath, err)
+	}
+	complete = true
 	return nil
 }

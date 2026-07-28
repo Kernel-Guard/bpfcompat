@@ -20,7 +20,7 @@ func writeFunctionalPlan(tests []manifest.FunctionalTest, dir string) (string, e
 	if len(tests) > 32 {
 		return "", fmt.Errorf("too many functional tests: max 32")
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create functional plan directory: %w", err)
 	}
 

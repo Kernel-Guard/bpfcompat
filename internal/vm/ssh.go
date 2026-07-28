@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const sshProbeToken = "__BPFCOMPAT_OK__"
+const sshProbeToken = "__BPFCOMPAT_OK__" // #nosec G101 -- SSH probe sentinel, not a credential.
 
 type sshTarget struct {
 	User       string

@@ -85,3 +85,34 @@ func TestBuildGitHubActionSummaryLimitsTargetsAndFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildGitHubActionSummaryIncludesExecutionProvenance(t *testing.T) {
+	report := schema.ReportV01{
+		Artifact: schema.Artifact{BaseName: "command", SHA256: "artifact-sha"},
+		Command: &schema.CommandInfo{
+			InvocationSHA256: "invocation-sha",
+			Binary: &schema.BinaryIdentity{
+				BaseName: "scap-open",
+				SHA256:   "loader-sha",
+			},
+		},
+		Validator: &schema.BinaryIdentity{
+			BaseName: "bpfcompat-validator",
+			SHA256:   "validator-sha",
+		},
+		Summary: schema.SummaryInfo{Status: "pass"},
+	}
+
+	summary := BuildGitHubActionSummary(report, ActionSummaryOptions{})
+	for _, want := range []string{
+		"| Validator | `bpfcompat-validator` |",
+		"| Validator SHA-256 | `validator-sh` |",
+		"| Invocation SHA-256 | `invocation-s` |",
+		"| Loader binary | `scap-open` |",
+		"| Loader SHA-256 | `loader-sha` |",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+}

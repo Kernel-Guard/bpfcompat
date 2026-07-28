@@ -1,13 +1,15 @@
 package schema
 
 type ReportV01 struct {
-	SchemaVersion string      `json:"schema_version"`
-	Run           RunInfo     `json:"run"`
-	Artifact      Artifact    `json:"artifact"`
-	Matrix        MatrixInfo  `json:"matrix"`
-	Targets       []Target    `json:"targets,omitempty"`
-	Summary       SummaryInfo `json:"summary"`
-	Paths         Paths       `json:"paths"`
+	SchemaVersion string          `json:"schema_version"`
+	Run           RunInfo         `json:"run"`
+	Artifact      Artifact        `json:"artifact"`
+	Command       *CommandInfo    `json:"command,omitempty"`
+	Validator     *BinaryIdentity `json:"validator,omitempty"`
+	Matrix        MatrixInfo      `json:"matrix"`
+	Targets       []Target        `json:"targets,omitempty"`
+	Summary       SummaryInfo     `json:"summary"`
+	Paths         Paths           `json:"paths"`
 }
 
 type RunInfo struct {
@@ -17,6 +19,21 @@ type RunInfo struct {
 
 type Artifact struct {
 	Path      string `json:"path"`
+	Source    string `json:"source,omitempty"`
+	BaseName  string `json:"basename"`
+	SHA256    string `json:"sha256"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+// CommandInfo records command-mode provenance without exposing the command
+// text, which can contain environment-specific or sensitive arguments.
+type CommandInfo struct {
+	InvocationSHA256 string          `json:"invocation_sha256"`
+	ExpectedExitCode int             `json:"expected_exit_code"`
+	Binary           *BinaryIdentity `json:"binary,omitempty"`
+}
+
+type BinaryIdentity struct {
 	BaseName  string `json:"basename"`
 	SHA256    string `json:"sha256"`
 	SizeBytes int64  `json:"size_bytes"`

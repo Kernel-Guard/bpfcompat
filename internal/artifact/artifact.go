@@ -19,7 +19,7 @@ func Stage(srcPath, dstDir string) (string, error) {
 		return "", fmt.Errorf("resolve destination directory: %w", err)
 	}
 
-	if err := os.MkdirAll(dstDirAbs, 0o755); err != nil {
+	if err := os.MkdirAll(dstDirAbs, 0o700); err != nil {
 		return "", fmt.Errorf("create destination directory: %w", err)
 	}
 
@@ -35,11 +35,14 @@ func Stage(srcPath, dstDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve staged artifact path: %w", err)
 	}
-	dst, err := os.Create(dstPath)
+	dst, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- dstPath is contained under dstDirAbs by safepath.LocalJoin.
 	if err != nil {
 		return "", fmt.Errorf("create staged artifact: %w", err)
 	}
 	defer dst.Close()
+	if err := dst.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("set staged artifact permissions: %w", err)
+	}
 
 	if _, err := io.Copy(dst, src); err != nil {
 		return "", fmt.Errorf("copy artifact: %w", err)

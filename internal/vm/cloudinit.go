@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func writeNoCloudSeed(seedDir, profileID, publicKey string) error {
-	if err := os.MkdirAll(seedDir, 0o755); err != nil {
+	if err := os.MkdirAll(seedDir, 0o700); err != nil {
 		return fmt.Errorf("create seed directory: %w", err)
 	}
 
@@ -28,10 +29,10 @@ instance-id: bpfcompat-%s
 local-hostname: bpfcompat-%s
 `, profileID, profileID)) + "\n"
 
-	if err := os.WriteFile(filepath.Join(seedDir, "user-data"), []byte(userData), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(seedDir, "user-data"), []byte(userData), 0o600); err != nil {
 		return fmt.Errorf("write user-data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(seedDir, "meta-data"), []byte(metaData), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(seedDir, "meta-data"), []byte(metaData), 0o600); err != nil {
 		return fmt.Errorf("write meta-data: %w", err)
 	}
 	return nil
@@ -45,8 +46,12 @@ type seedServer struct {
 func startSeedServer(seedDir string) (seedServer, error) {
 	handler := http.FileServer(http.Dir(seedDir))
 	server := &http.Server{
-		Addr:    "0.0.0.0:0",
-		Handler: handler,
+		Addr:              "0.0.0.0:0",
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       15 * time.Second,
 	}
 
 	ln, err := listenTCP(server.Addr)

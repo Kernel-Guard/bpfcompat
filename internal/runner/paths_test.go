@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,5 +21,14 @@ func TestPrepareRunCreatesExpectedDirectories(t *testing.T) {
 	}
 	if !strings.HasPrefix(paths.RunDir, filepath.Join(tempDir, "runs")) {
 		t.Fatalf("unexpected run dir: %s", paths.RunDir)
+	}
+	for _, dir := range []string{paths.RunDir, paths.InputDir, paths.LogsDir} {
+		info, statErr := os.Stat(dir)
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		if info.Mode().Perm() != 0o700 {
+			t.Fatalf("expected private run directory %s, got mode %o", dir, info.Mode().Perm())
+		}
 	}
 }

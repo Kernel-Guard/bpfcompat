@@ -88,10 +88,30 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 	commandMode := strings.TrimSpace(cfg.Command) != ""
 	hasArtifact := strings.TrimSpace(cfg.ArtifactPath) != ""
 
+	var commandInfo *schema.CommandInfo
+	if commandMode {
+		if strings.TrimSpace(cfg.CommandBinary) != "" {
+			stagedBinary, stageErr := artifact.Stage(
+				cfg.CommandBinary,
+				filepath.Join(runPaths.InputDir, "command"),
+			)
+			if stageErr != nil {
+				return RunResult{}, fmt.Errorf("stage command binary: %w", stageErr)
+			}
+			cfg.CommandBinary = stagedBinary
+		}
+		commandInfo, err = inspectCommandMetadata(cfg)
+		if err != nil {
+			return RunResult{}, err
+		}
+	}
+
 	var meta artifact.Metadata
+	artifactSource := ""
 	if hasArtifact {
 		artifactPath := cfg.ArtifactPath
 		if artifact.IsOCISource(artifactPath) {
+			artifactSource = artifactPath
 			emitProgress(cfg.Progress, ProgressUpdate{
 				Stage:   ProgressStageInspectArtifact,
 				Message: "Extracting eBPF object from OCI source",
@@ -101,7 +121,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
 			}
 			defer os.RemoveAll(ociDir)
-			extracted, err := artifact.ExtractEBPFFromOCI(artifactPath, ociDir)
+			extracted, err := artifact.ExtractEBPFFromOCI(ctx, artifactPath, ociDir)
 			if err != nil {
 				return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
 			}
@@ -123,8 +143,9 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		}
 	} else {
 		// Command mode with no .bpf.o: synthesize artifact identity from the
-		// command so reports and version history still have a stable key.
-		meta = commandArtifactMetadata(cfg)
+		// command and exact loader bytes so reports and version history carry
+		// a content-addressed key.
+		meta = commandArtifactMetadata(cfg, commandInfo)
 	}
 
 	var stagedManifest string
@@ -199,10 +220,30 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 	}
 
 	validatorBinPath := ""
+	var validatorInfo *schema.BinaryIdentity
 	if !commandMode {
-		validatorBinPath, err = resolveValidatorBinary()
+		resolvedValidator, resolveErr := resolveValidatorBinary()
+		if resolveErr != nil {
+			return RunResult{}, resolveErr
+		}
+		validatorBinPath, err = artifact.Stage(
+			resolvedValidator,
+			filepath.Join(runPaths.InputDir, "validator"),
+		)
 		if err != nil {
+			return RunResult{}, fmt.Errorf("stage validator binary: %w", err)
+		}
+		if err := enforceValidatorChecksum(validatorBinPath); err != nil {
 			return RunResult{}, err
+		}
+		validatorMeta, inspectErr := artifact.Inspect(validatorBinPath)
+		if inspectErr != nil {
+			return RunResult{}, fmt.Errorf("inspect staged validator binary: %w", inspectErr)
+		}
+		validatorInfo = &schema.BinaryIdentity{
+			BaseName:  validatorMeta.BaseName,
+			SHA256:    validatorMeta.SHA256,
+			SizeBytes: validatorMeta.SizeBytes,
 		}
 		if runner == RunnerVM {
 			dynamic, err := validatorIsDynamicallyLinked(validatorBinPath)
@@ -253,10 +294,13 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		},
 		Artifact: schema.Artifact{
 			Path:      meta.AbsolutePath,
+			Source:    artifactSource,
 			BaseName:  meta.BaseName,
 			SHA256:    meta.SHA256,
 			SizeBytes: meta.SizeBytes,
 		},
+		Command:   commandInfo,
+		Validator: validatorInfo,
 		Matrix: schema.MatrixInfo{
 			Path:     matrixPathAbs,
 			Name:     m.Name,
@@ -1139,23 +1183,52 @@ func shouldRunFunctionalTests(validationMode string, mf manifest.Manifest) bool 
 	}
 }
 
+func inspectCommandMetadata(cfg Config) (*schema.CommandInfo, error) {
+	invocation := fmt.Sprintf(
+		"%s\x00expected-exit=%d",
+		strings.TrimSpace(cfg.Command),
+		cfg.CommandExpectExit,
+	)
+	commandSum := sha256.Sum256([]byte(invocation))
+	info := &schema.CommandInfo{
+		InvocationSHA256: hex.EncodeToString(commandSum[:]),
+		ExpectedExitCode: cfg.CommandExpectExit,
+	}
+	if binaryPath := strings.TrimSpace(cfg.CommandBinary); binaryPath != "" {
+		meta, err := artifact.Inspect(binaryPath)
+		if err != nil {
+			return nil, fmt.Errorf("inspect command binary: %w", err)
+		}
+		info.Binary = &schema.BinaryIdentity{
+			BaseName:  meta.BaseName,
+			SHA256:    meta.SHA256,
+			SizeBytes: meta.SizeBytes,
+		}
+	}
+	return info, nil
+}
+
 // commandArtifactMetadata synthesizes an artifact identity for command-mode
-// runs that have no .bpf.o, so reports and version history still carry a stable
-// key. The SHA256 is computed over the command string (and binary basename when
-// present) — a content-addressed handle for "this validation command".
-func commandArtifactMetadata(cfg Config) artifact.Metadata {
+// runs that have no .bpf.o. Its digest covers the invocation and, when present,
+// the loader content digest rather than only its filename.
+func commandArtifactMetadata(cfg Config, info *schema.CommandInfo) artifact.Metadata {
 	base := "command"
 	seed := strings.TrimSpace(cfg.Command)
-	if b := strings.TrimSpace(cfg.CommandBinary); b != "" {
-		base = filepath.Base(b)
-		seed = base + "\x00" + seed
+	size := int64(len(seed))
+	if info != nil {
+		seed = info.InvocationSHA256
+	}
+	if info != nil && info.Binary != nil {
+		base = info.Binary.BaseName
+		seed += "\x00" + info.Binary.SHA256
+		size = info.Binary.SizeBytes
 	}
 	sum := sha256.Sum256([]byte(seed))
 	return artifact.Metadata{
 		AbsolutePath: "command://" + base,
 		BaseName:     base,
 		SHA256:       hex.EncodeToString(sum[:]),
-		SizeBytes:    0,
+		SizeBytes:    size,
 	}
 }
 
@@ -1373,10 +1446,33 @@ func resolveValidatorBinary() (string, error) {
 			continue
 		}
 		if _, statErr := os.Stat(abs); statErr == nil {
+			if checksumErr := enforceValidatorChecksum(abs); checksumErr != nil {
+				return "", checksumErr
+			}
 			return abs, nil
 		} else {
 			lastErr = statErr
 		}
 	}
 	return "", fmt.Errorf("validator binary not found: set $BPFCOMPAT_VALIDATOR_BIN, install it to /usr/local/libexec/bpfcompat/bpfcompat-validator, or run `make validator-static` in a source checkout (last error: %v)", lastErr)
+}
+
+func enforceValidatorChecksum(path string) error {
+	expected := strings.TrimSpace(os.Getenv("BPFCOMPAT_VALIDATOR_SHA256"))
+	if expected == "" {
+		return nil
+	}
+	meta, err := artifact.Inspect(path)
+	if err != nil {
+		return fmt.Errorf("inspect validator binary: %w", err)
+	}
+	if !strings.EqualFold(meta.SHA256, expected) {
+		return fmt.Errorf(
+			"validator checksum mismatch for %s: got %s want %s",
+			path,
+			meta.SHA256,
+			expected,
+		)
+	}
+	return nil
 }

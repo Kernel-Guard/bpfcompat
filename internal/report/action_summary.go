@@ -36,7 +36,21 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 	b.WriteString("|---|---|\n")
 	b.WriteString(fmt.Sprintf("| Run ID | `%s` |\n", markdownTableCell(emptyAs(report.Run.ID, "-"))))
 	b.WriteString(fmt.Sprintf("| Artifact | `%s` |\n", markdownTableCell(emptyAs(report.Artifact.BaseName, report.Artifact.Path))))
+	if report.Artifact.Source != "" {
+		b.WriteString(fmt.Sprintf("| Artifact source | `%s` |\n", markdownTableCell(report.Artifact.Source)))
+	}
 	b.WriteString(fmt.Sprintf("| Artifact SHA-256 | `%s` |\n", markdownTableCell(shortSHA(report.Artifact.SHA256))))
+	if report.Validator != nil {
+		b.WriteString(fmt.Sprintf("| Validator | `%s` |\n", markdownTableCell(report.Validator.BaseName)))
+		b.WriteString(fmt.Sprintf("| Validator SHA-256 | `%s` |\n", markdownTableCell(shortSHA(report.Validator.SHA256))))
+	}
+	if report.Command != nil {
+		b.WriteString(fmt.Sprintf("| Invocation SHA-256 | `%s` |\n", markdownTableCell(shortSHA(report.Command.InvocationSHA256))))
+		if report.Command.Binary != nil {
+			b.WriteString(fmt.Sprintf("| Loader binary | `%s` |\n", markdownTableCell(report.Command.Binary.BaseName)))
+			b.WriteString(fmt.Sprintf("| Loader SHA-256 | `%s` |\n", markdownTableCell(shortSHA(report.Command.Binary.SHA256))))
+		}
+	}
 	b.WriteString(fmt.Sprintf("| Matrix | `%s` |\n", markdownTableCell(emptyAs(report.Matrix.Name, report.Matrix.Path))))
 	b.WriteString(fmt.Sprintf("| Profiles | %d total, %d required |\n", counts.Total, counts.Required))
 	b.WriteString(fmt.Sprintf("| Required pass/fail | %d/%d |\n", counts.RequiredPass, counts.RequiredFail))

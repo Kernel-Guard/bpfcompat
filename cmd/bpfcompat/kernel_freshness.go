@@ -134,7 +134,7 @@ func runKernelFreshnessUpdate(baselinesPath string, baselines freshness.Baseline
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return runner.ExitToolError
 	}
-	if err := os.WriteFile(baselinesPath, out, 0o644); err != nil { // #nosec G306 -- committed repo file
+	if err := os.WriteFile(baselinesPath, out, 0o644); err != nil { // #nosec G306,G703 -- operator-selected committed baseline path.
 		fmt.Fprintf(os.Stderr, "write baselines: %v\n", err)
 		return runner.ExitToolError
 	}
@@ -151,7 +151,7 @@ func writeOutputFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644) // #nosec G306 -- report output, not a secret
+	return os.WriteFile(path, data, 0o644) // #nosec G306,G703 -- operator-selected report destination, not a sandbox path.
 }
 
 func dashIfEmpty(s string) string {

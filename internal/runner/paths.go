@@ -28,7 +28,7 @@ func PrepareRun(workdir string, now time.Time) (RunPaths, error) {
 	logsDir := filepath.Join(runDir, "logs")
 
 	for _, dir := range []string{inputDir, logsDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return RunPaths{}, fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
