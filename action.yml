@@ -76,7 +76,7 @@ inputs:
     required: false
     default: "true"
   prebuilt:
-    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-verified against the release SHA256SUMS.
+    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-checked and verified against GitHub build attestations; runners without gh build from source.
     required: false
     default: "auto"
   binary:
@@ -104,7 +104,7 @@ runs:
           # so SHA-pinned consumers still get prebuilt binaries instead of
           # silently requiring libbpf build deps on the runner. Any API
           # hiccup or no matching tag falls through to the source build.
-          tags_json="$(curl -fsSL --retry 2 \
+          tags_json="$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
             -H "Authorization: Bearer ${GITHUB_API_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/Kernel-Guard/bpfcompat/tags?per_page=100" || true)"
@@ -128,15 +128,24 @@ runs:
 
         base="https://github.com/Kernel-Guard/bpfcompat/releases/download/${ref}"
         tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
         for asset in bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 SHA256SUMS; do
-          if ! curl -fsSL --retry 2 -o "$tmp/$asset" "$base/$asset"; then
+          if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 \
+            -o "$tmp/$asset" "$base/$asset"; then
             echo "Release asset $asset not available for ${ref}; building from source."
             exit 0
           fi
         done
+        if ! command -v gh >/dev/null 2>&1 || ! gh attestation --help >/dev/null 2>&1; then
+          echo "GitHub CLI attestation verification is unavailable; building from the pinned Action source instead of using unverifiable prebuilt binaries."
+          exit 0
+        fi
         # A failed verification is a hard error, not a fallback: assets exist
-        # but do not match what the release workflow published.
-        (cd "$tmp" && sha256sum -c SHA256SUMS)
+        # but do not match what the release workflow published or attested.
+        GH_TOKEN="$GITHUB_API_TOKEN" bash \
+          "$GITHUB_ACTION_PATH/scripts/verify-release-assets.sh" \
+          "$tmp" Kernel-Guard/bpfcompat \
+          bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
 
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"
         install -m 0755 "$tmp/bpfcompat-linux-amd64" "$GITHUB_ACTION_PATH/bin/bpfcompat"

@@ -12,12 +12,12 @@ log_dir="${OUT_DIR}/logs-${timestamp}"
 mkdir -p "$log_dir"
 
 overall="ready"
-
-beta_gate_result="FAIL"
-stability_result="FAIL"
-registry_external_signer_result="FAIL"
-ops_docs_result="FAIL"
-upgrade_docs_result="FAIL"
+go_test_result="FAIL"
+go_vet_result="FAIL"
+hostile_result="FAIL"
+release_result="FAIL"
+docs_result="FAIL"
+contract_docs_result="FAIL"
 
 run_check() {
   local result_var="$1"
@@ -31,43 +31,55 @@ run_check() {
   fi
 }
 
-run_check beta_gate_result beta-tech-check make beta-tech-check
-run_check stability_result tech-stability scripts/tech-stability-report.sh
-run_check registry_external_signer_result registry-external-signer-tests go test ./internal/registry -run 'TestPersistArtifactVersionWithExternalSigner' -count=1
+run_check go_test_result go-test go test ./...
+run_check go_vet_result go-vet go vet ./...
+run_check hostile_result hostile-suite scripts/hostile-artifact-suite.sh
+run_check release_result release-consistency make check-release-consistency
+run_check docs_result docs-consistency env BPFCOMPAT_DOCS_COMPARE=worktree make check-docs-drift
 
-if [[ -f docs/production-slo-runbook.md && -f docs/incident-response-runbook.md ]]; then
-  ops_docs_result="PASS"
-else
-  ops_docs_result="FAIL"
-  overall="not-ready"
-fi
-
-if [[ -f docs/upgrade-backward-compat-playbook.md && -f docs/production-hardening-checklist.md ]]; then
-  upgrade_docs_result="PASS"
-else
-  upgrade_docs_result="FAIL"
-  overall="not-ready"
-fi
+required_docs=(
+  docs/production-support-boundary.md
+  docs/production-slo-runbook.md
+  docs/incident-response-runbook.md
+  docs/upgrade-backward-compat-playbook.md
+  docs/schema-stability-contract.md
+  docs/production-hardening-checklist.md
+  docs/production-release-process.md
+)
+contract_docs_result="PASS"
+: >"${log_dir}/contract-docs.log"
+for path in "${required_docs[@]}"; do
+  if [[ ! -f "$path" ]]; then
+    contract_docs_result="FAIL"
+    overall="not-ready"
+    printf 'missing %s\n' "$path" >>"${log_dir}/contract-docs.log"
+  else
+    printf 'present %s\n' "$path" >>"${log_dir}/contract-docs.log"
+  fi
+done
 
 {
   echo "# Production Technical Check"
   echo
   echo "- Timestamp (UTC): ${timestamp}"
   echo "- Gate status: ${overall}"
+  echo "- Supported boundary: CLI + GitHub Action + disposable QEMU/KVM validation"
   echo
   echo "| Control | Result | Output |"
   echo "|---|---|---|"
-  echo "| Technical beta gate | ${beta_gate_result} | ${log_dir}/beta-tech-check.log |"
-  echo "| Stability trend gate | ${stability_result} | ${log_dir}/tech-stability.log |"
-  echo "| Registry external signer integration tests | ${registry_external_signer_result} | ${log_dir}/registry-external-signer-tests.log |"
-  echo "| Ops/SLO + incident runbooks present | ${ops_docs_result} | docs/production-slo-runbook.md, docs/incident-response-runbook.md |"
-  echo "| Upgrade + hardening playbooks present | ${upgrade_docs_result} | docs/upgrade-backward-compat-playbook.md, docs/production-hardening-checklist.md |"
+  echo "| Go tests | ${go_test_result} | ${log_dir}/go-test.log |"
+  echo "| Go vet | ${go_vet_result} | ${log_dir}/go-vet.log |"
+  echo "| Hostile artifact/configuration suite | ${hostile_result} | ${log_dir}/hostile-suite.log |"
+  echo "| Release metadata consistency | ${release_result} | ${log_dir}/release-consistency.log |"
+  echo "| Generated documentation consistency | ${docs_result} | ${log_dir}/docs-consistency.log |"
+  echo "| Support/SLO/incident/schema/upgrade documents | ${contract_docs_result} | ${log_dir}/contract-docs.log |"
   echo
-  echo "## Notes"
+  echo "## External Evidence"
   echo
-  echo "- This gate is technical-only and covers local engineering readiness only."
-  echo "- Stability gate expects consecutive beta-tech checks (default minimum: 3)."
-} > "$report_file"
+  echo "- Release candidate VM evidence is produced by \`.github/workflows/release-artifacts.yml\`."
+  echo "- Weekly operational evidence is produced by \`.github/workflows/latest-kernel-compatibility.yml\`."
+  echo "- Runtime loading, agent, API, registry, and SaaS are excluded and retain separate failing gates."
+} >"$report_file"
 
 echo "[production-tech] ${overall}: ${report_file}"
 if [[ "$overall" == "ready" ]]; then

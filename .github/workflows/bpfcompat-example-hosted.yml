@@ -88,10 +88,10 @@ jobs:
         shell: bash
         run: |
           echo "===== /dev/kvm ====="; ls -l /dev/kvm || true
-          for f in $(find .bpfcompat -type f \( -name serial.log -o -name qemu.log -o -name validator.stderr -o -name validator-result.json \) 2>/dev/null); do
+          while IFS= read -r -d '' f; do
             echo "===== $f ====="
             tail -n 120 "$f" || true
-          done
+          done < <(find .bpfcompat -type f \( -name serial.log -o -name qemu.log -o -name validator.stderr -o -name validator-result.json \) -print0 2>/dev/null)
 
       - name: Upload reports
         if: always()

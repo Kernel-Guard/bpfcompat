@@ -1,0 +1,28 @@
+name: experimental-freeze
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  protected-surface:
+    name: Experimental surface remains frozen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Check frozen paths
+        env:
+          BPFCOMPAT_FREEZE_BASE: ${{ github.event.pull_request.base.sha }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          approved=0
+          if jq -e '. | index("experimental-change-approved") != null' <<<"$LABELS_JSON" >/dev/null; then
+            approved=1
+          fi
+          BPFCOMPAT_EXPERIMENTAL_CHANGE_APPROVED="$approved" \
+            bash scripts/check-experimental-freeze.sh

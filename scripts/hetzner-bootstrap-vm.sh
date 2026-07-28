@@ -23,7 +23,7 @@ BPFCOMPAT_REPO_URL="${BPFCOMPAT_REPO_URL:-https://github.com/Kernel-Guard/bpfcom
 BPFCOMPAT_REPO_REF="${BPFCOMPAT_REPO_REF:-main}"
 # bpfcompat needs a modern Go (see go.mod); distro packages lag, so we install
 # the official toolchain. Keep this in sync with the go directive in go.mod.
-GO_VERSION="${GO_VERSION:-1.25.0}"
+GO_VERSION="${GO_VERSION:-1.25.12}"
 
 if [[ -z "$HETZNER_HOST" ]]; then
   echo "[hetzner-bootstrap-vm] set HETZNER_HOST first" >&2

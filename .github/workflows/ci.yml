@@ -55,12 +55,28 @@ jobs:
         # unquoted colon in a description) breaks every consumer at "Set up
         # job" with no way to patch the tag. Catch it before release.
         run: python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in ['action.yml'] + glob.glob('.github/workflows/*.yml')]; print('ok')"
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
       - name: Action OCI-artifact detection regression
         # Guards the fix that lets the action accept remote OCI references
         # (ghcr.io/...) as `artifact`. Extracts is_remote_artifact() from
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Release-asset verification regression
+        run: bash scripts/verify-release-assets_test.sh
+      - name: Release-state fail-closed regression
+        run: bash scripts/check-release-state_test.sh
+      - name: Release metadata/channel regression
+        run: bash scripts/check-release-consistency_test.sh
+      - name: Release-channel promotion regression
+        run: bash scripts/promote-release_test.sh
+      - name: Production-environment protection regression
+        run: bash scripts/check-production-environment_test.sh
+      - name: Production-readiness evidence regression
+        run: bash scripts/production-readiness-report_test.sh
+      - name: Release metadata consistency
+        run: make check-release-consistency
       - name: go vet
         run: go vet ./...
       - name: go test
@@ -91,7 +107,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: latest
+          version: v2.6.2
           args: --timeout=5m --new-from-rev=origin/main
       - name: Check push diff base
         id: push-diff-base
@@ -107,7 +123,7 @@ jobs:
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent == 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: latest
+          version: v2.6.2
           args: --timeout=5m --new-from-rev=HEAD~1
       - name: golangci-lint (root commit bootstrap)
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent != 'true'
@@ -124,7 +140,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
       - name: govulncheck
         run: govulncheck ./...
 

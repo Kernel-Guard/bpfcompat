@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+script="scripts/check-release-consistency.sh"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+write_metadata() {
+  local stable="$1"
+  local release="$2"
+  local channel="$3"
+  local reviewer="${4:-yusuf-demirel4}"
+  cat >"$tmp/release.yaml" <<EOF
+stable_version: ${stable}
+release_version: ${release}
+release_channel: ${channel}
+release_reviewer: ${reviewer}
+minimum_go: 1.25.12
+report_schema: v0.1
+EOF
+}
+
+BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/current.log"
+grep -Fq 'channel=prerelease' "$tmp/current.log"
+
+write_metadata 0.3.6 0.3.6 stable
+BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" "$script" >"$tmp/stable.log"
+grep -Fq 'channel=stable' "$tmp/stable.log"
+
+GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.4.0-rc.1 \
+  BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/tag.log"
+
+for bad_case in \
+  "0.3.6 0.4.0-rc.1 stable yusuf-demirel4" \
+  "0.3.6 0.4.0 prerelease yusuf-demirel4" \
+  "0.3.6 0.4.0-rc.0 prerelease yusuf-demirel4" \
+  "0.3.6 0.3.6 prerelease yusuf-demirel4" \
+  "0.3.6 0.3.6 stable invalid_login_"; do
+  read -r stable release channel reviewer <<<"$bad_case"
+  write_metadata "$stable" "$release" "$channel" "$reviewer"
+  if BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" \
+    "$script" >"$tmp/bad.log" 2>&1; then
+    echo "[release-consistency-test] accepted invalid metadata: ${bad_case}" >&2
+    exit 1
+  fi
+done
+
+if GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.4.0-rc.2 \
+  BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-tag.log" 2>&1; then
+  echo "[release-consistency-test] accepted mismatched release tag" >&2
+  exit 1
+fi
+
+echo "[release-consistency-test] PASS"

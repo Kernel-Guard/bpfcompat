@@ -55,7 +55,7 @@ render_table() {
   echo "| Profile ID | Distro | Version | Kernel family | Arch | Transport / runner | Notes |"
   echo "|---|---|---|---|---|---|---|"
   if [[ -n "$1" ]]; then
-    printf '%s' "$1" | sort | awk -F'\t' '{printf "| %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7}'
+    printf '%s' "$1" | LC_ALL=C sort | awk -F'\t' '{printf "| %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7}'
   fi
 }
 

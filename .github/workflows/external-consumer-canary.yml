@@ -1,9 +1,9 @@
 name: external-consumer-canary
 
 # Continuously validates that bpfcompat still works on THREE independent
-# projects' real eBPF artifacts - so we detect breakage before their pinned
-# consumers do. Each exercises a different modality through the published action
-# (pinned to a release, the way a consumer uses it):
+# projects' real eBPF artifacts - so we detect breakage before pinned consumers
+# do. Each exercises a different modality through the current working tree;
+# consumer-canary.yml separately verifies the last published release:
 #   - Inspektor Gadget : a published OCI gadget (trace_open), pulled by reference
 #   - KubeArmor        : system_monitor built on-target against each kernel's BTF
 #   - Falco            : scap-open (modern_bpf), the real userspace loader path
@@ -34,15 +34,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.12"
+          cache: true
       - name: Install VM dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils cloud-image-utils jq
+            qemu-system-x86 qemu-utils cloud-image-utils jq make pkg-config \
+            libbpf-dev libelf-dev zlib1g-dev
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
       - name: Validate the published gadget across kernels
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: ./
         with:
           artifact: ghcr.io/inspektor-gadget/gadget/trace_open:latest
           matrix: matrices/consumer-external.yaml
@@ -64,15 +69,20 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.12"
+          cache: true
       - name: Install VM dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils cloud-image-utils jq
+            qemu-system-x86 qemu-utils cloud-image-utils jq make pkg-config \
+            libbpf-dev libelf-dev zlib1g-dev
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
       - name: Build system_monitor on each kernel and load it
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: ./
         with:
           command: |
             set -e
@@ -96,7 +106,7 @@ jobs:
             make kernel_headers >/dev/null
             make system_monitor.bpf.o >/dev/null 2>&1
             echo "built system_monitor.bpf.o against $(uname -r)"
-            V=v0.3.5
+            V=v0.3.6
             base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$V"
             curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
             curl -fsSLO "$base/SHA256SUMS"
@@ -126,12 +136,17 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.12"
+          cache: true
       - name: Install build and VM dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake clang llvm pkg-config autoconf automake \
-            libtool libelf-dev qemu-system-x86 qemu-utils cloud-image-utils jq
+            libtool libelf-dev libbpf-dev zlib1g-dev qemu-system-x86 \
+            qemu-utils cloud-image-utils jq
           curl -fsSL -o /tmp/bpftool.tar.gz \
             https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz
           tar -xzf /tmp/bpftool.tar.gz -C /tmp
@@ -142,6 +157,7 @@ jobs:
       - name: Build scap-open (static, modern_bpf embedded)
         run: |
           git clone --depth 1 https://github.com/falcosecurity/libs
+          git -C libs rev-parse HEAD | tee reports/falco-source-sha.txt
           cd libs && mkdir -p build && cd build
           cmake -DUSE_BUNDLED_DEPS=ON -DBUILD_LIBSCAP_MODERN_BPF=ON \
             -DMUSL_OPTIMIZED_BUILD=ON \
@@ -150,7 +166,7 @@ jobs:
           make scap-open -j"$(nproc)"
           file libscap/examples/01-open/scap-open
       - name: Validate scap-open across kernels (its real loader path)
-        uses: Kernel-Guard/bpfcompat@59ea07d2216113e86c0c9a5514be4c5c2a21d90c # v0.3.5
+        uses: ./
         with:
           command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
           command-binary: libs/build/libscap/examples/01-open/scap-open
@@ -159,6 +175,13 @@ jobs:
           markdown: reports/falco.md
           timeout: 20m
           concurrency: "2"
+      - name: Verify loader provenance
+        run: |
+          set -euo pipefail
+          expected="$(sha256sum libs/build/libscap/examples/01-open/scap-open | awk '{print $1}')"
+          actual="$(jq -r '.command.binary.sha256 // empty' reports/falco.json)"
+          test -n "$actual"
+          test "$actual" = "$expected"
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
