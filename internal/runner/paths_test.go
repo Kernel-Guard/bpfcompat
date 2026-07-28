@@ -22,7 +22,13 @@ func TestPrepareRunCreatesExpectedDirectories(t *testing.T) {
 	if !strings.HasPrefix(paths.RunDir, filepath.Join(tempDir, "runs")) {
 		t.Fatalf("unexpected run dir: %s", paths.RunDir)
 	}
-	for _, dir := range []string{paths.RunDir, paths.InputDir, paths.LogsDir} {
+	for _, dir := range []string{
+		paths.RunDir,
+		paths.InputDir,
+		paths.LogsDir,
+		filepath.Join(paths.InputDir, "command"),
+		filepath.Join(paths.InputDir, "validator"),
+	} {
 		info, statErr := os.Stat(dir)
 		if statErr != nil {
 			t.Fatal(statErr)

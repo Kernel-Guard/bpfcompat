@@ -18,13 +18,9 @@ func Stage(srcPath, dstDir string) (stagedPath string, retErr error) {
 		return "", fmt.Errorf("resolve destination directory: %w", err)
 	}
 
-	// codeql[go/path-injection] -- dstDir is the caller-selected output root; file creation below is constrained by os.Root.
-	if err := os.MkdirAll(dstDirAbs, 0o700); err != nil {
-		return "", fmt.Errorf("create destination directory: %w", err)
-	}
 	dstRoot, err := os.OpenRoot(dstDirAbs)
 	if err != nil {
-		return "", fmt.Errorf("open destination directory: %w", err)
+		return "", fmt.Errorf("open existing destination directory: %w", err)
 	}
 	defer dstRoot.Close()
 

@@ -1396,6 +1396,9 @@ func printSummary(result runner.RunResult) {
 	if result.Report.Artifact.Source != "" {
 		artifactDisplay = result.Report.Artifact.Source
 	}
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\n", `\n`)
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\r", `\r`)
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\x1b", `\x1b`)
 	fmt.Printf("Artifact: %s\n", artifactDisplay)
 	fmt.Printf("Hash: %s\n", result.Report.Artifact.SHA256)
 	fmt.Printf("Matrix Profiles: %d\n", len(result.Report.Matrix.Profiles))
