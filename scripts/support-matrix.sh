@@ -23,7 +23,7 @@ manual=""
 generated=""
 notrunnable=""
 
-for path in vm/profiles/*.yaml; do
+while IFS= read -r -d '' path; do
   id="$(field "$path" id)"
   distro="$(field "$path" distro)"
   version="$(field "$path" version)"
@@ -46,7 +46,7 @@ for path in vm/profiles/*.yaml; do
   else
     manual+="${row}	ssh	no source_url configured — operator supplies the image (see make import-required-images)"$'\n'
   fi
-done
+done < <(git ls-files -z -- 'vm/profiles/*.yaml')
 
 count() { printf '%s' "$1" | grep -c . || true; }
 
