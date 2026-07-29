@@ -43,6 +43,13 @@ Required CI runs `gosec` through `golangci-lint` on production-boundary
 changes. A full-repository scan is retained as audit evidence, but it is not
 evidence that the excluded surfaces are production-ready.
 
+The CodeQL workflow also runs `scripts/check-production-code-scanning.sh`
+after analysis. It fails the required `Analyze (Go)` check when an open alert
+lands in a supported CLI, report, runner, or QEMU path. Firecracker and
+`virtme-ng` stay outside that path gate because they remain explicitly
+excluded; alerts in any excluded surface still require a recorded risk review
+and do not provide evidence that the surface is production-ready.
+
 ## Compatibility Claim
 
 A passing result means the recorded artifact or command loader completed the

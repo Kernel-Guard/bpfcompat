@@ -114,7 +114,7 @@ func sshProbe(ctx context.Context, target sshTarget) error {
 }
 
 func sshRun(ctx context.Context, target sshTarget, remoteCmd string) error {
-	cmd := exec.CommandContext(ctx, "ssh", target.sshArgs(remoteCmd)...)
+	cmd := sshScriptCommand(ctx, target, remoteCmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))
@@ -127,7 +127,7 @@ func sshRun(ctx context.Context, target sshTarget, remoteCmd string) error {
 }
 
 func sshOutput(ctx context.Context, target sshTarget, remoteCmd string) (string, error) {
-	cmd := exec.CommandContext(ctx, "ssh", target.sshArgs(remoteCmd)...) // #nosec G204 -- remote commands are built from validated profile fields, same trust model as sshRun.
+	cmd := sshScriptCommand(ctx, target, remoteCmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))
@@ -137,6 +137,17 @@ func sshOutput(ctx context.Context, target sshTarget, remoteCmd string) (string,
 		return "", fmt.Errorf("ssh run failed (%s): %s", target.addr(), msg)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// sshScriptCommand keeps the local process invocation fixed and sends the
+// in-guest script over stdin. Command mode deliberately accepts arbitrary
+// loader shell from the caller, but that shell must never become part of the
+// host's ssh argv. OpenSSH runs the fixed "bash -s" command in the disposable
+// guest and forwards scriptInput on its standard input.
+func sshScriptCommand(ctx context.Context, target sshTarget, scriptInput string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "ssh", target.sshArgs("bash -s")...)
+	cmd.Stdin = strings.NewReader(scriptInput)
+	return cmd
 }
 
 func scpToGuest(ctx context.Context, target sshTarget, localPath, remotePath string) error {

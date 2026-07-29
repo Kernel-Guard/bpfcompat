@@ -56,3 +56,9 @@ jobs:
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
           category: "/language:go"
+
+      - name: Enforce zero open production-boundary alerts
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-production-code-scanning.sh "$GITHUB_REPOSITORY" "$GITHUB_REF"
