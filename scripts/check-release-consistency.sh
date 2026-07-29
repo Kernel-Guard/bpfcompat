@@ -91,7 +91,7 @@ for required_control in \
 done
 
 unexpected_release_writers="$(
-  rg -l --glob '*.yml' --glob '*.yaml' \
+  grep -ERl --include='*.yml' --include='*.yaml' \
     'gh release (create|upload|edit)|softprops/action-gh-release@' .github/workflows |
     grep -vFx "$release_workflow" || true
 )"
@@ -101,7 +101,7 @@ if [[ -n "$unexpected_release_writers" ]]; then
 fi
 
 unexpected_latest_writers="$(
-  rg -l --glob '*.yml' --glob '*.yaml' \
+  grep -ERl --include='*.yml' --include='*.yaml' \
     -- '--tag .*IMAGE.*:latest|value=latest' .github/workflows |
     grep -vFx "$release_workflow" || true
 )"
@@ -111,8 +111,8 @@ if [[ -n "$unexpected_latest_writers" ]]; then
 fi
 
 bad_action_refs="$(
-  rg -n 'uses: Kernel-Guard/bpfcompat@v[0-9]+\.[0-9]+\.[0-9]+' \
-    README.md docs --glob '*.md' --glob '*.yml' --glob '*.yaml' |
+  grep -ERn --include='*.md' --include='*.yml' --include='*.yaml' \
+    'uses: Kernel-Guard/bpfcompat@v[0-9]+\.[0-9]+\.[0-9]+' README.md docs |
     grep -vF "@${stable_action_tag}" || true
 )"
 if [[ -n "$bad_action_refs" ]]; then
@@ -123,7 +123,10 @@ fi
 while IFS= read -r workflow; do
   grep -Fq "GO_VERSION: \"${minimum_go}\"" "$workflow" ||
     fail "$workflow does not use Go ${minimum_go}"
-done < <(rg -l '^  GO_VERSION: ' .github/workflows --glob '*.yml' --glob '*.yaml')
+done < <(
+  grep -ERl --include='*.yml' --include='*.yaml' \
+    '^  GO_VERSION: ' .github/workflows
+)
 
 if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
   [[ "${GITHUB_REF_NAME:-}" == "$release_tag" ]] ||

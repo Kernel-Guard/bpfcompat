@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.2] - 2026-07-30
+
+### Fixed
+- Isolated release-consistency fixtures from the tag workflow environment so
+  candidate tags do not make stable-metadata regression fixtures fail.
+- Removed the release-consistency checker's undeclared `ripgrep` dependency;
+  tag release jobs now use the baseline `grep` tool available on hosted
+  runners.
+
 ## [0.4.0-rc.1] - 2026-07-29
 
 ### Added

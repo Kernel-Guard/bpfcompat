@@ -4,9 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# A tag workflow exports these variables to every child process. Individual
+# fixtures below set them only when tag matching is the behavior under test.
+unset GITHUB_REF_TYPE GITHUB_REF_NAME
+
 script="scripts/check-release-consistency.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+current_release="$(
+  awk -F': ' '$1 == "release_version" {print $2; exit}' release.yaml
+)"
 
 write_metadata() {
   local stable="$1"
@@ -30,7 +37,7 @@ write_metadata 0.3.6 0.3.6 stable
 BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" "$script" >"$tmp/stable.log"
 grep -Fq 'channel=stable' "$tmp/stable.log"
 
-GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.4.0-rc.1 \
+GITHUB_REF_TYPE=tag GITHUB_REF_NAME="v${current_release}" \
   BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/tag.log"
 
 for bad_case in \
@@ -48,7 +55,7 @@ for bad_case in \
   fi
 done
 
-if GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.4.0-rc.2 \
+if GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v9.9.9 \
   BPFCOMPAT_RELEASE_METADATA=release.yaml \
   "$script" >"$tmp/bad-tag.log" 2>&1; then
   echo "[release-consistency-test] accepted mismatched release tag" >&2
