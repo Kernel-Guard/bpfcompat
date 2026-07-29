@@ -34,6 +34,9 @@ Before creating a release tag:
 3. `scripts/check-production-environment.sh` passes against the live GitHub
    configuration. The tag workflow runs this check before building release
    artifacts.
+4. Required CI and the tagged-release workflow enforce at least 50.0% total Go
+   statement coverage. Raise this floor as sustained coverage improvements
+   land; never lower it to make a release pass.
 
 ## Release Candidate
 

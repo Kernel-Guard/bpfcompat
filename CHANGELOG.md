@@ -35,6 +35,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   GitHub-hosted KVM runner.
 - Container targets now default to CLI help instead of starting the frozen
   experimental API server.
+- Required CI and tagged releases now enforce a 50.0% total Go statement
+  coverage floor so coverage cannot silently regress during graduation.
 
 ### Security
 - Release downloads now require a release-workflow GitHub attestation or an
@@ -308,7 +310,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   `load_attach` across the RHEL 8/9/10 ABI (AlmaLinux/Rocky/CentOS-Stream),
   Oracle UEK 7/8, Amazon Linux 2 (5.10 and the no-BTF 4.14) and 2023, and
   openSUSE Leap — documented in `docs/case-study-enterprise-kernels.md`.
-- **SLSA Build L3 build-provenance + SBOM attestations** on tag releases
+- **SLSA build provenance + SBOM attestations** on tag releases
   (keyless OIDC via Sigstore/Rekor), with a verification guide
   (`docs/verifying-releases.md`).
 - **Weekly stability gate** (`.github/workflows/stability-gate.yml`) producing an
