@@ -1,6 +1,8 @@
 name: latest-kernel-compatibility
 
-# Scheduled compatibility sweep for moving distro-kernel targets. True
+# Scheduled compatibility sweep for moving distro-kernel targets on a hosted
+# KVM runner, so the supported campaign does not depend on an intermittently
+# available self-hosted fleet. True
 # upstream kernel.org validation is handled separately by
 # upstream-kernel-compatibility.yml through the virtme-ng backend.
 
@@ -32,7 +34,7 @@ concurrency:
 jobs:
   latest-kernel-sweep:
     name: Latest distro-kernel sweep
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       MATRIX: ${{ github.event.inputs.matrix || 'matrices/latest-kernel-sweep.yaml' }}
@@ -41,6 +43,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.12"
+          cache: true
+      - name: Install VM dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils clang llvm \
+            libbpf-dev libelf-dev zlib1g-dev pkg-config jq
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          fi
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: vm/cache
+          key: latest-kernel-images-${{ runner.os }}-${{ hashFiles('matrices/latest-kernel-sweep.yaml', 'vm/profiles/*.yaml') }}
 
       - name: Verify KVM availability
         shell: bash
@@ -83,6 +103,41 @@ jobs:
           concurrency: ${{ env.VM_CONCURRENCY }}
           build: "false"
 
+      - name: Record scheduled campaign identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="reports/functional-execve-latest-kernel.json"
+          test -s "$report"
+          jq -e '
+            .summary.status == "pass" and
+            ([.targets[] | select(.required and .status != "pass")] | length == 0) and
+            ([.targets[] | select(.status == "infra_error")] | length == 0)
+          ' "$report" >/dev/null
+          jq -n \
+            --arg schema_version "v0.1" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$GITHUB_WORKFLOW_REF" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg commit_sha "$GITHUB_SHA" \
+            --arg report "functional-execve-latest-kernel.json" \
+            --arg report_sha256 "$(sha256sum "$report" | awk '{print $1}')" \
+            --arg started_at "$(jq -r '.run.started_at' "$report")" \
+            '{
+              schema_version: $schema_version,
+              repository: $repository,
+              workflow: $workflow,
+              event: $event,
+              workflow_run_id: $run_id,
+              workflow_run_attempt: $run_attempt,
+              commit_sha: $commit_sha,
+              report: $report,
+              report_sha256: $report_sha256,
+              started_at: $started_at
+            }' >reports/production-campaign.json
+
       - name: Generate compatibility site snapshot
         if: always()
         shell: bash
@@ -100,6 +155,7 @@ jobs:
           path: |
             reports/functional-execve-latest-kernel.json
             reports/functional-execve-latest-kernel.md
+            reports/production-campaign.json
             matrices/latest-kernel-runnable.yaml
             public/compatibility/**
             .bpfcompat/runs/**/targets/**/serial.log

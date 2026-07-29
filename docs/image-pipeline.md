@@ -47,9 +47,10 @@ rationale is in [`profile-catalog.md`](profile-catalog.md).
 
 ## Integrity: recorded always, pinned optionally
 
-- **Recording (always):** the first time an image is used, its sha256 is
-  computed and cached in a `<image>.sha256` sidecar next to the file in
-  `vm/cache/`. Every VM target's report notes include
+- **Recording (always):** an image is rehashed before every run and its sha256
+  is recorded in a `<image>.sha256` sidecar next to the file in `vm/cache/`.
+  The sidecar is evidence, not a trust source; bpfcompat never skips hashing
+  based on its contents. Every VM target's report notes include
   `base image sha256: …`, so any past matrix result is attributable to
   exact image bytes even when the vendor URL has since changed.
 - **Pinning (opt-in):** setting `image.sha256` in a profile makes a
@@ -60,8 +61,9 @@ rationale is in [`profile-catalog.md`](profile-catalog.md).
 
 ## Acquisition and caching
 
-Images download on first use into `vm/cache/` (never committed). Bulk
-prefetch targets:
+Images download on first use into `vm/cache/` (never committed). Downloads
+honor run cancellation, use a 45-minute HTTP timeout, reject responses larger
+than 20 GiB, and remove partial output after any failure. Bulk prefetch targets:
 
 ```bash
 make vm-images                    # MVP matrix images

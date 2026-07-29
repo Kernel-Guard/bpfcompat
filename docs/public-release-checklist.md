@@ -67,6 +67,8 @@ Required:
 - `CONTRIBUTING.md`
 - `.github/workflows/ci.yml`
 - `.github/workflows/release-artifacts.yml`
+- `release.yaml`
+- `docs/production-support-boundary.md`
 - `docs/openapi.yaml`
 - `docs/env-reference.md`
 
@@ -76,6 +78,8 @@ Recommended:
 - GitHub Security Advisories enabled.
 - Dependabot or dependency-review workflow enabled.
 - Release tags signed by a trusted maintainer key.
+- A protected `production-release` environment with an independent reviewer,
+  self-review prevention, admin bypass disabled, and a `v*` tag policy.
 
 ## Verification
 
@@ -85,7 +89,12 @@ Run before publishing:
 make test
 go vet ./...
 golangci-lint run --timeout=5m
-govulncheck ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+make check-release-consistency
+make check-docs-drift
+make production-tech-check
+BPFCOMPAT_SKIP_READINESS_ATTESTATION=1 \
+  bash scripts/production-readiness-report_test.sh
 git diff --check
 ```
 
@@ -111,3 +120,7 @@ Avoid these claims unless the separate production gates pass:
 - "production runtime loader"
 - "production multi-tenant SaaS"
 - "fully managed artifact registry"
+
+The production claim is limited to the CLI, GitHub Action, and disposable
+QEMU/KVM compatibility validator described in
+[`production-support-boundary.md`](production-support-boundary.md).

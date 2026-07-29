@@ -4,8 +4,9 @@ version: "22.04"
 kernel_family: "5.15"
 arch: x86_64
 image:
-  source_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-  local_path: "vm/cache/ubuntu-22.04.qcow2"
+  source_url: "https://cloud-images.ubuntu.com/releases/jammy/release-20260722/ubuntu-22.04-server-cloudimg-amd64.img"
+  local_path: "vm/cache/ubuntu-22.04-release-20260722.qcow2"
+  sha256: "757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812"
 boot:
   memory_mb: 1024
   cpus: 1
@@ -13,4 +14,3 @@ validator:
   path: "/usr/local/bin/bpfcompat-validator"
 capabilities:
   expected_btf: true
-

@@ -23,7 +23,7 @@ manual=""
 generated=""
 notrunnable=""
 
-for path in vm/profiles/*.yaml; do
+while IFS= read -r -d '' path; do
   id="$(field "$path" id)"
   distro="$(field "$path" distro)"
   version="$(field "$path" version)"
@@ -46,7 +46,7 @@ for path in vm/profiles/*.yaml; do
   else
     manual+="${row}	ssh	no source_url configured — operator supplies the image (see make import-required-images)"$'\n'
   fi
-done
+done < <(git ls-files -z -- 'vm/profiles/*.yaml')
 
 count() { printf '%s' "$1" | grep -c . || true; }
 
@@ -55,7 +55,7 @@ render_table() {
   echo "| Profile ID | Distro | Version | Kernel family | Arch | Transport / runner | Notes |"
   echo "|---|---|---|---|---|---|---|"
   if [[ -n "$1" ]]; then
-    printf '%s' "$1" | sort | awk -F'\t' '{printf "| %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7}'
+    printf '%s' "$1" | LC_ALL=C sort | awk -F'\t' '{printf "| %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7}'
   fi
 }
 

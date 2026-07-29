@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -178,9 +180,9 @@ func TestExecuteTargetCommandModeInfraError(t *testing.T) {
 }
 
 func TestCommandArtifactMetadataStableAndDistinct(t *testing.T) {
-	a := commandArtifactMetadata(Config{Command: "loader --run"})
-	b := commandArtifactMetadata(Config{Command: "loader --run"})
-	c := commandArtifactMetadata(Config{Command: "loader --other"})
+	a := commandArtifactMetadata(Config{Command: "loader --run"}, nil)
+	b := commandArtifactMetadata(Config{Command: "loader --run"}, nil)
+	c := commandArtifactMetadata(Config{Command: "loader --other"}, nil)
 	if a.SHA256 == "" || a.SHA256 != b.SHA256 {
 		t.Fatalf("expected stable sha for identical command: %q vs %q", a.SHA256, b.SHA256)
 	}
@@ -190,8 +192,65 @@ func TestCommandArtifactMetadataStableAndDistinct(t *testing.T) {
 	if a.BaseName != "command" {
 		t.Fatalf("expected default basename 'command', got %q", a.BaseName)
 	}
-	withBin := commandArtifactMetadata(Config{Command: "x", CommandBinary: "/path/to/myloader"})
+}
+
+func TestCommandArtifactMetadataIncludesBinaryContents(t *testing.T) {
+	binaryPath := filepath.Join(t.TempDir(), "myloader")
+	if err := os.WriteFile(binaryPath, []byte("loader-v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Command: "x", CommandBinary: binaryPath}
+	infoV1, err := inspectCommandMetadata(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBin := commandArtifactMetadata(cfg, infoV1)
 	if withBin.BaseName != "myloader" {
 		t.Fatalf("expected basename from command binary, got %q", withBin.BaseName)
+	}
+	if infoV1.Binary == nil || infoV1.Binary.SHA256 == "" || infoV1.Binary.SizeBytes != int64(len("loader-v1")) {
+		t.Fatalf("expected binary provenance, got %+v", infoV1.Binary)
+	}
+	if infoV1.InvocationSHA256 == "" {
+		t.Fatal("expected invocation digest")
+	}
+
+	if err := os.WriteFile(binaryPath, []byte("loader-v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	infoV2, err := inspectCommandMetadata(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := commandArtifactMetadata(cfg, infoV2)
+	if withBin.SHA256 == changed.SHA256 {
+		t.Fatal("expected synthesized artifact identity to change with loader bytes")
+	}
+	if infoV1.Binary.SHA256 == infoV2.Binary.SHA256 {
+		t.Fatal("expected loader digest to change with loader bytes")
+	}
+}
+
+func TestCommandInvocationMetadataIncludesExpectedExitCode(t *testing.T) {
+	pass, err := inspectCommandMetadata(Config{Command: "loader --self-test", CommandExpectExit: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedFailure, err := inspectCommandMetadata(Config{Command: "loader --self-test", CommandExpectExit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pass.InvocationSHA256 == expectedFailure.InvocationSHA256 {
+		t.Fatal("expected invocation digest to change with expected exit code")
+	}
+}
+
+func TestInspectCommandMetadataRejectsMissingBinary(t *testing.T) {
+	_, err := inspectCommandMetadata(Config{
+		Command:       "$BPFCOMPAT_BIN --self-test",
+		CommandBinary: filepath.Join(t.TempDir(), "missing"),
+	})
+	if err == nil {
+		t.Fatal("expected missing command binary to fail before VM execution")
 	}
 }

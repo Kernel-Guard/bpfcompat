@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write  # attach matrix assets to tag releases
+      contents: read
       pages: write     # deploy the compatibility site to GitHub Pages
       id-token: write  # OIDC for Pages deployment
 
@@ -172,30 +172,6 @@ jobs:
             .bpfcompat/runs/**/targets/**/libbpf.log
             .bpfcompat/runs/**/targets/**/validator-result.json
             .bpfcompat/runs/**/targets/**/validator.stderr
-
-      - name: Package compatibility evidence for release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar -czf "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" \
-            public/compatibility \
-            reports/quirk-library-ringbuf-modern.json \
-            reports/quirk-library-ringbuf-modern.md \
-            reports/quirk-library-simple-pass.json \
-            reports/quirk-library-simple-pass.md
-
-      - name: Attach compatibility evidence to GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Compatibility evidence attached by ${GITHUB_WORKFLOW}."
-          fi
-          gh release upload "$GITHUB_REF_NAME" "bpfcompat-compatibility-${GITHUB_REF_NAME}.tgz" --clobber
 
       - name: Configure Pages
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')

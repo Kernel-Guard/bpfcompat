@@ -8,7 +8,8 @@ prove a binary came from this repository's build workflow before you run it:
 | `bpfcompat-linux-amd64`, `bpfcompat-validator-static-linux-amd64` | the binaries |
 | `SHA256SUMS` (+ `.sig`, `.crt`) | checksums, cosign-signed (keyless) |
 | `bpfcompat.sbom.cdx.json` | CycloneDX SBOM |
-| **SLSA build-provenance attestation** | non-falsifiable provenance (SLSA Build L3), bound to the repo/commit/workflow, in the public Sigstore transparency log |
+| `release-candidate-evidence.json` | Tag, commit, workflow run, exact image digest, and positive/negative VM report hashes |
+| **SLSA provenance attestation** | provenance bound to the artifact digest, repository, commit, and release workflow |
 | **SBOM attestation** | the SBOM bound to the binary's digest |
 
 Signing is **keyless** (Sigstore Fulcio + Rekor) via GitHub Actions OIDC — there is no
@@ -28,6 +29,14 @@ A pass confirms the artifact's digest matches an attestation produced by the
 
 ```bash
 gh attestation verify ./bpfcompat-linux-amd64 \
+  --repo Kernel-Guard/bpfcompat \
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
+```
+
+The promotion evidence is independently attested by the same workflow:
+
+```bash
+gh attestation verify ./release-candidate-evidence.json \
   --repo Kernel-Guard/bpfcompat \
   --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
 ```
@@ -63,9 +72,14 @@ gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat --pr
 - **Integrity** — the bytes weren't altered (checksums).
 - **Authenticity** — they were signed by this repo's workflow, not a fork or attacker
   (cosign cert identity).
-- **Provenance** — a tamper-evident, publicly logged record of *which commit and
-  workflow* built them (SLSA Build L3 attestation).
+- **Provenance** — a tamper-evident record of *which commit and workflow*
+  built them.
+- **Promotion binding** — one attested record connects the release tag and
+  commit to the tested VM reports and promoted container digest.
 
-The GitHub Action consumes prebuilt release binaries only after a `sha256sum -c`
-against the published `SHA256SUMS`; a checksum mismatch is a hard failure, not a
-silent fallback.
+The GitHub Action consumes prebuilt release binaries only after both
+`sha256sum -c` and `gh attestation verify` succeed for the CLI and validator.
+Attestation verification is restricted to
+`.github/workflows/release-artifacts.yml`; a checksum or attestation mismatch
+is a hard failure. When attestation verification is unavailable, the Action
+builds from its pinned source instead of trusting unverifiable release bytes.

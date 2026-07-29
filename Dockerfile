@@ -12,9 +12,7 @@
 #   docker build --target with-validator -t bpfcompat:dev-validator .
 #
 # Run:
-#   docker run --rm -p 8080:8080 \
-#     -v $(pwd)/.bpfcompat:/data/.bpfcompat \
-#     bpfcompat:dev serve --addr :8080 --workdir /data/.bpfcompat
+#   docker run --rm bpfcompat:dev version
 #
 # Security notes:
 #   - Final stage is distroless/static so there's no shell, no package
@@ -26,12 +24,12 @@
 #     drops the build-id, so two builds of the same commit hash produce
 #     byte-identical binaries.
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.25.12
 
 #######################################
 # 1. Builder
 #######################################
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:bbb255b0e131db500cf0520adc97441d2260cf629c7fa7e39e025ddf53995a24 AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS builder
 
 WORKDIR /src
 
@@ -100,9 +98,8 @@ COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
 COPY --from=validator-builder /src/validator/c-libbpf/bin/bpfcompat-validator \
      /usr/libexec/bpfcompat/bpfcompat-validator
 USER nonroot:nonroot
-EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/bpfcompat"]
-CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
+CMD ["--help"]
 
 #######################################
 # 3. Final image (default): Go binary only
@@ -121,9 +118,7 @@ COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
 # distroless images carry an unprivileged 'nonroot' user (uid 65532) already.
 USER nonroot:nonroot
 
-EXPOSE 8080
-
 # Entry point is the binary; subcommand is passed via CMD so the typical
 # operator override is just `docker run bpfcompat:dev <subcommand>`.
 ENTRYPOINT ["/usr/local/bin/bpfcompat"]
-CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]
+CMD ["--help"]

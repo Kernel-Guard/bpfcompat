@@ -62,9 +62,11 @@ jobs:
           : > /tmp/rows.md
           run "build" go build ./...
           run "vet" go vet ./...
-          run "gofmt" bash -c '[ -z "$(gofmt -l $(git ls-files "*.go" ":!:vendor/*"))" ]'
+          run "gofmt" bash -c "[ -z \"\$(gofmt -l \$(git ls-files '*.go' ':!:vendor/*'))\" ]"
           run "unit-tests" go test ./...
-          run "govulncheck" bash -c 'go run golang.org/x/vuln/cmd/govulncheck@latest ./...'
+          run "govulncheck" go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+          run "release-consistency" make check-release-consistency
+          run "generated-docs" make check-docs-drift
 
           {
             echo "# bpfcompat stability report"

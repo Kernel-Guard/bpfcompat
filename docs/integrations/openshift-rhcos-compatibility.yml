@@ -78,7 +78,7 @@ jobs:
           cp /tmp/bpfcompat/vm/cache/rhcos-${OCP}.qcow2 vm/cache/
 
       - name: Validate the agent on the OpenShift node OS
-        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
         env:
           # RHCOS is opt-in: without a staged image it stays unsupported
           # rather than being silently claimed runnable.

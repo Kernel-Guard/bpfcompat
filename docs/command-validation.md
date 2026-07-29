@@ -97,8 +97,13 @@ inside it freely: pipes, `&&`, redirects.
   **infra error**, not a compatibility failure — exactly as in the `.bpf.o`
   flow.
 - The run is still recorded in artifact version history; with no `.bpf.o` the
-  artifact identity is content-addressed from the command string
-  (`command://<name>`), so `compare`/history still work.
+  artifact identity is content-addressed from the command string and, when
+  supplied, the loader bytes (`command://<name>`), so `compare`/history still
+  work.
+- The report records a SHA-256 of the command plus expected exit code and, when
+  `--command-binary` is used, the loader binary's basename, size, and content
+  SHA-256. Two different builds remain distinguishable when they use the same
+  filename and command.
 
 ## GitHub Action
 
@@ -109,7 +114,7 @@ on its own loader with one step. A bare `matrix` name resolves to the
 to copy:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.2
+- uses: Kernel-Guard/bpfcompat@v0.3.6
   with:
     command: $BPFCOMPAT_BIN --self-test
     command-binary: build/myloader

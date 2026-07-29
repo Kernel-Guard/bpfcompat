@@ -1,12 +1,7 @@
-name: ghcr-image
+name: ghcr-image-preview
 
-# Builds and publishes the bpfcompat container image to GHCR on release tags,
-# cosign-signed (keyless) with a SLSA build-provenance attestation - the same
-# trust posture as the release binaries. The image is the distroless `final`
-# target: the CLI + `serve` API. VM-backed validation needs qemu/kvm on the
-# host, so for running the kernel matrix prefer the one-command install
-# (scripts/install.sh) or the GitHub Action; use this image for the CLI/API or
-# as a base to extend.
+# Manual preview-image builder. SemVer and latest production image publication
+# is owned exclusively by release-artifacts.yml after its candidate VM gate.
 #
 # Multi-arch: linux/amd64 + linux/arm64 (the `final` target is a static Go
 # binary on distroless/static, so the arm64 variant is a cheap cross-build).
@@ -15,8 +10,6 @@ name: ghcr-image
 # interpolated into any run: block.
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -31,13 +24,11 @@ env:
 
 jobs:
   image:
-    name: Build, push, sign (GHCR)
+    name: Build and push preview (GHCR)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write       # push to GHCR
-      id-token: write       # cosign keyless + provenance OIDC
-      attestations: write   # SLSA build-provenance attestation
+      packages: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -47,13 +38,8 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            ver="${GITHUB_REF_NAME}"
-          else
-            ver="$(git describe --tags --always 2>/dev/null || echo dev)"
-          fi
           {
-            echo "version=${ver}"
+            echo "version=$(git describe --tags --always 2>/dev/null || echo dev)"
             echo "commit=${GITHUB_SHA}"
             echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
@@ -73,10 +59,7 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=sha,format=short,enable=${{ github.ref_type != 'tag' }}
+            type=sha,format=short
 
       - name: Build and push
         id: build
@@ -94,23 +77,3 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
             BUILD_DATE=${{ steps.meta.outputs.date }}
-
-      - name: Install cosign
-        if: github.ref_type == 'tag'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: "v2.6.3"
-
-      - name: Sign image (keyless)
-        if: github.ref_type == 'tag'
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "${IMAGE}@${DIGEST}"
-
-      - name: Attest build provenance
-        if: github.ref_type == 'tag'
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true

@@ -3,12 +3,14 @@ package artifact
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -22,6 +24,13 @@ import (
 // fall back to ELF-magic detection so the loader also handles gadgets packaged
 // by other tools.
 const gadgetEBPFMediaType = "application/vnd.gadget.ebpf.program.v1+binary"
+
+const (
+	maxEBPFArtifactBytes       = int64(512 << 20)
+	maxOCIArchiveExpandedBytes = int64(8 << 30)
+	maxOCIArchiveEntries       = 100_000
+	ociOperationTimeout        = 10 * time.Minute
+)
 
 // elfMagic is the leading byte sequence of every ELF object (`\x7fELF`).
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
@@ -85,8 +94,11 @@ func fileLooksLikeOCIArchive(path string) bool {
 // ExtractEBPFFromOCI loads the OCI image named by ref (registry reference, OCI
 // layout directory, or OCI/docker image archive) and writes its eBPF ELF layer
 // into dstDir, returning the path to the extracted object.
-func ExtractEBPFFromOCI(ref, dstDir string) (string, error) {
-	img, err := loadOCIImage(ref)
+func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, ociOperationTimeout)
+	defer cancel()
+
+	img, err := loadOCIImage(ctx, ref)
 	if err != nil {
 		return "", err
 	}
@@ -104,33 +116,19 @@ func ExtractEBPFFromOCI(ref, dstDir string) (string, error) {
 		return "", fmt.Errorf("locate eBPF object in OCI image %q: %w", ref, err)
 	}
 
-	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+	if err := os.MkdirAll(dstDir, 0o700); err != nil {
 		return "", fmt.Errorf("create destination directory: %w", err)
 	}
 	outPath := filepath.Join(dstDir, ociArtifactName(ref)+".bpf.o")
-	out, err := os.Create(outPath)
-	if err != nil {
-		return "", fmt.Errorf("create extracted artifact: %w", err)
-	}
-	defer out.Close()
-
-	rc, err := elf.Uncompressed()
-	if err != nil {
-		return "", fmt.Errorf("read eBPF layer: %w", err)
-	}
-	defer rc.Close()
-	if _, err := io.Copy(out, rc); err != nil {
-		return "", fmt.Errorf("write extracted artifact: %w", err)
-	}
-	if err := out.Sync(); err != nil {
-		return "", fmt.Errorf("sync extracted artifact: %w", err)
+	if err := extractLayerToFile(elf, outPath, maxEBPFArtifactBytes); err != nil {
+		return "", err
 	}
 	return outPath, nil
 }
 
 // loadOCIImage resolves ref to a single image, handling registry references,
 // OCI layout directories, and image archives.
-func loadOCIImage(ref string) (v1.Image, error) {
+func loadOCIImage(ctx context.Context, ref string) (v1.Image, error) {
 	info, statErr := os.Stat(ref)
 	switch {
 	case statErr == nil && info.IsDir():
@@ -138,12 +136,48 @@ func loadOCIImage(ref string) (v1.Image, error) {
 	case statErr == nil:
 		return imageFromArchive(ref)
 	default:
-		img, err := crane.Pull(ref)
+		img, err := crane.Pull(ref, crane.WithContext(ctx))
 		if err != nil {
 			return nil, fmt.Errorf("pull OCI image %q: %w", ref, err)
 		}
 		return img, nil
 	}
+}
+
+func extractLayerToFile(layer v1.Layer, outPath string, maxBytes int64) error {
+	rc, err := layer.Uncompressed()
+	if err != nil {
+		return fmt.Errorf("read eBPF layer: %w", err)
+	}
+	defer rc.Close()
+
+	out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- outPath is contained in the private runner directory.
+	if err != nil {
+		return fmt.Errorf("create extracted artifact: %w", err)
+	}
+	complete := false
+	defer func() {
+		_ = out.Close()
+		if !complete {
+			_ = os.Remove(outPath)
+		}
+	}()
+
+	written, err := io.Copy(out, io.LimitReader(rc, maxBytes+1))
+	if err != nil {
+		return fmt.Errorf("write extracted artifact: %w", err)
+	}
+	if written > maxBytes {
+		return fmt.Errorf("eBPF layer exceeds limit %d bytes", maxBytes)
+	}
+	if err := out.Sync(); err != nil {
+		return fmt.Errorf("sync extracted artifact: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("close extracted artifact: %w", err)
+	}
+	complete = true
+	return nil
 }
 
 // imageFromLayout returns the first image in an OCI layout directory.
@@ -248,6 +282,10 @@ func ociArtifactName(ref string) string {
 }
 
 func extractTar(path, dstDir string) error {
+	return extractTarWithLimits(path, dstDir, maxOCIArchiveExpandedBytes, maxOCIArchiveEntries)
+}
+
+func extractTarWithLimits(path, dstDir string, maxBytes int64, maxEntries int) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -271,6 +309,8 @@ func extractTar(path, dstDir string) error {
 	}
 
 	tr := tar.NewReader(r)
+	var totalBytes int64
+	entries := 0
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -279,28 +319,38 @@ func extractTar(path, dstDir string) error {
 		if err != nil {
 			return err
 		}
+		entries++
+		if entries > maxEntries {
+			return fmt.Errorf("OCI archive exceeds limit of %d entries", maxEntries)
+		}
 		target, err := safeJoin(dstDir, hdr.Name)
 		if err != nil {
 			return err
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if hdr.Size < 0 || hdr.Size > maxBytes-totalBytes {
+				return fmt.Errorf("OCI archive exceeds expanded-size limit of %d bytes", maxBytes)
+			}
+			totalBytes += hdr.Size
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return err
 			}
-			w, err := os.Create(target)
+			w, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- target is contained under dstDir by safeJoin.
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(w, tr); err != nil { //nolint:gosec // size bounded by trusted local archive
-				w.Close()
+			if _, err := io.CopyN(w, tr, hdr.Size); err != nil {
+				_ = w.Close()
 				return err
 			}
-			w.Close()
+			if err := w.Close(); err != nil {
+				return err
+			}
 		}
 	}
 }

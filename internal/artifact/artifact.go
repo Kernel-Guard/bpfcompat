@@ -1,15 +1,14 @@
 package artifact
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/kernel-guard/bpfcompat/internal/safepath"
 )
 
-func Stage(srcPath, dstDir string) (string, error) {
+func Stage(srcPath, dstDir string) (stagedPath string, retErr error) {
 	srcAbs, err := filepath.Abs(srcPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve source path: %w", err)
@@ -19,9 +18,11 @@ func Stage(srcPath, dstDir string) (string, error) {
 		return "", fmt.Errorf("resolve destination directory: %w", err)
 	}
 
-	if err := os.MkdirAll(dstDirAbs, 0o755); err != nil {
-		return "", fmt.Errorf("create destination directory: %w", err)
+	dstRoot, err := os.OpenRoot(dstDirAbs)
+	if err != nil {
+		return "", fmt.Errorf("open existing destination directory: %w", err)
 	}
+	defer dstRoot.Close()
 
 	src, err := os.Open(srcAbs)
 	if err != nil {
@@ -29,17 +30,26 @@ func Stage(srcPath, dstDir string) (string, error) {
 	}
 	defer src.Close()
 
-	// The destination filename is derived from the source basename; contain
-	// it to a single component under the destination directory.
-	dstPath, err := safepath.LocalJoin(dstDirAbs, filepath.Base(srcAbs))
-	if err != nil {
-		return "", fmt.Errorf("resolve staged artifact path: %w", err)
-	}
-	dst, err := os.Create(dstPath)
+	dstName := filepath.Base(srcAbs)
+	dst, err := dstRoot.OpenFile(dstName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create staged artifact: %w", err)
 	}
-	defer dst.Close()
+	defer func() {
+		if closeErr := dst.Close(); closeErr != nil && retErr == nil {
+			stagedPath = ""
+			retErr = fmt.Errorf("close staged artifact: %w", closeErr)
+		}
+		if retErr == nil {
+			return
+		}
+		if removeErr := dstRoot.Remove(dstName); removeErr != nil && !os.IsNotExist(removeErr) {
+			retErr = errors.Join(retErr, fmt.Errorf("remove incomplete staged artifact: %w", removeErr))
+		}
+	}()
+	if err := dst.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("set staged artifact permissions: %w", err)
+	}
 
 	if _, err := io.Copy(dst, src); err != nil {
 		return "", fmt.Errorf("copy artifact: %w", err)
@@ -48,5 +58,5 @@ func Stage(srcPath, dstDir string) (string, error) {
 		return "", fmt.Errorf("sync staged artifact: %w", err)
 	}
 
-	return dstPath, nil
+	return filepath.Join(dstDirAbs, dstName), nil
 }

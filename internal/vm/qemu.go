@@ -185,7 +185,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	}()
 
 	vmRunDir := filepath.Join(req.RunDir, "targets", req.Profile.ID)
-	if err := os.MkdirAll(vmRunDir, 0o755); err != nil {
+	if err := os.MkdirAll(vmRunDir, 0o700); err != nil {
 		result.InfraError = fmt.Sprintf("create vm run directory: %v", err)
 		return
 	}
@@ -196,7 +196,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 
-	baseImagePath, imageSHA, err := ensureImageAvailable(req.Profile, vmRunDir)
+	baseImagePath, imageSHA, err := ensureImageAvailable(ctx, req.Profile, vmRunDir)
 	if err != nil {
 		result.InfraError = err.Error()
 		return
@@ -676,12 +676,9 @@ func waitProcessExit(cmd *exec.Cmd, timeout time.Duration) error {
 	}
 }
 
-// ensureImageAvailable returns the cached image path and its sha256. The
-// digest is computed once and cached in a sidecar so every run is
-// attributable to exact image bytes; when the profile pins image.sha256, a
-// mismatching download or cache fails the run instead of silently testing
-// different bytes.
-func ensureImageAvailable(profile Profile, vmRunDir string) (string, string, error) {
+// ensureImageAvailable returns the cached image path and the digest recomputed
+// from the bytes used by this run. A pinned profile fails closed on mismatch.
+func ensureImageAvailable(ctx context.Context, profile Profile, vmRunDir string) (string, string, error) {
 	basePath := profile.Image.LocalPath
 	if basePath == "" {
 		return "", "", fmt.Errorf("profile %q missing image.local_path", profile.ID)
@@ -699,7 +696,7 @@ func ensureImageAvailable(profile Profile, vmRunDir string) (string, string, err
 			return "", "", fmt.Errorf("create image cache directory: %w", err)
 		}
 		tempPath := filepath.Join(vmRunDir, "image-download.tmp")
-		if err := downloadFile(profile.Image.SourceURL, tempPath); err != nil {
+		if err := downloadFile(ctx, profile.Image.SourceURL, tempPath); err != nil {
 			return "", "", fmt.Errorf("download image: %w", err)
 		}
 		if pinned := strings.TrimSpace(profile.Image.SHA256); pinned != "" {
@@ -721,7 +718,7 @@ func ensureImageAvailable(profile Profile, vmRunDir string) (string, string, err
 
 	sum, err := ensureImageChecksum(basePathAbs)
 	if err != nil {
-		return basePathAbs, "", nil //nolint:nilerr // checksum recording is best-effort for unpinned images
+		return "", "", fmt.Errorf("hash cached image %s: %w", basePathAbs, err)
 	}
 	if pinned := strings.TrimSpace(profile.Image.SHA256); pinned != "" && !strings.EqualFold(sum, pinned) {
 		return "", "", fmt.Errorf("cached image %s checksum mismatch: got %s want %s (delete the cached file and its .sha256 sidecar to re-download)", basePathAbs, sum, pinned)

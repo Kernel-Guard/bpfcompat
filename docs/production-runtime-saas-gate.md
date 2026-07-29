@@ -62,7 +62,10 @@ Still not production:
 - No production KMS/HSM signer operation or monitored signer SLO.
 - No full tenant isolation proof across storage, reports, audit, secrets, jobs, and runtime decisions.
 - Controlled rollback, unload, and revocation drill evidence exists locally; customer identity-provider, tenant backup/restore, and offboarding drills are still missing.
-- ~~No SLSA-style build provenance for `bpfcompat` and validator binaries.~~ Done: SLSA Build L3 build-provenance + SBOM attestations are generated on tag releases (`release-artifacts.yml`); verification in `docs/verifying-releases.md`.
+- ~~No SLSA-style build provenance for `bpfcompat` and validator binaries.~~
+  Done: SLSA provenance and SBOM attestations are generated on tag releases
+  (`release-artifacts.yml`); verification is documented in
+  `docs/verifying-releases.md`.
 
 ## Runtime Loading Production Gate
 
@@ -79,7 +82,7 @@ Production-safe runtime loading is `PASS` only when every P0 and P1 requirement 
 | P0 | Audit records include requester, approver, tenant/project, artifact digest, selected version, policy result, target, execution result, and correlation ID. | Example allow/deny audit records. | partial; agent load ledger now records selected digest, policy result, previous load, rollback/unload/revocation drills |
 | P0 | Unauthorized, tampered, unsigned, cross-tenant, and kill-switch-denied execute attempts fail before host load. | Negative-path test suite. | complete |
 | P1 | External signer is backed by KMS/HSM or equivalent managed key service. | Signer integration doc + rotation test. | partial; Azure Key Vault ES256 sign/verify can be regenerated with `make azure-production-boundary-proof`, but signer rotation and Managed HSM/customer-KMS operation are not complete |
-| P1 | Build provenance exists for `bpfcompat` and validator binaries. | SLSA-style provenance artifact for release build. | not-started |
+| P1 | Build provenance exists for `bpfcompat` and validator binaries. | SLSA-style provenance artifact for release build. | complete |
 | P1 | Runtime policy supports allow/deny by tenant, artifact, hook/program type, kernel range, profile, and required signature status. | Policy tests and sample policy file. | partial; API and agent policy paths cover these fields, plus agent allow/revoke identity lists |
 | P1 | Per-host worker identity is unique, least-privileged, and revocable. | Identity/RBAC design + revocation test. | partial; Azure VM managed identity and temporary managed-identity revocation checks can be regenerated with `make azure-production-boundary-proof` |
 | P1 | Rollback and incident response drills are documented and tested. | Drill notes linked from incident runbook. | partial; controlled local drill evidence exists at `evidence/production-runtime-drills/20260602T223121Z/production-runtime-drill.md`, but a customer incident drill is still required |

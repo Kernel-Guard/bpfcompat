@@ -18,7 +18,9 @@ dashboards, and audits.
 |---|---|---|
 | `schema_version` | string | Always present. Gate on this. |
 | `run` | object | `{ id, started_at }` |
-| `artifact` | object | `{ path, basename, sha256, size_bytes }` — the validated `.bpf.o` |
+| `artifact` | object | `{ path, source?, basename, sha256, size_bytes }` — the validated `.bpf.o` or synthetic command identity; `source` preserves the original OCI reference when extraction was required |
+| `command` | object, optional | Command-mode invocation digest, expected exit code, and optional loader binary name/size/SHA-256. Command text is not persisted. |
+| `validator` | object, optional | Artifact-mode libbpf validator binary name, size, and SHA-256. The staged bytes are reused for every target. |
 | `matrix` | object | `{ path, name?, profiles[] }` — the kernel set requested |
 | `targets[]` | array | one entry per kernel profile (below) |
 | `summary` | object | `{ status, notes[]? }` — roll-up verdict (`pass`/`fail`) |

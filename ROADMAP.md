@@ -16,7 +16,8 @@ maintainer capacity. Work is tracked through public issues and pull requests.
 
 ## Next: v0.4 — adopter-ready CI
 
-- complete at least one upstream project integration using its actual loader;
+- keep the Falco actual-loader integration green and transfer future matrix and
+  cadence decisions to upstream maintainers;
 - make GitHub Action setup, caching, image prefetch, and evidence retention
   easier for external repositories;
 - add repeatable native ARM64 execution when suitable infrastructure is

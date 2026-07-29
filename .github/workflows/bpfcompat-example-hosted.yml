@@ -9,18 +9,6 @@ name: bpfcompat-example-hosted
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "cmd/**"
-      - "internal/**"
-      - "validator/**"
-      - "examples/**"
-      - "matrices/**"
-      - "vm/**"
-      - "action.yml"
-      - "Makefile"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/bpfcompat-example-hosted.yml"
 
 permissions:
   contents: read
@@ -34,8 +22,40 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect compatibility-relevant changes
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          required=false
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            required=true
+          else
+            while IFS= read -r path; do
+              case "$path" in
+                cmd/*|internal/*|validator/*|examples/*|matrices/*|suites/*|vm/*|vendor/*|action.yml|Makefile|go.mod|go.sum|go.work|go.work.sum|.github/workflows/bpfcompat-example-hosted.yml)
+                  required=true
+                  break
+                  ;;
+              esac
+            done < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA")
+          fi
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+          if [[ "$required" == "true" ]]; then
+            echo "Compatibility-relevant changes detected; running the VM gate."
+          else
+            echo "No compatibility-relevant changes detected; the VM gate is not required."
+          fi
 
       - name: Report KVM acceleration status
+        if: steps.changes.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -50,6 +70,7 @@ jobs:
           fi
 
       - name: Install host dependencies
+        if: steps.changes.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -59,6 +80,7 @@ jobs:
             pkg-config jq
 
       - name: Build validator and fixture artifacts
+        if: steps.changes.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -66,12 +88,14 @@ jobs:
           make examples
 
       - name: Fetch VM image for dev-one profile
+        if: steps.changes.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
           make vm-ubuntu-22
 
       - name: Run bpfcompat action
+        if: steps.changes.outputs.required == 'true'
         uses: ./
         with:
           suite: suites/dev-functional.yaml
@@ -84,17 +108,17 @@ jobs:
           build: "true"
 
       - name: Dump guest serial + validator output on failure
-        if: failure()
+        if: failure() && steps.changes.outputs.required == 'true'
         shell: bash
         run: |
           echo "===== /dev/kvm ====="; ls -l /dev/kvm || true
-          for f in $(find .bpfcompat -type f \( -name serial.log -o -name qemu.log -o -name validator.stderr -o -name validator-result.json \) 2>/dev/null); do
+          while IFS= read -r -d '' f; do
             echo "===== $f ====="
             tail -n 120 "$f" || true
-          done
+          done < <(find .bpfcompat -type f \( -name serial.log -o -name qemu.log -o -name validator.stderr -o -name validator-result.json \) -print0 2>/dev/null)
 
       - name: Upload reports
-        if: always()
+        if: always() && steps.changes.outputs.required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bpfcompat-reports-${{ github.run_id }}

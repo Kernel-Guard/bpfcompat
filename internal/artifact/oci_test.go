@@ -1,9 +1,12 @@
 package artifact
 
 import (
+	"archive/tar"
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -83,7 +86,7 @@ func TestExtractEBPFFromOCILayoutByMediaType(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, gadgetEBPFMediaType, payload)
 
 	out := t.TempDir()
-	got, err := ExtractEBPFFromOCI(layoutDir, out)
+	got, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
@@ -94,6 +97,13 @@ func TestExtractEBPFFromOCILayoutByMediaType(t *testing.T) {
 	if !bytes.Equal(data, payload) {
 		t.Fatalf("extracted payload mismatch: got %d bytes, want %d", len(data), len(payload))
 	}
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected extracted artifact mode 0600, got %o", info.Mode().Perm())
+	}
 }
 
 func TestExtractEBPFFromOCILayoutByELFMagicFallback(t *testing.T) {
@@ -102,7 +112,7 @@ func TestExtractEBPFFromOCILayoutByELFMagicFallback(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, string(types.OCILayer), payload)
 
 	out := t.TempDir()
-	got, err := ExtractEBPFFromOCI(layoutDir, out)
+	got, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
 	if err != nil {
 		t.Fatalf("extract (magic fallback): %v", err)
 	}
@@ -117,8 +127,54 @@ func TestExtractEBPFFromOCILayoutByELFMagicFallback(t *testing.T) {
 
 func TestExtractEBPFFromOCINoELFLayer(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, string(types.OCILayer), []byte("not an elf at all"))
-	if _, err := ExtractEBPFFromOCI(layoutDir, t.TempDir()); err == nil {
+	if _, err := ExtractEBPFFromOCI(context.Background(), layoutDir, t.TempDir()); err == nil {
 		t.Fatalf("expected error when no eBPF layer is present")
+	}
+}
+
+func TestExtractLayerToFileRejectsExpandedOverflow(t *testing.T) {
+	payload := append(fakeELF(), []byte("overflow")...)
+	layer := static.NewLayer(payload, types.OCILayer)
+	out := filepath.Join(t.TempDir(), "artifact.bpf.o")
+	err := extractLayerToFile(layer, out, int64(len(fakeELF())))
+	if err == nil || !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("expected expanded-size error, got %v", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("partial artifact should be removed, stat error=%v", statErr)
+	}
+}
+
+func TestExtractTarRejectsExpandedOverflow(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "layout.tar")
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	payload := []byte("12345")
+	header := &tar.Header{
+		Name:     "blobs/payload",
+		Mode:     0o600,
+		Size:     int64(len(payload)),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = extractTarWithLimits(archivePath, t.TempDir(), 4, 10)
+	if err == nil || !strings.Contains(err.Error(), "expanded-size limit") {
+		t.Fatalf("expected archive size error, got %v", err)
 	}
 }
 

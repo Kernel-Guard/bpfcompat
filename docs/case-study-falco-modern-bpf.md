@@ -65,7 +65,7 @@ keep in sync with the loader: the loader is the contract.
 
 On 2026-07-27 the maintainers reviewed and merged a follow-up,
 [falcosecurity/libs#3061](https://github.com/falcosecurity/libs/pull/3061),
-which switches the lane to the prebuilt (checksum-verified) action path and
+which switches the lane to the prebuilt, checksum-verified Action path and
 **expands the matrix to RHEL-family vendor kernels** — where backported eBPF
 features make "kernel version" least predictive. That second merge is upstream
 investment in the lane, not a one-time contribution.
@@ -85,7 +85,7 @@ expressed during review, not an endorsement of the project.
 
 ```bash
 # In CI (GitHub Action), against your kernel matrix:
-- uses: Kernel-Guard/bpfcompat@v0.3.2
+- uses: Kernel-Guard/bpfcompat@v0.3.6
   with:
     artifact: build/bpf_probe.o
     matrix: matrices/mvp.yaml

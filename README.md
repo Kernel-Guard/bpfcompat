@@ -46,8 +46,9 @@ RHEL-family vendor kernels on the prebuilt action path.
 
 **Trust & provenance at a glance:** CI, CodeQL, and OpenSSF Scorecard run on
 every change (badges above); every tagged release ships checksums, cosign
-keyless signatures, a CycloneDX SBOM, and SLSA Build L3 build-provenance; the
-action verifies checksums and hard-fails on mismatch; vulnerabilities go through
+keyless signatures, a CycloneDX SBOM, and SLSA provenance; the Action verifies
+checksums and release-workflow attestations and hard-fails on mismatch;
+vulnerabilities go through
 a private policy. What's runnable today is a generated, CI-checked page, not a
 prose claim. Details: [supply-chain posture](#supply-chain-posture) ·
 [verifying releases](docs/verifying-releases.md) ·
@@ -216,7 +217,7 @@ A complete, real example is [`examples/preload-gate`](examples/preload-gate):
 ![preload-gate.go — a real program using ValidateBeforeLoad](docs/images/library/library-code.png)
 
 ```sh
-go get github.com/kernel-guard/bpfcompat@v0.3.2
+go get github.com/kernel-guard/bpfcompat@v0.3.6
 go build -tags hostload -o preload-gate ./examples/preload-gate
 sudo ./preload-gate probe.bpf.o
 ```
@@ -338,11 +339,13 @@ CLI discovers it) plus the kernel matrices in this repo, and a KVM-capable Linux
 host with `qemu-system-x86_64` for VM-backed runs.
 
 **0. One-command install (quickest, Linux x86_64 / arm64).** Downloads the CLI
-and the static guest validator, verifies them against the release `SHA256SUMS`
-(and the cosign signature when `cosign` is present), and installs the validator
-where `bpfcompat test` finds it automatically. On arm64 the CLI installs but the
-static validator is not published yet, so artifact-mode VM validation there
-needs `make validator-static` or command mode:
+and the static guest validator, verifies checksums plus either the release
+workflow's Sigstore signature or GitHub build attestations, and installs the
+validator where `bpfcompat test` finds it automatically. Verification is
+fail-closed, so the host needs `cosign` or an authenticated GitHub CLI with
+attestation support. On arm64 the CLI installs but the static validator is not
+published yet, so artifact-mode VM validation there needs
+`make validator-static` or command mode:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
@@ -351,10 +354,10 @@ curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts
 Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`, and
 `BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)).
 
-**1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and* the
-static validator (to a location the CLI auto-discovers), checksum-verified. The
-validator is currently published for amd64 only; on arm64 use the CLI plus
-`make validator-static` or command mode:
+**1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and*
+the static validator (to a location the CLI auto-discovers), checksum- and
+attestation-verified. The validator is currently published for amd64 only; on
+arm64 use the CLI plus `make validator-static` or command mode:
 
 ```bash
 VER=v0.3.6
@@ -362,6 +365,12 @@ base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
 curl -fsSLO "$base/SHA256SUMS"
+gh attestation verify ./bpfcompat-linux-amd64 \
+  --repo Kernel-Guard/bpfcompat \
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
+gh attestation verify ./bpfcompat-validator-static-linux-amd64 \
+  --repo Kernel-Guard/bpfcompat \
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
 sha256sum -c SHA256SUMS --ignore-missing
 sudo install -m 0755 bpfcompat-linux-amd64 /usr/local/bin/bpfcompat
 sudo install -D -m 0755 bpfcompat-validator-static-linux-amd64 \
@@ -399,16 +408,21 @@ a kernel matrix — use option 1 or 2 for that.
 
 ![Installing bpfcompat with go install](docs/images/install/install-go-install.png)
 
-**4. Container image (GHCR).** The CLI and `serve` API as a distroless,
-cosign-signed multi-arch image (amd64 + arm64), published per release:
+**4. Container image (GHCR).** The CLI as a distroless, cosign-signed
+multi-arch image (amd64 + arm64), published per release:
 
 ```bash
 docker run --rm ghcr.io/kernel-guard/bpfcompat:latest version
 ```
 
 Tags follow the release without the `v` prefix (`0.3.6`, `0.3`, `latest`). The
-image is the lean CLI/API build (no bundled qemu), so VM-backed validation still
-needs a KVM host — use option 0 or the GitHub Action for the kernel matrix.
+image does not bundle QEMU or the validator and therefore is not a standalone
+VM-validation environment. Use option 0 or the GitHub Action for a kernel
+matrix. The experimental `serve` command remains present but does not start by
+default and is outside the production support boundary.
+Release candidates use an exact tag such as `0.4.0-rc.1`; they never update
+the stable minor or `latest` aliases and are not returned by the installer's
+default latest-release lookup.
 Verify provenance with
 `cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
@@ -606,6 +620,10 @@ The experimental backends — upstream-mainline via `virtme-ng` and the
 Firecracker generated-initramfs proof — live in
 [docs/experimental.md](docs/experimental.md).
 
+The exact supported and excluded production surfaces, release gate, and
+operational graduation criteria are defined in
+[docs/production-support-boundary.md](docs/production-support-boundary.md).
+
 ## GitHub Action
 
 This repository includes a composite action that runs `bpfcompat` and appends
@@ -618,7 +636,7 @@ or the Firecracker lane. See
 Suite mode (recommended — gates the whole collection):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.2
+- uses: Kernel-Guard/bpfcompat@v0.3.6
   with:
     suite: suites/project.yaml
     suite-out: reports/suite.json
@@ -632,7 +650,7 @@ are alive and adds the result to the suite-level collection matrix.
 Single artifact:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.2
+- uses: Kernel-Guard/bpfcompat@v0.3.6
   with:
     artifact: path/to/program.bpf.o
     manifest: path/to/manifest.yaml
@@ -648,7 +666,7 @@ per-kernel verdict is the loader's exit code), against the built-in
 [library of known-tricky vendor kernels](docs/kernel-quirk-library.md):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.2
+- uses: Kernel-Guard/bpfcompat@v0.3.6
   with:
     command: $BPFCOMPAT_BIN --self-test
     command-binary: build/myloader   # static or fully self-contained binary
@@ -766,8 +784,8 @@ Operator guidance:
 - **Risk scoring:** OpenSSF Scorecard (`scorecard.yml`), published to the
   public Scorecard API (badge above).
 - **Signed releases + SLSA provenance:** tag builds produce a CycloneDX SBOM,
-  cosign keyless (Sigstore OIDC) signatures over the binaries / `SHA256SUMS` /
-  SBOM, and **SLSA Build L3 build-provenance attestations** bound to the
+  cosign keyless (Sigstore OIDC) signatures over `SHA256SUMS` and the SBOM,
+  plus SLSA provenance attestations for the binaries and container bound to the
   producing commit and workflow (`release-artifacts.yml`). Quick check:
 
   ```bash

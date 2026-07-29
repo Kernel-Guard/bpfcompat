@@ -1,8 +1,14 @@
 package main
 
 import (
+	"io"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/kernel-guard/bpfcompat/internal/runner"
+	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
 
 func TestStripHiddenUnsafeHostRunnerFlag(t *testing.T) {
@@ -38,6 +44,42 @@ func TestSplitCSVUpper(t *testing.T) {
 	want := []string{"UNKNOWN", "MISSING_BTF", "UNSUPPORTED_MAP_TYPE"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected splitCSVUpper result: got=%v want=%v", got, want)
+	}
+}
+
+func TestPrintSummaryEscapesArtifactControlCharacters(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStdout := os.Stdout
+	os.Stdout = writer
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+
+	printSummary(runner.RunResult{
+		Report: schema.ReportV01{
+			Artifact: schema.Artifact{Source: "ghcr.io/example/object\nforged\rentry\x1b[2J"},
+		},
+	})
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = originalStdout
+
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(output)
+	if strings.ContainsAny(got, "\r\x1b") {
+		t.Fatalf("summary contains an unescaped terminal control: %q", got)
+	}
+	if !strings.Contains(got, `Artifact: ghcr.io/example/object\nforged\rentry\x1b[2J`) {
+		t.Fatalf("summary did not preserve escaped artifact identity: %q", got)
 	}
 }
 

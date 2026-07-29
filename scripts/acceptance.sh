@@ -97,10 +97,21 @@ jq -e '[.targets[] | select(.status == "infra_error")] | length == 0' reports/si
 grep -q "Ubuntu 22.04" reports/simple-pass-mvp.md
 
 jq -e '.. | objects | select(.classification_code? == "UNSUPPORTED_MAP_TYPE" or .code? == "UNSUPPORTED_MAP_TYPE")' reports/ringbuf-modern-mvp.json >/dev/null
-grep -qi "perf" reports/ringbuf-modern-mvp.md
+jq -e '
+  all(.targets[] | select(.profile_id == "ubuntu-18.04-4.15" or .profile_id == "ubuntu-20.04-5.4");
+      .status == "fail" and .classification_code == "UNSUPPORTED_MAP_TYPE") and
+  all(.targets[] | select(.profile_id == "ubuntu-22.04-5.15" or .profile_id == "debian-12-6.1");
+      .status == "pass")
+' reports/ringbuf-modern-mvp.json >/dev/null
+grep -q "UNSUPPORTED_MAP_TYPE" reports/ringbuf-modern-mvp.md
 
 jq -e '.summary.status == "pass"' reports/perfbuf-fallback-mvp.json >/dev/null
-grep -q "perf_event" reports/perfbuf-fallback-mvp.md
+jq -e '
+  all(.targets[] | select(.required); .status == "pass") and
+  all(.targets[] | select(.profile_id == "ubuntu-18.04-4.15" or .profile_id == "ubuntu-20.04-5.4");
+      .validation.load_status == "pass" and .validation.attach_status == "pass")
+' reports/perfbuf-fallback-mvp.json >/dev/null
+grep -q "perfbuf_fallback.bpf.o" reports/perfbuf-fallback-mvp.md
 
 jq -e '.. | objects | select(.classification_code? == "MISSING_BTF" or .code? == "MISSING_BTF")' reports/core-relocation-mvp.json >/dev/null
 jq -e '.. | objects | select(.classification_code? == "CORE_RELOCATION_FAILURE" or .code? == "CORE_RELOCATION_FAILURE")' reports/core-relocation-mvp.json >/dev/null

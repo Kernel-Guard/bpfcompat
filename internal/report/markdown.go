@@ -28,7 +28,22 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 	b.WriteString(fmt.Sprintf("- Started At: `%s`\n", report.Run.StartedAt))
 	b.WriteString(fmt.Sprintf("- Status: `%s`\n", report.Summary.Status))
 	b.WriteString(fmt.Sprintf("- Artifact: `%s`\n", report.Artifact.Path))
+	if report.Artifact.Source != "" {
+		b.WriteString(fmt.Sprintf("- Artifact Source: `%s`\n", report.Artifact.Source))
+	}
 	b.WriteString(fmt.Sprintf("- Artifact SHA-256: `%s`\n", report.Artifact.SHA256))
+	if report.Validator != nil {
+		b.WriteString(fmt.Sprintf("- Validator: `%s`\n", report.Validator.BaseName))
+		b.WriteString(fmt.Sprintf("- Validator SHA-256: `%s`\n", report.Validator.SHA256))
+	}
+	if report.Command != nil {
+		b.WriteString(fmt.Sprintf("- Command invocation SHA-256: `%s`\n", report.Command.InvocationSHA256))
+		b.WriteString(fmt.Sprintf("- Command expected exit code: `%d`\n", report.Command.ExpectedExitCode))
+		if report.Command.Binary != nil {
+			b.WriteString(fmt.Sprintf("- Command binary: `%s`\n", report.Command.Binary.BaseName))
+			b.WriteString(fmt.Sprintf("- Command binary SHA-256: `%s`\n", report.Command.Binary.SHA256))
+		}
+	}
 	b.WriteString(fmt.Sprintf("- Matrix: `%s`\n", report.Matrix.Path))
 	b.WriteString(fmt.Sprintf("- Profiles: `%s`\n", strings.Join(report.Matrix.Profiles, ", ")))
 

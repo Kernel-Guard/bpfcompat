@@ -1392,7 +1392,14 @@ func runRuntimeWorkerExecute(args []string) int {
 func printSummary(result runner.RunResult) {
 	fmt.Printf("Run ID: %s\n", result.Report.Run.ID)
 	fmt.Printf("Run Dir: %s\n", result.RunDir)
-	fmt.Printf("Artifact: %s\n", result.Report.Artifact.Path)
+	artifactDisplay := result.Report.Artifact.Path
+	if result.Report.Artifact.Source != "" {
+		artifactDisplay = result.Report.Artifact.Source
+	}
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\n", `\n`)
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\r", `\r`)
+	artifactDisplay = strings.ReplaceAll(artifactDisplay, "\x1b", `\x1b`)
+	fmt.Printf("Artifact: %s\n", artifactDisplay)
 	fmt.Printf("Hash: %s\n", result.Report.Artifact.SHA256)
 	fmt.Printf("Matrix Profiles: %d\n", len(result.Report.Matrix.Profiles))
 	fmt.Printf("Status: %s\n", result.Report.Summary.Status)

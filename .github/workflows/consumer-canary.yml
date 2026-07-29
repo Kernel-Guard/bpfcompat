@@ -13,10 +13,11 @@ name: consumer-canary
 #
 # Two jobs, one per resolution path:
 #
-#   prebuilt      pins the v0.3.2 release commit, like falcosecurity/libs.
+#   prebuilt      pins the v0.3.6 release commit, like falcosecurity/libs.
 #                 A SHA that matches a release tag must resolve to prebuilt,
-#                 checksum-verified binaries — so this job deliberately does
-#                 NOT install libbpf-dev. If resolution regresses and it
+#                 checksum-verified binaries. This release predates the
+#                 Action's attestation-enforcement change. The job deliberately
+#                 does NOT install libbpf-dev; if resolution regresses and it
 #                 falls back to a source build, the compile fails here.
 #
 #   source-build  pins @main, which is not a release, forcing the source
@@ -71,7 +72,7 @@ jobs:
           fi
 
       - name: Validate via the published action (pinned to a release commit)
-        uses: Kernel-Guard/bpfcompat@48f7bf9bf0f19481c9dc98786c364358f8f0b902 # v0.3.2
+        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
         with:
           # Command mode with no artifact and no shipped binary, so this job
           # needs no compiler at all: the example .bpf.o objects are built,

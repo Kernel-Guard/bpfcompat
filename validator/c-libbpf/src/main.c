@@ -1948,7 +1948,9 @@ static void probe_per_program_loads(struct validator_result *res) {
             size_t keep = sizeof(res->programs[i].load_log) - 1;
             const char *start =
                 g_trial_log_len > keep ? g_trial_log + (g_trial_log_len - keep) : g_trial_log;
-            snprintf(res->programs[i].load_log, sizeof(res->programs[i].load_log), "%s", start);
+            res->programs[i].load_log[0] = '\0';
+            append_tail(res->programs[i].load_log, sizeof(res->programs[i].load_log),
+                        start, strlen(start));
         }
     }
     libbpf_set_print(libbpf_log_callback);
