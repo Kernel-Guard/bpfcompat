@@ -42,7 +42,7 @@ jobs:
       VM_CONCURRENCY: ${{ github.event.inputs.concurrency || '2' }}
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25.12"
@@ -57,7 +57,7 @@ jobs:
           if [[ -e /dev/kvm ]]; then
             sudo chmod 0666 /dev/kvm
           fi
-      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vm/cache
           key: latest-kernel-images-${{ runner.os }}-${{ hashFiles('matrices/latest-kernel-sweep.yaml', 'vm/profiles/*.yaml') }}
