@@ -34,6 +34,7 @@ func (t sshTarget) sshArgs(remoteCmd string) []string {
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=5",
+		"--",
 		t.addr(),
 		remoteCmd,
 	}
@@ -145,13 +146,16 @@ func sshOutput(ctx context.Context, target sshTarget, remoteCmd string) (string,
 // host's ssh argv. OpenSSH runs the fixed "bash -s" command in the disposable
 // guest and forwards scriptInput on its standard input.
 func sshScriptCommand(ctx context.Context, target sshTarget, scriptInput string) *exec.Cmd {
+	// #nosec G204 -- the executable and every option are fixed, target.sshArgs
+	// inserts "--" before the destination, and guest-controlled script content
+	// is carried only on stdin.
 	cmd := exec.CommandContext(ctx, "ssh", target.sshArgs("bash -s")...)
 	cmd.Stdin = strings.NewReader(scriptInput)
 	return cmd
 }
 
 func scpToGuest(ctx context.Context, target sshTarget, localPath, remotePath string) error {
-	args := append(target.scpBaseArgs(), localPath, fmt.Sprintf("%s:%s", target.addr(), remotePath))
+	args := append(target.scpBaseArgs(), "--", localPath, fmt.Sprintf("%s:%s", target.addr(), remotePath))
 	cmd := exec.CommandContext(ctx, "scp", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -165,7 +169,7 @@ func scpToGuest(ctx context.Context, target sshTarget, localPath, remotePath str
 }
 
 func scpFromGuest(ctx context.Context, target sshTarget, remotePath, localPath string) error {
-	args := append(target.scpBaseArgs(), fmt.Sprintf("%s:%s", target.addr(), remotePath), localPath)
+	args := append(target.scpBaseArgs(), "--", fmt.Sprintf("%s:%s", target.addr(), remotePath), localPath)
 	cmd := exec.CommandContext(ctx, "scp", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

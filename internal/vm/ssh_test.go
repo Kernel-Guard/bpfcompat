@@ -26,6 +26,13 @@ func TestSSHScriptCommandKeepsGuestScriptOutOfHostArgv(t *testing.T) {
 	if got := cmd.Args[len(cmd.Args)-1]; got != "bash -s" {
 		t.Fatalf("remote ssh command = %q, want fixed %q", got, "bash -s")
 	}
+	separator := slices.Index(cmd.Args, "--")
+	if separator < 0 || separator+2 >= len(cmd.Args) {
+		t.Fatalf("ssh argv must terminate options before destination and command: %#v", cmd.Args)
+	}
+	if got := cmd.Args[separator+2]; got != "bash -s" {
+		t.Fatalf("ssh command after option separator = %q, want %q", got, "bash -s")
+	}
 
 	stdin, err := io.ReadAll(cmd.Stdin)
 	if err != nil {
