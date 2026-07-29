@@ -73,6 +73,8 @@ jobs:
         run: bash scripts/promote-release_test.sh
       - name: Production-environment protection regression
         run: bash scripts/check-production-environment_test.sh
+      - name: Production CodeQL alert-gate regression
+        run: bash scripts/check-production-code-scanning_test.sh
       - name: Production-readiness evidence regression
         run: bash scripts/production-readiness-report_test.sh
       - name: Release metadata consistency
