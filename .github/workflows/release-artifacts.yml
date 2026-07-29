@@ -69,11 +69,13 @@ jobs:
           bash scripts/check-release-state_test.sh
           bash scripts/check-release-consistency_test.sh
           bash scripts/check-production-environment_test.sh
+          bash scripts/check-coverage_test.sh
           bash scripts/promote-release_test.sh
           bash scripts/production-readiness-report_test.sh
           bash scripts/verify-release-assets_test.sh
           go vet ./...
-          go test -race -count=1 ./...
+          go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+          bash scripts/check-coverage.sh coverage.out 50.0
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
           make production-tech-check
       - name: Resolve build metadata
