@@ -94,14 +94,7 @@ baselines:
       release_prefix: 6.12.0-
       release_contains: el9uek
   - profile: rhel-8-4.18
-    kernel: 5.15.0-206.153.7.1.el8uek.x86_64
-    recorded: "2026-05-19"
-    note: image boots UEK7 on the EL8 userspace
-    crawler:
-      distro: ol
-      target: ol
-      release_prefix: 5.15.0-
-      release_contains: el8uek
+    note: BYO subscription-walled RHEL image; the previous Oracle UEK observation was not valid RHEL freshness evidence
   - profile: rocky-10-6.12
     kernel: 6.12.0-124.8.1.el10_1.x86_64
     recorded: "2026-05-19"
