@@ -59,6 +59,17 @@ Before creating a release tag:
 
 ## Graduation Evidence
 
+For the active release candidate, the temporary
+`release-candidate-canary` workflow validates five exact-artifact paths:
+verified clean installation, clean source build, the published Action pinned
+to the immutable RC commit, the signed multiarchitecture container pinned by
+digest, and the external Inspektor Gadget/KubeArmor/Falco workflow dispatched
+at the immutable RC tag. Run it once immediately after publication. Its two
+dated schedules run just after T+24 hours and T+72 hours and emit
+`[bpfcompat-rc-canary:v1]` evidence; any out-of-window invocation exits after
+the planning job. Remove or retarget these temporary schedules after
+graduation.
+
 Before assembling the graduation directory, run the protected
 `rollback-drill` workflow from `main`. Supply a dedicated
 `rollback-drill-vX.Y.Z-rc.N` alias, the immutable known-good and candidate
