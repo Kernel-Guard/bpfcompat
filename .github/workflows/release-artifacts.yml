@@ -138,6 +138,8 @@ jobs:
             .release_version == $version and
             .slo.campaign_count == 4 and
             .slo.infrastructure_errors == 0 and
+            (.canaries | length == 3) and
+            .incident.completed == true and
             .operator.approval_mode == "solo-maintainer" and
             .operator.confirmed == true
           ' "${source_base}.json" >/dev/null

@@ -85,10 +85,10 @@ unchanged, leaves the drill alias on the known-good digest, and uploads
 artifact as the rollback drill note.
 
 Download four chronological scheduled campaign artifacts, one expanded Falco
-artifact, the attested candidate evidence, the rollback drill note, and the
+artifact, the attested candidate evidence, all three RC canary manifests, the
+rollback drill note, the fail-closed promotion incident note, and the
 operator's written promotion confirmation into one private working directory.
-Create an
-input manifest with paths relative to that directory:
+Create an input manifest with paths relative to that directory:
 
 ```json
 {
@@ -111,9 +111,31 @@ input manifest with paths relative to that directory:
     "evidence": "candidate/release-candidate-evidence.json",
     "evidence_sha256": "<sha256>"
   },
+  "canaries": [
+    {
+      "milestone": "manual",
+      "evidence": "canary-manual/release-candidate-canary.json",
+      "evidence_sha256": "<sha256>"
+    },
+    {
+      "milestone": "t-plus-24h",
+      "evidence": "canary-t-plus-24h/release-candidate-canary.json",
+      "evidence_sha256": "<sha256>"
+    },
+    {
+      "milestone": "t-plus-72h",
+      "evidence": "canary-t-plus-72h/release-candidate-canary.json",
+      "evidence_sha256": "<sha256>"
+    }
+  ],
   "rollback": {
     "completed": true,
     "evidence": "rollback/evidence.md",
+    "evidence_sha256": "<sha256>"
+  },
+  "incident": {
+    "completed": true,
+    "evidence": "incident/evidence.md",
     "evidence_sha256": "<sha256>"
   },
   "operator": {
@@ -126,7 +148,12 @@ input manifest with paths relative to that directory:
 }
 ```
 
-The real manifest contains exactly four campaign entries. Run:
+The real manifest contains exactly four campaign entries and exactly three
+canary entries in `manual`, `t-plus-24h`, and `t-plus-72h` order. The two timed
+canaries must come from `schedule` events, and every canary must bind the same
+RC tag, commit, and image digest as the attested candidate. The incident note
+must contain `[bpfcompat-promotion-incident:v1]` and describe the deliberately
+rejected promotion run. Run:
 
 ```bash
 scripts/production-readiness-report.sh \
@@ -137,6 +164,8 @@ The command writes both Markdown and JSON. Add the reviewed outputs to
 `docs/releases/bpfcompat-0.4.0-readiness.{md,json}` in the final release pull
 request. The stable release workflow validates, checksums, attests, and
 publishes those files; a stable tag fails if they are absent or not `ready`.
+The online candidate check requires an authenticated GitHub CLI version that
+provides `gh attestation`; an older CLI fails closed.
 
 Do not use `BPFCOMPAT_SKIP_READINESS_ATTESTATION=1` outside the regression
 test; production evidence must verify the candidate attestation online.
