@@ -22,6 +22,7 @@ GitHub repository UI/API (they cannot be set from committed files).
 | Release-channel alias isolation | `scripts/promote-release.sh` | tag releases (`v*`) |
 | Protected-environment preflight | `scripts/check-production-environment.sh` | tag releases (`v*`) |
 | Exact-input manual publication | `.github/workflows/promote-release.yml` | explicit `workflow_dispatch` |
+| Protected moving-alias rollback drill | `.github/workflows/rollback-drill.yml` | explicit `workflow_dispatch` from `main` |
 
 The tagged-release workflow builds candidate binaries once, tests those bytes
 in a pinned vendor VM, builds and verifies the candidate image, and stages a
