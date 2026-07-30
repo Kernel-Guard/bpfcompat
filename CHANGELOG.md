@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.3] - 2026-07-30
+
 ### Changed
 - Split release creation into a tag-triggered candidate workflow and a
   separately dispatched promotion workflow that re-verifies exact candidate
