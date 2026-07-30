@@ -59,6 +59,20 @@ Before creating a release tag:
 
 ## Graduation Evidence
 
+Before assembling the graduation directory, run the protected
+`rollback-drill` workflow from `main`. Supply a dedicated
+`rollback-drill-vX.Y.Z-rc.N` alias, the immutable known-good and candidate
+digests, their embedded versions, their exact Sigstore workflow identities,
+and confirmation text `rollback drill rollback-drill-vX.Y.Z-rc.N`.
+`production-drill` adds a five-minute wait and permits only `main`.
+
+The workflow verifies both signatures, SLSA v1 provenance records, and
+embedded versions before moving the drill-only alias known-good → candidate →
+known-good. It records the promotion and recovery times, proves `latest` was
+unchanged, leaves the drill alias on the known-good digest, and uploads
+`evidence.{md,json}` containing `[bpfcompat-rollback-drill:v1]`. Download that
+artifact as the rollback drill note.
+
 Download four chronological scheduled campaign artifacts, one expanded Falco
 artifact, the attested candidate evidence, the rollback drill note, and the
 operator's written promotion confirmation into one private working directory.
