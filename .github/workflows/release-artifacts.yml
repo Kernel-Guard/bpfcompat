@@ -1,9 +1,8 @@
 name: release-artifacts
 
-# One release graph owns binaries, the VM candidate test, the draft GitHub
-# release, and GHCR promotion. A tag is not made visible as a release until the
-# exact candidate binaries pass positive and classified-negative VM tests and
-# the candidate container has been built and verified.
+# The tag-triggered graph builds, verifies, signs, attests, and stages a private
+# draft. It never publishes or promotes. A separate workflow_dispatch-only
+# workflow re-verifies the exact run, commit, digest, and draft before promotion.
 
 on:
   push:
@@ -54,9 +53,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          reviewer="$(awk -F': ' '$1 == "release_reviewer" {print $2; exit}' release.yaml)"
+          approval_mode="$(awk -F': ' '$1 == "approval_mode" {print $2; exit}' release.yaml)"
           bash scripts/check-production-environment.sh \
-            "$GITHUB_REPOSITORY" production-release "$reviewer"
+            "$GITHUB_REPOSITORY" production-release "$approval_mode"
       - name: Refuse mutation of an already-published release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -71,6 +70,7 @@ jobs:
           bash scripts/check-production-environment_test.sh
           bash scripts/check-coverage_test.sh
           bash scripts/promote-release_test.sh
+          bash scripts/verify-promotion-inputs_test.sh
           bash scripts/production-readiness-report_test.sh
           bash scripts/verify-release-assets_test.sh
           go vet ./...
@@ -138,7 +138,8 @@ jobs:
             .release_version == $version and
             .slo.campaign_count == 4 and
             .slo.infrastructure_errors == 0 and
-            .reviewer.approved == true
+            .operator.approval_mode == "solo-maintainer" and
+            .operator.confirmed == true
           ' "${source_base}.json" >/dev/null
           cp "${source_base}.json" dist/production-readiness.json
           cp "${source_base}.md" dist/production-readiness.md
@@ -526,36 +527,3 @@ jobs:
             dist/bpfcompat.sbom.cdx.crt
             dist/release-candidate-evidence.json
             dist/production-readiness.*
-
-  promote:
-    name: Promote image and publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs:
-      - build-and-sign
-      - build-candidate-image
-      - assemble-candidate-evidence
-      - stage-draft-release
-    runs-on: ubuntu-latest
-    environment:
-      name: production-release
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote the verified image digest
-        env:
-          DIGEST: ${{ needs.build-candidate-image.outputs.digest }}
-          RELEASE_VERSION: ${{ needs.build-and-sign.outputs.version }}
-          RELEASE_CHANNEL: ${{ needs.build-and-sign.outputs.channel }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash scripts/promote-release.sh \
-            "$IMAGE" "$DIGEST" "$RELEASE_VERSION" "$RELEASE_CHANNEL"

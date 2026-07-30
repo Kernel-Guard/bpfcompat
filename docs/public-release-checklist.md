@@ -75,11 +75,14 @@ Required:
 Recommended:
 
 - Branch protection on `main`.
+- An active tag ruleset preventing updates or deletion of `v*` tags.
 - GitHub Security Advisories enabled.
 - Dependabot or dependency-review workflow enabled.
 - Release tags signed by a trusted maintainer key.
-- A protected `production-release` environment with an independent reviewer,
-  self-review prevention, admin bypass disabled, and a `v*` tag policy.
+- A protected `production-release` environment with no human reviewers, a
+  15-minute wait, admin bypass disabled, and a `v*` tag policy.
+- A separate `workflow_dispatch`-only promotion workflow that re-verifies the
+  candidate before publication.
 
 ## Verification
 

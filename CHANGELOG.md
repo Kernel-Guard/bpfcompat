@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Changed
+- Split release creation into a tag-triggered candidate workflow and a
+  separately dispatched promotion workflow that re-verifies exact candidate
+  evidence after a 15-minute production wait.
+- Replaced the external-reviewer release contract with an explicit
+  solo-maintainer operator confirmation and documented its residual
+  account-compromise risk.
+- Protected `v*` release tags from updates and deletion while retaining strict
+  pull-request checks with zero required human approvals.
+
 ## [0.4.0-rc.2] - 2026-07-30
 
 ### Fixed

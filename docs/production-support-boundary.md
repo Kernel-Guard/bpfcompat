@@ -84,9 +84,11 @@ Every supported release must:
 7. bind the release inputs and VM results into an attested candidate-evidence
    record;
 8. publish signed checksums, SBOM, and build provenance;
-9. pass the configured independent-reviewer check for the protected
-   `production-release` environment; and
-10. promote the verified image digest before making the draft release public.
+9. finish as a private draft without an automatic publication path;
+10. receive a separate exact-input manual promotion dispatch through the
+    15-minute `production-release` environment; and
+11. re-verify the run, tag, commit, assets, attestations, signatures, channel,
+    image digest, and version before making the draft release public.
 
 The release metadata source is [`release.yaml`](../release.yaml). It records
 the current stable version separately from the release candidate and its
@@ -104,12 +106,17 @@ Before the first production claim:
   [production-slo-runbook.md](production-slo-runbook.md);
 - the Falco upstream lane must complete on the expanded vendor-kernel matrix;
 - rollback and incident ownership must be exercised; and
-- at least one external reviewer must be able to approve a release.
+- the release operator must record a deliberate solo-promotion confirmation
+  bound to the final evidence.
+
+There is no separation of duties in `solo-maintainer` mode. The production
+claim must not describe the operator confirmation as independent review.
+Account compromise remains a residual release risk.
 
 Confirmed adoption is an ecosystem-readiness requirement for 1.0, not a
 substitute for these technical controls.
 
 `scripts/production-readiness-report.sh` validates the campaign manifests,
 report hashes, Falco profile coverage, attested release-candidate evidence,
-rollback evidence, and independent approval before producing the graduation
-report.
+rollback evidence, and solo-operator promotion confirmation before producing
+the graduation report.

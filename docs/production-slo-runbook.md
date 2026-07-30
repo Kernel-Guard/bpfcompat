@@ -54,8 +54,8 @@ boundary behavior change requires a new release candidate and restarts the
 window; documentation-only changes do not.
 
 Run the evidence aggregator after downloading the four campaign artifacts,
-the expanded Falco report, candidate evidence, rollback note, and reviewer
-approval:
+the expanded Falco report, candidate evidence, rollback note, and
+solo-maintainer promotion confirmation:
 
 ```bash
 scripts/production-readiness-report.sh \

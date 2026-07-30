@@ -7,7 +7,8 @@
 
 ## Immediate Actions
 
-1. Reject or leave pending the `production-release` environment deployment.
+1. Cancel the manual `promote-release` workflow before its 15-minute
+   environment wait completes, or cancel it before the promotion step.
 2. Capture latest evidence artifacts:
    - `evidence/production-tech/*`
    - `.bpfcompat/runs/<latest-run-id>/`
@@ -43,15 +44,17 @@ before changing any alias. Never rebuild or replace an immutable release tag.
 
 1. Keep a draft release private, or mark an already-public candidate as a
    prerelease. Do not delete evidence.
-2. Stop further promotion by rejecting the protected environment deployment.
+2. Stop further promotion by cancelling any queued or running manual
+   `promote-release` workflow.
 3. Repoint only the moving container aliases (`X.Y`, `latest`) to the previous
    signed image digest. Never change an immutable `X.Y.Z` or `X.Y.Z-rc.N` tag.
 4. Verify the restored image signature, provenance, version output, and digest.
 5. Direct Action consumers to the previous immutable commit SHA and installer
    users to the previous stable version.
-6. Record the primary operator, independent reviewer, commands, before/after
-   digests, elapsed recovery time, and verification results. Include the marker
-   `[bpfcompat-rollback-drill:v1]` in a planned drill note.
+6. Record the primary operator, commands, before/after digests, elapsed
+   recovery time, and verification results. Include the marker
+   `[bpfcompat-rollback-drill:v1]` in a planned drill note and record the
+   corresponding `[bpfcompat-solo-promotion:v1]` operator confirmation.
 
 ## Exit Criteria
 
@@ -59,4 +62,5 @@ before changing any alias. Never rebuild or replace an immutable release tag.
 - Production-tech gate returns `ready`.
 - A post-incident note is added under `evidence/production-tech/`.
 - Release aliases resolve to the intended attested digest.
-- The independent reviewer confirms the rollback evidence.
+- The release operator confirms the rollback evidence and explicitly records
+  that no independent human review occurred.

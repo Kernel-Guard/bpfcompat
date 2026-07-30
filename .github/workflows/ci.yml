@@ -71,6 +71,8 @@ jobs:
         run: bash scripts/check-release-consistency_test.sh
       - name: Release-channel promotion regression
         run: bash scripts/promote-release_test.sh
+      - name: Candidate-promotion binding regression
+        run: bash scripts/verify-promotion-inputs_test.sh
       - name: Production-environment protection regression
         run: bash scripts/check-production-environment_test.sh
       - name: Production CodeQL alert-gate regression
