@@ -1,0 +1,452 @@
+name: release-candidate-canary
+
+# Exact-artifact canaries for v0.4.0-rc.3. The two dated schedules land just
+# after T+24h and T+72h; the planning job also rejects any out-of-window
+# invocation. Remove or retarget this workflow after v0.4.0 graduates.
+on:
+  schedule:
+    - cron: "21 15 31 7 *"
+    - cron: "21 15 2 8 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-canary-v0.4.0-rc.3
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_TAG: v0.4.0-rc.3
+  CANDIDATE_COMMIT: cba1e09537f2e05e4ba7278efdb5c2d044d1889b
+  CANDIDATE_DIGEST: sha256:842ebbc5746dcfcf98823407a762bdf379e24beb8ea20941ff77f9a74a1a2ac6
+  CANDIDATE_PUBLISHED_AT: "2026-07-30T15:05:34Z"
+  IMAGE: ghcr.io/kernel-guard/bpfcompat
+
+jobs:
+  plan:
+    name: Select RC observation window
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      milestone: ${{ steps.window.outputs.milestone }}
+      should_run: ${{ steps.window.outputs.should_run }}
+    steps:
+      - name: Select manual, T+24h, or T+72h observation
+        id: window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          published_epoch="$(date -u -d "$CANDIDATE_PUBLISHED_AT" +%s)"
+          now_epoch="$(date -u +%s)"
+          elapsed_hours="$(((now_epoch - published_epoch) / 3600))"
+
+          should_run=false
+          milestone=outside-window
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            should_run=true
+            milestone=manual
+          elif (( elapsed_hours >= 20 && elapsed_hours <= 30 )); then
+            should_run=true
+            milestone=t-plus-24h
+          elif (( elapsed_hours >= 68 && elapsed_hours <= 78 )); then
+            should_run=true
+            milestone=t-plus-72h
+          fi
+
+          echo "should_run=$should_run" >>"$GITHUB_OUTPUT"
+          echo "milestone=$milestone" >>"$GITHUB_OUTPUT"
+          {
+            echo "Candidate: \`$CANDIDATE_TAG\`"
+            echo "Elapsed whole hours: \`$elapsed_hours\`"
+            echo "Observation: \`$milestone\`"
+            echo "Run canaries: \`$should_run\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  clean-install:
+    name: Clean installer against RC assets
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.3"
+
+      - name: Install and verify the exact prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$RUNNER_TEMP/bpfcompat-rc-install"
+          mkdir -p "$install_root/bin" "$install_root/libexec" evidence
+          BPFCOMPAT_VERSION="$CANDIDATE_TAG" \
+          BPFCOMPAT_BIN_DIR="$install_root/bin" \
+          BPFCOMPAT_LIBEXEC_DIR="$install_root/libexec" \
+            sh scripts/install.sh
+
+          actual="$("$install_root/bin/bpfcompat" version --json)"
+          jq -e \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "${CANDIDATE_COMMIT:0:12}" \
+            '.version == $version and .commit == $commit' <<<"$actual" >/dev/null
+          test -x "$install_root/libexec/bpfcompat-validator"
+
+          jq -n \
+            --arg check clean-install \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --arg installer scripts/install.sh \
+            '{
+              check: $check,
+              status: "pass",
+              version: $version,
+              commit: $commit,
+              installer: $installer,
+              checksum_verified: true,
+              sigstore_verified: true,
+              validator_installed: true
+            }' >evidence/clean-install.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rc3-canary-component-clean-install-${{ github.run_id }}
+          path: evidence/clean-install.json
+          if-no-files-found: error
+
+  source-build:
+    name: Clean source build at RC commit
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.12"
+          cache: true
+
+      - name: Install documented source-build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang llvm pkg-config libbpf-dev libelf-dev \
+            zlib1g-dev
+
+      - name: Build, test, and verify embedded identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build validator-static examples
+          go test ./...
+          actual="$(bin/bpfcompat version --json)"
+          jq -e \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "${CANDIDATE_COMMIT:0:12}" \
+            '.version == $version and .commit == $commit' <<<"$actual" >/dev/null
+          test -x validator/c-libbpf/bin/bpfcompat-validator
+
+          mkdir -p evidence
+          jq -n \
+            --arg check source-build \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            '{
+              check: $check,
+              status: "pass",
+              version: $version,
+              commit: $commit,
+              go_tests: "pass",
+              cli_built: true,
+              validator_built: true,
+              examples_built: true
+            }' >evidence/source-build.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rc3-canary-component-source-build-${{ github.run_id }}
+          path: evidence/source-build.json
+          if-no-files-found: error
+
+  published-action:
+    name: Published Action at immutable RC commit
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+
+      - name: Install minimal consumer dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm || true
+          fi
+
+      - name: Exercise the published RC Action and prebuilt path
+        uses: Kernel-Guard/bpfcompat@cba1e09537f2e05e4ba7278efdb5c2d044d1889b # v0.4.0-rc.3
+        with:
+          command: uname -r && test -d /sys/fs/bpf
+          matrix: matrices/canary.yaml
+          out: reports/rc3-action.json
+          markdown: reports/rc3-action.md
+          timeout: 10m
+          concurrency: "2"
+
+      - name: Verify Action report
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .summary.status == "pass" and
+            ([.targets[] | select(.required and .status != "pass")] | length == 0) and
+            ([.targets[] | select(.status == "infra_error")] | length == 0)
+          ' reports/rc3-action.json >/dev/null
+          mkdir -p evidence
+          jq -n \
+            --arg check published-action \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --arg report_sha256 "$(sha256sum reports/rc3-action.json | awk '{print $1}')" \
+            '{
+              check: $check,
+              status: "pass",
+              version: $version,
+              commit: $commit,
+              immutable_action_pin: true,
+              prebuilt_release_path: true,
+              report_sha256: $report_sha256
+            }' >evidence/published-action.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rc3-canary-component-published-action-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            evidence/published-action.json
+            reports/rc3-action.json
+            reports/rc3-action.md
+
+  container:
+    name: Signed multiarch RC container
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.3"
+
+      - name: Verify digest, platforms, signature, provenance, and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_ref="${IMAGE}@${CANDIDATE_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/${CANDIDATE_TAG}"
+          cosign verify \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$image_ref" >/dev/null
+          cosign verify-attestation \
+            --type https://slsa.dev/provenance/v1 \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$image_ref" >/dev/null
+
+          raw_index="$(docker buildx imagetools inspect "$image_ref" --raw)"
+          jq -e '
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "amd64") and
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "arm64")
+          ' <<<"$raw_index" >/dev/null
+          actual_version="$(docker run --rm "$image_ref" version --json | jq -r .version)"
+          test "$actual_version" = "$CANDIDATE_TAG"
+
+          mkdir -p evidence
+          jq -n \
+            --arg check container \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --arg digest "$CANDIDATE_DIGEST" \
+            '{
+              check: $check,
+              status: "pass",
+              version: $version,
+              commit: $commit,
+              digest: $digest,
+              signature_verified: true,
+              provenance_verified: true,
+              platforms: ["linux/amd64", "linux/arm64"]
+            }' >evidence/container.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rc3-canary-component-container-${{ github.run_id }}
+          path: evidence/container.json
+          if-no-files-found: error
+
+  external-consumers:
+    name: External consumers at exact RC tag
+    needs: plan
+    if: needs.plan.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      run_id: ${{ steps.dispatch.outputs.run_id }}
+    steps:
+      - name: Dispatch and await exact-tag external canary
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dispatched_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run external-consumer-canary.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$CANDIDATE_TAG"
+
+          run_id=""
+          for _ in $(seq 1 30); do
+            runs="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow external-consumer-canary.yml \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,createdAt,headSha
+            )"
+            run_id="$(
+              jq -r \
+                --arg commit "$CANDIDATE_COMMIT" \
+                --arg after "$dispatched_after" \
+                '[.[] | select(.headSha == $commit and .createdAt >= $after)][0].databaseId // empty' \
+                <<<"$runs"
+            )"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+          test -n "$run_id"
+          echo "run_id=$run_id" >>"$GITHUB_OUTPUT"
+          gh run watch "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --interval 15 \
+            --exit-status
+
+          mkdir -p evidence
+          jq -n \
+            --arg check external-consumers \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --argjson workflow_run_id "$run_id" \
+            '{
+              check: $check,
+              status: "pass",
+              version: $version,
+              commit: $commit,
+              workflow_run_id: $workflow_run_id,
+              consumers: ["Inspektor Gadget", "KubeArmor", "Falco"]
+            }' >evidence/external-consumers.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rc3-canary-component-external-consumers-${{ github.run_id }}
+          path: evidence/external-consumers.json
+          if-no-files-found: error
+
+  evidence:
+    name: Assemble RC canary evidence
+    needs:
+      - plan
+      - clean-install
+      - source-build
+      - published-action
+      - container
+      - external-consumers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: rc3-canary-component-*-${{ github.run_id }}
+          path: evidence/components
+
+      - name: Create exact-run evidence manifest
+        env:
+          EXTERNAL_RUN_ID: ${{ needs.external-consumers.outputs.run_id }}
+          MILESTONE: ${{ needs.plan.outputs.milestone }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          find evidence/components -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum >evidence/component-sha256.txt
+          components="$(
+            jq -Rn \
+              '[inputs | capture("^(?<sha256>[0-9a-f]{64})  (?<path>.+)$")]' \
+              <evidence/component-sha256.txt
+          )"
+          jq -n \
+            --arg schema_version v0.1 \
+            --arg marker "[bpfcompat-rc-canary:v1]" \
+            --arg milestone "$MILESTONE" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow_run_id "$GITHUB_RUN_ID" \
+            --arg completed_at "$completed_at" \
+            --arg version "$CANDIDATE_TAG" \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --arg digest "$CANDIDATE_DIGEST" \
+            --arg external_run_id "$EXTERNAL_RUN_ID" \
+            --argjson components "$components" \
+            '{
+              schema_version: $schema_version,
+              marker: $marker,
+              milestone: $milestone,
+              event: $event,
+              repository: $repository,
+              workflow_run_id: ($workflow_run_id | tonumber),
+              external_consumer_run_id: ($external_run_id | tonumber),
+              completed_at: $completed_at,
+              version: $version,
+              commit: $commit,
+              image_digest: $digest,
+              checks: {
+                clean_install: "pass",
+                source_build: "pass",
+                published_action: "pass",
+                container: "pass",
+                external_consumers: "pass"
+              },
+              components: $components
+            }' >evidence/release-candidate-canary.json
+          jq . evidence/release-candidate-canary.json >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-candidate-canary-${{ needs.plan.outputs.milestone }}-${{ github.run_id }}
+          path: evidence/**
+          if-no-files-found: error
