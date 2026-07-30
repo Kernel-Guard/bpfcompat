@@ -101,6 +101,16 @@ func TestValidateProfileInstallKernel(t *testing.T) {
 		t.Fatalf("valid install_kernel rejected: %v", err)
 	}
 
+	oracle := ubuntuVMProfile()
+	oracle.Distro = "oracle"
+	oracle.InstallKernel = "6.12.0-204.92.4.4.el9uek.x86_64"
+	oracle.KernelPackages = []string{
+		"https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-core-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+	}
+	if err := ValidateProfile(oracle); err != nil {
+		t.Fatalf("valid Oracle UEK install_kernel rejected: %v", err)
+	}
+
 	nonUbuntu := ubuntuVMProfile()
 	nonUbuntu.Distro = "debian"
 	nonUbuntu.InstallKernel = "6.1.0-30-cloud-amd64"

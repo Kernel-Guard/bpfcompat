@@ -100,15 +100,16 @@ const (
 )
 
 // KernelInstallFamily maps a profile distro to its kernel install family, or
-// "" when kernel-sweep does not support the distro. Deliberately excluded:
-// oracle (UEK ships from its own repositories, not BaseOS), immutable or
-// image-based systems (rhcos, fedora-coreos, flatcar, bottlerocket, talos),
-// and the mainline/CI kernel profiles, which are built rather than packaged.
+// "" when kernel-sweep does not support the distro. Oracle UEK uses the RHEL
+// install/reboot mechanics with package URLs derived from its UEKR repository.
+// Deliberately excluded: immutable or image-based systems (rhcos,
+// fedora-coreos, flatcar, bottlerocket, talos), and the mainline/CI kernel
+// profiles, which are built rather than packaged.
 func KernelInstallFamily(distro string) string {
 	switch strings.ToLower(strings.TrimSpace(distro)) {
 	case "ubuntu":
 		return KernelFamilyDebian
-	case "almalinux", "rocky", "centos-stream", "rhel":
+	case "almalinux", "rocky", "centos-stream", "rhel", "oracle":
 		return KernelFamilyRHEL
 	default:
 		return ""

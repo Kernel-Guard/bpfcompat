@@ -150,6 +150,7 @@ func runKernelSweep(args []string) int {
 		}
 		derived := base
 		derived.ID = sweepProfileID(base.ID, release)
+		derived.KernelFamily = sweepKernelFamily(release, base.KernelFamily)
 		derived.InstallKernel = release
 		derived.KernelPackages = debs
 
@@ -199,6 +200,30 @@ func sweepProfileID(baseID, release string) string {
 	return baseID + "-k" + short
 }
 
+// sweepKernelFamily keeps generated profile metadata aligned with the kernel
+// that will actually boot. This matters when a vendor repository moves to a
+// new kernel family before its cloud-image profile is renamed (for example
+// Oracle Linux 9 moving from UEK7 5.15 to UEK8 6.12).
+func sweepKernelFamily(release, fallback string) string {
+	parts := strings.SplitN(release, ".", 3)
+	if len(parts) < 2 || !decimalDigits(parts[0]) || !decimalDigits(parts[1]) {
+		return fallback
+	}
+	return parts[0] + "." + parts[1]
+}
+
+func decimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // defaultCrawlerRef supplies the kernel-crawler mapping for profiles that are
 // not yet listed in the baselines file. The crawler groups RHEL rebuilds
 // under their own distro key with the same value as the target flavor.
@@ -216,6 +241,8 @@ func defaultCrawlerRef(distro, kernelFamily string) freshness.CrawlerRef {
 		return freshness.CrawlerRef{Distro: "rocky", Target: "rocky", ReleasePrefix: prefix}
 	case "centos-stream":
 		return freshness.CrawlerRef{Distro: "centos", Target: "centos", ReleasePrefix: prefix}
+	case "oracle":
+		return freshness.CrawlerRef{Distro: "oracle", Target: "ol", ReleasePrefix: prefix}
 	default:
 		return freshness.CrawlerRef{}
 	}
