@@ -14,7 +14,7 @@ pinned see [image-pipeline.md](image-pipeline.md).
 
 | Category | Count | Meaning |
 |---|---|---|
-| Runnable (auto-download) | 47 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
+| Runnable (auto-download) | 48 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
 | Manual image required | 8 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
 | Generated lane | 0 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
 | Cataloged, not runnable here | 4 | Present in the catalog but not bootable on the current SSH/cloud-init executor (immutable images, executor limits). Marked non-blocking in matrices. |
@@ -43,6 +43,7 @@ image is fetched on first use and its sha256 is recorded.
 | opensuse-leap-15.6-6.4 | opensuse | 15.6 | 6.4 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | oracle-linux-10-uek8-6.12 | oracle | 10 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | oracle-linux-9-uek7-5.15 | oracle | 9 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek | oracle | 9 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | rocky-10-6.12 | rocky | 10 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | rocky-8-4.18 | rocky | 8 | 4.18 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | rocky-9-5.14 | rocky | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
