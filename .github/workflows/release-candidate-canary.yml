@@ -76,6 +76,8 @@ jobs:
           ref: ${{ env.CANDIDATE_COMMIT }}
 
       - name: Install and verify the exact prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
