@@ -75,14 +75,15 @@ jobs:
         with:
           ref: ${{ env.CANDIDATE_COMMIT }}
 
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: "v2.6.3"
-
       - name: Install and verify the exact prerelease
         shell: bash
         run: |
           set -euo pipefail
+          # Exercise the installer's independent GitHub-attestation path.
+          # Container signature/provenance verification is covered by the
+          # separate container job; avoiding a second cosign bootstrap also
+          # removes a redundant release-download failure point.
+          gh attestation --help >/dev/null
           install_root="$RUNNER_TEMP/bpfcompat-rc-install"
           mkdir -p "$install_root/bin" "$install_root/libexec" evidence
           BPFCOMPAT_VERSION="$CANDIDATE_TAG" \
@@ -109,7 +110,7 @@ jobs:
               commit: $commit,
               installer: $installer,
               checksum_verified: true,
-              sigstore_verified: true,
+              github_attestations_verified: true,
               validator_installed: true
             }' >evidence/clean-install.json
 
