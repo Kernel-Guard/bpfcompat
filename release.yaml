@@ -1,5 +1,5 @@
 stable_version: 0.3.6
-release_version: 0.4.0-rc.2
+release_version: 0.4.0-rc.3
 release_channel: prerelease
 release_operator: ErenAri
 approval_mode: solo-maintainer
