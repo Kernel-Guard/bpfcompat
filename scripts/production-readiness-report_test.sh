@@ -58,7 +58,7 @@ for index in 0 1 2 3; do
     '. + [{metadata: $metadata, report: $report}]' <<<"$campaigns")"
 done
 
-mkdir -p "$tmp/falco" "$tmp/candidate" "$tmp/rollback" "$tmp/reviewer"
+mkdir -p "$tmp/falco" "$tmp/candidate" "$tmp/rollback" "$tmp/operator"
 falco_report="$tmp/falco/modern-bpf-compat.json"
 make_report "$falco_report" \
   ubuntu-22.04-5.15 \
@@ -79,14 +79,14 @@ jq -n --arg image "ghcr.io/kernel-guard/bpfcompat@sha256:$(printf 'b%.0s' {1..64
   negative_report_sha256: ("f" * 64)
 }' >"$candidate"
 printf '%s\n' '[bpfcompat-rollback-drill:v1] completed' >"$tmp/rollback/evidence.md"
-printf '%s\n' '[bpfcompat-release-reviewer-acceptance:v1] yusuf-demirel4 approved' >"$tmp/reviewer/evidence.md"
+printf '%s\n' '[bpfcompat-solo-promotion:v1] ErenAri confirmed exact evidence' >"$tmp/operator/evidence.md"
 
 jq -n \
   --argjson campaigns "$campaigns" \
   --arg falco_sha "$(sha256sum "$falco_report" | awk '{print $1}')" \
   --arg candidate_sha "$(sha256sum "$candidate" | awk '{print $1}')" \
   --arg rollback_sha "$(sha256sum "$tmp/rollback/evidence.md" | awk '{print $1}')" \
-  --arg reviewer_sha "$(sha256sum "$tmp/reviewer/evidence.md" | awk '{print $1}')" \
+  --arg operator_sha "$(sha256sum "$tmp/operator/evidence.md" | awk '{print $1}')" \
   '{
     schema_version: "v0.1",
     release_version: "0.4.0",
@@ -107,11 +107,12 @@ jq -n \
       evidence: "rollback/evidence.md",
       evidence_sha256: $rollback_sha
     },
-    reviewer: {
-      login: "yusuf-demirel4",
-      approved: true,
-      evidence: "reviewer/evidence.md",
-      evidence_sha256: $reviewer_sha
+    operator: {
+      login: "ErenAri",
+      approval_mode: "solo-maintainer",
+      confirmed: true,
+      evidence: "operator/evidence.md",
+      evidence_sha256: $operator_sha
     }
   }' >"$tmp/input.json"
 
@@ -125,7 +126,9 @@ jq -e '
   .release_version == "0.4.0" and
   .slo.campaign_count == 4 and
   .slo.infrastructure_errors == 0 and
-  .reviewer.login == "yusuf-demirel4"
+  .operator.login == "ErenAri" and
+  .operator.approval_mode == "solo-maintainer" and
+  .operator.confirmed == true
 ' "$tmp/readiness.json" >/dev/null
 
 jq '.campaigns[3] = .campaigns[2]' "$tmp/input.json" >"$tmp/bad-duplicate.json"

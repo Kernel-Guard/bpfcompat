@@ -19,12 +19,14 @@ write_metadata() {
   local stable="$1"
   local release="$2"
   local channel="$3"
-  local reviewer="${4:-yusuf-demirel4}"
+  local operator="${4:-ErenAri}"
+  local approval_mode="${5:-solo-maintainer}"
   cat >"$tmp/release.yaml" <<EOF
 stable_version: ${stable}
 release_version: ${release}
 release_channel: ${channel}
-release_reviewer: ${reviewer}
+release_operator: ${operator}
+approval_mode: ${approval_mode}
 minimum_go: 1.25.12
 report_schema: v0.1
 EOF
@@ -41,13 +43,14 @@ GITHUB_REF_TYPE=tag GITHUB_REF_NAME="v${current_release}" \
   BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/tag.log"
 
 for bad_case in \
-  "0.3.6 0.4.0-rc.1 stable yusuf-demirel4" \
-  "0.3.6 0.4.0 prerelease yusuf-demirel4" \
-  "0.3.6 0.4.0-rc.0 prerelease yusuf-demirel4" \
-  "0.3.6 0.3.6 prerelease yusuf-demirel4" \
-  "0.3.6 0.3.6 stable invalid_login_"; do
-  read -r stable release channel reviewer <<<"$bad_case"
-  write_metadata "$stable" "$release" "$channel" "$reviewer"
+  "0.3.6 0.4.0-rc.1 stable ErenAri solo-maintainer" \
+  "0.3.6 0.4.0 prerelease ErenAri solo-maintainer" \
+  "0.3.6 0.4.0-rc.0 prerelease ErenAri solo-maintainer" \
+  "0.3.6 0.3.6 prerelease ErenAri solo-maintainer" \
+  "0.3.6 0.3.6 stable invalid_login_ solo-maintainer" \
+  "0.3.6 0.3.6 stable ErenAri two-person"; do
+  read -r stable release channel operator approval_mode <<<"$bad_case"
+  write_metadata "$stable" "$release" "$channel" "$operator" "$approval_mode"
   if BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" \
     "$script" >"$tmp/bad.log" 2>&1; then
     echo "[release-consistency-test] accepted invalid metadata: ${bad_case}" >&2

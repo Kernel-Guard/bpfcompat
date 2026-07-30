@@ -21,14 +21,19 @@ GitHub repository UI/API (they cannot be set from committed files).
 | Attested candidate promotion record | `.github/workflows/release-artifacts.yml` | tag releases (`v*`) |
 | Release-channel alias isolation | `scripts/promote-release.sh` | tag releases (`v*`) |
 | Protected-environment preflight | `scripts/check-production-environment.sh` | tag releases (`v*`) |
+| Exact-input manual publication | `.github/workflows/promote-release.yml` | explicit `workflow_dispatch` |
 
-The tagged-release workflow is the sole production promotion path. It builds
-candidate binaries once, tests those bytes in a pinned vendor VM, builds and
-verifies the candidate image, stages a draft release, promotes the verified
-image digest, and only then publishes the release. Promotion pauses at the
-`production-release` environment. The workflow refuses tag processing if that
-environment does not require the release reviewer, prevent self-review,
-disable admin bypass, and restrict deployments to `v*` tags.
+The tagged-release workflow builds candidate binaries once, tests those bytes
+in a pinned vendor VM, builds and verifies the candidate image, and stages a
+private draft. It has no publication job. A separate `workflow_dispatch`-only
+workflow is dispatched on the exact `v*` tag and accepts the candidate run ID,
+full commit, image digest, and confirmation phrase. It re-verifies the
+candidate and draft before calling the sole promotion script.
+
+Promotion pauses for 15 minutes at the `production-release` environment. The
+workflows refuse release processing unless that environment has no required
+reviewers, disables administrator bypass, and restricts deployments to `v*`
+tags. This is an explicit solo-maintainer posture, not independent review.
 
 Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
 (`X.Y`, `latest`) are reachable only through the stable release channel.
@@ -48,15 +53,17 @@ sha256sum -c SHA256SUMS
 
 These are not files in the repo. Track their status here.
 
-- [ ] **Production branch protection on `main`**: block force-pushes and
+- [x] **Production branch protection on `main`**: block force-pushes and
       deletions, require conversation resolution and an up-to-date branch,
-      enforce checks for admins, dismiss stale reviews, and require one
-      non-author approval plus the documented production checks. Set via:
+      enforce checks for admins, dismiss stale reviews, require zero human
+      approvals, and require the documented production checks. Set via:
       `gh api -X PUT repos/Kernel-Guard/bpfcompat/branches/main/protection --input -`
-- [ ] **Protected `production-release` environment**: after the selected
-      reviewer accepts the duty in writing, require that reviewer, prevent
-      self-review, disable admin bypass, and allow only `v*` tag deployments.
-      Tag releases fail closed until this configuration exists.
+- [x] **Immutable release tags**: active repository ruleset prevents updates
+      or deletion of `v*` tags, with no bypass actor.
+- [x] **Protected `production-release` environment**: require no human
+      reviewers, apply a 15-minute wait, disable admin bypass, and allow only
+      `v*` tag deployments. Candidate and promotion workflows fail closed
+      until this configuration exists.
 - [x] **Secret scanning + push protection** (wired 2026-06-14): enabled via
       `gh api -X PATCH repos/Kernel-Guard/bpfcompat` with
       `security_and_analysis.secret_scanning` + `secret_scanning_push_protection`.

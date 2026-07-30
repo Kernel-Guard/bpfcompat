@@ -60,7 +60,8 @@ jq -e '
   (.falco | type == "object") and
   (.candidate | type == "object") and
   (.rollback.completed == true) and
-  (.reviewer.approved == true)
+  (.operator.approval_mode == "solo-maintainer") and
+  (.operator.confirmed == true)
 ' "$input" >/dev/null || fail "manifest schema or required gates are invalid"
 
 release_version="$(jq -r '.release_version' "$input")"
@@ -210,15 +211,25 @@ rollback="$(evidence_path "$(jq -r '.rollback.evidence' "$input")")"
 verify_hash "$rollback" "$(jq -r '.rollback.evidence_sha256' "$input")"
 grep -Fq '[bpfcompat-rollback-drill:v1]' "$rollback" ||
   fail "rollback evidence is missing its completion marker"
-review="$(evidence_path "$(jq -r '.reviewer.evidence' "$input")")"
-verify_hash "$review" "$(jq -r '.reviewer.evidence_sha256' "$input")"
-reviewer="$(jq -r '.reviewer.login' "$input")"
-[[ "$reviewer" == "yusuf-demirel4" ]] ||
-  fail "the required independent reviewer is not recorded"
-grep -Fq '[bpfcompat-release-reviewer-acceptance:v1]' "$review" ||
-  fail "reviewer evidence is missing its acceptance marker"
-grep -Fq "$reviewer" "$review" ||
-  fail "reviewer evidence does not identify ${reviewer}"
+operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
+verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
+operator="$(jq -r '.operator.login' "$input")"
+approval_mode="$(jq -r '.operator.approval_mode' "$input")"
+metadata_operator="$(
+  awk -F': ' '$1 == "release_operator" {print $2; exit}' release.yaml
+)"
+metadata_approval_mode="$(
+  awk -F': ' '$1 == "approval_mode" {print $2; exit}' release.yaml
+)"
+[[ "$operator" == "$metadata_operator" ]] ||
+  fail "operator does not match release metadata"
+[[ "$approval_mode" == "solo-maintainer" &&
+   "$approval_mode" == "$metadata_approval_mode" ]] ||
+  fail "solo-maintainer approval mode is not recorded"
+grep -Fq '[bpfcompat-solo-promotion:v1]' "$operator_evidence" ||
+  fail "operator evidence is missing its solo-promotion marker"
+grep -Fq "$operator" "$operator_evidence" ||
+  fail "operator evidence does not identify ${operator}"
 
 mkdir -p "$(dirname "$output")"
 mkdir -p "$(dirname "$output_json")"
@@ -231,7 +242,8 @@ mkdir -p "$(dirname "$output_json")"
   echo "- Target executions: ${total_targets}"
   echo "- Infrastructure errors: 0"
   echo "- Target duration p95: ${p95_ms} ms"
-  echo "- Independent reviewer: \`${reviewer}\`"
+  echo "- Release operator: \`${operator}\`"
+  echo "- Approval mode: \`${approval_mode}\` (no independent human approval)"
   echo
   echo "## Scheduled Campaigns"
   echo
@@ -244,7 +256,7 @@ mkdir -p "$(dirname "$output_json")"
   echo "- Falco expanded vendor-kernel matrix: PASS"
   echo "- Attested release candidate: PASS"
   echo "- Rollback and incident exercise: PASS"
-  echo "- Independent release approval: PASS"
+  echo "- Deliberate solo-maintainer promotion confirmation: PASS"
   echo
   echo "Runtime loading, agent, API, registry, SaaS, Firecracker, and virtme-ng are excluded."
 } >"$output"
@@ -259,7 +271,7 @@ candidate_commit="$(jq -r '.commit_sha' "$candidate")"
 candidate_image="$(jq -r '.image' "$candidate")"
 candidate_sha="$(jq -r '.candidate.evidence_sha256' "$input")"
 rollback_sha="$(jq -r '.rollback.evidence_sha256' "$input")"
-review_sha="$(jq -r '.reviewer.evidence_sha256' "$input")"
+operator_sha="$(jq -r '.operator.evidence_sha256' "$input")"
 
 jq -n \
   --arg schema_version "v0.1" \
@@ -279,8 +291,9 @@ jq -n \
   --arg candidate_image "$candidate_image" \
   --arg candidate_sha "$candidate_sha" \
   --arg rollback_sha "$rollback_sha" \
-  --arg reviewer "$reviewer" \
-  --arg review_sha "$review_sha" \
+  --arg operator "$operator" \
+  --arg approval_mode "$approval_mode" \
+  --arg operator_sha "$operator_sha" \
   '{
     schema_version: $schema_version,
     gate_status: $gate_status,
@@ -318,10 +331,11 @@ jq -n \
       completed: true,
       evidence_sha256: $rollback_sha
     },
-    reviewer: {
-      login: $reviewer,
-      approved: true,
-      evidence_sha256: $review_sha
+    operator: {
+      login: $operator,
+      approval_mode: $approval_mode,
+      confirmed: true,
+      evidence_sha256: $operator_sha
     },
     excluded_surfaces: [
       "runtime-loading",

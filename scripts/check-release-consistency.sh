@@ -25,15 +25,19 @@ fail() {
 stable_version="$(field stable_version)"
 release_version="$(field release_version)"
 release_channel="$(field release_channel)"
-release_reviewer="$(field release_reviewer)"
+release_operator="$(field release_operator)"
+approval_mode="$(field approval_mode)"
 minimum_go="$(field minimum_go)"
 report_schema="$(field report_schema)"
 
 [[ -n "$stable_version" && -n "$release_version" && -n "$release_channel" &&
-   -n "$release_reviewer" && -n "$minimum_go" && -n "$report_schema" ]] ||
+   -n "$release_operator" && -n "$approval_mode" &&
+   -n "$minimum_go" && -n "$report_schema" ]] ||
   fail "release metadata fields must not be empty"
-[[ "$release_reviewer" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] ||
-  fail "release_reviewer must be a valid GitHub login"
+[[ "$release_operator" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] ||
+  fail "release_operator must be a valid GitHub login"
+[[ "$approval_mode" == "solo-maintainer" ]] ||
+  fail "approval_mode must be solo-maintainer"
 
 stable_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
 prerelease_pattern='^[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$'
@@ -83,32 +87,57 @@ for required_control in \
   "Candidate VM positive + classified negative" \
   "Candidate ARM64 CLI native smoke" \
   "Stage production readiness evidence" \
-  "production-release" \
-  "scripts/promote-release.sh" \
-  "Promote image and publish release"; do
+  "Stage draft release"; do
   grep -Fq "$required_control" "$release_workflow" ||
     fail "${release_workflow} is missing required control: ${required_control}"
 done
 
+promotion_workflow=".github/workflows/promote-release.yml"
+[[ -f "$promotion_workflow" ]] ||
+  fail "manual promotion workflow is missing"
+for required_control in \
+  "workflow_dispatch:" \
+  "candidate_run_id:" \
+  "expected_commit:" \
+  "expected_image_digest:" \
+  "Manual promotion confirmation" \
+  "production-release" \
+  "scripts/promote-release.sh" \
+  "Promote image and publish release"; do
+  grep -Fq "$required_control" "$promotion_workflow" ||
+    fail "${promotion_workflow} is missing required control: ${required_control}"
+done
+if grep -Eq '^[[:space:]]+push:' "$promotion_workflow"; then
+  fail "${promotion_workflow} must never have an automatic push trigger"
+fi
+
 unexpected_release_writers="$(
   grep -ERl --include='*.yml' --include='*.yaml' \
     'gh release (create|upload|edit)|softprops/action-gh-release@' .github/workflows |
-    grep -vFx "$release_workflow" || true
+    grep -vFx "$release_workflow" |
+    grep -vFx "$promotion_workflow" || true
 )"
 if [[ -n "$unexpected_release_writers" ]]; then
   printf '%s\n' "$unexpected_release_writers" >&2
-  fail "a workflow other than release-artifacts can publish or mutate releases"
+  fail "an unexpected workflow can publish or mutate releases"
 fi
 
 unexpected_latest_writers="$(
   grep -ERl --include='*.yml' --include='*.yaml' \
     -- '--tag .*IMAGE.*:latest|value=latest' .github/workflows |
-    grep -vFx "$release_workflow" || true
+    grep -vFx "$promotion_workflow" || true
 )"
 if [[ -n "$unexpected_latest_writers" ]]; then
   printf '%s\n' "$unexpected_latest_writers" >&2
-  fail "a workflow other than release-artifacts can publish the production latest image"
+  fail "a workflow other than promote-release can publish the production latest image"
 fi
+
+promotion_callers="$(
+  grep -ERl --include='*.yml' --include='*.yaml' \
+    'scripts/promote-release.sh' .github/workflows || true
+)"
+[[ "$promotion_callers" == "$promotion_workflow" ]] ||
+  fail "only ${promotion_workflow} may invoke scripts/promote-release.sh"
 
 bad_action_refs="$(
   grep -ERn --include='*.md' --include='*.yml' --include='*.yaml' \
@@ -133,4 +162,4 @@ if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
     fail "release tag ${GITHUB_REF_NAME:-<empty>} does not match metadata ${release_tag}"
 fi
 
-echo "[release-consistency] PASS stable=${stable_version} release=${release_version} channel=${release_channel} go=${minimum_go} schema=${report_schema}"
+echo "[release-consistency] PASS stable=${stable_version} release=${release_version} channel=${release_channel} operator=${release_operator} mode=${approval_mode} go=${minimum_go} schema=${report_schema}"
