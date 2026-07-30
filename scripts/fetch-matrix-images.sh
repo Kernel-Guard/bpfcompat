@@ -34,6 +34,24 @@ failed=0
 
 echo "[fetch-matrix-images] matrix=$MATRIX dry_run=$DRY_RUN"
 
+yaml_scalar() {
+  local key="$1"
+  local path="$2"
+  awk -v key="$key" '
+    $1 == key ":" {
+      value = $0
+      sub(/^[[:space:]]*[A-Za-z0-9_]+:[[:space:]]*/, "", value)
+      first = substr(value, 1, 1)
+      last = substr(value, length(value), 1)
+      if ((first == "\"" && last == "\"") || (first == "\047" && last == "\047")) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$path"
+}
+
 while IFS= read -r profile_id; do
   [[ -z "$profile_id" ]] && continue
   total=$((total + 1))
@@ -45,9 +63,9 @@ while IFS= read -r profile_id; do
     continue
   fi
 
-  source_url="$(awk -F'"' '/source_url:/ {print $2; exit}' "$profile_path")"
-  local_path="$(awk -F'"' '/local_path:/ {print $2; exit}' "$profile_path")"
-  distro="$(awk -F': ' '/^distro:/ {gsub(/"/, "", $2); print $2; exit}' "$profile_path")"
+  source_url="$(yaml_scalar source_url "$profile_path")"
+  local_path="$(yaml_scalar local_path "$profile_path")"
+  distro="$(yaml_scalar distro "$profile_path")"
 
   if [[ -z "$local_path" ]]; then
     echo "[fetch-matrix-images] ${profile_id}: missing local_path in profile"
@@ -97,4 +115,3 @@ echo "  failed:                 $failed"
 if [[ "$failed" -gt 0 ]]; then
   exit 2
 fi
-
