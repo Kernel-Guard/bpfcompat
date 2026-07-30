@@ -362,11 +362,49 @@ func TestRHELKernelRPMs(t *testing.T) {
 		t.Errorf("rocky url = %s, want %s", got[0], wantFirst)
 	}
 
+	// Oracle UEK keeps its devel, core, and module packages together and uses
+	// the kernel-uek-* naming family instead of the generic RHEL names.
+	oracle := Entry{
+		KernelRelease: "6.12.0-204.92.4.4.el9uek.x86_64",
+		Target:        "ol",
+		Headers: []string{
+			"http://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-devel-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+		},
+	}
+	got, err = RHELKernelRPMs(oracle)
+	if err != nil {
+		t.Fatalf("RHELKernelRPMs(oracle): %v", err)
+	}
+	want = []string{
+		"https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-core-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+		"https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-modules-core-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+		"https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-modules-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+		"https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/x86_64/getPackage/kernel-uek-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("oracle: got %d urls, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("oracle url %d = %s, want %s", i, got[i], want[i])
+		}
+	}
+
 	// A headers URL for a different release must not be used.
 	if _, err := RHELKernelRPMs(Entry{
 		KernelRelease: "5.14.0-999.el9_8.x86_64",
 		Headers:       []string{alma.Headers[0]},
 	}); err == nil {
 		t.Error("expected an error when no headers URL matches the release")
+	}
+
+	// A lookalike UEK URL outside Oracle's vendor repository is rejected.
+	if _, err := RHELKernelRPMs(Entry{
+		KernelRelease: oracle.KernelRelease,
+		Headers: []string{
+			"https://example.com/UEKR8/kernel-uek-devel-6.12.0-204.92.4.4.el9uek.x86_64.rpm",
+		},
+	}); err == nil {
+		t.Error("expected an error for a non-Oracle UEK repository")
 	}
 }

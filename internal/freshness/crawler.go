@@ -124,13 +124,11 @@ func httpsURL(raw string) string {
 }
 
 // RHELKernelRPMs derives the bootable kernel RPM URLs for a RHEL-family
-// release from its crawler entry. The crawler publishes only the
-// kernel-devel RPM, which lives in AppStream; the packages that actually
-// provide a bootable kernel (vmlinuz plus modules) sit in BaseOS under the
-// same repository layout, so the AppStream URL pins the mirror, repository
-// version and architecture, and swapping the component and package name
-// yields the rest. The per-letter subdirectory some mirrors use (Rocky's
-// Packages/k/) is preserved because only the file name is replaced.
+// release from its crawler entry. Generic RHEL rebuilds publish kernel-devel
+// in AppStream and their bootable packages in the corresponding BaseOS path.
+// Oracle UEK instead publishes kernel-uek-devel and all bootable
+// kernel-uek-* packages together in its UEK repository. Both layouts remain
+// pinned to the exact vendor URL and release recorded by kernel-crawler.
 func RHELKernelRPMs(entry Entry) ([]string, error) {
 	release := entry.KernelRelease
 	for _, headerURL := range entry.Headers {
@@ -139,6 +137,20 @@ func RHELKernelRPMs(entry Entry) ([]string, error) {
 			continue
 		}
 		base := headerURL[slash+1:]
+		uekWant := "kernel-uek-devel-" + release + ".rpm"
+		if base == uekWant {
+			dir := headerURL[:slash+1]
+			if !strings.Contains(dir, "/OracleLinux/") || !strings.Contains(dir, "/UEKR") {
+				return nil, fmt.Errorf("UEK headers URL for %s is not under an OracleLinux UEKR repository: %s", release, headerURL)
+			}
+			return []string{
+				httpsURL(dir + "kernel-uek-core-" + release + ".rpm"),
+				httpsURL(dir + "kernel-uek-modules-core-" + release + ".rpm"),
+				httpsURL(dir + "kernel-uek-modules-" + release + ".rpm"),
+				httpsURL(dir + "kernel-uek-" + release + ".rpm"),
+			}, nil
+		}
+
 		want := "kernel-devel-" + release + ".rpm"
 		if base != want {
 			continue

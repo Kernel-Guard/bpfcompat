@@ -1,0 +1,8 @@
+name: pre-campaign-oracle-uek-refresh
+profiles:
+  - id: ubuntu-24.04-6.8
+    required: true
+    timeout: 20m
+  - id: oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek
+    required: true
+    timeout: 20m
