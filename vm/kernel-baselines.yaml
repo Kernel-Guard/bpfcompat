@@ -24,16 +24,19 @@ baselines:
   - profile: almalinux-9-5.14-k5.14.0-687.26.1.el9_8
     kernel: 5.14.0-687.26.1.el9_8.x86_64
     recorded: "2026-07-21"
+  - profile: almalinux-9-5.14-k5.14.0-687.29.1.el9_8
+    kernel: 5.14.0-687.29.1.el9_8.x86_64
+    recorded: "2026-07-30"
   - profile: amazon-linux-2-5.10
-    kernel: 5.10.259-258.1046.amzn2.x86_64
-    recorded: "2026-07-20"
+    kernel: 5.10.260-259.1054.amzn2.x86_64
+    recorded: "2026-07-30"
     crawler:
       distro: amazonlinux2
       target: amazonlinux2
       release_prefix: 5.10.
   - profile: amazon-linux-2023-6.1
-    kernel: 6.1.176-221.367.amzn2023.x86_64
-    recorded: "2026-07-20"
+    kernel: 6.1.176-223.369.amzn2023.x86_64
+    recorded: "2026-07-30"
     crawler:
       distro: amazonlinux2023
       target: amazonlinux2023
@@ -57,6 +60,9 @@ baselines:
   - profile: centos-stream-9-5.14-k5.14.0-725.el9
     kernel: 5.14.0-725.el9.x86_64
     recorded: "2026-07-21"
+  - profile: centos-stream-9-5.14-k5.14.0-729.el9
+    kernel: 5.14.0-729.el9.x86_64
+    recorded: "2026-07-30"
   - profile: debian-11-5.10
     kernel: 5.10.0-42-cloud-amd64
     recorded: "2026-05-22"
@@ -93,6 +99,9 @@ baselines:
       target: ol
       release_prefix: 6.12.0-
       release_contains: el9uek
+  - profile: oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek
+    kernel: 6.12.0-204.92.4.4.el9uek.x86_64
+    recorded: "2026-07-30"
   - profile: rhel-8-4.18
     note: BYO subscription-walled RHEL image; the previous Oracle UEK observation was not valid RHEL freshness evidence
   - profile: rocky-10-6.12
@@ -114,6 +123,9 @@ baselines:
   - profile: rocky-9-5.14-k5.14.0-687.26.1.el9_8
     kernel: 5.14.0-687.26.1.el9_8.x86_64
     recorded: "2026-07-21"
+  - profile: rocky-9-5.14-k5.14.0-687.30.1.el9_8
+    kernel: 5.14.0-687.30.1.el9_8.x86_64
+    recorded: "2026-07-30"
   - profile: sles-15.6-6.4
     kernel: 6.4.0-150600.23.100-default
     recorded: "2026-05-19"
@@ -201,8 +213,8 @@ baselines:
       target: ubuntu-generic
       release_prefix: 6.5.0-
   - profile: ubuntu-24.04-6.8
-    kernel: 6.8.0-134-generic
-    recorded: "2026-07-20"
+    kernel: 6.8.0-136-generic
+    recorded: "2026-07-30"
     crawler:
       distro: ubuntu
       target: ubuntu-generic
