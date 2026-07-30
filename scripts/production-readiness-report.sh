@@ -59,7 +59,10 @@ jq -e '
   (.campaigns | type == "array" and length == 4) and
   (.falco | type == "object") and
   (.candidate | type == "object") and
+  (.canaries | type == "array" and length == 3) and
+  ([.canaries[].milestone] == ["manual", "t-plus-24h", "t-plus-72h"]) and
   (.rollback.completed == true) and
+  (.incident.completed == true) and
   (.operator.approval_mode == "solo-maintainer") and
   (.operator.confirmed == true)
 ' "$input" >/dev/null || fail "manifest schema or required gates are invalid"
@@ -201,16 +204,93 @@ jq -e --arg release_version "$release_version" '
 
 if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
   command -v gh >/dev/null || fail "gh is required to verify candidate evidence"
+  gh attestation --help >/dev/null 2>&1 ||
+    fail "installed GitHub CLI lacks attestation support"
   gh attestation verify "$candidate" \
     --repo Kernel-Guard/bpfcompat \
     --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
     >/dev/null || fail "release-candidate evidence attestation verification failed"
 fi
 
+: >"$tmp/canary_rows"
+: >"$tmp/canaries.ndjson"
+: >"$tmp/canary_run_ids"
+candidate_tag="$(jq -r '.tag' "$candidate")"
+candidate_commit="$(jq -r '.commit_sha' "$candidate")"
+candidate_image="$(jq -r '.image' "$candidate")"
+candidate_digest="${candidate_image##*@}"
+
+while IFS= read -r canary; do
+  milestone="$(jq -r '.milestone' <<<"$canary")"
+  evidence_rel="$(jq -r '.evidence' <<<"$canary")"
+  canary_evidence="$(evidence_path "$evidence_rel")"
+  canary_sha="$(jq -r '.evidence_sha256' <<<"$canary")"
+  verify_hash "$canary_evidence" "$canary_sha"
+
+  expected_event="schedule"
+  if [[ "$milestone" == "manual" ]]; then
+    expected_event="workflow_dispatch"
+  fi
+  jq -e \
+    --arg milestone "$milestone" \
+    --arg event "$expected_event" \
+    --arg version "$candidate_tag" \
+    --arg commit "$candidate_commit" \
+    --arg digest "$candidate_digest" \
+    '
+      .schema_version == "v0.1" and
+      .marker == "[bpfcompat-rc-canary:v1]" and
+      .repository == "Kernel-Guard/bpfcompat" and
+      .milestone == $milestone and
+      .event == $event and
+      (.workflow_run_id | type == "number" and . > 0) and
+      (.external_consumer_run_id | type == "number" and . > 0) and
+      (.completed_at | fromdateiso8601 > 0) and
+      .version == $version and
+      .commit == $commit and
+      .image_digest == $digest and
+      .checks.clean_install == "pass" and
+      .checks.source_build == "pass" and
+      .checks.published_action == "pass" and
+      .checks.container == "pass" and
+      .checks.external_consumers == "pass" and
+      (.components | type == "array" and length > 0) and
+      ([.components[] |
+        (.sha256 | test("^[0-9a-f]{64}$")) and
+        (.path | type == "string" and length > 0)
+      ] | all)
+    ' "$canary_evidence" >/dev/null ||
+    fail "RC canary ${milestone} evidence is invalid or does not match the candidate"
+
+  canary_run_id="$(jq '.workflow_run_id' "$canary_evidence")"
+  canary_completed_at="$(jq -r '.completed_at' "$canary_evidence")"
+  printf '%s\n' "$canary_run_id" >>"$tmp/canary_run_ids"
+  printf "| %s | \`%s\` | %s |\n" \
+    "$milestone" "$canary_run_id" "$canary_completed_at" >>"$tmp/canary_rows"
+  jq -n \
+    --arg milestone "$milestone" \
+    --argjson workflow_run_id "$canary_run_id" \
+    --arg completed_at "$canary_completed_at" \
+    --arg evidence_sha256 "$canary_sha" \
+    '{
+      milestone: $milestone,
+      workflow_run_id: $workflow_run_id,
+      completed_at: $completed_at,
+      evidence_sha256: $evidence_sha256
+    }' >>"$tmp/canaries.ndjson"
+done < <(jq -c '.canaries[]' "$input")
+
+[[ "$(sort -u "$tmp/canary_run_ids" | wc -l)" -eq 3 ]] ||
+  fail "RC canary workflow run IDs must be unique"
+
 rollback="$(evidence_path "$(jq -r '.rollback.evidence' "$input")")"
 verify_hash "$rollback" "$(jq -r '.rollback.evidence_sha256' "$input")"
 grep -Fq '[bpfcompat-rollback-drill:v1]' "$rollback" ||
   fail "rollback evidence is missing its completion marker"
+incident="$(evidence_path "$(jq -r '.incident.evidence' "$input")")"
+verify_hash "$incident" "$(jq -r '.incident.evidence_sha256' "$input")"
+grep -Fq '[bpfcompat-promotion-incident:v1]' "$incident" ||
+  fail "incident evidence is missing its fail-closed completion marker"
 operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
 verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
 operator="$(jq -r '.operator.login' "$input")"
@@ -242,6 +322,7 @@ mkdir -p "$(dirname "$output_json")"
   echo "- Target executions: ${total_targets}"
   echo "- Infrastructure errors: 0"
   echo "- Target duration p95: ${p95_ms} ms"
+  echo "- Release-candidate canary observations: 3"
   echo "- Release operator: \`${operator}\`"
   echo "- Approval mode: \`${approval_mode}\` (no independent human approval)"
   echo
@@ -251,26 +332,33 @@ mkdir -p "$(dirname "$output_json")"
   echo "|---:|---|---|---|---:|"
   cat "$tmp/campaign_rows"
   echo
+  echo "## Release-Candidate Canaries"
+  echo
+  echo "| Milestone | Workflow run | Completed (UTC) |"
+  echo "|---|---|---|"
+  cat "$tmp/canary_rows"
+  echo
   echo "## Required External Evidence"
   echo
   echo "- Falco expanded vendor-kernel matrix: PASS"
   echo "- Attested release candidate: PASS"
-  echo "- Rollback and incident exercise: PASS"
+  echo "- RC manual, T+24h, and T+72h canaries: PASS"
+  echo "- Rollback drill: PASS"
+  echo "- Fail-closed promotion incident: PASS"
   echo "- Deliberate solo-maintainer promotion confirmation: PASS"
   echo
   echo "Runtime loading, agent, API, registry, SaaS, Firecracker, and virtme-ng are excluded."
 } >"$output"
 
 campaigns_json="$(jq -s '.' "$tmp/campaigns.ndjson")"
+canaries_json="$(jq -s '.' "$tmp/canaries.ndjson")"
 falco_run_id="$(jq '.falco.workflow_run_id' "$input")"
 falco_commit="$(jq -r '.falco.commit_sha' "$input")"
 falco_started_at="$(jq -r '.falco.started_at' "$input")"
 falco_sha="$(jq -r '.falco.report_sha256' "$input")"
-candidate_tag="$(jq -r '.tag' "$candidate")"
-candidate_commit="$(jq -r '.commit_sha' "$candidate")"
-candidate_image="$(jq -r '.image' "$candidate")"
 candidate_sha="$(jq -r '.candidate.evidence_sha256' "$input")"
 rollback_sha="$(jq -r '.rollback.evidence_sha256' "$input")"
+incident_sha="$(jq -r '.incident.evidence_sha256' "$input")"
 operator_sha="$(jq -r '.operator.evidence_sha256' "$input")"
 
 jq -n \
@@ -280,6 +368,7 @@ jq -n \
   --arg supported_boundary "CLI + GitHub Action + disposable QEMU/KVM validation" \
   --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson campaigns "$campaigns_json" \
+  --argjson canaries "$canaries_json" \
   --argjson total_targets "$total_targets" \
   --argjson p95_ms "$p95_ms" \
   --argjson falco_run_id "$falco_run_id" \
@@ -291,6 +380,7 @@ jq -n \
   --arg candidate_image "$candidate_image" \
   --arg candidate_sha "$candidate_sha" \
   --arg rollback_sha "$rollback_sha" \
+  --arg incident_sha "$incident_sha" \
   --arg operator "$operator" \
   --arg approval_mode "$approval_mode" \
   --arg operator_sha "$operator_sha" \
@@ -327,9 +417,14 @@ jq -n \
       image: $candidate_image,
       evidence_sha256: $candidate_sha
     },
+    canaries: $canaries,
     rollback: {
       completed: true,
       evidence_sha256: $rollback_sha
+    },
+    incident: {
+      completed: true,
+      evidence_sha256: $incident_sha
     },
     operator: {
       login: $operator,

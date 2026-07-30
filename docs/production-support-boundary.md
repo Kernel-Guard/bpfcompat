@@ -118,5 +118,6 @@ substitute for these technical controls.
 
 `scripts/production-readiness-report.sh` validates the campaign manifests,
 report hashes, Falco profile coverage, attested release-candidate evidence,
-rollback evidence, and solo-operator promotion confirmation before producing
-the graduation report.
+manual/T+24h/T+72h canary evidence, rollback and fail-closed incident evidence,
+and solo-operator promotion confirmation before producing the graduation
+report.
