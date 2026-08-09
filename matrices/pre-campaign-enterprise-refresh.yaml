@@ -4,13 +4,13 @@ profiles:
   - id: ubuntu-24.04-6.8
     required: true
     timeout: 20m
-  - id: almalinux-9-5.14-k5.14.0-687.29.1.el9_8
+  - id: almalinux-9-5.14-k5.14.0-687.36.1.el9_8
     required: true
     timeout: 20m
-  - id: centos-stream-9-5.14-k5.14.0-729.el9
+  - id: centos-stream-9-5.14-k5.14.0-731.el9
     required: true
     timeout: 20m
-  - id: rocky-9-5.14-k5.14.0-687.30.1.el9_8
+  - id: rocky-9-5.14-k5.14.0-687.36.1.el9_8
     required: true
     timeout: 20m
   - id: amazon-linux-2-5.10

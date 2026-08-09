@@ -27,6 +27,9 @@ baselines:
   - profile: almalinux-9-5.14-k5.14.0-687.29.1.el9_8
     kernel: 5.14.0-687.29.1.el9_8.x86_64
     recorded: "2026-07-30"
+  - profile: almalinux-9-5.14-k5.14.0-687.36.1.el9_8
+    kernel: 5.14.0-687.36.1.el9_8.x86_64
+    recorded: "2026-08-09"
   - profile: amazon-linux-2-5.10
     kernel: 5.10.260-259.1054.amzn2.x86_64
     recorded: "2026-07-30"
@@ -63,6 +66,9 @@ baselines:
   - profile: centos-stream-9-5.14-k5.14.0-729.el9
     kernel: 5.14.0-729.el9.x86_64
     recorded: "2026-07-30"
+  - profile: centos-stream-9-5.14-k5.14.0-731.el9
+    kernel: 5.14.0-731.el9.x86_64
+    recorded: "2026-08-09"
   - profile: debian-11-5.10
     kernel: 5.10.0-42-cloud-amd64
     recorded: "2026-05-22"
@@ -126,6 +132,9 @@ baselines:
   - profile: rocky-9-5.14-k5.14.0-687.30.1.el9_8
     kernel: 5.14.0-687.30.1.el9_8.x86_64
     recorded: "2026-07-30"
+  - profile: rocky-9-5.14-k5.14.0-687.36.1.el9_8
+    kernel: 5.14.0-687.36.1.el9_8.x86_64
+    recorded: "2026-08-09"
   - profile: sles-15.6-6.4
     kernel: 6.4.0-150600.23.100-default
     recorded: "2026-05-19"
@@ -188,6 +197,12 @@ baselines:
   - profile: ubuntu-22.04-5.15-k5.15.0-186
     kernel: 5.15.0-186-generic
     recorded: "2026-07-20"
+  - profile: ubuntu-22.04-5.15-k5.15.0-187
+    kernel: 5.15.0-187-generic
+    recorded: "2026-08-09"
+  - profile: ubuntu-22.04-5.15-k5.15.0-189
+    kernel: 5.15.0-189-generic
+    recorded: "2026-08-09"
   - profile: ubuntu-22.04-5.15-lockdown
     kernel: 5.15.0-185-generic
     recorded: "2026-07-20"
@@ -198,6 +213,9 @@ baselines:
   - profile: ubuntu-22.04-5.15-lockdown-k5.15.0-186
     kernel: 5.15.0-186-generic
     recorded: "2026-07-20"
+  - profile: ubuntu-22.04-5.15-lockdown-k5.15.0-189
+    kernel: 5.15.0-189-generic
+    recorded: "2026-08-09"
   - profile: ubuntu-22.04-minimal-5.15
     kernel: 5.15.0-1104-kvm
     recorded: "2026-07-20"
@@ -205,6 +223,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-kvm
       release_prefix: 5.15.0-
+  - profile: ubuntu-22.04-minimal-5.15-k5.15.0-1105
+    kernel: 5.15.0-1105-kvm
+    recorded: "2026-08-09"
   - profile: ubuntu-23.10-6.5
     kernel: 6.5.0-44-generic
     recorded: "2026-06-11"
@@ -222,6 +243,9 @@ baselines:
   - profile: ubuntu-24.04-6.8-k6.8.0-136
     kernel: 6.8.0-136-generic
     recorded: "2026-07-20"
+  - profile: ubuntu-24.04-6.8-k6.8.0-139
+    kernel: 6.8.0-139-generic
+    recorded: "2026-08-09"
   - profile: ubuntu-24.04-minimal-6.8
     kernel: 6.8.0-136-generic
     recorded: "2026-07-20"
@@ -229,6 +253,9 @@ baselines:
       distro: ubuntu
       target: ubuntu-generic
       release_prefix: 6.8.0-
+  - profile: ubuntu-24.04-minimal-6.8-k6.8.0-139
+    kernel: 6.8.0-139-generic
+    recorded: "2026-08-09"
   - profile: ubuntu-24.10-6.11
     kernel: 6.11.0-29-generic
     recorded: "2026-06-03"

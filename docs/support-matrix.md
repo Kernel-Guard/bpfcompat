@@ -14,7 +14,7 @@ pinned see [image-pipeline.md](image-pipeline.md).
 
 | Category | Count | Meaning |
 |---|---|---|
-| Runnable (auto-download) | 48 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
+| Runnable (auto-download) | 57 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
 | Manual image required | 8 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
 | Generated lane | 0 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
 | Cataloged, not runnable here | 4 | Present in the catalog but not bootable on the current SSH/cloud-init executor (immutable images, executor limits). Marked non-blocking in matrices. |
@@ -31,12 +31,14 @@ image is fetched on first use and its sha256 is recorded.
 | almalinux-9-5.14 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | almalinux-9-5.14-k5.14.0-687.26.1.el9_8 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | almalinux-9-5.14-k5.14.0-687.29.1.el9_8 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| almalinux-9-5.14-k5.14.0-687.36.1.el9_8 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | amazon-linux-2-5.10 | amazon-linux | 2 | 5.10 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | amazon-linux-2023-6.1 | amazon-linux | 2023 | 6.1 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-10-6.12 | centos-stream | 10 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-9-5.14 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-9-5.14-k5.14.0-725.el9 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-9-5.14-k5.14.0-729.el9 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| centos-stream-9-5.14-k5.14.0-731.el9 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | debian-11-5.10 | debian | 11 | 5.10 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | debian-12-6.1 | debian | 12 | 6.1 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | debian-13-6.12 | debian | 13 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
@@ -49,6 +51,7 @@ image is fetched on first use and its sha256 is recorded.
 | rocky-9-5.14 | rocky | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | rocky-9-5.14-k5.14.0-687.26.1.el9_8 | rocky | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | rocky-9-5.14-k5.14.0-687.30.1.el9_8 | rocky | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| rocky-9-5.14-k5.14.0-687.36.1.el9_8 | rocky | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-16.04-4.4 | ubuntu | 16.04 | 4.4 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-18.04-4.15 | ubuntu | 18.04 | 4.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-18.04-4.15-k4.15.0-213 | ubuntu | 18.04 | 4.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
@@ -60,14 +63,20 @@ image is fetched on first use and its sha256 is recorded.
 | ubuntu-22.04-5.15-k5.15.0-181 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-k5.15.0-184 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-k5.15.0-186 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-22.04-5.15-k5.15.0-187 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-22.04-5.15-k5.15.0-189 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-lockdown | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-lockdown-k5.15.0-186 | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-22.04-5.15-lockdown-k5.15.0-189 | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-arm64-5.15 | ubuntu | 22.04 | 5.15 | aarch64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-minimal-5.15 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-22.04-minimal-5.15-k5.15.0-1105 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-23.10-6.5 | ubuntu | 23.10 | 6.5 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-24.04-6.8 | ubuntu | 24.04 | 6.8 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-24.04-6.8-k6.8.0-136 | ubuntu | 24.04 | 6.8 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-24.04-6.8-k6.8.0-139 | ubuntu | 24.04 | 6.8 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-24.04-minimal-6.8 | ubuntu | 24.04-minimal | 6.8 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-24.04-minimal-6.8-k6.8.0-139 | ubuntu | 24.04-minimal | 6.8 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-24.10-6.11 | ubuntu | 24.10 | 6.11 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-25.04-6.14 | ubuntu | 25.04 | 6.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-25.10-6.17 | ubuntu | 25.10 | 6.17 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
