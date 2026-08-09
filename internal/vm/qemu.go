@@ -566,14 +566,14 @@ func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget
 // overlay with the requested kernel selected. Returns the new QEMU command;
 // the caller re-establishes SSH and verifies uname -r.
 //
-// Debian- and RHEL-family only by validation: the release string is
+// Debian-, RHEL-, and Amazon-family only by validation: the release string is
 // package-exact and the boot-default selection is distro specific (grub menu
-// titles on Ubuntu, grubby on RHEL).
+// titles on Ubuntu, grubby on RHEL and Amazon Linux).
 func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, req ExecutionRequest, target sshTarget, qemuCmd *exec.Cmd,
 	overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*exec.Cmd, error) {
 	release := req.Profile.InstallKernel
 
-	installCmd := guestKernelInstallCmd(req.Profile.Distro, release, req.Profile.KernelPackages)
+	installCmd := guestKernelInstallCmd(req.Profile.Distro, req.Profile.Version, release, req.Profile.KernelPackages)
 	if err := sshRun(ctx, target, installCmd); err != nil {
 		return nil, fmt.Errorf("install kernel %s in guest: %w", release, err)
 	}
@@ -604,11 +604,15 @@ func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, r
 // timeout rides out cloud-init/unattended-upgrades holding the apt lock
 // right after first boot. All interpolated values are validated at profile
 // load (validKernelRelease / validKernelPackageURL), so they are shell-safe.
-func guestKernelInstallCmd(distro, release string, packageURLs []string) string {
-	if KernelInstallFamily(distro) == KernelFamilyRHEL {
+func guestKernelInstallCmd(distro, version, release string, packageURLs []string) string {
+	switch KernelInstallFamily(distro) {
+	case KernelFamilyRHEL:
 		return guestKernelInstallCmdRHEL(release, packageURLs)
+	case KernelFamilyAmazon:
+		return guestKernelInstallCmdAmazon(version, release)
+	default:
+		return guestKernelInstallCmdDebian(release, packageURLs)
 	}
-	return guestKernelInstallCmdDebian(release, packageURLs)
 }
 
 func guestKernelInstallCmdDebian(release string, packageURLs []string) string {
@@ -658,6 +662,25 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 		b.WriteString("sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
 	} else {
 		fmt.Fprintf(&b, "sudo dnf -y install %s; ", shellQuote("kernel-core-"+release))
+	}
+	fmt.Fprintf(&b, "sudo grubby --set-default %s", shellQuote("/boot/vmlinuz-"+release))
+	return b.String()
+}
+
+// guestKernelInstallCmdAmazon installs an exact repository kernel and selects
+// its vmlinuz for the next boot. AL2 follows the rolling yum repository model;
+// AL2023 images are intentionally locked to the repository version they were
+// built from, so --releasever=latest is required to test the current vendor
+// kernel instead of silently reinstalling the image-era package set. Package
+// signatures remain enforced by yum/dnf.
+func guestKernelInstallCmdAmazon(version, release string) string {
+	var b strings.Builder
+	b.WriteString("set -e; ")
+	packageName := "kernel-" + release
+	if version == "2023" {
+		fmt.Fprintf(&b, "sudo dnf -y --releasever=latest install %s; ", shellQuote(packageName))
+	} else {
+		fmt.Fprintf(&b, "sudo yum -y install %s; ", shellQuote(packageName))
 	}
 	fmt.Fprintf(&b, "sudo grubby --set-default %s", shellQuote("/boot/vmlinuz-"+release))
 	return b.String()

@@ -37,6 +37,9 @@ baselines:
       distro: amazonlinux2
       target: amazonlinux2
       release_prefix: 5.10.
+  - profile: amazon-linux-2-5.10-k5.10.260-259.1061.amzn2
+    kernel: 5.10.260-259.1061.amzn2.x86_64
+    recorded: "2026-08-09"
   - profile: amazon-linux-2023-6.1
     kernel: 6.1.176-223.369.amzn2023.x86_64
     recorded: "2026-07-30"
@@ -44,6 +47,9 @@ baselines:
       distro: amazonlinux2023
       target: amazonlinux2023
       release_prefix: 6.1.
+  - profile: amazon-linux-2023-6.1-k6.1.177-224.371.amzn2023
+    kernel: 6.1.177-224.371.amzn2023.x86_64
+    recorded: "2026-08-09"
   - profile: centos-stream-10-6.12
     kernel: 6.12.0-226.el10.x86_64
     recorded: "2026-05-19"

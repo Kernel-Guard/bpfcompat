@@ -550,9 +550,11 @@ See [`docs/validator.md`](docs/validator.md) for details.
 ### Dense kernel sweeps and freshness
 
 One cloud image samples a kernel series at a single release. The sweep lane
-installs exact kernel releases (from the distro archive pool, indexed by
-[falcosecurity/kernel-crawler](https://github.com/falcosecurity/kernel-crawler))
-inside the guest and reboots into them before validating:
+installs exact kernel releases indexed by
+[falcosecurity/kernel-crawler](https://github.com/falcosecurity/kernel-crawler)
+inside the guest and reboots into them before validating. Debian/RHEL-family
+profiles use pinned archive packages; Amazon Linux resolves the exact signed
+kernel from its vendor repository (including AL2023's versioned repositories):
 
 ```bash
 ./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4
