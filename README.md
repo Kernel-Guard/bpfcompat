@@ -711,6 +711,7 @@ Reference matrices (real, reproducible artifacts):
 
 - [`docs/integrations/`](docs/integrations/) — copy-paste templates: Go loader, Rust/Aya, OCI gadgets, and an in-process pre-load gate
 - [`docs/case-study-falco-modern-bpf.md`](docs/case-study-falco-modern-bpf.md) — Falco `modern_bpf` across 5 kernels
+- [`docs/verified-compatibility-preview.md`](docs/verified-compatibility-preview.md) — versioned Falco conformance profile, decisions, and signed evidence
 - [`docs/case-study-enterprise-kernels.md`](docs/case-study-enterprise-kernels.md) — RHEL/Oracle/Amazon/SUSE backported tier
 - [`docs/case-study-inspektor-gadget.md`](docs/case-study-inspektor-gadget.md) — published gadgets from OCI, zero config
 - [`docs/evidence-rhcos.md`](docs/evidence-rhcos.md) — RHEL CoreOS / OpenShift 4.14·4.16·4.18 × 6 artifacts (x86_64) + a real aarch64 boot

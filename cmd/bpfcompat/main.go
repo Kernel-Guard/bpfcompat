@@ -61,6 +61,8 @@ func run(args []string) int {
 		return runKernelFreshness(args[1:])
 	case "kernel-sweep":
 		return runKernelSweep(args[1:])
+	case "conformance":
+		return runConformance(args[1:])
 	case "version", "--version":
 		return runVersion(args[1:])
 	case "env":
@@ -1456,6 +1458,7 @@ func printRootUsage() {
 	fmt.Println("  bpfcompat report-summary --report <file>")
 	fmt.Println("  bpfcompat kernel-freshness [--baselines <file>] [--fail-on-stale] [--update-from-report <file>]")
 	fmt.Println("  bpfcompat kernel-sweep --profile <id> [--count N] [--series <prefix>]")
+	fmt.Println("  bpfcompat conformance evaluate --profile <file> --report <file> --out-dir <dir> --verifier-id <uri>")
 	fmt.Println("  bpfcompat version [--json]")
 	fmt.Println("  bpfcompat env [--markdown|--json]")
 }

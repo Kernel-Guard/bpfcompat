@@ -109,3 +109,15 @@ func TestRunTestCommandDispatch(t *testing.T) {
 		t.Fatalf("run test-command -h = %d, want 0", got)
 	}
 }
+
+func TestRunConformanceDispatchAndValidation(t *testing.T) {
+	if got := run([]string{"conformance", "evaluate", "-h"}); got != runner.ExitSuccess {
+		t.Fatalf("run conformance evaluate -h = %d, want 0", got)
+	}
+	if got := run([]string{"conformance", "evaluate"}); got != runner.ExitToolError {
+		t.Fatalf("run conformance evaluate = %d, want tool error", got)
+	}
+	if got := run([]string{"conformance", "unknown"}); got != runner.ExitToolError {
+		t.Fatalf("run conformance unknown = %d, want tool error", got)
+	}
+}
