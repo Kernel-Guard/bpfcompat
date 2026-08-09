@@ -1,20 +1,11 @@
 name: bpfcompat-example
 
+# Optional operator lane for environments that register a Linux x64 runner
+# with KVM. Pull requests use bpfcompat-example-hosted instead; keeping this
+# workflow manual prevents permanently queued jobs when no self-hosted runner
+# is registered.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "cmd/**"
-      - "internal/**"
-      - "validator/**"
-      - "examples/**"
-      - "matrices/**"
-      - "vm/**"
-      - "action.yml"
-      - "Makefile"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/bpfcompat-example.yml"
 
 permissions:
   contents: read
