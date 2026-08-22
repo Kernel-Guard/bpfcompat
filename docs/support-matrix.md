@@ -15,7 +15,7 @@ pinned see [image-pipeline.md](image-pipeline.md).
 | Category | Count | Meaning |
 |---|---|---|
 | Runnable (auto-download) | 57 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
-| Manual image required | 8 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
+| Manual image required | 10 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
 | Generated lane | 0 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
 | Cataloged, not runnable here | 4 | Present in the catalog but not bootable on the current SSH/cloud-init executor (immutable images, executor limits). Marked non-blocking in matrices. |
 
@@ -91,6 +91,8 @@ Supported by the executor, but you must supply the image yourself
 
 | Profile ID | Distro | Version | Kernel family | Arch | Transport / runner | Notes |
 |---|---|---|---|---|---|---|
+| azurelinux-2.0-5.15 | azurelinux | 2.0 | 5.15 | x86_64 | ssh | no source_url configured — operator supplies the image (see make import-required-images) |
+| azurelinux-3.0-6.6 | azurelinux | 3.0 | 6.6 | x86_64 | ssh | no source_url configured — operator supplies the image (see make import-required-images) |
 | fedora-coreos-stable-7.0 | fedora-coreos | stable | 7.0 | x86_64 | ssh | no source_url configured — operator supplies the image (see make import-required-images) |
 | linux-mainline-5.6 | linux-mainline | 5.6 | 5.6 | x86_64 | ssh | no source_url configured — operator supplies the image (see make import-required-images) |
 | rhcos-4.14-5.14 | rhcos | 4.14 | 5.14 | x86_64 | ssh | no source_url configured — operator supplies the image (see make import-required-images) |

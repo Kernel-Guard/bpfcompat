@@ -167,6 +167,18 @@ func TestSSHUserCandidates(t *testing.T) {
 			wantSet:   []string{"ec2-user", "cloud-user"},
 		},
 		{
+			name:      "azurelinux",
+			distro:    "azurelinux",
+			wantFirst: "azureuser",
+			wantSet:   []string{"azureuser", "mariner", "cloud-user", "root"},
+		},
+		{
+			name:      "cbl-mariner",
+			distro:    "cbl-mariner",
+			wantFirst: "azureuser",
+			wantSet:   []string{"azureuser", "mariner", "cloud-user"},
+		},
+		{
 			name:      "flatcar",
 			distro:    "flatcar",
 			wantFirst: "core",
@@ -213,6 +225,7 @@ func TestExecutionTransport(t *testing.T) {
 		{name: "ubuntu", distro: "ubuntu", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "rhel8 supported", distro: "rhel", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "amazon-linux-2-4.14 supported", id: "amazon-linux-2-4.14", distro: "amazon-linux", wantTransport: ExecutionTransportSSH, wantSupported: true},
+		{name: "azurelinux supported", id: "azurelinux-3.0-6.6", distro: "azurelinux", wantTransport: ExecutionTransportSSH, wantSupported: true},
 		{name: "talos blocked", distro: "talos", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "no ssh"},
 		{name: "bottlerocket blocked", distro: "bottlerocket", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ssh"},
 		{name: "flatcar blocked", distro: "flatcar", wantTransport: ExecutionTransportUnsupported, wantSupported: false, wantInMsg: "ignition"},
@@ -572,5 +585,40 @@ func TestGuestCommandLineQuotesHostileCommand(t *testing.T) {
 	// Empty artifact/bin paths render as empty quoted strings, not bare gaps.
 	if !strings.Contains(got, "BPFCOMPAT_ARTIFACT='' BPFCOMPAT_BIN=''") {
 		t.Fatalf("empty env paths not quoted: %s", got)
+	}
+}
+
+// The EL-family cloud-init images do not honour the NoCloud-over-SMBIOS seed,
+// so they must be routed to a CIDATA disk instead. Azure Linux (formerly
+// CBL-Mariner) is RPM/tdnf-based and packaged the same way, so it belongs in
+// that group; regressing it back to the network seed would silently strand the
+// injected SSH key on DataSourceNone.
+func TestNeedsCIDATASeed(t *testing.T) {
+	cidata := []string{
+		"rhel", "almalinux", "rocky", "centos", "centos-stream",
+		"oracle", "amazon-linux", "sles", "opensuse",
+		"azurelinux", "azure-linux", "mariner", "cbl-mariner",
+	}
+	for _, distro := range cidata {
+		if !needsCIDATASeed(Profile{Distro: distro}) {
+			t.Errorf("distro %q should need a CIDATA seed", distro)
+		}
+	}
+
+	// Case-insensitive, matching the rest of the distro dispatch.
+	if !needsCIDATASeed(Profile{Distro: "AzureLinux"}) {
+		t.Errorf("distro matching should be case-insensitive")
+	}
+
+	// The Debian family reads the SMBIOS-net seed and must stay on it.
+	for _, distro := range []string{"ubuntu", "debian"} {
+		if needsCIDATASeed(Profile{Distro: distro}) {
+			t.Errorf("distro %q should not need a CIDATA seed", distro)
+		}
+	}
+
+	// rhel-8-4.18 is matched by explicit ID even without a recognised distro.
+	if !needsCIDATASeed(Profile{ID: "rhel-8-4.18"}) {
+		t.Errorf("rhel-8-4.18 should need a CIDATA seed by ID")
 	}
 }
