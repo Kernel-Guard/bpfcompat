@@ -3,5 +3,5 @@ release_version: 0.4.0-rc.3
 release_channel: prerelease
 release_operator: ErenAri
 approval_mode: solo-maintainer
-minimum_go: 1.25.12
+minimum_go: 1.25.14
 report_schema: v0.1
