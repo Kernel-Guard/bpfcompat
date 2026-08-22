@@ -27,7 +27,7 @@ release_version: ${release}
 release_channel: ${channel}
 release_operator: ${operator}
 approval_mode: ${approval_mode}
-minimum_go: 1.25.12
+minimum_go: 1.25.14
 report_schema: v0.1
 EOF
 }

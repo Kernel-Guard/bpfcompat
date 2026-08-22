@@ -44,6 +44,10 @@ baselines:
       distro: amazonlinux2023
       target: amazonlinux2023
       release_prefix: 6.1.
+  - profile: azurelinux-2.0-5.15
+    note: BYO Azure Linux 2.0 (CBL-Mariner) image; no public cloud image and kernel-crawler has no azurelinux target, so this is reported as uncovered rather than stale
+  - profile: azurelinux-3.0-6.6
+    note: BYO Azure Linux 3.0 image; no public cloud image and kernel-crawler has no azurelinux target, so this is reported as uncovered rather than stale
   - profile: centos-stream-10-6.12
     kernel: 6.12.0-226.el10.x86_64
     recorded: "2026-05-19"

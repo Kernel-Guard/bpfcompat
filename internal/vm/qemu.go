@@ -986,7 +986,13 @@ func needsCIDATASeed(profile Profile) bool {
 	switch strings.ToLower(strings.TrimSpace(profile.Distro)) {
 	case "rhel", "almalinux", "rocky", "centos", "centos-stream",
 		"oracle", "oracle-linux", "amazon-linux", "amazonlinux",
-		"sles", "suse", "opensuse":
+		"sles", "suse", "opensuse",
+		// Azure Linux (formerly CBL-Mariner) is RPM/tdnf-based and ships the
+		// same cloud-init packaging as the EL family, so it is grouped with
+		// them rather than left on the SMBIOS-net seed. Not yet confirmed on a
+		// booted guest: Microsoft publishes no public cloud image, so these
+		// profiles are image-BYO (see docs/profile-catalog.md).
+		"azurelinux", "azure-linux", "mariner", "cbl-mariner":
 		return true
 	}
 	// Keep the explicit ID for any profile that omits a recognised distro.
@@ -1110,6 +1116,11 @@ func sshUserCandidates(profile Profile) []string {
 		candidates = append(candidates, "core")
 	case "centos", "centos-stream", "rhel", "redhat":
 		candidates = append(candidates, "cloud-user", "centos")
+	case "azurelinux", "azure-linux", "mariner", "cbl-mariner":
+		// Azure tooling provisions "azureuser"; images built from the Azure
+		// Linux toolkit commonly default to "mariner". Both are tried before
+		// the shared fallbacks below.
+		candidates = append(candidates, "azureuser", "mariner")
 	}
 
 	// Keep broad fallbacks so new profile families can still bootstrap without

@@ -33,6 +33,8 @@ This document defines the maintained profile matrices used for compatibility cam
    - `oracle-linux-10-uek8-6.12`
    - `sles-15.6-6.4` (manual licensed image)
    - `opensuse-leap-15.6-6.4`
+   - `azurelinux-3.0-6.6` (manual image; AKS/Azure default host OS)
+   - `azurelinux-2.0-5.15` (manual image; formerly CBL-Mariner 2.0)
 2. Tier 2: kernel feature boundaries important for selector decisions.
    - `ubuntu-20.04-5.4`
    - `linux-mainline-5.6` (manual image)
@@ -125,6 +127,13 @@ Optional licensed image source:
 
   Left unset, `ExecutionTransport()` keeps `rhcos` unsupported so it is never claimed runnable without a real image. The matching RHEL/AlmaLinux 9 (5.14) profile approximates the RHCOS kernel in the meantime.
 - `rhel-8-4.18` uses NoCloud config-drive bootstrap in the current SSH executor (prefers `cloud-localds` ISO; falls back to local `vvfat` seed).
+- `azurelinux-3.0-6.6` / `azurelinux-2.0-5.15` (Azure Linux, formerly CBL-Mariner) are **cataloged and image-BYO, not yet booted**. Microsoft publishes RPM repositories at `packages.microsoft.com/azurelinux/` but **no public cloud disk image**: the GitHub releases carry no assets, and images ship through the Azure Marketplace (publisher `MicrosoftCBLMariner`) or are built with the Azure Linux image toolkit. Supply one with:
+
+  ```
+  make import-required-images AZURELINUX30_IMG=/path/to/azure-linux-3.0.vhd
+  ```
+
+  (`qemu-img` converts VHD to qcow2 during import.) Kernel families are pinned from Microsoft's own repository metadata: Azure Linux 3.0 ships the **6.6** series and 2.0/CBL-Mariner the **5.15** series. Azure Linux **4.0 is in beta** on the **6.18** series and is deliberately not cataloged yet. Because Azure Linux is RPM/tdnf-based it is grouped with the EL family for cloud-init seeding (CIDATA disk, not the SMBIOS-net seed) and tries the `azureuser` then `mariner` SSH users; that grouping is inferred from packaging, **not yet confirmed on a booted guest**, so treat the first real run as the proof.
 - `aarch64`/`arm64` profiles select `qemu-system-aarch64`; `x86_64`/`amd64` profiles select `qemu-system-x86_64`.
 - ARM64 validation requires a matching ARM64-capable self-hosted runner, KVM access, an ARM64 cloud image, and a validator binary built for the guest architecture. The default Azure demo VM is x86_64 and should not be presented as ARM64 validation proof.
 - Firecracker profiles require a Firecracker release binary, `/dev/kvm`, a static BusyBox, `cpio`, `gzip`, and an uncompressed guest kernel. The current transport generates an initramfs, executes the validator inside the microVM, and extracts JSON results over serial markers.
