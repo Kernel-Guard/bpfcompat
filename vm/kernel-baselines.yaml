@@ -50,6 +50,10 @@ baselines:
   - profile: amazon-linux-2023-6.1-k6.1.177-224.371.amzn2023
     kernel: 6.1.177-224.371.amzn2023.x86_64
     recorded: "2026-08-09"
+  - profile: azurelinux-2.0-5.15
+    note: BYO Azure Linux 2.0 (CBL-Mariner) image; no public cloud image and kernel-crawler has no azurelinux target, so this is reported as uncovered rather than stale
+  - profile: azurelinux-3.0-6.6
+    note: BYO Azure Linux 3.0 image; no public cloud image and kernel-crawler has no azurelinux target, so this is reported as uncovered rather than stale
   - profile: centos-stream-10-6.12
     kernel: 6.12.0-226.el10.x86_64
     recorded: "2026-05-19"
