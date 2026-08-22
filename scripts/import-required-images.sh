@@ -6,8 +6,10 @@ cd "$ROOT_DIR"
 
 RHEL8_SRC="${RHEL8_IMG:-}"
 SLES156_SRC="${SLES156_IMG:-}"
+AZURELINUX30_SRC="${AZURELINUX30_IMG:-}"
+AZURELINUX20_SRC="${AZURELINUX20_IMG:-}"
 
-if [[ -z "$RHEL8_SRC" && -z "$SLES156_SRC" ]]; then
+if [[ -z "$RHEL8_SRC" && -z "$SLES156_SRC" && -z "$AZURELINUX30_SRC" && -z "$AZURELINUX20_SRC" ]]; then
   cat >&2 <<'USAGE'
 [import-required-images] missing required inputs.
 
@@ -17,6 +19,12 @@ Usage:
 
 Optional:
   RHEL8_IMG=/absolute/path/to/rhel-8-image.qcow2
+
+Azure Linux (Microsoft publishes no public cloud image; export a VHD from an
+Azure VM/AKS node image, or build one with the Azure Linux image toolkit --
+qemu-img converts VHD to qcow2 for you):
+  AZURELINUX30_IMG=/absolute/path/to/azure-linux-3.0.vhd
+  AZURELINUX20_IMG=/absolute/path/to/azure-linux-2.0.vhd
 USAGE
   exit 2
 fi
@@ -66,6 +74,14 @@ fi
 
 if [[ -n "$SLES156_SRC" ]]; then
   import_one "$SLES156_SRC" "vm/cache/sles-15.6-6.4.qcow2" "sles-15.6-6.4"
+fi
+
+if [[ -n "$AZURELINUX30_SRC" ]]; then
+  import_one "$AZURELINUX30_SRC" "vm/cache/azurelinux-3.0-6.6.qcow2" "azurelinux-3.0-6.6"
+fi
+
+if [[ -n "$AZURELINUX20_SRC" ]]; then
+  import_one "$AZURELINUX20_SRC" "vm/cache/azurelinux-2.0-5.15.qcow2" "azurelinux-2.0-5.15"
 fi
 
 echo "[import-required-images] done"
