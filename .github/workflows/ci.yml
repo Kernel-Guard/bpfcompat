@@ -33,7 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25.12"
+  GO_VERSION: "1.25.14"
 
 jobs:
   test:
@@ -61,6 +61,14 @@ jobs:
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Action prebuilt-checksum regression
+        # Guards the fix for the v0.3.6 regression where a bare
+        # `sha256sum -c SHA256SUMS` failed on the newly published arm64 binary
+        # that the action never downloads, aborting every amd64 run. Extracts
+        # verify_prebuilt_checksums() from action.yml and drives it against
+        # real fixtures, including the corrupt/missing/duplicate cases that
+        # must still fail closed.
+        run: bash scripts/action-prebuilt-checksums_test.sh
       - name: go vet
         run: go vet ./...
       - name: go test

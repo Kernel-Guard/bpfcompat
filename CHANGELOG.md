@@ -7,6 +7,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-26
+
+### Fixed
+- **GitHub Action: prebuilt-binary verification no longer fails on assets it
+  never downloads.** v0.3.6 began publishing `bpfcompat-linux-arm64`, so the
+  release `SHA256SUMS` listed three artifacts while the action fetches only the
+  two amd64 ones. The bare `sha256sum -c SHA256SUMS` then reported
+  `bpfcompat-linux-arm64: FAILED open or read` and, because verification is a
+  hard error rather than a fallback, aborted the action on **every amd64
+  runner** — the "Run bpfcompat" step never executed. Any workflow pinned to
+  the v0.3.6 commit was affected; consumers that pinned a tag object SHA
+  instead silently fell back to building from source and so did not see it.
+  Verification now covers exactly the downloaded assets and stays fail-closed:
+  a missing, duplicated, or malformed `SHA256SUMS` entry is still an error.
+  Covered by `scripts/action-prebuilt-checksums_test.sh`, which extracts the
+  logic from `action.yml` and exercises the corrupt/missing/duplicate cases.
+
+### Security
+- Moved the CI and release toolchain from Go 1.25.12 to 1.25.14, which
+  govulncheck now flags on the older patch release. Release binaries for this
+  tag are built with 1.25.14.
+
+## [0.3.6] - 2026-07-26
+
+### Added
+- Published the CLI as multi-architecture `linux/amd64` and `linux/arm64`
+  release assets and published a matching multi-architecture container image.
+- Added a scheduled external-consumer canary covering Falco, Inspektor Gadget,
+  and KubeArmor integration paths.
+
+### Security
+- Made installer checksum/signature verification fail closed when verification
+  is available.
+
+## [0.3.5] - 2026-07-26
+
+### Added
+- Added the one-command installer, GHCR image, and installed-validator
+  discovery.
+
+## [0.3.4] - 2026-07-26
+
+### Added
+- Added command-mode guest disk resizing for loaders that build or install
+  dependencies inside constrained cloud images.
+
+## [0.3.3] - 2026-07-26
+
+### Added
+- Added the canonical generated support matrix and documentation-drift guard.
+- Added Ubuntu and RHEL-family kernel-sweep profiles, consumer canaries, and
+  integration templates for common loader architectures.
+
+### Fixed
+- Accepted remote OCI references in the GitHub Action without treating them as
+  workspace-relative paths.
+
 ## [0.3.2] - 2026-07-16
 
 ### Fixed

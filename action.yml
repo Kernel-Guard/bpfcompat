@@ -134,9 +134,51 @@ runs:
             exit 0
           fi
         done
+        # Verify exactly the assets that were downloaded. A release publishes
+        # checksums for every artifact it builds, not just the ones this step
+        # fetches: v0.3.6 added bpfcompat-linux-arm64, so `sha256sum -c
+        # SHA256SUMS` failed on an arm64 binary that was deliberately never
+        # downloaded and took the whole action down with it on every amd64
+        # runner. Requiring exactly one well-formed entry per downloaded asset
+        # keeps this fail-closed: a missing, duplicated, or malformed entry is
+        # an error, never a skipped check.
+        verify_prebuilt_checksums() { # $1=dir, $2.. = asset basenames
+          local dir="$1"
+          shift
+          local checksums="$dir/SHA256SUMS"
+          local checklist asset line
+          if [[ ! -f "$checksums" ]]; then
+            echo "SHA256SUMS missing in $dir" >&2
+            return 1
+          fi
+          checklist="$(mktemp "$dir/.bpfcompat-checksums.XXXXXX")"
+          for asset in "$@"; do
+            if [[ ! -f "$dir/$asset" ]]; then
+              echo "downloaded asset missing: $asset" >&2
+              rm -f "$checklist"
+              return 1
+            fi
+            if ! line="$(awk -v file="$asset" '
+              $2 == file && $1 ~ /^[0-9a-fA-F]{64}$/ { count++; found = $0 }
+              END { if (count == 1) { print found } else { exit 1 } }
+            ' "$checksums")"; then
+              echo "$asset needs exactly one valid SHA256SUMS entry" >&2
+              rm -f "$checklist"
+              return 1
+            fi
+            printf '%s\n' "$line" >>"$checklist"
+          done
+          if (cd "$dir" && sha256sum -c "$(basename "$checklist")"); then
+            rm -f "$checklist"
+            return 0
+          fi
+          rm -f "$checklist"
+          return 1
+        }
         # A failed verification is a hard error, not a fallback: assets exist
         # but do not match what the release workflow published.
-        (cd "$tmp" && sha256sum -c SHA256SUMS)
+        verify_prebuilt_checksums "$tmp" \
+          bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
 
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"
         install -m 0755 "$tmp/bpfcompat-linux-amd64" "$GITHUB_ACTION_PATH/bin/bpfcompat"
