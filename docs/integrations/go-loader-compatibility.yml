@@ -60,8 +60,8 @@ jobs:
       - name: Validate the loader across kernels
         # Pinned by commit SHA. A SHA matching a release resolves to prebuilt,
         # checksum-verified binaries, so no toolchain is needed for bpfcompat.
-        # Pins after v0.3.6 also enforce release-workflow attestations.
-        uses: Kernel-Guard/bpfcompat@f1ba21fd4e098d483961e9e9355a51ae78273422 # v0.3.6
+        # Release-workflow attestation enforcement lands in v0.4.0.
+        uses: Kernel-Guard/bpfcompat@179ff612ed2b5d1afb16dd9c282752028d47c415 # v0.3.7
         with:
           # $BPFCOMPAT_BIN is your binary inside the guest. Give it whatever
           # flags make it load, do a bounded amount of work, and exit.

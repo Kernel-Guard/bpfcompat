@@ -85,7 +85,7 @@ expressed during review, not an endorsement of the project.
 
 ```bash
 # In CI (GitHub Action), against your kernel matrix:
-- uses: Kernel-Guard/bpfcompat@v0.3.6
+- uses: Kernel-Guard/bpfcompat@v0.3.7
   with:
     artifact: build/bpf_probe.o
     matrix: matrices/mvp.yaml

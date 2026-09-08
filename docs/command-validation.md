@@ -114,7 +114,7 @@ on its own loader with one step. A bare `matrix` name resolves to the
 to copy:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.6
+- uses: Kernel-Guard/bpfcompat@v0.3.7
   with:
     command: $BPFCOMPAT_BIN --self-test
     command-binary: build/myloader

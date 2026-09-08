@@ -106,7 +106,7 @@ jobs:
             make kernel_headers >/dev/null
             make system_monitor.bpf.o >/dev/null 2>&1
             echo "built system_monitor.bpf.o against $(uname -r)"
-            V=v0.3.6
+            V=v0.3.7
             base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$V"
             curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
             curl -fsSLO "$base/SHA256SUMS"

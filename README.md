@@ -32,7 +32,10 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
-**Runs upstream, weekly, green:** [falcosecurity/libs](https://github.com/falcosecurity/libs)
+**Runs upstream, weekly:** two projects have merged scheduled bpfcompat lanes
+into their own CI.
+
+[falcosecurity/libs](https://github.com/falcosecurity/libs)
 merged a scheduled bpfcompat compatibility lane for Falco's `modern_bpf` probe,
 driven by Falco's real loader binary
 ([falcosecurity/libs#3024](https://github.com/falcosecurity/libs/pull/3024),
@@ -44,10 +47,21 @@ maintainers later reviewed and merged a second PR
 ([#3061](https://github.com/falcosecurity/libs/pull/3061)) expanding the lane to
 RHEL-family vendor kernels on the prebuilt action path.
 
+[inspektor-gadget/inspektor-gadget](https://github.com/inspektor-gadget/inspektor-gadget)
+merged a weekly lane on 2026-09-08 that pulls each published gadget by its OCI
+reference and load/attach-tests it on vendor distro images
+([#5708](https://github.com/inspektor-gadget/inspektor-gadget/pull/5708),
+[workflow](https://github.com/inspektor-gadget/inspektor-gadget/blob/main/.github/workflows/gadget-kernel-compatibility.yml)).
+It was reviewed and merged by a maintainer and is disabled on forks by default;
+its first upstream scheduled run is the Monday after the merge. Both lanes are
+non-blocking drift detectors that complement the projects' existing tests
+(Falco's own CI, IG's vimto/ci-kernels), not replacements for them.
+
 **Trust & provenance at a glance:** CI, CodeQL, and OpenSSF Scorecard run on
 every change (badges above); every tagged release ships checksums, cosign
 keyless signatures, a CycloneDX SBOM, and SLSA provenance; the Action verifies
-checksums and release-workflow attestations and hard-fails on mismatch;
+checksums and hard-fails on mismatch (release-workflow attestation
+verification is on `main` and ships in v0.4.0);
 vulnerabilities go through
 a private policy. What's runnable today is a generated, CI-checked page, not a
 prose claim. Details: [supply-chain posture](#supply-chain-posture) ·
@@ -217,7 +231,7 @@ A complete, real example is [`examples/preload-gate`](examples/preload-gate):
 ![preload-gate.go — a real program using ValidateBeforeLoad](docs/images/library/library-code.png)
 
 ```sh
-go get github.com/kernel-guard/bpfcompat@v0.3.6
+go get github.com/kernel-guard/bpfcompat@v0.3.7
 go build -tags hostload -o preload-gate ./examples/preload-gate
 sudo ./preload-gate probe.bpf.o
 ```
@@ -360,7 +374,7 @@ attestation-verified. The validator is currently published for amd64 only; on
 arm64 use the CLI plus `make validator-static` or command mode:
 
 ```bash
-VER=v0.3.6
+VER=v0.3.7
 base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$VER"
 curl -fsSLO "$base/bpfcompat-linux-amd64"
 curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
@@ -424,7 +438,7 @@ Release candidates use an exact tag such as `0.4.0-rc.1`; they never update
 the stable minor or `latest` aliases and are not returned by the installer's
 default latest-release lookup.
 Verify provenance with
-`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 ### What a run looks like
 
@@ -636,7 +650,7 @@ or the Firecracker lane. See
 Suite mode (recommended — gates the whole collection):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.6
+- uses: Kernel-Guard/bpfcompat@v0.3.7
   with:
     suite: suites/project.yaml
     suite-out: reports/suite.json
@@ -650,7 +664,7 @@ are alive and adds the result to the suite-level collection matrix.
 Single artifact:
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.6
+- uses: Kernel-Guard/bpfcompat@v0.3.7
   with:
     artifact: path/to/program.bpf.o
     manifest: path/to/manifest.yaml
@@ -666,7 +680,7 @@ per-kernel verdict is the loader's exit code), against the built-in
 [library of known-tricky vendor kernels](docs/kernel-quirk-library.md):
 
 ```yaml
-- uses: Kernel-Guard/bpfcompat@v0.3.6
+- uses: Kernel-Guard/bpfcompat@v0.3.7
   with:
     command: $BPFCOMPAT_BIN --self-test
     command-binary: build/myloader   # static or fully self-contained binary

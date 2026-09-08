@@ -57,6 +57,10 @@ jobs:
         run: python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in ['action.yml'] + glob.glob('.github/workflows/*.yml')]; print('ok')"
       - name: Lint GitHub Actions workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+      - name: Documented action pins
+        # v0.3.6 shipped a broken action; the docs kept pointing at it for two
+        # weeks because nothing checked the pins a reader copy-pastes.
+        run: bash scripts/check-doc-pins.sh
       - name: Action OCI-artifact detection regression
         # Guards the fix that lets the action accept remote OCI references
         # (ghcr.io/...) as `artifact`. Extracts is_remote_artifact() from

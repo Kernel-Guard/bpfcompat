@@ -48,8 +48,9 @@ either of those. Real vendor images can.
 Every template pins the action by commit SHA. A SHA that matches a release tag
 resolves to prebuilt, checksum-verified binaries, so your runner needs no
 toolchain; any other ref builds from source and needs `libbpf-dev` and
-`zlib1g-dev`. The current source also verifies release-workflow attestations;
-templates will gain that enforcement when their pin advances beyond v0.3.6.
+`zlib1g-dev`. `main` additionally verifies release-workflow attestations;
+that enforcement ships in v0.4.0, so the v0.3.7 pins here verify checksums
+only.
 Releases are cosign-signed with SBOM and SLSA provenance.
 
 ## Running it somewhere real
@@ -57,3 +58,8 @@ Releases are cosign-signed with SBOM and SLSA provenance.
 The [falcosecurity/libs](https://github.com/falcosecurity/libs) lane runs this
 weekly against Falco's `modern_bpf` probe, driven by Falco's own loader
 ([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml)).
+
+[inspektor-gadget/inspektor-gadget](https://github.com/inspektor-gadget/inspektor-gadget)
+merged the OCI-gadget template above on 2026-09-08; it pulls each published
+gadget by reference and load/attach-tests it weekly
+([workflow](https://github.com/inspektor-gadget/inspektor-gadget/blob/main/.github/workflows/gadget-kernel-compatibility.yml)).
