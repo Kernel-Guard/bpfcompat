@@ -74,6 +74,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - `BPFCOMPAT_VALIDATOR_SHA256` is now enforced before a guest validator is
   used.
 
+## [0.3.7] - 2026-08-26
+
+### Fixed
+- **GitHub Action: prebuilt-binary verification no longer fails on assets it
+  never downloads.** v0.3.6 began publishing `bpfcompat-linux-arm64`, so the
+  release `SHA256SUMS` listed three artifacts while the action fetches only the
+  two amd64 ones. The bare `sha256sum -c SHA256SUMS` then reported
+  `bpfcompat-linux-arm64: FAILED open or read` and, because verification is a
+  hard error rather than a fallback, aborted the action on **every amd64
+  runner** — the "Run bpfcompat" step never executed. Any workflow pinned to
+  the v0.3.6 commit was affected; consumers that pinned a tag object SHA
+  instead silently fell back to building from source and so did not see it.
+  Verification now covers exactly the downloaded assets and stays fail-closed:
+  a missing, duplicated, or malformed `SHA256SUMS` entry is still an error.
+  Covered by `scripts/action-prebuilt-checksums_test.sh`, which extracts the
+  logic from `action.yml` and exercises the corrupt/missing/duplicate cases.
+
+### Security
+- Moved the CI and release toolchain from Go 1.25.12 to 1.25.14, which
+  govulncheck now flags on the older patch release. Release binaries for this
+  tag are built with 1.25.14.
+
 ## [0.3.6] - 2026-07-26
 
 ### Added

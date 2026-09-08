@@ -438,7 +438,7 @@ Release candidates use an exact tag such as `0.4.0-rc.1`; they never update
 the stable minor or `latest` aliases and are not returned by the installer's
 default latest-release lookup.
 Verify provenance with
-`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.6 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 ### What a run looks like
 

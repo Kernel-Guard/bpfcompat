@@ -35,7 +35,7 @@ EOF
 BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/current.log"
 grep -Fq 'channel=prerelease' "$tmp/current.log"
 
-write_metadata 0.3.6 0.3.6 stable
+write_metadata 0.3.7 0.3.7 stable
 BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" "$script" >"$tmp/stable.log"
 grep -Fq 'channel=stable' "$tmp/stable.log"
 
