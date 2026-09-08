@@ -36,7 +36,11 @@ tag_commit() {
   local tag="$1" sha=""
   sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
   if [[ -z "$sha" ]]; then
-    sha="$(git ls-remote --tags origin "refs/tags/${tag}^{}" 2>/dev/null | awk '{print $1}' | head -1)"
+    # `set -euo pipefail` is in force: a failing remote (no `origin`, network
+    # down, SIGPIPE from `head`) would abort the whole script from inside this
+    # command substitution and skip the note_fail path, so swallow it here and
+    # let the caller report "tag does not exist".
+    sha="$(git ls-remote --tags origin "refs/tags/${tag}^{}" 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
   fi
   printf '%s' "$sha"
 }
@@ -84,6 +88,12 @@ while IFS= read -r hit; do
 
   versions["$version"]+="$file:$line "
 done < <(grep -rn 'Kernel-Guard/bpfcompat@' README.md docs 2>/dev/null || true)
+
+# A guard that finds nothing is a guard that passes forever. The docs always
+# carry pins; zero matches means the docs moved or the pattern rotted.
+if (( ${#versions[@]} == 0 )); then
+  note_fail "found no 'uses: Kernel-Guard/bpfcompat@...' pins in README.md or docs -- the docs moved, or this check no longer matches them"
+fi
 
 if (( ${#versions[@]} > 1 )); then
   note_fail "docs pin more than one bpfcompat version:"
