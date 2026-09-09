@@ -40,8 +40,10 @@ func LoadReport(path string) (schema.ReportV01, error) {
 	return report, nil
 }
 
-// Compare loads both reports, validates their schemas and builds the diff. It
-// touches nothing but those two files: no database, no network, no service.
+// Compare loads both reports, validates their schemas and comparison keys, and
+// builds the diff. It touches nothing but those two files: no database, no
+// network, no service. Every failure here is an inability to compare, which the
+// caller reports as exit 1 and never as a verdict on the candidate.
 func Compare(baselinePath, candidatePath string, now time.Time) (Diff, error) {
 	baseline, err := LoadReport(baselinePath)
 	if err != nil {
@@ -56,7 +58,7 @@ func Compare(baselinePath, candidatePath string, now time.Time) (Diff, error) {
 	}
 	return Build(baseline, candidate,
 		absOrOriginal(baselinePath), absOrOriginal(candidatePath),
-		now.UTC().Format(time.RFC3339)), nil
+		now.UTC().Format(time.RFC3339))
 }
 
 // ExitCode maps the diff's overall result onto the process contract.

@@ -3,8 +3,10 @@ package regressiondiff
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +57,11 @@ func report(complete bool, targets ...schema.Target) schema.ReportV01 {
 
 func build(t *testing.T, baseline, candidate schema.ReportV01) Diff {
 	t.Helper()
-	return Build(baseline, candidate, "base.json", "cand.json", time.Unix(0, 0).UTC().Format(time.RFC3339))
+	d, err := Build(baseline, candidate, "base.json", "cand.json", time.Unix(0, 0).UTC().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	return d
 }
 
 func onlyCell(t *testing.T, d Diff) Cell {
@@ -64,6 +70,17 @@ func onlyCell(t *testing.T, d Diff) Cell {
 		t.Fatalf("expected exactly one cell, got %d", len(d.Cells))
 	}
 	return d.Cells[0]
+}
+
+func cellFor(t *testing.T, d Diff, profileID string) Cell {
+	t.Helper()
+	for i := range d.Cells {
+		if d.Cells[i].ProfileID == profileID {
+			return d.Cells[i]
+		}
+	}
+	t.Fatalf("no cell for %q in %+v", profileID, d.Cells)
+	return Cell{}
 }
 
 // The comparison table. Each row is a release decision that must differ.
@@ -105,7 +122,12 @@ func TestComparisonTable(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var baseTargets, candTargets []schema.Target
+			// Every report carries a shared, unchanging anchor cell: a report
+			// with no targets is now rejected outright, and the anchor keeps
+			// coverage-add/remove rows expressible.
+			anchor := target("anchor", C, true)
+			baseTargets := []schema.Target{anchor}
+			candTargets := []schema.Target{anchor}
 			if tc.baseline != nil {
 				baseTargets = append(baseTargets, *tc.baseline)
 			}
@@ -113,7 +135,7 @@ func TestComparisonTable(t *testing.T) {
 				candTargets = append(candTargets, *tc.candidate)
 			}
 			d := build(t, report(true, baseTargets...), report(true, candTargets...))
-			cell := onlyCell(t, d)
+			cell := cellFor(t, d, "k")
 			if cell.Classification != tc.want {
 				t.Errorf("classification: want %s, got %s (%s)", tc.want, cell.Classification, cell.Reason)
 			}
@@ -232,19 +254,140 @@ func TestChangedObligationIsInconclusive(t *testing.T) {
 	}
 }
 
-func TestRequiredFlagFollowsTheCandidateAndRecordsChanges(t *testing.T) {
+// Replaces an earlier test that asserted "the candidate defines the current
+// support claim". That rule let a release dodge its own gate: flip a profile to
+// `required: false` in the candidate and a regression on an environment the
+// baseline promised became a non-gating optional finding.
+func TestRequirednessChangeIsNotLikeForLike(t *testing.T) {
 	C, I := schema.VerdictCompatible, schema.VerdictIncompatible
-	// Demoting a required profile to optional must be visible.
-	d := build(t, report(true, target("k", C, true)), report(true, target("k", I, false)))
-	cell := onlyCell(t, d)
-	if !cell.RequiredChanged {
-		t.Fatal("a required->optional demotion must be recorded")
+
+	t.Run("demotion cannot launder a regression into an optional finding", func(t *testing.T) {
+		d := build(t, report(true, target("k", C, true)), report(true, target("k", I, false)))
+		cell := onlyCell(t, d)
+
+		if cell.Classification == NewRegression && !cell.Required {
+			t.Fatal("a required->optional demotion turned a gating regression into an optional one")
+		}
+		if cell.Classification != Inconclusive {
+			t.Fatalf("a support-contract change is not like-for-like evidence; want %s, got %s", Inconclusive, cell.Classification)
+		}
+		if !cell.Required {
+			t.Fatal("an obligation either side treated as required must still gate")
+		}
+		if !cell.RequiredChanged {
+			t.Fatal("the requiredness change must be recorded")
+		}
+		if d.Summary.Result != ResultInconclusive || ExitCode(d) != ExitInconclusive {
+			t.Fatalf("want %s/exit %d, got %s/exit %d", ResultInconclusive, ExitInconclusive, d.Summary.Result, ExitCode(d))
+		}
+		if d.Summary.NewOptionalRegressions != 0 {
+			t.Fatalf("the demotion must not be counted as an optional regression: %+v", d.Summary)
+		}
+	})
+
+	t.Run("promotion is equally not like-for-like", func(t *testing.T) {
+		// The mirror direction. Whether a candidate "regressed" against a
+		// promise that did not exist at baseline is not something this evidence
+		// settles, so it is not reasoned about asymmetrically.
+		d := build(t, report(true, target("k", C, false)), report(true, target("k", I, true)))
+		cell := onlyCell(t, d)
+		if cell.Classification != Inconclusive {
+			t.Fatalf("want %s, got %s", Inconclusive, cell.Classification)
+		}
+		if !cell.Required || ExitCode(d) != ExitInconclusive {
+			t.Fatalf("a newly-required obligation must gate: required=%t exit=%d", cell.Required, ExitCode(d))
+		}
+	})
+
+	t.Run("unchanged requiredness still compares normally", func(t *testing.T) {
+		for _, req := range []bool{true, false} {
+			d := build(t, report(true, target("k", C, req)), report(true, target("k", I, req)))
+			cell := onlyCell(t, d)
+			if cell.Classification != NewRegression {
+				t.Fatalf("required=%t: want %s, got %s", req, NewRegression, cell.Classification)
+			}
+			if cell.RequiredChanged {
+				t.Fatalf("required=%t: nothing changed", req)
+			}
+		}
+	})
+}
+
+// Comparison keys must be trustworthy before anything is compared. Each of
+// these was previously tolerated and produced a diff that looked conclusive.
+func TestUnusableComparisonKeysFailClosed(t *testing.T) {
+	C := schema.VerdictCompatible
+	good := report(true, target("k", C, true))
+
+	dup := report(true, target("k", C, true), target("k", schema.VerdictIncompatible, true))
+	blank := report(true, target("k", C, true), target("   ", C, true))
+	empty := report(true)
+
+	for _, tc := range []struct {
+		name                string
+		baseline, candidate schema.ReportV01
+		wantSubstr          string
+	}{
+		{"duplicate profile_id in baseline", dup, good, "ambiguous"},
+		{"duplicate profile_id in candidate", good, dup, "ambiguous"},
+		{"blank profile_id in baseline", blank, good, "empty profile_id"},
+		{"blank profile_id in candidate", good, blank, "empty profile_id"},
+		{"zero targets in baseline", empty, good, "no targets"},
+		{"zero targets in candidate", good, empty, "no targets"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Build(tc.baseline, tc.candidate, "b", "c", "now")
+			if err == nil {
+				t.Fatalf("expected a refusal, got a diff with %d cells", len(d.Cells))
+			}
+			if !strings.Contains(err.Error(), tc.wantSubstr) {
+				t.Fatalf("error should say why: want %q in %q", tc.wantSubstr, err.Error())
+			}
+			var invalid *InvalidEvidenceError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("want InvalidEvidenceError, got %T", err)
+			}
+		})
 	}
-	if cell.Required {
-		t.Fatal("the candidate defines the current support claim")
+
+	// A duplicate must never be resolved by silently keeping one of them.
+	d, err := Build(dup, good, "b", "c", "now")
+	if err == nil {
+		for i := range d.Cells {
+			if d.Cells[i].ProfileID == "k" {
+				t.Fatal("a duplicated profile_id was resolved by picking a winner")
+			}
+		}
 	}
-	if d.Summary.NewOptionalRegressions != 1 {
-		t.Fatalf("expected the regression to be counted as optional: %+v", d.Summary)
+}
+
+// The CLI must map every unusable-evidence refusal to exit 1 -- an inability to
+// compare, never a verdict on the candidate.
+func TestUnusableEvidenceReachesExitOneThroughCompare(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, r schema.ReportV01) string {
+		blob, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, blob, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	C := schema.VerdictCompatible
+	good := write("good.json", report(true, target("k", C, true)))
+	dup := write("dup.json", report(true, target("k", C, true), target("k", C, true)))
+	empty := write("empty.json", report(true))
+
+	for _, bad := range []string{dup, empty} {
+		if _, err := Compare(bad, good, time.Now()); err == nil {
+			t.Errorf("%s was accepted as a baseline", filepath.Base(bad))
+		}
+		if _, err := Compare(good, bad, time.Now()); err == nil {
+			t.Errorf("%s was accepted as a candidate", filepath.Base(bad))
+		}
 	}
 }
 

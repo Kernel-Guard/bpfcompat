@@ -143,6 +143,45 @@ type Diff struct {
 	Notes         []string  `json:"notes,omitempty"`
 }
 
+// InvalidEvidenceError is returned when a report cannot supply trustworthy
+// comparison keys. Every case here is an inability to compare, never a verdict
+// on the candidate, so the caller maps it to exit 1.
+type InvalidEvidenceError struct {
+	Side, Reason string
+}
+
+func (e *InvalidEvidenceError) Error() string {
+	return fmt.Sprintf("%s report cannot be compared: %s", e.Side, e.Reason)
+}
+
+// Validate rejects evidence whose comparison keys cannot be trusted.
+//
+// Each of these was previously tolerated, and each let a diff look conclusive
+// when it was not: a report with no targets compared cleanly against anything,
+// a blank profile_id silently vanished from the comparison, and a duplicated
+// profile_id had its first occurrence silently chosen as the winner. Ambiguity
+// about *which* obligation a cell represents is not something a release gate
+// may resolve by guessing.
+func Validate(r schema.ReportV01, side string) error {
+	if len(r.Targets) == 0 {
+		return &InvalidEvidenceError{Side: side, Reason: "it contains no targets, so it establishes nothing to compare"}
+	}
+	seen := make(map[string]int, len(r.Targets))
+	for i := range r.Targets {
+		id := strings.TrimSpace(r.Targets[i].ProfileID)
+		if id == "" {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d has an empty profile_id, so the obligation it represents is unidentifiable", i)}
+		}
+		if first, dup := seen[id]; dup {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"profile_id %q appears at targets %d and %d; which result represents that obligation is ambiguous", id, first, i)}
+		}
+		seen[id] = i
+	}
+	return nil
+}
+
 // UnsupportedSchemaError is returned when a report's schema is not one this
 // differ understands. Comparing it anyway would guess at semantics.
 type UnsupportedSchemaError struct {
@@ -226,7 +265,17 @@ func conclusive(s CellSide) bool {
 }
 
 // Build compares two reports. It performs no I/O and needs no network.
-func Build(baseline, candidate schema.ReportV01, baselinePath, candidatePath, generatedAt string) Diff {
+//
+// It returns an error rather than a Diff whenever the inputs cannot supply
+// trustworthy comparison keys, so there is no path that produces a diff from
+// evidence the differ had to guess about.
+func Build(baseline, candidate schema.ReportV01, baselinePath, candidatePath, generatedAt string) (Diff, error) {
+	if err := Validate(baseline, "baseline"); err != nil {
+		return Diff{}, err
+	}
+	if err := Validate(candidate, "candidate"); err != nil {
+		return Diff{}, err
+	}
 	d := Diff{
 		SchemaVersion: SchemaVersion,
 		GeneratedAt:   generatedAt,
@@ -275,24 +324,17 @@ func Build(baseline, candidate schema.ReportV01, baselinePath, candidatePath, ge
 	d.Summary.BaselineComplete = baseline.Summary.Complete
 	d.Summary.CandidateComplete = candidate.Summary.Complete
 	d.Summary.Result = overallResult(d.Summary)
-	return d
+	return d, nil
 }
 
+// indexTargets assumes Validate has already run, so every profile_id is present
+// and unique. It never drops or de-duplicates anything: a comparison key that
+// cannot be trusted is rejected before this point, not quietly resolved here.
 func indexTargets(targets []schema.Target) map[string]*schema.Target {
 	out := make(map[string]*schema.Target, len(targets))
 	for i := range targets {
 		t := &targets[i]
-		id := strings.TrimSpace(t.ProfileID)
-		if id == "" {
-			continue
-		}
-		// A duplicate profile_id in one report makes that obligation ambiguous.
-		// Keep the first and let the cell fall to inconclusive rather than
-		// silently picking a winner.
-		if _, exists := out[id]; exists {
-			continue
-		}
-		out[id] = t
+		out[strings.TrimSpace(t.ProfileID)] = t
 	}
 	return out
 }
@@ -306,17 +348,20 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Candidate = sideOf(ct)
 	}
 
-	// Which side decides gating: the candidate defines the release's current
-	// support claims, except when the candidate dropped the obligation
-	// entirely, where the baseline's promise is what was lost.
+	// Gating follows whichever side treated the obligation as required.
+	//
+	// Letting the candidate alone decide was a hole: demoting a profile to
+	// `required: false` in the candidate turned a regression on an environment
+	// the baseline promised into a non-gating optional finding, so a release
+	// could dodge the gate by editing its own matrix.
 	switch {
+	case hasBase && hasCand:
+		cell.Required = bt.Required || ct.Required
+		cell.RequiredChanged = bt.Required != ct.Required
 	case hasCand:
 		cell.Required = ct.Required
 	case hasBase:
 		cell.Required = bt.Required
-	}
-	if hasBase && hasCand && bt.Required != ct.Required {
-		cell.RequiredChanged = true
 	}
 
 	switch {
@@ -337,6 +382,20 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 	if loaderChanged {
 		cell.Classification = Inconclusive
 		cell.Reason = "loader contract differs between the two reports"
+		return cell
+	}
+
+	// A requiredness change is a change to the support contract, not to the
+	// software. Whether a candidate "regressed" against a promise that did not
+	// exist at baseline -- or still honours one it has since dropped -- is not
+	// something this evidence can settle, in either direction. Both sides of the
+	// change are treated as not-like-for-like rather than reasoning
+	// asymmetrically about which direction is safe.
+	if cell.RequiredChanged {
+		cell.Classification = Inconclusive
+		cell.Reason = fmt.Sprintf(
+			"the support contract changed: this environment is required=%t at baseline and required=%t in the candidate, so the two results are not like-for-like",
+			cell.Baseline.Required, cell.Candidate.Required)
 		return cell
 	}
 

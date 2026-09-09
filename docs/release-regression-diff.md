@@ -69,7 +69,22 @@ A cell is inconclusive when either side failed to settle the question:
 - either side ran a kernel other than the one the profile names
   (`environment.kernel_family_match: false`);
 - no verdict recorded, or a verdict this differ does not recognise;
-- the obligation or loader contract changed between the reports.
+- the obligation, its requiredness, or the loader contract changed between the
+  reports.
+
+## Evidence that cannot be compared at all
+
+Some inputs are rejected outright, before any cell is built, because their
+comparison keys cannot be trusted. Each produces exit `1` with an explanation:
+
+- a report with **no targets** — it establishes nothing to compare against;
+- a target with an **empty `profile_id`** — the obligation it represents is
+  unidentifiable;
+- a **duplicated `profile_id`** within one report — which result represents that
+  obligation is ambiguous, and a release gate may not resolve that by guessing;
+- unreadable, malformed, or unsupported-schema evidence.
+
+None of these is a statement about the candidate's software.
 
 **An unproven baseline can never manufacture a regression.** If the baseline hit
 an infrastructure failure and the candidate is incompatible, that is
@@ -89,11 +104,17 @@ release. The diff preserves that exactly:
   the candidate's compatibility relative to the baseline was not established;
 - an **optional** one is visible and non-gating.
 
-Which side decides: the **candidate's** `required` flag, because the candidate
-defines the release's current support claims. When the candidate dropped the
-obligation entirely, the baseline's flag is used — that is what was lost. A
-`required` → `optional` demotion is recorded as `required_changed: true` so
-downgrading a profile to dodge a gate is visible in the evidence.
+Which side decides: **either**. A cell gates if the baseline *or* the candidate
+treated the obligation as required. Letting the candidate alone decide was a
+hole — a release could flip a profile to `required: false` and turn a regression
+on an environment the baseline promised into a non-gating optional finding.
+
+A change in requiredness is a change to the **support contract**, not to the
+software, so such a cell is `INCONCLUSIVE` and `required_changed: true` is
+recorded. Whether a candidate regressed against a promise that did not exist at
+baseline — or still honours one it has since dropped — is not something this
+evidence can settle, in either direction, so neither direction is reasoned about
+asymmetrically.
 
 ## Coverage completeness
 
