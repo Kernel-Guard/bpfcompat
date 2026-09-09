@@ -32,7 +32,7 @@ dashboards, and audits.
 | Field | Type | Notes |
 |---|---|---|
 | `profile_id` | string | e.g. `ubuntu-22.04-5.15` |
-| `required` | bool | whether a failure here fails the gate |
+| `required` | bool | whether this target gates the run. Only required targets set the run verdict and exit code — for **any** outcome, including infrastructure failure and an environment mismatch. Optional targets report information and reduce `summary.complete`, never the gate |
 | `status` | string | `pass` \| `fail` \| `partial` \| `infra_error` \| `unsupported` |
 | `verdict` | enum | `COMPATIBLE` \| `INCOMPATIBLE` \| `INFRA_ERROR` \| `UNSUPPORTED` — see [compatibility-contract.md](compatibility-contract.md) |
 | `environment` | object | `{ requested_kernel_family, observed_kernel, kernel_family_match, image_source_url, image_sha256 }` — `kernel_family_match: false` means this target ran a different kernel series than the profile requested and cannot support a claim about it |
