@@ -82,7 +82,9 @@ comparison keys cannot be trusted. Each produces exit `1` with an explanation:
   unidentifiable;
 - a **duplicated `profile_id`** within one report — which result represents that
   obligation is ambiguous, and a release gate may not resolve that by guessing;
-- unreadable, malformed, or unsupported-schema evidence.
+- unreadable, malformed, or unsupported-schema evidence, **including a file
+  carrying anything after the report** — a truncated or concatenated file would
+  otherwise be compared from its first JSON value alone.
 
 None of these is a statement about the candidate's software.
 
@@ -141,6 +143,10 @@ candidate and must not be buried by an inability to compare somewhere else.
 `bpfcompat.regression-diff.v0.1` — distinct from the run-report schema because
 the semantics are different. The Markdown is rendered from it and is
 presentation only; never parse it.
+
+With neither `--out` nor `--markdown` set, the diff JSON is written to **stdout**
+and stays parseable (`bpfcompat diff ... | jq` works); the human-readable summary
+goes to stderr. With an output file selected, the summary goes to stdout.
 
 Each cell records both sides' verdict, required flag, classification code,
 requested and observed kernel, whether the environment was established, the

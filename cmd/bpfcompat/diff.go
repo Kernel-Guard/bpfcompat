@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -36,6 +37,10 @@ func runDiff(args []string) int {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		// --help is a successful request for help, not a failed comparison.
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return regressiondiff.ExitInconclusive
 	}
 
@@ -67,7 +72,12 @@ func runDiff(args []string) int {
 	if strings.TrimSpace(*markdownPath) != "" {
 		fmt.Printf("Diff Markdown: %s\n", *markdownPath)
 	}
-	if strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == "" {
+	// With no output file selected the diff itself is written to stdout, and
+	// stdout has to stay machine-readable: the flag help promises JSON there,
+	// and `bpfcompat diff ... | jq` must work. The human summary then goes to
+	// stderr rather than being appended after the JSON document.
+	jsonOnStdout := strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == ""
+	if jsonOnStdout {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(d); err != nil {
@@ -76,11 +86,15 @@ func runDiff(args []string) int {
 		}
 	}
 
+	summaryOut := os.Stdout
+	if jsonOnStdout {
+		summaryOut = os.Stderr
+	}
 	s := d.Summary
-	fmt.Printf("Result: %s\n", s.Result)
-	fmt.Printf("New required regressions: %d | new optional: %d | existing incompatibilities: %d | fixed: %d | unchanged: %d\n",
+	fmt.Fprintf(summaryOut, "Result: %s\n", s.Result)
+	fmt.Fprintf(summaryOut, "New required regressions: %d | new optional: %d | existing incompatibilities: %d | fixed: %d | unchanged: %d\n",
 		s.NewRequiredRegressions, s.NewOptionalRegressions, s.ExistingIncompatibility, s.Fixed, s.UnchangedCompatible)
-	fmt.Printf("Inconclusive required: %d | optional: %d | coverage added: %d | removed required: %d | removed optional: %d\n",
+	fmt.Fprintf(summaryOut, "Inconclusive required: %d | optional: %d | coverage added: %d | removed required: %d | removed optional: %d\n",
 		s.InconclusiveRequired, s.InconclusiveOptional, s.CoverageAddedCount, s.CoverageRemovedRequired, s.CoverageRemovedOptional)
 
 	return regressiondiff.ExitCode(d)

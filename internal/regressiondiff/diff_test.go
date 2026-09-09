@@ -454,3 +454,53 @@ func TestDiffJSONIsVersionedAndSelfDescribing(t *testing.T) {
 		t.Fatal("candidate incompleteness must be surfaced in the summary")
 	}
 }
+
+// Evidence must be the whole file, not its first JSON value. json.Decoder.Decode
+// stops after one value and leaves the rest unread, so a truncated or
+// concatenated report compared cleanly from its first value alone -- exit 0 over
+// a file nobody can vouch for.
+func TestTrailingDataAfterTheReportIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	valid, err := json.Marshal(report(true, target("k", schema.VerdictCompatible, true)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := filepath.Join(dir, "good.json")
+	if err := os.WriteFile(good, valid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		trailer string
+	}{
+		{"second JSON value", "\n{\"schema_version\":\"v0.1\"}\n"},
+		{"stray bytes", "\ngarbage\n"},
+		{"truncated append", "\n{\"targets\":"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, "trailing.json")
+			if err := os.WriteFile(path, append(append([]byte{}, valid...), tc.trailer...), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadReport(path); err == nil {
+				t.Fatal("a report with trailing data was accepted, so only its first value would have been compared")
+			}
+			if _, err := Compare(path, good, time.Now()); err == nil {
+				t.Fatal("Compare accepted a baseline with trailing data")
+			}
+			if _, err := Compare(good, path, time.Now()); err == nil {
+				t.Fatal("Compare accepted a candidate with trailing data")
+			}
+		})
+	}
+
+	// Trailing whitespace is not trailing data.
+	padded := filepath.Join(dir, "padded.json")
+	if err := os.WriteFile(padded, append(append([]byte{}, valid...), "\n\n  \n"...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadReport(padded); err != nil {
+		t.Fatalf("whitespace after the report must be fine: %v", err)
+	}
+}

@@ -1,8 +1,11 @@
 package regressiondiff
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,8 +27,9 @@ const (
 	ExitRegressed     = 2
 )
 
-// LoadReport reads one evidence file. A file that is absent or not valid JSON
-// is an error rather than an empty report, so a typo in a path can never be
+// LoadReport reads one evidence file. A file that is absent, not valid JSON, or
+// carrying anything after the report is an error rather than a partial report,
+// so neither a typo in a path nor a truncated or concatenated file can be
 // mistaken for "nothing regressed".
 func LoadReport(path string) (schema.ReportV01, error) {
 	blob, err := os.ReadFile(path)
@@ -33,11 +37,30 @@ func LoadReport(path string) (schema.ReportV01, error) {
 		return schema.ReportV01{}, fmt.Errorf("read report %s: %w", path, err)
 	}
 	var report schema.ReportV01
-	dec := json.NewDecoder(strings.NewReader(string(blob)))
+	dec := json.NewDecoder(bytes.NewReader(blob))
 	if err := dec.Decode(&report); err != nil {
 		return schema.ReportV01{}, fmt.Errorf("parse report %s: %w", path, err)
 	}
+	// Decode stops after one JSON value and is happy to leave the rest of the
+	// file unread. Evidence with anything after the report -- a second value, a
+	// truncated append, stray bytes -- is not evidence we can vouch for, and
+	// comparing only its first value would look entirely successful.
+	if err := requireEOF(dec); err != nil {
+		return schema.ReportV01{}, fmt.Errorf("parse report %s: %w", path, err)
+	}
 	return report, nil
+}
+
+func requireEOF(dec *json.Decoder) error {
+	var trailing json.RawMessage
+	switch err := dec.Decode(&trailing); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil:
+		return fmt.Errorf("unexpected data after the report: %w", err)
+	default:
+		return fmt.Errorf("unexpected data after the report: a second JSON value is present")
+	}
 }
 
 // Compare loads both reports, validates their schemas and comparison keys, and
