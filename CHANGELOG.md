@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   duplicated, or malformed entry, a missing asset or manifest, a traversing
   asset name, a failed attestation, and a runner with no usable `gh` must all
   fail closed.
+- The canary pin guard's remote tag lookup, used on the shallow checkouts some
+  gate lanes run, now resolves lightweight tags as well as annotated ones. Only
+  an annotated tag advertises a peeled `refs/tags/<t>^{}` ref, so asking for
+  that ref alone would have reported the next lightweight release tag as
+  nonexistent and failed the release gate for a tag that exists.
 
 ## [0.4.0-rc.3] - 2026-07-30
 
