@@ -58,7 +58,8 @@ func VerdictForStatus(status string) string {
 func RunVerdict(targets []Target) string {
 	sawInfra := false
 	sawRequiredUnsupported := false
-	for _, t := range targets {
+	for i := range targets {
+		t := &targets[i]
 		switch t.Verdict {
 		case VerdictIncompatible:
 			if t.Required {
@@ -82,7 +83,8 @@ func RunVerdict(targets []Target) string {
 // compatibility answer. A COMPATIBLE run with Complete=false means "nothing we
 // managed to test was incompatible", not "the whole matrix passed".
 func RunComplete(targets []Target) bool {
-	for _, t := range targets {
+	for i := range targets {
+		t := &targets[i]
 		switch t.Verdict {
 		case VerdictInfraError, VerdictUnsupported:
 			return false

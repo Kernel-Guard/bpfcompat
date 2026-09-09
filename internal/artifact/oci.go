@@ -101,7 +101,7 @@ func fileLooksLikeOCIArchive(path string) bool {
 // which published image was tested. The digest can. It is best-effort -- an
 // image whose digest cannot be computed still yields a usable artifact, which
 // is identified by its own SHA-256 either way.
-func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path string, digest string, err error) {
+func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, ociOperationTimeout)
 	defer cancel()
 
