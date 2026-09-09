@@ -120,20 +120,44 @@ program is broken.
 
 ### Run-level roll-up
 
-1. Any **required** target `INCOMPATIBLE` → run is `INCOMPATIBLE`.
-2. Otherwise, any target `INFRA_ERROR`, or any required target `UNSUPPORTED` →
-   run is `INFRA_ERROR`.
+**Only `required` targets gate the run.** `required: false` is documented as "a
+failure here does not fail the gate", and that holds for every outcome — a
+compatibility failure, a VM that never booted, an environment we cannot execute.
+If an optional target could set the exit code it would be required in everything
+but name. What an optional target lost is still reported, through
+`summary.complete` and its own entry, rather than by blocking the release.
+
+Over the required targets:
+
+1. Any `INCOMPATIBLE` → run is `INCOMPATIBLE`.
+2. Otherwise, any `INFRA_ERROR`, any `UNSUPPORTED`, or any target that did not
+   establish the environment it was asked about
+   (`environment.kernel_family_match: false`) → run is `INFRA_ERROR`.
 3. Otherwise → `COMPATIBLE`.
 
 Rule 1 deliberately outranks rule 2. A proven incompatibility is a definitive
-fact, and downgrading it to `INFRA_ERROR` because an unrelated optional VM
-failed to boot would hide a real regression behind a flaky runner. The lost
-coverage is reported separately:
+fact, and downgrading it because an unrelated VM failed would hide a real
+regression behind a flaky runner.
 
-`summary.complete` is `false` when any target produced no compatibility answer
-(`INFRA_ERROR`, `UNSUPPORTED`, or an environment mismatch). **`COMPATIBLE` with
-`complete: false` means "nothing we managed to test was incompatible" — not
-"the matrix passed".**
+Rule 2 covers the case that matters most for a support claim. A required profile
+whose guest booted a different kernel series produces a genuine result *about
+the kernel that ran* — that evidence is kept — but the requested contract was
+never exercised, so the run must not exit `0` claiming it held. And because it
+was **our** environment that failed to be what we asked for, this is
+`INFRA_ERROR` and never `INCOMPATIBLE`.
+
+`summary.complete` is `false` when **any** target — required or optional —
+produced no answer about the environment it was asked about (`INFRA_ERROR`,
+`UNSUPPORTED`, or an environment mismatch). Coverage describes what was tested;
+it is not a gating decision. **`COMPATIBLE` with `complete: false` means
+"nothing we managed to test was incompatible" — not "the matrix passed".**
+
+### Unrecognised states
+
+A target status bpfcompat does not recognise maps to `INFRA_ERROR`, never to
+`INCOMPATIBLE`. An unknown state means the tool does not understand what
+happened, which is not evidence that the user's program failed to load. It still
+fails closed, so it cannot pass silently either.
 
 ### Relationship to `status`
 
@@ -169,9 +193,13 @@ Field-by-field reference: [evidence-schema.md](evidence-schema.md).
 
 | Exit code | Verdict | What a CI consumer should conclude |
 |---:|---|---|
-| `0` | `COMPATIBLE` | No required target was incompatible. Check `summary.complete` before reading this as full coverage. |
+| `0` | `COMPATIBLE` | Every required target was exercised as requested and none was incompatible. Optional targets may still have failed — check `summary.complete`. |
 | `2` | `INCOMPATIBLE` | A required target proved your artifact or loader does not work there. **Do not merge / do not ship.** |
-| `1` | `INFRA_ERROR` | bpfcompat could not complete the test. This says nothing about your software — retry, or investigate the runner. |
+| `1` | `INFRA_ERROR` | bpfcompat could not establish the requested contract on a required target — it failed to run, or the guest was not the environment that was asked for. This says nothing about your software; retry, or investigate the runner or the profile. |
+
+A consumer that reads only the process exit status is safe: every case where the
+requested contract was not established on a required target is non-zero. No new
+JSON field has to be adopted to avoid a false green.
 
 Exit codes are unchanged from earlier releases. What changed is the precedence:
 a run with both a proven required incompatibility and an unrelated

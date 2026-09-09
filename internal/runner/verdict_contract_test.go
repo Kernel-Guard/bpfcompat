@@ -237,8 +237,101 @@ func TestEnvironmentMismatchIsRecordedNotSilentlyClaimed(t *testing.T) {
 	if env.ImageSHA256 != "abc123" || env.ImageSourceURL == "" {
 		t.Fatalf("image identity missing from evidence: %+v", env)
 	}
+
+	// The target's own result stays truthful: the artifact really did load on
+	// the kernel that booted, and that evidence is preserved.
+	if targets[0].Status != "pass" || targets[0].Verdict != schema.VerdictCompatible {
+		t.Fatalf("the artifact result against the observed kernel must be preserved, got status=%q verdict=%q",
+			targets[0].Status, targets[0].Verdict)
+	}
+
+	// But the run must not exit 0 claiming the requested 4.18 contract held.
 	if schema.RunComplete(targets) {
 		t.Fatal("a target that ran the wrong kernel series cannot count as covered")
+	}
+	got := schema.RunVerdict(targets)
+	if got == schema.VerdictCompatible {
+		t.Fatal("a required profile that booted the wrong kernel must not produce a green compatibility gate")
+	}
+	if got == schema.VerdictIncompatible {
+		t.Fatal("our environment failing to be what we asked for is not the user's incompatibility")
+	}
+	if got != schema.VerdictInfraError {
+		t.Fatalf("want %s, got %s", schema.VerdictInfraError, got)
+	}
+}
+
+func TestOptionalTargetsDoNotGateTheRun(t *testing.T) {
+	// `required: false` is documented as "a failure here does not fail the
+	// gate". That has to hold for every outcome, not just compatibility
+	// failures -- otherwise an optional experimental kernel that fails to boot
+	// blocks a release, and the flag means nothing.
+	dir := t.TempDir()
+	passPath := filepath.Join(dir, "pass.json")
+	writeValidatorResult(t, passPath, map[string]any{
+		"status": "pass",
+		"host":   map[string]any{"release": "5.15.0-152-generic", "machine": "x86_64"},
+		"load":   map[string]any{"status": "pass"},
+	})
+	// An optional guest that booted a completely different series.
+	wrongPath := filepath.Join(dir, "wrong.json")
+	writeValidatorResult(t, wrongPath, map[string]any{
+		"status": "pass",
+		"host":   map[string]any{"release": "6.12.0-107.el9uek.x86_64", "machine": "x86_64"},
+		"load":   map[string]any{"status": "pass"},
+	})
+
+	stubProfile(t, vm.Profile{Distro: "ubuntu", Version: "22.04", KernelFamily: "5.15", Arch: "x86_64"})
+	stubExecutor(t, func(ctx context.Context, req vm.ExecutionRequest) vm.ExecutionResult {
+		now := time.Now().UTC()
+		switch {
+		case strings.HasPrefix(req.Profile.ID, "flaky"):
+			return vm.ExecutionResult{ProfileID: req.Profile.ID, Status: "infra_error", InfraError: "qemu died", StartedAt: now, FinishedAt: now}
+		case strings.HasPrefix(req.Profile.ID, "drifted"):
+			return vm.ExecutionResult{ProfileID: req.Profile.ID, Status: "pass", ValidatorResultPath: wrongPath, StartedAt: now, FinishedAt: now}
+		default:
+			return vm.ExecutionResult{ProfileID: req.Profile.ID, Status: "pass", ValidatorResultPath: passPath, StartedAt: now, FinishedAt: now}
+		}
+	})
+
+	required, optional := true, false
+	m := matrix.Matrix{Profiles: []matrix.MatrixProfile{
+		{ID: "ubuntu-22.04-5.15", Required: &required},
+		{ID: "flaky", Required: &optional},
+		{ID: "drifted", Required: &optional},
+	}}
+	targets, _ := executeTargets(context.Background(), baseCfg(), m, t.TempDir(),
+		"/tmp/a.bpf.o", "", "", validatorTuning{}, "/tmp/validator", "best-effort", nil)
+
+	if got := schema.RunVerdict(targets); got != schema.VerdictCompatible {
+		t.Fatalf("optional targets must not gate the run; want %s, got %s", schema.VerdictCompatible, got)
+	}
+	// ...but the lost coverage is still reported rather than hidden.
+	if schema.RunComplete(targets) {
+		t.Fatal("an optional target that failed or drifted still reduces coverage")
+	}
+}
+
+func TestUnknownTargetStatusFailsClosedWithoutBlamingTheUser(t *testing.T) {
+	// No runner path produces a status outside the four known values today.
+	// This asserts the behaviour of the mapping itself, which is exported and
+	// is reached by anything reading a report from a different bpfcompat
+	// version: an unrecognised state is our gap, not the user's bug.
+	target := schema.Target{Required: true, Status: "some-future-status"}
+	target.Verdict = schema.VerdictForStatus(target.Status)
+
+	if target.Verdict == schema.VerdictIncompatible {
+		t.Fatal("an unrecognised status must never be reported as the user's incompatibility")
+	}
+	if target.Verdict == schema.VerdictCompatible {
+		t.Fatal("an unrecognised status must not pass silently")
+	}
+	targets := []schema.Target{target}
+	if got := schema.RunVerdict(targets); got != schema.VerdictInfraError {
+		t.Fatalf("want run verdict %s, got %s", schema.VerdictInfraError, got)
+	}
+	if schema.RunComplete(targets) {
+		t.Fatal("a target in an unrecognised state produced no compatibility answer")
 	}
 }
 

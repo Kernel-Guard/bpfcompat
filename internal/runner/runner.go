@@ -291,7 +291,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		exitCode = ExitToolError
 	}
 	if !complete && runVerdict == schema.VerdictCompatible {
-		notes = append(notes, "coverage incomplete: at least one target produced no compatibility answer; see targets[].verdict and targets[].environment.")
+		notes = append(notes, "coverage incomplete: at least one optional target produced no compatibility answer; required targets were all established. See targets[].verdict and targets[].environment.")
 	}
 
 	reportObj := schema.ReportV01{
@@ -511,7 +511,7 @@ func executeTargets(
 	case schema.VerdictIncompatible:
 		notes = append(notes, "Compatibility check failed on at least one required profile.")
 	case schema.VerdictInfraError:
-		notes = append(notes, "At least one target produced no compatibility answer (infrastructure error, or an environment bpfcompat cannot execute). Check targets[].verdict, infra_error, and serial logs.")
+		notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
 	default:
 		notes = append(notes, "All required profiles passed validator load checks.")
 	}

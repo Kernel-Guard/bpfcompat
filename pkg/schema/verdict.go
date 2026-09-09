@@ -33,6 +33,17 @@ const (
 
 // VerdictForStatus maps a per-target `status` to its verdict. Kept as one
 // function so the two fields cannot drift apart.
+//
+// An unrecognised status maps to INFRA_ERROR, not INCOMPATIBLE. Every status the
+// runner produces today is one of the four below, so this is unreachable from
+// our own execution paths -- but this function is exported from pkg/, is reached
+// by anything unmarshalling a report written by a different bpfcompat version,
+// and would be reached by any future producer that adds a status without
+// updating this switch. In all of those cases what we know is "bpfcompat does
+// not understand this state", which is not evidence that the user's program
+// failed to load. Guessing INCOMPATIBLE would blame their software for our own
+// gap; INFRA_ERROR still fails closed and still fails CI, without assigning
+// fault.
 func VerdictForStatus(status string) string {
 	switch status {
 	case "pass":
@@ -42,45 +53,77 @@ func VerdictForStatus(status string) string {
 	case "unsupported":
 		return VerdictUnsupported
 	case "fail", "partial":
+		// Both are real execution evidence about the artifact: it was loaded and
+		// the loader reported failure or partial success.
 		return VerdictIncompatible
 	default:
-		return VerdictIncompatible
+		return VerdictInfraError
 	}
+}
+
+// EstablishedRequestedEnvironment reports whether this target actually exercised
+// the environment the profile asked for. A guest that booted a different kernel
+// series produces a genuine result about the kernel it ran -- but it cannot
+// support a claim about the one that was requested.
+func EstablishedRequestedEnvironment(t *Target) bool {
+	if t.Environment == nil || t.Environment.KernelFamilyMatch == nil {
+		// Unknown, not mismatched: an older report, or a target that never
+		// reported a kernel. Do not invent a failure from missing data.
+		return true
+	}
+	return *t.Environment.KernelFamilyMatch
 }
 
 // RunVerdict rolls per-target verdicts up to the run.
 //
-// A proven incompatibility on a required target wins over an infrastructure
-// error elsewhere: it is a definitive fact about the user's software, and
-// downgrading it to INFRA_ERROR because an unrelated optional VM failed to boot
-// would hide a real regression. Incomplete coverage is reported separately by
-// Complete() rather than by erasing the finding.
+// Two rules govern it.
+//
+// `required` decides gating, for every outcome and not only for compatibility
+// failures. A profile marked `required: false` is documented as one whose
+// failure does not fail the gate; letting an optional VM that failed to boot
+// set the run's exit code would make it required in everything but name. So
+// only required targets are considered here. What was lost is still reported --
+// by RunComplete, and per target -- rather than by blocking the release.
+//
+// A proven incompatibility on a required target outranks an infrastructure
+// error: it is a definitive fact about the user's software, and downgrading it
+// because some other VM failed would hide a real regression behind a flaky
+// runner.
 func RunVerdict(targets []Target) string {
-	sawInfra := false
-	sawRequiredUnsupported := false
+	cannotEstablish := false
 	for i := range targets {
 		t := &targets[i]
+		if !t.Required {
+			continue
+		}
 		switch t.Verdict {
 		case VerdictIncompatible:
-			if t.Required {
-				return VerdictIncompatible
-			}
-		case VerdictInfraError:
-			sawInfra = true
-		case VerdictUnsupported:
-			if t.Required {
-				sawRequiredUnsupported = true
+			return VerdictIncompatible
+		case VerdictInfraError, VerdictUnsupported:
+			cannotEstablish = true
+		case VerdictCompatible:
+			// A required target that passed on a kernel other than the one the
+			// profile requested has not established the requested contract. The
+			// artifact result stands for the kernel that booted, but the run
+			// must not exit 0 claiming support for a series nothing tested.
+			// This is our environment failing to be what we asked for, not the
+			// user's program failing, so it is INFRA_ERROR and never
+			// INCOMPATIBLE.
+			if !EstablishedRequestedEnvironment(t) {
+				cannotEstablish = true
 			}
 		}
 	}
-	if sawInfra || sawRequiredUnsupported {
+	if cannotEstablish {
 		return VerdictInfraError
 	}
 	return VerdictCompatible
 }
 
-// RunComplete reports whether every target in the matrix actually produced a
-// compatibility answer. A COMPATIBLE run with Complete=false means "nothing we
+// RunComplete reports whether every target in the matrix actually produced an
+// answer about the environment it was asked about. Unlike RunVerdict this spans
+// optional targets too: coverage is a description of what was tested, not a
+// gating decision. A COMPATIBLE run with Complete=false means "nothing we
 // managed to test was incompatible", not "the whole matrix passed".
 func RunComplete(targets []Target) bool {
 	for i := range targets {
@@ -89,7 +132,7 @@ func RunComplete(targets []Target) bool {
 		case VerdictInfraError, VerdictUnsupported:
 			return false
 		}
-		if t.Environment != nil && t.Environment.KernelFamilyMatch != nil && !*t.Environment.KernelFamilyMatch {
+		if !EstablishedRequestedEnvironment(t) {
 			return false
 		}
 	}

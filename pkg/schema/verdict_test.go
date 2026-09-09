@@ -28,13 +28,20 @@ func TestVerdictForStatusNeverBlamesTheUserForOurFailures(t *testing.T) {
 			t.Errorf("status %q: want %s, got %s", status, want, got)
 		}
 	}
-	// An unrecognised status is a bug somewhere upstream. Failing closed
-	// (INCOMPATIBLE) is wrong here -- it would invent a claim about the user's
-	// software from a value we do not understand. But silently calling it
-	// COMPATIBLE would be worse. The conservative choice is documented by this
-	// assertion so a future change is deliberate.
-	if got := VerdictForStatus("something-new"); got != VerdictIncompatible {
-		t.Fatalf("unknown status should map to %s, got %s", VerdictIncompatible, got)
+	// An unrecognised status means bpfcompat does not understand the state. It
+	// is not evidence that the artifact failed to load, so it must not be
+	// reported as the user's incompatibility -- and it must not pass either.
+	for _, unknown := range []string{"", "something-new", "PASS", "timeout"} {
+		got := VerdictForStatus(unknown)
+		if got == VerdictIncompatible {
+			t.Errorf("unknown status %q blamed the user's software (%s)", unknown, got)
+		}
+		if got == VerdictCompatible {
+			t.Errorf("unknown status %q silently passed (%s)", unknown, got)
+		}
+		if got != VerdictInfraError {
+			t.Errorf("unknown status %q: want %s, got %s", unknown, VerdictInfraError, got)
+		}
 	}
 }
 
@@ -56,13 +63,50 @@ func TestRunVerdictPrecedence(t *testing.T) {
 			[]Target{req(VerdictIncompatible), opt(VerdictInfraError)},
 			VerdictIncompatible,
 		},
-		{"infra only", []Target{req(VerdictCompatible), opt(VerdictInfraError)}, VerdictInfraError},
+		{"required infra error", []Target{req(VerdictInfraError)}, VerdictInfraError},
 		{"required unsupported", []Target{req(VerdictUnsupported)}, VerdictInfraError},
 		{
-			// An optional environment we cannot execute is not a run failure.
-			"optional unsupported",
+			// `required: false` is documented as "a failure here does not fail
+			// the gate". If an optional VM failing to boot sets the exit code,
+			// the profile is required in everything but name.
+			"optional infra error does not gate",
+			[]Target{req(VerdictCompatible), opt(VerdictInfraError)},
+			VerdictCompatible,
+		},
+		{
+			"optional unsupported does not gate",
 			[]Target{req(VerdictCompatible), opt(VerdictUnsupported)},
 			VerdictCompatible,
+		},
+		{
+			// The requested contract was never exercised. That is our
+			// environment failing to be what we asked for, so the run cannot
+			// exit 0 -- but it is not the user's incompatibility either.
+			"required target booted the wrong kernel series",
+			[]Target{{Required: true, Verdict: VerdictCompatible,
+				Environment: &EnvironmentCheck{KernelFamilyMatch: boolPtr(false)}}},
+			VerdictInfraError,
+		},
+		{
+			"optional target booted the wrong kernel series does not gate",
+			[]Target{req(VerdictCompatible), {Required: false, Verdict: VerdictCompatible,
+				Environment: &EnvironmentCheck{KernelFamilyMatch: boolPtr(false)}}},
+			VerdictCompatible,
+		},
+		{
+			// Missing data is not a mismatch: an older report has no
+			// environment block at all.
+			"required target with no environment evidence",
+			[]Target{{Required: true, Verdict: VerdictCompatible}},
+			VerdictCompatible,
+		},
+		{
+			// A proven required incompatibility still outranks a mismatch
+			// elsewhere; exit 2 is the more specific and more actionable fact.
+			"required incompatibility outranks a required mismatch",
+			[]Target{req(VerdictIncompatible), {Required: true, Verdict: VerdictCompatible,
+				Environment: &EnvironmentCheck{KernelFamilyMatch: boolPtr(false)}}},
+			VerdictIncompatible,
 		},
 		{
 			// An optional target failing compatibility is information, not a gate.
