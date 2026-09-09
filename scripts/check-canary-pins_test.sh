@@ -178,4 +178,49 @@ metadata 9.9.9 0.4.0-rc.3 prerelease
 { pin stable "$STABLE_SHA" v9.9.9; pin candidate "$CAND_SHA" "$CAND_TAG"; } | workflow
 expect_fail "stable pin names a tag that does not exist"
 
+# 15. The remote fallback that shallow-checkout lanes depend on must resolve a
+#     lightweight tag as well as an annotated one. Only annotated tags
+#     advertise a peeled `^{}` ref, so asking for that ref alone reports a
+#     lightweight tag as nonexistent and fails the release gate for a tag that
+#     exists. Extract tag_commit() from the shipped script -- no second copy to
+#     drift -- and point it at a local fixture remote, so this stays offline.
+fixture="$tmp/fixture"
+mkdir -p "$fixture/upstream"
+(
+  cd "$fixture/upstream"
+  git init -q -b main .
+  git -c user.email=t@e -c user.name=t commit -q --allow-empty -m fixture
+  git tag lightweight-1.0.0
+  git -c user.email=t@e -c user.name=t tag -a annotated-1.0.0 -m annotated
+)
+git clone -q --depth 1 "file://$fixture/upstream" "$fixture/clone"
+(
+  cd "$fixture/clone"
+  # Drop the local tags so only the remote fallback can answer, exactly as on a
+  # shallow CI checkout.
+  for t in $(git tag); do git tag -d "$t" >/dev/null; done
+
+  fn="$(awk '/^tag_commit\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$ROOT_DIR/$script")"
+  [[ -n "$fn" ]] || { echo "[canary-pins-test] could not extract tag_commit() from $script" >&2; exit 1; }
+  # tag_commit() reads $tag_remote from its enclosing scope in the real script.
+  # shellcheck disable=SC2034  # used by the eval'd function below
+  tag_remote=origin
+  # shellcheck disable=SC2086
+  eval "$fn"
+
+  expected="$(git -C "$fixture/upstream" rev-parse HEAD)"
+  for t in lightweight-1.0.0 annotated-1.0.0; do
+    got="$(tag_commit "$t")"
+    if [[ "$got" != "$expected" ]]; then
+      echo "[canary-pins-test] remote fallback resolved $t to ''''${got:-<empty>}'''', want $expected" >&2
+      exit 1
+    fi
+  done
+  # A tag that does not exist must still come back empty, so the caller fails.
+  [[ -z "$(tag_commit no-such-tag)" ]] || {
+    echo "[canary-pins-test] remote fallback invented a commit for a missing tag" >&2
+    exit 1
+  }
+)
+
 echo "[canary-pins-test] PASS"

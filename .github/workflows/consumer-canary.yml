@@ -196,6 +196,15 @@ jobs:
           timeout: 10m
           concurrency: "2"
 
+      - name: Assert a non-empty compatibility report was produced
+        run: |
+          set -euo pipefail
+          # Same reasoning as the stable job: a report with no targets in it
+          # summarises as a pass, so the exit code alone cannot tell "every
+          # kernel passed" from "no kernel ran".
+          jq -e '(.targets | length) > 0' reports/canary-prebuilt.json >/dev/null
+          jq -r '.targets[] | "\(.profile_id): \(.status)"' reports/canary-prebuilt.json
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

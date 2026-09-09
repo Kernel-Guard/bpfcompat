@@ -142,13 +142,22 @@ if BPFCOMPAT_TEST_ATTESTATION=broken \
   exit 1
 fi
 
-# 11. A runner with no usable gh must not fall through to "verified".
+# 11. A runner with no usable gh must not fall through to "verified". The PATH
+#     has to be genuinely empty -- keeping /usr/bin on it leaves the real gh
+#     discoverable, and the case then "passes" on a later attestation error
+#     while proving nothing about the missing-gh branch. Assert the diagnostic
+#     so it cannot pass for the wrong reason again.
 seed "$d"
 mkdir -p "$tmp/emptybin"
-if PATH="$tmp/emptybin:/usr/bin:/bin" bash "$verifier" "$d" Kernel-Guard/bpfcompat \
+if PATH="$tmp/emptybin" "$BASH" "$verifier" "$d" Kernel-Guard/bpfcompat \
   "$CLI" "$VALIDATOR" >"$tmp/out.log" 2>&1; then
   echo "[release-assets-test] expected FAIL but verification passed: no gh on PATH" >&2
   exit 1
 fi
+grep -Fq "GitHub CLI is required for attestation verification" "$tmp/out.log" || {
+  echo "[release-assets-test] missing-gh case failed for the wrong reason:" >&2
+  cat "$tmp/out.log" >&2
+  exit 1
+}
 
 echo "[release-assets-test] PASS"

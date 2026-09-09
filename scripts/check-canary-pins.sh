@@ -72,7 +72,19 @@ tag_commit() {
   local tag="$1" sha=""
   sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
   if [[ -z "$sha" ]]; then
-    sha="$(git ls-remote --tags "$tag_remote" "refs/tags/${tag}^{}" 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
+    # Ask for both refs. Only an annotated tag advertises a peeled `^{}` ref;
+    # a lightweight one advertises just `refs/tags/<tag>`, pointing straight at
+    # the commit. Every release tag is annotated today, so querying the peeled
+    # ref alone happens to work -- and would report the next lightweight tag as
+    # nonexistent, failing the release gate for a tag that is right there.
+    # Prefer the peeled value when both come back; it is the commit.
+    sha="$(git ls-remote --tags "$tag_remote" \
+      "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null |
+      awk '
+        $2 ~ /\^\{\}$/ { peeled = $1 }
+        $2 !~ /\^\{\}$/ { direct = $1 }
+        END { print peeled != "" ? peeled : direct }
+      ' || true)"
   fi
   printf '%s' "$sha"
 }
