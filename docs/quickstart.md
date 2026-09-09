@@ -107,6 +107,7 @@ tooling.
 
 ## Next
 
+- [compatibility-contract.md](compatibility-contract.md) — what a bpfcompat result means: artifact, loader, environment, verdict, and CI exit semantics
 - [evidence-schema.md](evidence-schema.md) — the report format + classification taxonomy
 - [verifying-releases.md](verifying-releases.md) — verify signed, attested binaries
 - [case-study-falco-modern-bpf.md](case-study-falco-modern-bpf.md) — a real reference matrix

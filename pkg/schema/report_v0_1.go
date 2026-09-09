@@ -18,11 +18,17 @@ type RunInfo struct {
 }
 
 type Artifact struct {
-	Path      string `json:"path"`
-	Source    string `json:"source,omitempty"`
-	BaseName  string `json:"basename"`
-	SHA256    string `json:"sha256"`
-	SizeBytes int64  `json:"size_bytes"`
+	Path   string `json:"path"`
+	Source string `json:"source,omitempty"`
+	// SourceDigest is the immutable content digest the OCI reference resolved
+	// to at pull time. Without it a report whose source is a mutable tag
+	// (":latest") cannot be tied back to a specific published image, because
+	// the tag has since moved. Empty for local .bpf.o inputs, which are already
+	// identified by SHA256.
+	SourceDigest string `json:"source_digest,omitempty"`
+	BaseName     string `json:"basename"`
+	SHA256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
 }
 
 // CommandInfo records command-mode provenance without exposing the command
@@ -46,33 +52,65 @@ type MatrixInfo struct {
 }
 
 type SummaryInfo struct {
-	Status string   `json:"status"`
-	Notes  []string `json:"notes,omitempty"`
+	Status string `json:"status"`
+	// Verdict is the run-level compatibility contract result: COMPATIBLE,
+	// INCOMPATIBLE, or INFRA_ERROR. New consumers should gate on this rather
+	// than on Status.
+	Verdict string `json:"verdict,omitempty"`
+	// Complete is false when at least one target did not produce a
+	// compatibility answer -- an infrastructure failure, an environment
+	// bpfcompat cannot execute, or a guest whose kernel did not match the one
+	// the profile requested. A COMPATIBLE run with Complete=false means
+	// "nothing we managed to test was incompatible", not "the matrix passed".
+	Complete *bool    `json:"complete,omitempty"`
+	Notes    []string `json:"notes,omitempty"`
 }
 
 type Target struct {
-	ProfileID                string      `json:"profile_id"`
-	Required                 bool        `json:"required"`
-	Status                   string      `json:"status"`
-	Profile                  *TargetEnv  `json:"profile,omitempty"`
-	Host                     *TargetEnv  `json:"host,omitempty"`
-	Validation               *Validation `json:"validation,omitempty"`
-	Functional               *Functional `json:"functional,omitempty"`
-	FailedStage              string      `json:"failed_stage,omitempty"`
-	BTF                      *TargetBTF  `json:"btf,omitempty"`
-	ClassificationCode       string      `json:"classification_code,omitempty"`
-	ClassificationConfidence string      `json:"classification_confidence,omitempty"`
-	ClassificationReason     string      `json:"classification_reason,omitempty"`
-	StartedAt                string      `json:"started_at,omitempty"`
-	FinishedAt               string      `json:"finished_at,omitempty"`
-	DurationMs               int64       `json:"duration_ms,omitempty"`
-	VMRunDir                 string      `json:"vm_run_dir,omitempty"`
-	QEMUCommand              string      `json:"qemu_command,omitempty"`
-	SerialLog                string      `json:"serial_log,omitempty"`
-	ValidatorResult          string      `json:"validator_result,omitempty"`
-	ValidatorExit            int         `json:"validator_exit,omitempty"`
-	InfraError               string      `json:"infra_error,omitempty"`
-	Notes                    []string    `json:"notes,omitempty"`
+	ProfileID string `json:"profile_id"`
+	Required  bool   `json:"required"`
+	Status    string `json:"status"`
+	// Verdict classifies Status into the product contract taxonomy so that a
+	// statement about the user's software (INCOMPATIBLE) is structurally
+	// distinct from a statement about bpfcompat (INFRA_ERROR, UNSUPPORTED).
+	Verdict                  string            `json:"verdict,omitempty"`
+	Environment              *EnvironmentCheck `json:"environment,omitempty"`
+	Profile                  *TargetEnv        `json:"profile,omitempty"`
+	Host                     *TargetEnv        `json:"host,omitempty"`
+	Validation               *Validation       `json:"validation,omitempty"`
+	Functional               *Functional       `json:"functional,omitempty"`
+	FailedStage              string            `json:"failed_stage,omitempty"`
+	BTF                      *TargetBTF        `json:"btf,omitempty"`
+	ClassificationCode       string            `json:"classification_code,omitempty"`
+	ClassificationConfidence string            `json:"classification_confidence,omitempty"`
+	ClassificationReason     string            `json:"classification_reason,omitempty"`
+	StartedAt                string            `json:"started_at,omitempty"`
+	FinishedAt               string            `json:"finished_at,omitempty"`
+	DurationMs               int64             `json:"duration_ms,omitempty"`
+	VMRunDir                 string            `json:"vm_run_dir,omitempty"`
+	QEMUCommand              string            `json:"qemu_command,omitempty"`
+	SerialLog                string            `json:"serial_log,omitempty"`
+	ValidatorResult          string            `json:"validator_result,omitempty"`
+	ValidatorExit            int               `json:"validator_exit"`
+	InfraError               string            `json:"infra_error,omitempty"`
+	Notes                    []string          `json:"notes,omitempty"`
+}
+
+// EnvironmentCheck records which environment was actually exercised, as opposed
+// to the one the matrix asked for. The image identity makes a target
+// reproducible; KernelFamilyMatch answers whether the guest that booted is the
+// one the profile claims to validate.
+type EnvironmentCheck struct {
+	RequestedKernelFamily string `json:"requested_kernel_family,omitempty"`
+	ObservedKernel        string `json:"observed_kernel,omitempty"`
+	// KernelFamilyMatch is nil when the comparison could not be made (no
+	// observed kernel, or an unparseable family), false when the guest booted a
+	// materially different kernel series than the profile requested. A false
+	// value means this target does not support a claim about the requested
+	// environment, whatever its Status says.
+	KernelFamilyMatch *bool  `json:"kernel_family_match,omitempty"`
+	ImageSourceURL    string `json:"image_source_url,omitempty"`
+	ImageSHA256       string `json:"image_sha256,omitempty"`
 }
 
 type TargetBTF struct {
@@ -111,8 +149,8 @@ type FunctionalTest struct {
 	Status           string `json:"status,omitempty"`
 	Command          string `json:"command,omitempty"`
 	TimeoutSeconds   int    `json:"timeout_seconds,omitempty"`
-	ExpectedExitCode int    `json:"expected_exit_code,omitempty"`
-	ExitCode         int    `json:"exit_code,omitempty"`
+	ExpectedExitCode int    `json:"expected_exit_code"`
+	ExitCode         int    `json:"exit_code"`
 	TimedOut         bool   `json:"timed_out,omitempty"`
 	StdoutTail       string `json:"stdout_tail,omitempty"`
 	StderrTail       string `json:"stderr_tail,omitempty"`

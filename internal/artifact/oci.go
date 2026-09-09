@@ -93,37 +93,47 @@ func fileLooksLikeOCIArchive(path string) bool {
 
 // ExtractEBPFFromOCI loads the OCI image named by ref (registry reference, OCI
 // layout directory, or OCI/docker image archive) and writes its eBPF ELF layer
-// into dstDir, returning the path to the extracted object.
-func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (string, error) {
+// into dstDir. It returns the path to the extracted object and the image's
+// immutable content digest.
+//
+// The digest matters for evidence: a reference like "ghcr.io/org/gadget:latest"
+// has moved by the time anyone reads the report, so the tag alone cannot say
+// which published image was tested. The digest can. It is best-effort -- an
+// image whose digest cannot be computed still yields a usable artifact, which
+// is identified by its own SHA-256 either way.
+func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, ociOperationTimeout)
 	defer cancel()
 
 	img, err := loadOCIImage(ctx, ref)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	if d, digestErr := img.Digest(); digestErr == nil {
+		digest = d.String()
 	}
 
 	layers, err := img.Layers()
 	if err != nil {
-		return "", fmt.Errorf("read OCI image layers: %w", err)
+		return "", "", fmt.Errorf("read OCI image layers: %w", err)
 	}
 	if len(layers) == 0 {
-		return "", fmt.Errorf("OCI image %q has no layers", ref)
+		return "", "", fmt.Errorf("OCI image %q has no layers", ref)
 	}
 
 	elf, err := selectEBPFLayer(layers)
 	if err != nil {
-		return "", fmt.Errorf("locate eBPF object in OCI image %q: %w", ref, err)
+		return "", "", fmt.Errorf("locate eBPF object in OCI image %q: %w", ref, err)
 	}
 
 	if err := os.MkdirAll(dstDir, 0o700); err != nil {
-		return "", fmt.Errorf("create destination directory: %w", err)
+		return "", "", fmt.Errorf("create destination directory: %w", err)
 	}
 	outPath := filepath.Join(dstDir, ociArtifactName(ref)+".bpf.o")
 	if err := extractLayerToFile(elf, outPath, maxEBPFArtifactBytes); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return outPath, nil
+	return outPath, digest, nil
 }
 
 // loadOCIImage resolves ref to a single image, handling registry references,

@@ -142,3 +142,7 @@ probe skeleton embedded) and validates it per kernel with
   per-program expectations) remain available through the manifest
   `functional_tests` + `--validation-mode behavior` path, which layers commands
   *on top of* a `.bpf.o` load.
+
+The loader provenance recorded for command mode, and what a verdict from it
+means, are defined in
+[compatibility-contract.md](compatibility-contract.md#loader-contract--how-was-it-exercised).
