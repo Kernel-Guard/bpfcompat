@@ -21,6 +21,8 @@ fail() {
 [[ -f scripts/check-production-environment.sh &&
    -f scripts/check-production-environment_test.sh ]] ||
   fail "production environment fail-closed checks are missing"
+[[ -f scripts/check-canary-pins.sh && -f scripts/check-canary-pins_test.sh ]] ||
+  fail "consumer-canary pin fail-closed checks are missing"
 
 stable_version="$(field stable_version)"
 release_version="$(field release_version)"
@@ -156,6 +158,14 @@ done < <(
   grep -ERl --include='*.yml' --include='*.yaml' \
     '^  GO_VERSION: ' .github/workflows
 )
+
+# The consumer canary is the only lane that consumes a published release the
+# way a downstream project does. Metadata is authoritative: a stable_version
+# bump that leaves the canary pinned to the previous release means the
+# documented consumer path is no longer tested, so that is a failure here and
+# not a follow-up chore.
+BPFCOMPAT_RELEASE_METADATA="$metadata" bash scripts/check-canary-pins.sh ||
+  fail "consumer-canary action pins do not match ${metadata}"
 
 if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
   [[ "${GITHUB_REF_NAME:-}" == "$release_tag" ]] ||

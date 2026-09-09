@@ -7,6 +7,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- Consumer canary now covers the **stable** release as well as the candidate.
+  `stable-prebuilt` pins the exact commit of the release `release.yaml` calls
+  stable, installs no `libbpf-dev` and no compiler, and asserts the action's
+  installed binary is byte-identical to the published release asset — so a
+  regression in commit-SHA-to-release resolution fails here instead of forcing
+  a downstream consumer into an unexpected source build. `candidate-prebuilt`
+  (formerly `prebuilt`) keeps the prerelease path and its attestation
+  verification unchanged; `source-build` keeps the documented dependency set
+  honest.
+- `scripts/check-canary-pins.sh` binds those pins to `release.yaml` and runs
+  inside the release-consistency gate. Bumping `stable_version` without
+  repinning the canary — or mislabelling a pin's `# vX.Y.Z` comment — now fails
+  CI instead of silently leaving the documented consumer path untested.
+
+### Fixed
+- Release-asset verification regression coverage now exercises the cases the
+  contract actually depends on: extra `SHA256SUMS` entries for assets that were
+  never downloaded must pass (the v0.3.6 arm64 failure), while a missing,
+  duplicated, or malformed entry, a missing asset or manifest, a traversing
+  asset name, a failed attestation, and a runner with no usable `gh` must all
+  fail closed.
+
 ## [0.4.0-rc.3] - 2026-07-30
 
 ### Changed

@@ -73,6 +73,11 @@ jobs:
         run: bash scripts/check-release-state_test.sh
       - name: Release metadata/channel regression
         run: bash scripts/check-release-consistency_test.sh
+      - name: Consumer-canary pin drift regression
+        # The published-action canary only protects the releases it pins. A
+        # stable_version bump that leaves the canary on the old commit stops
+        # testing the documented consumer path; this keeps that fail-closed.
+        run: bash scripts/check-canary-pins_test.sh
       - name: Release-channel promotion regression
         run: bash scripts/promote-release_test.sh
       - name: Candidate-promotion binding regression
