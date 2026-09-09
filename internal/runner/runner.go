@@ -108,6 +108,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 
 	var meta artifact.Metadata
 	artifactSource := ""
+	artifactSourceDigest := ""
 	if hasArtifact {
 		artifactPath := cfg.ArtifactPath
 		if artifact.IsOCISource(artifactPath) {
@@ -121,10 +122,11 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
 			}
 			defer os.RemoveAll(ociDir)
-			extracted, err := artifact.ExtractEBPFFromOCI(ctx, artifactPath, ociDir)
+			extracted, digest, err := artifact.ExtractEBPFFromOCI(ctx, artifactPath, ociDir)
 			if err != nil {
 				return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
 			}
+			artifactSourceDigest = digest
 			artifactPath = extracted
 		}
 
@@ -256,7 +258,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		}
 	}
 
-	targets, targetNotes, hasInfraError, hasRequiredCompatFailure := executeTargets(
+	targets, targetNotes := executeTargets(
 		ctx,
 		cfg,
 		m,
@@ -276,14 +278,20 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 	}
 	notes = append(notes, targetNotes...)
 
+	runVerdict := schema.RunVerdict(targets)
+	complete := schema.RunComplete(targets)
 	status := "pass"
 	exitCode := ExitSuccess
-	if hasInfraError {
-		status = "error"
-		exitCode = ExitToolError
-	} else if hasRequiredCompatFailure {
+	switch runVerdict {
+	case schema.VerdictIncompatible:
 		status = "fail"
 		exitCode = ExitCompatibilityFailure
+	case schema.VerdictInfraError:
+		status = "error"
+		exitCode = ExitToolError
+	}
+	if !complete && runVerdict == schema.VerdictCompatible {
+		notes = append(notes, "coverage incomplete: at least one target produced no compatibility answer; see targets[].verdict and targets[].environment.")
 	}
 
 	reportObj := schema.ReportV01{
@@ -293,11 +301,12 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 			StartedAt: time.Now().UTC().Format(time.RFC3339),
 		},
 		Artifact: schema.Artifact{
-			Path:      meta.AbsolutePath,
-			Source:    artifactSource,
-			BaseName:  meta.BaseName,
-			SHA256:    meta.SHA256,
-			SizeBytes: meta.SizeBytes,
+			Path:         meta.AbsolutePath,
+			Source:       artifactSource,
+			SourceDigest: artifactSourceDigest,
+			BaseName:     meta.BaseName,
+			SHA256:       meta.SHA256,
+			SizeBytes:    meta.SizeBytes,
 		},
 		Command:   commandInfo,
 		Validator: validatorInfo,
@@ -308,8 +317,10 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		},
 		Targets: targets,
 		Summary: schema.SummaryInfo{
-			Status: status,
-			Notes:  notes,
+			Status:   status,
+			Verdict:  runVerdict,
+			Complete: &complete,
+			Notes:    notes,
 		},
 		Paths: schema.Paths{
 			RunDir:   runPaths.RunDir,
@@ -410,11 +421,9 @@ func executeTargets(
 	validatorBinPath string,
 	attachMode string,
 	progress ProgressReporter,
-) ([]schema.Target, []string, bool, bool) {
+) ([]schema.Target, []string) {
 	targets := make([]schema.Target, len(m.Profiles))
 	notes := make([]string, 0)
-	hasInfraError := false
-	hasRequiredCompatFailure := false
 
 	limit := cfg.Concurrency
 	if limit < 1 {
@@ -486,13 +495,8 @@ func executeTargets(
 	completedProfiles := 0
 	for result := range results {
 		completedProfiles++
+		result.target.Verdict = schema.VerdictForStatus(result.target.Status)
 		targets[result.index] = result.target
-		if result.hasInfraError {
-			hasInfraError = true
-		}
-		if result.hasRequiredCompatFailed {
-			hasRequiredCompatFailure = true
-		}
 		emitProgress(progress, ProgressUpdate{
 			Stage:             ProgressStageValidateTargets,
 			Message:           fmt.Sprintf("Completed profile %s (%d/%d)", result.target.ProfileID, completedProfiles, totalProfiles),
@@ -503,15 +507,16 @@ func executeTargets(
 		})
 	}
 
-	if hasInfraError {
-		notes = append(notes, "At least one VM target failed with infrastructure error. Check target infra_error and serial logs.")
-	} else if hasRequiredCompatFailure {
+	switch schema.RunVerdict(targets) {
+	case schema.VerdictIncompatible:
 		notes = append(notes, "Compatibility check failed on at least one required profile.")
-	} else {
+	case schema.VerdictInfraError:
+		notes = append(notes, "At least one target produced no compatibility answer (infrastructure error, or an environment bpfcompat cannot execute). Check targets[].verdict, infra_error, and serial logs.")
+	default:
 		notes = append(notes, "All required profiles passed validator load checks.")
 	}
 
-	return targets, notes, hasInfraError, hasRequiredCompatFailure
+	return targets, notes
 }
 
 func executeTarget(
@@ -556,28 +561,28 @@ func executeTarget(
 	executor := executeProfileFn
 	if runnerName == RunnerVirtmeNG {
 		if !strings.EqualFold(strings.TrimSpace(profile.Runner), RunnerVirtmeNG) {
-			target.Status = "fail"
+			target.Status = "unsupported"
 			target.FailedStage = "transport"
 			target.ClassificationCode = "UNSUPPORTED_TRANSPORT"
 			target.ClassificationConfidence = "high"
 			target.ClassificationReason = "Profile is a QEMU/cloud-image target; use --runner vm for this profile or select an upstream-kernel virtme-ng matrix."
 			target.Notes = append(target.Notes, "execution transport: virtme-ng")
-			return target, false, matrixProfile.RequiredBool()
+			return target, false, false
 		}
 		executor = executeVirtmeNGProfile
 	} else if runnerName == RunnerFirecracker {
 		if !strings.EqualFold(strings.TrimSpace(profile.Runner), RunnerFirecracker) {
-			target.Status = "fail"
+			target.Status = "unsupported"
 			target.FailedStage = "transport"
 			target.ClassificationCode = "UNSUPPORTED_TRANSPORT"
 			target.ClassificationConfidence = "high"
 			target.ClassificationReason = "Profile is a QEMU/cloud-image target; use --runner vm for this profile or select a Firecracker profile."
 			target.Notes = append(target.Notes, "execution transport: firecracker")
-			return target, false, matrixProfile.RequiredBool()
+			return target, false, false
 		}
 		executor = executeFirecrackerProfile
 	} else if transport, supported, reason := vm.ExecutionTransport(profile); !supported {
-		target.Status = "fail"
+		target.Status = "unsupported"
 		target.FailedStage = "transport"
 		target.ClassificationCode = "UNSUPPORTED_TRANSPORT"
 		target.ClassificationConfidence = "high"
@@ -586,7 +591,7 @@ func executeTarget(
 		if reason != "" {
 			target.Notes = append(target.Notes, "remediation: route this profile to a supported executor path (or mark as optional until that executor is implemented).")
 		}
-		return target, false, matrixProfile.RequiredBool()
+		return target, false, false
 	}
 
 	commandBinaryAbs := ""
@@ -673,6 +678,10 @@ func executeTarget(
 		KernelFamily: profile.KernelFamily,
 		Kernel:       vr.Host.Release,
 		Arch:         vr.Host.Machine,
+	}
+	target.Environment = environmentEvidence(profile, vr.Host.Release)
+	if note, mismatched := environmentMismatchNote(target.Environment); mismatched {
+		target.Notes = append(target.Notes, note)
 	}
 	target.Validation = &schema.Validation{
 		LoadStatus:      vr.Load.Status,
@@ -1271,6 +1280,10 @@ func evaluateCommandTarget(
 		KernelFamily: profile.KernelFamily,
 		Kernel:       execResult.HostRelease,
 		Arch:         execResult.HostMachine,
+	}
+	target.Environment = environmentEvidence(profile, execResult.HostRelease)
+	if note, mismatched := environmentMismatchNote(target.Environment); mismatched {
+		target.Notes = append(target.Notes, note)
 	}
 	target.ValidatorExit = execResult.CommandExitCode
 	target.Validation = &schema.Validation{LoadStatus: "skipped"}

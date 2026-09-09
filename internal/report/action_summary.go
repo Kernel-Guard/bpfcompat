@@ -32,6 +32,15 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 	var b strings.Builder
 	b.WriteString("# bpfcompat Compatibility Gate\n\n")
 	b.WriteString(fmt.Sprintf("**Status:** `%s`\n\n", emptyAs(report.Summary.Status, "unknown")))
+	if report.Summary.Verdict != "" {
+		b.WriteString(fmt.Sprintf("**Verdict:** `%s`\n\n", report.Summary.Verdict))
+	}
+	// The job summary is what a downstream maintainer actually reads. A
+	// COMPATIBLE run that did not cover the whole matrix must say so here, not
+	// only in the JSON.
+	if report.Summary.Complete != nil && !*report.Summary.Complete {
+		b.WriteString("**Coverage:** `incomplete` — at least one target produced no compatibility answer.\n\n")
+	}
 	b.WriteString("| Field | Value |\n")
 	b.WriteString("|---|---|\n")
 	b.WriteString(fmt.Sprintf("| Run ID | `%s` |\n", markdownTableCell(emptyAs(report.Run.ID, "-"))))

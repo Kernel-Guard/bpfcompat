@@ -86,7 +86,7 @@ func TestExtractEBPFFromOCILayoutByMediaType(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, gadgetEBPFMediaType, payload)
 
 	out := t.TempDir()
-	got, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
+	got, _, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestExtractEBPFFromOCILayoutByELFMagicFallback(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, string(types.OCILayer), payload)
 
 	out := t.TempDir()
-	got, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
+	got, _, err := ExtractEBPFFromOCI(context.Background(), layoutDir, out)
 	if err != nil {
 		t.Fatalf("extract (magic fallback): %v", err)
 	}
@@ -127,7 +127,7 @@ func TestExtractEBPFFromOCILayoutByELFMagicFallback(t *testing.T) {
 
 func TestExtractEBPFFromOCINoELFLayer(t *testing.T) {
 	layoutDir := writeGadgetLayout(t, string(types.OCILayer), []byte("not an elf at all"))
-	if _, err := ExtractEBPFFromOCI(context.Background(), layoutDir, t.TempDir()); err == nil {
+	if _, _, err := ExtractEBPFFromOCI(context.Background(), layoutDir, t.TempDir()); err == nil {
 		t.Fatalf("expected error when no eBPF layer is present")
 	}
 }
@@ -188,3 +188,38 @@ func TestSafeJoinRejectsEscape(t *testing.T) {
 }
 
 var _ v1.Image // keep v1 import even if helpers change
+
+func TestExtractEBPFFromOCIReturnsImageDigest(t *testing.T) {
+	// The evidence contract cannot rest on the reference the user typed: a
+	// gadget pulled as ":latest" is a different image next week, and the report
+	// would still say ":latest". The resolved digest is what ties a report back
+	// to a specific published image.
+	payload := fakeELF()
+	layoutDir := writeGadgetLayout(t, gadgetEBPFMediaType, payload)
+
+	_, digest, err := ExtractEBPFFromOCI(context.Background(), layoutDir, t.TempDir())
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if !strings.HasPrefix(digest, "sha256:") || len(digest) != len("sha256:")+64 {
+		t.Fatalf("expected a sha256 image digest, got %q", digest)
+	}
+
+	// Same bytes must resolve to the same digest; different bytes must not.
+	_, again, err := ExtractEBPFFromOCI(context.Background(), layoutDir, t.TempDir())
+	if err != nil {
+		t.Fatalf("re-extract: %v", err)
+	}
+	if again != digest {
+		t.Fatalf("digest is not stable for identical content: %q vs %q", digest, again)
+	}
+
+	otherDir := writeGadgetLayout(t, gadgetEBPFMediaType, append(fakeELF(), 0x42))
+	_, otherDigest, err := ExtractEBPFFromOCI(context.Background(), otherDir, t.TempDir())
+	if err != nil {
+		t.Fatalf("extract other: %v", err)
+	}
+	if otherDigest == digest {
+		t.Fatal("different image content produced the same digest, so the digest identifies nothing")
+	}
+}

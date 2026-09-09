@@ -6,6 +6,7 @@ record of whether a compiled eBPF object loads (and attaches) on each target ker
 stable format — not the VM layer — are what make the evidence reusable across CI,
 dashboards, and audits.
 
+- Product meaning of these fields: [compatibility-contract.md](compatibility-contract.md)
 - Source of truth: [`pkg/schema/report_v0_1.go`](../pkg/schema/report_v0_1.go)
 - `schema_version`: **`v0.1`**
 - Stability policy: see [schema-stability-contract.md](schema-stability-contract.md)
@@ -18,12 +19,12 @@ dashboards, and audits.
 |---|---|---|
 | `schema_version` | string | Always present. Gate on this. |
 | `run` | object | `{ id, started_at }` |
-| `artifact` | object | `{ path, source?, basename, sha256, size_bytes }` — the validated `.bpf.o` or synthetic command identity; `source` preserves the original OCI reference when extraction was required |
+| `artifact` | object | `{ path, source?, source_digest?, basename, sha256, size_bytes }` — the validated `.bpf.o` or synthetic command identity; `source` preserves the original OCI reference and `source_digest` the immutable image digest it resolved to |
 | `command` | object, optional | Command-mode invocation digest, expected exit code, and optional loader binary name/size/SHA-256. Command text is not persisted. |
 | `validator` | object, optional | Artifact-mode libbpf validator binary name, size, and SHA-256. The staged bytes are reused for every target. |
 | `matrix` | object | `{ path, name?, profiles[] }` — the kernel set requested |
 | `targets[]` | array | one entry per kernel profile (below) |
-| `summary` | object | `{ status, notes[]? }` — roll-up verdict (`pass`/`fail`) |
+| `summary` | object | `{ status, verdict?, complete?, notes[]? }` — `status` is `pass`/`fail`/`error`; `verdict` is `COMPATIBLE`/`INCOMPATIBLE`/`INFRA_ERROR`; `complete: false` means at least one target produced no compatibility answer |
 | `paths` | object | `{ run_dir, json, markdown? }` |
 
 ## `targets[]` — per-kernel result
@@ -32,12 +33,14 @@ dashboards, and audits.
 |---|---|---|
 | `profile_id` | string | e.g. `ubuntu-22.04-5.15` |
 | `required` | bool | whether a failure here fails the gate |
-| `status` | string | `pass` \| `fail` \| `partial` \| `infra_error` |
+| `status` | string | `pass` \| `fail` \| `partial` \| `infra_error` \| `unsupported` |
+| `verdict` | enum | `COMPATIBLE` \| `INCOMPATIBLE` \| `INFRA_ERROR` \| `UNSUPPORTED` — see [compatibility-contract.md](compatibility-contract.md) |
+| `environment` | object | `{ requested_kernel_family, observed_kernel, kernel_family_match, image_source_url, image_sha256 }` — `kernel_family_match: false` means this target ran a different kernel series than the profile requested and cannot support a claim about it |
 | `profile` / `host` | object | `{ distro, version, kernel_family, kernel, arch }` (requested vs actual) |
 | `validation` | object | `{ load_status, load_error_code, load_error, attach_mode, attach_status, attach_attempted, attach_passed, attach_failed }` |
 | `functional` | object | optional behavior tests: `{ status, tests[] }` |
 | `btf` | object | `{ kernel_btf_available, artifact_has_btf, artifact_has_btf_ext }` |
-| `failed_stage` | string | `load` \| `attach` \| `functional` |
+| `failed_stage` | string | `load` \| `attach` \| `functional` \| `command` \| `transport` \| `infra` |
 | `classification_code` | enum | **why it failed** — see taxonomy below |
 | `classification_confidence` | string | `high` \| `medium` \| `low` |
 | `classification_reason` | string | human-readable explanation |
@@ -68,6 +71,8 @@ cause — and the part that compounds in value as more real-world failures are c
 | `CAPABILITY_FAILURE` | A probed helper/map/prog capability failed | Compare against the target profile; select a compatible variant |
 | `VERIFIER_REJECTION` | The verifier rejected the program | Inspect the validator/libbpf log in the report |
 | `FUNCTIONAL_TEST_FAILURE` | Loaded, but a behavior test failed | Inspect the functional command output / project test assets |
+| `COMMAND_VALIDATION_FAILURE` | Command mode: the project's own loader exited with an unexpected code | Inspect `functional.tests[].stderr_tail`; the shipped loader failed on this kernel |
+| `UNSUPPORTED_TRANSPORT` | bpfcompat has no execution transport for this profile — **not** a statement about the artifact (`verdict: UNSUPPORTED`) | Route the profile to a supported executor, or mark it optional |
 
 Consumers should treat unknown codes as a generic failure (forward-compatible).
 

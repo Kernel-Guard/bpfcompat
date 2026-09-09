@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kernel-guard/bpfcompat/pkg/schema"
+
 	"github.com/kernel-guard/bpfcompat/internal/matrix"
 	"github.com/kernel-guard/bpfcompat/internal/vm"
 )
@@ -66,7 +68,7 @@ func TestExecuteTargetsHonorsConcurrencyAndOrder(t *testing.T) {
 	}
 
 	start := time.Now()
-	targets, _, hasInfraError, hasRequiredCompatFailure := executeTargets(
+	targets, _ := executeTargets(
 		context.Background(),
 		cfg,
 		m,
@@ -81,11 +83,8 @@ func TestExecuteTargetsHonorsConcurrencyAndOrder(t *testing.T) {
 	)
 	elapsed := time.Since(start)
 
-	if !hasInfraError {
-		t.Fatalf("expected infra error summary from mocked executor")
-	}
-	if hasRequiredCompatFailure {
-		t.Fatalf("did not expect compatibility failure summary")
+	if got := schema.RunVerdict(targets); got != schema.VerdictInfraError {
+		t.Fatalf("expected run verdict %s from mocked executor, got %s", schema.VerdictInfraError, got)
 	}
 	if len(targets) != 4 {
 		t.Fatalf("unexpected target count: got=%d want=4", len(targets))
@@ -107,7 +106,7 @@ func TestExecuteTargetsHonorsConcurrencyAndOrder(t *testing.T) {
 	}
 }
 
-func TestExecuteTargetsMarksUnsupportedTransportAsCompatibilityFailure(t *testing.T) {
+func TestExecuteTargetsMarksUnsupportedTransportAsUnsupported(t *testing.T) {
 	origLoadProfileFn := loadProfileFn
 	origExecuteProfileFn := executeProfileFn
 	t.Cleanup(func() {
@@ -140,7 +139,7 @@ func TestExecuteTargetsMarksUnsupportedTransportAsCompatibilityFailure(t *testin
 		},
 	}
 
-	targets, _, hasInfraError, hasRequiredCompatFailure := executeTargets(
+	targets, _ := executeTargets(
 		context.Background(),
 		cfg,
 		m,
@@ -154,18 +153,25 @@ func TestExecuteTargetsMarksUnsupportedTransportAsCompatibilityFailure(t *testin
 		nil,
 	)
 
-	if hasInfraError {
-		t.Fatalf("did not expect infra error for unsupported transport compatibility classification")
+	// A profile bpfcompat has no transport for says nothing about the user's
+	// software: the contract was never exercised. It must therefore not roll up
+	// as INCOMPATIBLE. The run is still not clean -- a required environment went
+	// untested -- so it rolls up as INFRA_ERROR and the run is not complete.
+	if got := schema.RunVerdict(targets); got != schema.VerdictInfraError {
+		t.Fatalf("unsupported transport on a required profile must roll up as %s, got %s", schema.VerdictInfraError, got)
 	}
-	if !hasRequiredCompatFailure {
-		t.Fatalf("expected required compatibility failure for required unsupported transport profile")
+	if schema.RunComplete(targets) {
+		t.Fatalf("a required unsupported profile must mark the run incomplete")
 	}
 	if len(targets) != 2 {
 		t.Fatalf("unexpected target count: got=%d want=2", len(targets))
 	}
 	for _, target := range targets {
-		if target.Status != "fail" {
-			t.Fatalf("expected fail status, got %q", target.Status)
+		if target.Status != "unsupported" {
+			t.Fatalf("expected unsupported status, got %q", target.Status)
+		}
+		if target.Verdict != schema.VerdictUnsupported {
+			t.Fatalf("expected verdict %s, got %q", schema.VerdictUnsupported, target.Verdict)
 		}
 		if target.FailedStage != "transport" {
 			t.Fatalf("expected failed_stage transport, got %q", target.FailedStage)

@@ -27,9 +27,21 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 	b.WriteString(fmt.Sprintf("- Run ID: `%s`\n", report.Run.ID))
 	b.WriteString(fmt.Sprintf("- Started At: `%s`\n", report.Run.StartedAt))
 	b.WriteString(fmt.Sprintf("- Status: `%s`\n", report.Summary.Status))
+	if report.Summary.Verdict != "" {
+		b.WriteString(fmt.Sprintf("- Verdict: `%s`\n", report.Summary.Verdict))
+	}
+	// Incomplete coverage has to be visible in the rendered report too: a
+	// COMPATIBLE verdict over a matrix where some target never answered is a
+	// weaker claim than it looks, and the Markdown is what people read first.
+	if report.Summary.Complete != nil && !*report.Summary.Complete {
+		b.WriteString("- Coverage: `incomplete` (at least one target produced no compatibility answer)\n")
+	}
 	b.WriteString(fmt.Sprintf("- Artifact: `%s`\n", report.Artifact.Path))
 	if report.Artifact.Source != "" {
 		b.WriteString(fmt.Sprintf("- Artifact Source: `%s`\n", report.Artifact.Source))
+	}
+	if report.Artifact.SourceDigest != "" {
+		b.WriteString(fmt.Sprintf("- Artifact Source Digest: `%s`\n", report.Artifact.SourceDigest))
 	}
 	b.WriteString(fmt.Sprintf("- Artifact SHA-256: `%s`\n", report.Artifact.SHA256))
 	if report.Validator != nil {
