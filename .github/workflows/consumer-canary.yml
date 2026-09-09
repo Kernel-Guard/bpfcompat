@@ -11,26 +11,41 @@ name: consumer-canary
 # those paths have broken in the past without a single red check here —
 # the first scheduled run of the falcosecurity/libs lane failed that way.
 #
-# Two jobs, one per resolution path:
+# Three jobs, one per consumer path:
 #
-#   prebuilt      pins the active v0.4.0-rc.3 release commit, matching the
-#                 release candidate being exercised by downstream lanes.
-#                 A SHA that matches a release tag must resolve to prebuilt,
-#                 checksum- and attestation-verified binaries. The job
-#                 deliberately does NOT install libbpf-dev; if resolution
-#                 regresses and it falls back to a source build, the compile
-#                 fails here.
+#   stable-prebuilt     pins the commit of the release release.yaml calls
+#                       stable — the one every documented copy-paste path
+#                       tells a reader to use. It is the path that broke
+#                       twice: a SHA pin that failed to resolve to its
+#                       release and fell back to a source build the
+#                       consumer had no libbpf-dev for, and v0.3.6's
+#                       verification of arm64 assets it never downloaded.
 #
-#   source-build  pins @main, which is not a release, forcing the source
-#                 path with exactly the dependencies we document. If a
-#                 future change needs another package, this job goes red
-#                 before a consumer's does.
+#   candidate-prebuilt  pins the active prerelease commit, the one downstream
+#                       lanes exercise ahead of graduation. Adds attestation
+#                       verification, which the v0.4 line requires and the
+#                       stable line does not.
+#
+#   source-build        pins @main, which is not a release, forcing the source
+#                       path with exactly the dependencies we document. If a
+#                       future change needs another package, this job goes red
+#                       before a consumer's does.
+#
+# The two prebuilt jobs deliberately do NOT install libbpf-dev: if release
+# resolution regresses and either falls back to compiling bpfcompat, the build
+# fails here instead of in a consumer's CI. They are kept as separate jobs
+# rather than a matrix so a stable-only or candidate-only break is legible at
+# a glance and neither can mask the other.
+#
+# Both pins are bound to release.yaml by scripts/check-canary-pins.sh, which
+# the release-consistency gate runs on every PR: bumping stable_version
+# without repinning `# bpfcompat-pin: stable` below fails CI.
 #
 # Scheduled ahead of the falcosecurity/libs lane (Mondays 06:00 UTC) to
 # leave a working day of lead time.
 
-# Schedule and manual dispatch only, deliberately. Both jobs resolve the
-# action from a published ref (a release commit and @main), so a
+# Schedule and manual dispatch only, deliberately. Every job resolves the
+# action from a published ref (two release commits and @main), so a
 # pull_request trigger would test those refs and not the PR's own changes —
 # a green run that proves nothing about the change under review. To exercise
 # a working-tree change to the action, use bpfcompat-example-hosted, which
@@ -45,8 +60,8 @@ permissions:
   contents: read
 
 jobs:
-  prebuilt:
-    name: Consumer canary (prebuilt release assets)
+  stable-prebuilt:
+    name: Consumer canary (stable release, prebuilt assets)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -62,6 +77,20 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             qemu-system-x86 qemu-utils cloud-image-utils jq
 
+      - name: Assert a source-build fallback could not succeed here
+        run: |
+          set -euo pipefail
+          # This job proves "prebuilt was used" negatively: it installs no
+          # build toolchain, so a green run cannot have come from a source
+          # build. That only holds while the runner image really cannot build
+          # the validator, which needs libbpf headers via pkg-config. If the
+          # image ever ships them, say so here rather than quietly passing.
+          if command -v pkg-config >/dev/null && pkg-config --exists libbpf; then
+            echo "::error::runner provides libbpf; a source-build fallback would succeed here and this job would stop proving anything"
+            exit 1
+          fi
+          echo "no libbpf development headers: a source-build fallback cannot succeed on this runner"
+
       - name: Enable KVM on the hosted runner
         run: |
           set -euo pipefail
@@ -72,8 +101,9 @@ jobs:
             echo "::warning::/dev/kvm absent - falling back to TCG (slower, still correct)."
           fi
 
-      - name: Validate via the published action (pinned to a release commit)
-        uses: Kernel-Guard/bpfcompat@cba1e09537f2e05e4ba7278efdb5c2d044d1889b # v0.4.0-rc.3
+      - name: Validate via the published action (stable release commit)
+        # bpfcompat-pin: stable
+        uses: Kernel-Guard/bpfcompat@179ff612ed2b5d1afb16dd9c282752028d47c415 # v0.3.7
         with:
           # Command mode with no artifact and no shipped binary, so this job
           # needs no compiler at all: the example .bpf.o objects are built,
@@ -84,10 +114,96 @@ jobs:
           # assets, boot, execute, report.
           command: uname -r && test -d /sys/fs/bpf
           matrix: matrices/canary.yaml
+          out: reports/canary-stable.json
+          markdown: reports/canary-stable.md
+          timeout: 10m
+          concurrency: "2"
+
+      - name: Assert a non-empty compatibility report was produced
+        run: |
+          set -euo pipefail
+          # The action's exit code already covers "did every target pass". It
+          # does not cover a report with no targets in it, which summarises as
+          # a pass: an Inspektor Gadget rehearsal once reported success across
+          # 108 empty reports. Assert the run actually reached kernels.
+          jq -e '(.targets | length) > 0' reports/canary-stable.json >/dev/null
+          jq -r '.targets[] | "\(.profile_id): \(.status)"' reports/canary-stable.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canary-stable-${{ github.run_id }}
+          if-no-files-found: warn
+          path: reports/
+
+  candidate-prebuilt:
+    name: Consumer canary (release candidate, prebuilt assets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install consumer dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # Intentionally minimal: no libbpf-dev, no compiler toolchain. A
+          # release-commit pin must not need them. cloud-image-utils supplies
+          # cloud-localds, which RHEL-family guests require for their seed ISO.
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils jq
+
+      - name: Assert a source-build fallback could not succeed here
+        run: |
+          set -euo pipefail
+          # This job proves "prebuilt was used" negatively: it installs no
+          # build toolchain, so a green run cannot have come from a source
+          # build. That only holds while the runner image really cannot build
+          # the validator, which needs libbpf headers via pkg-config. If the
+          # image ever ships them, say so here rather than quietly passing.
+          if command -v pkg-config >/dev/null && pkg-config --exists libbpf; then
+            echo "::error::runner provides libbpf; a source-build fallback would succeed here and this job would stop proving anything"
+            exit 1
+          fi
+          echo "no libbpf development headers: a source-build fallback cannot succeed on this runner"
+
+      - name: Enable KVM on the hosted runner
+        run: |
+          set -euo pipefail
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm || true
+            ls -l /dev/kvm
+          else
+            echo "::warning::/dev/kvm absent - falling back to TCG (slower, still correct)."
+          fi
+
+      - name: Validate via the published action (release candidate commit)
+        # bpfcompat-pin: candidate
+        uses: Kernel-Guard/bpfcompat@cba1e09537f2e05e4ba7278efdb5c2d044d1889b # v0.4.0-rc.3
+        with:
+          # Command mode with no artifact and no shipped binary, so this job
+          # needs no compiler at all: the example .bpf.o objects are built,
+          # not committed, and building them would drag in the toolchain this
+          # job exists to prove is unnecessary. The command runs in-guest and
+          # its exit code is the verdict, which exercises the whole consumer
+          # path — resolve the pin to a release, download, checksum- and
+          # attestation-verify the assets, boot, execute, report.
+          command: uname -r && test -d /sys/fs/bpf
+          matrix: matrices/canary.yaml
           out: reports/canary-prebuilt.json
           markdown: reports/canary-prebuilt.md
           timeout: 10m
           concurrency: "2"
+
+      - name: Assert a non-empty compatibility report was produced
+        run: |
+          set -euo pipefail
+          # Same reasoning as the stable job: a report with no targets in it
+          # summarises as a pass, so the exit code alone cannot tell "every
+          # kernel passed" from "no kernel ran".
+          jq -e '(.targets | length) > 0' reports/canary-prebuilt.json >/dev/null
+          jq -r '.targets[] | "\(.profile_id): \(.status)"' reports/canary-prebuilt.json
 
       - name: Upload report
         if: always()

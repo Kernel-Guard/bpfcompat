@@ -3,7 +3,8 @@ name: external-consumer-canary
 # Continuously validates that bpfcompat still works on THREE independent
 # projects' real eBPF artifacts - so we detect breakage before pinned consumers
 # do. Each exercises a different modality through the current working tree;
-# consumer-canary.yml separately verifies the last published release:
+# consumer-canary.yml separately verifies the published stable release, the
+# active release candidate, and the source-build path:
 #   - Inspektor Gadget : a published OCI gadget (trace_open), pulled by reference
 #   - KubeArmor        : system_monitor built on-target against each kernel's BTF
 #   - Falco            : scap-open (modern_bpf), the real userspace loader path

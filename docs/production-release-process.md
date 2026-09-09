@@ -179,3 +179,12 @@ graduation report and draft assets, records
 `[bpfcompat-solo-promotion:v1]`, and dispatches the exact promotion inputs.
 Only this path may update the `X.Y` and `latest` image aliases or GitHub's
 latest release.
+
+Once the new stable tag exists, repin the `# bpfcompat-pin: stable` step in
+`.github/workflows/consumer-canary.yml` to its commit SHA and update the
+`# vX.Y.Z` comment beside it. `scripts/check-canary-pins.sh` runs inside the
+release-consistency gate and fails the build until that is done, because a
+canary left on the previous release stops testing the path the documentation
+now sends every reader down. The `# bpfcompat-pin: candidate` step is not
+enforced while `release_channel` is `stable`; repin it with the next
+`X.Y.Z-rc.1`.
