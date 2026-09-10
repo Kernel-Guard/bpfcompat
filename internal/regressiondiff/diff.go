@@ -559,14 +559,22 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	// A change of loader contract makes every cell incomparable rather than
 	// wrong: the question "did the candidate regress" has no meaning when the
 	// thing doing the loading also changed.
-	loaderChanged := d.Baseline.LoaderMode != d.Candidate.LoaderMode
-	if loaderChanged {
+	// incomparable is non-empty when something about the two runs makes every
+	// cell inconclusive. It carries the reason rather than a flag so that a
+	// cell says what actually changed instead of naming the first cause the
+	// code happened to check.
+	incomparable := ""
+	if d.Baseline.LoaderMode != d.Candidate.LoaderMode {
+		incomparable = fmt.Sprintf("the loader contract differs between the two reports (baseline=%s, candidate=%s)",
+			d.Baseline.LoaderMode, d.Candidate.LoaderMode)
 		d.Notes = append(d.Notes, fmt.Sprintf(
 			"loader contract changed between reports (baseline=%s candidate=%s); every cell is inconclusive because the comparison would not be like-for-like",
 			d.Baseline.LoaderMode, d.Candidate.LoaderMode))
 	}
 	if note, changed := commandContractChanged(baseline, candidate); changed {
-		loaderChanged = true
+		if incomparable == "" {
+			incomparable = note
+		}
 		d.Notes = append(d.Notes, note)
 	}
 	if note, changed := validatorIdentityChanged(d.Baseline, d.Candidate); changed {
@@ -597,7 +605,7 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	for _, id := range ids {
 		bt, hasBase := baseByID[id]
 		ct, hasCand := candByID[id]
-		d.Cells = append(d.Cells, classify(id, bt, hasBase, ct, hasCand, loaderChanged))
+		d.Cells = append(d.Cells, classify(id, bt, hasBase, ct, hasCand, incomparable))
 	}
 
 	d.Summary = summarize(d.Cells)
@@ -619,7 +627,7 @@ func indexTargets(targets []schema.Target) map[string]*schema.Target {
 	return out
 }
 
-func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, hasCand, loaderChanged bool) Cell {
+func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, hasCand bool, incomparable string) Cell {
 	cell := Cell{Key: id, ProfileID: id}
 	if hasBase {
 		cell.Baseline = sideOf(bt)
@@ -672,9 +680,9 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		return cell
 	}
 
-	if loaderChanged {
+	if incomparable != "" {
 		cell.Classification = Inconclusive
-		cell.Reason = "loader contract differs between the two reports"
+		cell.Reason = incomparable
 		return cell
 	}
 
