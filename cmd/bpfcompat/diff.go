@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -47,6 +48,14 @@ func runDiff(args []string) int {
 	if strings.TrimSpace(*baseline) == "" || strings.TrimSpace(*candidate) == "" {
 		fmt.Fprintln(os.Stderr, "diff requires --baseline and --candidate")
 		fs.Usage()
+		return regressiondiff.ExitInconclusive
+	}
+
+	// One file cannot be both outputs: whichever is written second wins, so a
+	// consumer parsing --out would silently receive Markdown. Caught before
+	// anything runs, because the fix is the command line, not the evidence.
+	if err := distinctOutputs(*outPath, *markdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "diff failed: %v\n", err)
 		return regressiondiff.ExitInconclusive
 	}
 
@@ -98,4 +107,24 @@ func runDiff(args []string) int {
 		s.InconclusiveRequired, s.InconclusiveOptional, s.CoverageAddedCount, s.CoverageRemovedRequired, s.CoverageRemovedOptional)
 
 	return regressiondiff.ExitCode(d)
+}
+
+// distinctOutputs refuses --out and --markdown pointing at one file.
+func distinctOutputs(outPath, markdownPath string) error {
+	out, markdown := strings.TrimSpace(outPath), strings.TrimSpace(markdownPath)
+	if out == "" || markdown == "" {
+		return nil
+	}
+	outAbs, err := filepath.Abs(out)
+	if err != nil {
+		return fmt.Errorf("resolve --out: %w", err)
+	}
+	markdownAbs, err := filepath.Abs(markdown)
+	if err != nil {
+		return fmt.Errorf("resolve --markdown: %w", err)
+	}
+	if outAbs == markdownAbs {
+		return fmt.Errorf("--out and --markdown are the same file (%s); the Markdown would overwrite the JSON evidence", outAbs)
+	}
+	return nil
 }

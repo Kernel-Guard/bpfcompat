@@ -98,9 +98,23 @@ type CellSide struct {
 	RequestedKernelFamily string `json:"requested_kernel_family,omitempty"`
 	ObservedKernel        string `json:"observed_kernel,omitempty"`
 	KernelFamilyMatch     *bool  `json:"kernel_family_match,omitempty"`
-	// EnvironmentEstablished is false when this side ran, but not on the
-	// environment the obligation names.
+	// EnvironmentEstablished is false unless this side positively recorded that
+	// it ran on the environment the obligation names.
 	EnvironmentEstablished bool `json:"environment_established"`
+	// EnvironmentEvidence separates the two ways that can fail: "unknown" (the
+	// report never said what booted) and "mismatch" (it said, and it was the
+	// wrong kernel series). They are not the same finding and must not read as
+	// though they were.
+	EnvironmentEvidence string `json:"environment_evidence,omitempty"`
+	// The requested obligation identity, recorded so a comparison that refused
+	// to treat two sides as the same promise can show why.
+	ProfileArch         string `json:"profile_arch,omitempty"`
+	ProfileDistro       string `json:"profile_distro,omitempty"`
+	ProfileVersion      string `json:"profile_version,omitempty"`
+	ProfileKernelFamily string `json:"profile_kernel_family,omitempty"`
+	// AttachMode is how much of the contract was exercised: load-only evidence
+	// does not support a claim that attaching still works.
+	AttachMode string `json:"attach_mode,omitempty"`
 }
 
 type Cell struct {
@@ -168,7 +182,8 @@ func Validate(r schema.ReportV01, side string) error {
 	}
 	seen := make(map[string]int, len(r.Targets))
 	for i := range r.Targets {
-		id := strings.TrimSpace(r.Targets[i].ProfileID)
+		t := &r.Targets[i]
+		id := strings.TrimSpace(t.ProfileID)
 		if id == "" {
 			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
 				"target %d has an empty profile_id, so the obligation it represents is unidentifiable", i)}
@@ -178,6 +193,81 @@ func Validate(r schema.ReportV01, side string) error {
 				"profile_id %q appears at targets %d and %d; which result represents that obligation is ambiguous", id, first, i)}
 		}
 		seen[id] = i
+		if err := validateTarget(t, i, id, side); err != nil {
+			return err
+		}
+	}
+	return validateSummary(r, side)
+}
+
+// validateTarget rejects a target that contradicts itself.
+//
+// A report does not become conclusive because one of its fields contains the
+// word COMPATIBLE. `status` and `verdict` are two recordings of one execution:
+// the runner derives the second from the first with schema.VerdictForStatus, so
+// for genuine evidence they agree by construction. When they disagree, the file
+// was edited or written by a producer whose semantics we do not know, and the
+// honest answer is that we cannot compare it -- not that we should pick the
+// field we like. Refusing is also strictly better than resolving the conflict
+// as INCOMPATIBLE, which would blame a candidate for a broken input file.
+func validateTarget(t *schema.Target, i int, id, side string) error {
+	status := strings.TrimSpace(t.Status)
+	verdict := strings.TrimSpace(t.Verdict)
+	// Absence is not contradiction. A pre-Gate-1 report records status and no
+	// verdict; it is unusable as a compatibility claim (conclusive() refuses
+	// it) but it is not self-contradictory, and rejecting the whole file would
+	// confuse "old" with "tampered with".
+	if status != "" && verdict != "" && schema.VerdictForStatus(status) != verdict {
+		return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+			"target %d (%s) records status %q and verdict %q, which contradict each other (status %q means %q); this report does not agree with itself",
+			i, id, status, verdict, status, schema.VerdictForStatus(status))}
+	}
+	// kernel_family_match is a claim derived from two other fields: the runner
+	// sets it only after parsing a kernel series out of both the requested
+	// family and the observed kernel. A `true` standing alone, with nothing it
+	// could have been derived from, is an assertion rather than evidence.
+	if env := t.Environment; env != nil && env.KernelFamilyMatch != nil {
+		if strings.TrimSpace(env.RequestedKernelFamily) == "" || strings.TrimSpace(env.ObservedKernel) == "" {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) states kernel_family_match without recording both the requested kernel family and the observed kernel, so the claim rests on nothing",
+				i, id)}
+		}
+	}
+	return nil
+}
+
+// validateSummary rejects a report whose run-level summary contradicts its own
+// targets.
+//
+// The targets are the single source of semantic truth: they are what the
+// comparison reads, and the summary is derived from them. Rather than choosing
+// which to believe -- or carrying a contradiction forward as if it were
+// trustworthy -- a report that disagrees with itself is refused.
+//
+// These checks deliberately use the lenient package-level helpers, because they
+// reproduce the producer's own computation. Gate 2's stricter reading of
+// missing environment evidence (see establishedEnvironment) applies to what the
+// comparison may conclude, never to whether the producer's arithmetic was
+// self-consistent; using the strict rule here would flag correct reports as
+// forged.
+func validateSummary(r schema.ReportV01, side string) error {
+	status := strings.TrimSpace(r.Summary.Status)
+	verdict := strings.TrimSpace(r.Summary.Verdict)
+	if status != "" && verdict != "" && schema.VerdictForStatus(status) != verdict {
+		return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+			"summary.status is %q and summary.verdict is %q, which contradict each other; this report does not agree with itself", status, verdict)}
+	}
+	if got := strings.TrimSpace(r.Summary.Verdict); got != "" {
+		if want := schema.RunVerdict(r.Targets); got != want {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.verdict is %q but its own required targets add up to %q; this report does not agree with itself", got, want)}
+		}
+	}
+	if r.Summary.Complete != nil {
+		if want := schema.RunComplete(r.Targets); *r.Summary.Complete != want {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.complete is %t but its own targets add up to %t; this report does not agree with itself", *r.Summary.Complete, want)}
+		}
 	}
 	return nil
 }
@@ -216,6 +306,128 @@ func loaderMode(r schema.ReportV01) string {
 	return "artifact"
 }
 
+// checkDistinctRuns refuses a report compared against itself.
+//
+// Run IDs are a UTC timestamp plus a random suffix, so two sides carrying the
+// same non-empty ID are one run read twice -- the usual cause being CI wiring
+// that downloads the same artifact into both paths. Such a comparison is
+// trivially, permanently green: it proves a run equals itself and nothing about
+// a candidate release. A gate that can be satisfied by a wiring mistake is not
+// protecting anything, so this is refused with the reason rather than answered
+// with exit 0. It is an inability to compare, never a claim about the
+// candidate.
+func checkDistinctRuns(baseline, candidate Evidence) error {
+	if id := strings.TrimSpace(baseline.Report.Run.ID); id != "" && id == strings.TrimSpace(candidate.Report.Run.ID) {
+		return &InvalidEvidenceError{Side: "candidate", Reason: fmt.Sprintf(
+			"it is the same run as the baseline (run id %q); comparing a run with itself cannot establish anything about a candidate release", id)}
+	}
+	if baseline.Path != "" && baseline.Path == candidate.Path {
+		return &InvalidEvidenceError{Side: "candidate", Reason: fmt.Sprintf(
+			"it is the same file as the baseline (%s); a release diff needs the evidence of two runs", baseline.Path)}
+	}
+	return nil
+}
+
+// commandContractChanged reports whether two command-mode runs tested the same
+// thing.
+//
+// The loader binary's SHA-256 deliberately does not appear here. In command
+// mode the loader is the project's own program -- it is the thing being
+// released, and requiring it to be identical between release N and N+1 would
+// make every real comparison incomparable. What must hold still is the *test*:
+// the command that was run (recorded as invocation_sha256, the text itself
+// never being published) and the exit code that counts as success. Change
+// either and a later COMPATIBLE is an answer to a different question.
+func commandContractChanged(baseline, candidate schema.ReportV01) (string, bool) {
+	b, c := baseline.Command, candidate.Command
+	if b == nil || c == nil {
+		return "", false
+	}
+	if strings.TrimSpace(b.InvocationSHA256) != "" && strings.TrimSpace(c.InvocationSHA256) != "" &&
+		strings.TrimSpace(b.InvocationSHA256) != strings.TrimSpace(c.InvocationSHA256) {
+		return "the command under test changed between reports (different invocation_sha256); every cell is inconclusive because the two runs answer different questions", true
+	}
+	if b.ExpectedExitCode != c.ExpectedExitCode {
+		return fmt.Sprintf(
+			"the command success contract changed between reports (expected exit code %d at baseline, %d in the candidate); every cell is inconclusive",
+			b.ExpectedExitCode, c.ExpectedExitCode), true
+	}
+	return "", false
+}
+
+// validatorIdentityChanged notes -- and deliberately does not gate on -- a
+// change of the generic validator's build.
+//
+// In artifact mode the validator is bpfcompat's own measuring instrument, and
+// upgrading bpfcompat between a baseline and a candidate is ordinary. Its
+// load/attach contract is stable across its versions by design; that is the
+// premise the whole product rests on. Gating on SHA equality would make every
+// bpfcompat upgrade report every environment as incomparable, which trains
+// users to ignore the gate. What the mismatch is worth is traceability: if a
+// surprising NEW_REGRESSION appears, the first question is whether the
+// instrument changed, and this note puts that in the evidence rather than
+// leaving it to be reconstructed.
+func validatorIdentityChanged(baseline, candidate ReportRef) (string, bool) {
+	if baseline.LoaderMode != "artifact" || candidate.LoaderMode != "artifact" {
+		return "", false
+	}
+	if baseline.LoaderSHA256 == "" || candidate.LoaderSHA256 == "" || baseline.LoaderSHA256 == candidate.LoaderSHA256 {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"the bpfcompat validator build differs between reports (%s -> %s); this is expected across bpfcompat upgrades and does not by itself make the comparison invalid, but it is the first thing to check if a result is surprising",
+		shortSHA(baseline.LoaderSHA256), shortSHA(candidate.LoaderSHA256)), true
+}
+
+// obligationChanged reports whether the two sides of a cell describe the same
+// promise. profile_id is the comparison key, but a key is only as good as the
+// thing it names: the same id can be pointed at a different architecture,
+// distro, release or kernel series by editing a profile, and then a candidate's
+// result is an answer about an environment the baseline never tested. Every
+// field here comes from the profile the matrix *requested*, never from what
+// happened to boot.
+//
+// The artifact SHA-256 and OCI digest are excluded on purpose: release N and
+// N+1 are supposed to differ there, and that is the point of the comparison.
+func obligationChanged(b, c CellSide) (string, bool) {
+	for _, f := range []struct {
+		name, base, cand string
+	}{
+		{"architecture", b.ProfileArch, c.ProfileArch},
+		{"distro", b.ProfileDistro, c.ProfileDistro},
+		{"distro version", b.ProfileVersion, c.ProfileVersion},
+		{"kernel family", b.ProfileKernelFamily, c.ProfileKernelFamily},
+	} {
+		base, cand := strings.TrimSpace(f.base), strings.TrimSpace(f.cand)
+		// Both sides must say, or there is nothing to compare -- an absent
+		// field is unknown, and unknown is handled by the environment rules
+		// rather than being read as a change.
+		if base == "" || cand == "" || base == cand {
+			continue
+		}
+		return fmt.Sprintf(
+			"the obligation changed: this profile names %s %s at baseline and %s in the candidate, so the two results are about different environments",
+			f.name, base, cand), true
+	}
+	return "", false
+}
+
+// validationDepthChanged reports a cell whose two sides exercised different
+// amounts of the contract. A baseline that attached its programs and a
+// candidate that only loaded them are not comparable evidence: the candidate's
+// COMPATIBLE says nothing about attaching, which is exactly what the baseline
+// proved. This fails closed in the direction that matters -- the shallower
+// candidate cannot inherit the deeper baseline's green.
+func validationDepthChanged(b, c CellSide) (string, bool) {
+	base, cand := strings.TrimSpace(b.AttachMode), strings.TrimSpace(c.AttachMode)
+	if base == "" || cand == "" || base == cand {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"the validation contract changed: attach mode %q at baseline and %q in the candidate, so the two runs exercised different amounts of the contract",
+		base, cand), true
+}
+
 func refOf(r schema.ReportV01, path string) ReportRef {
 	ref := ReportRef{
 		Path:           path,
@@ -237,26 +449,71 @@ func refOf(r schema.ReportV01, path string) ReportRef {
 	return ref
 }
 
+// Environment evidence states, recorded per side so the JSON says which of the
+// two very different reasons a cell was not established.
+const (
+	EnvironmentEstablishedEvidence = "established"
+	EnvironmentUnknownEvidence     = "unknown"
+	EnvironmentMismatchEvidence    = "mismatch"
+)
+
+// establishedEnvironment is Gate 2's reading of whether a target actually
+// exercised the environment its obligation names.
+//
+// It is deliberately stricter than schema.EstablishedRequestedEnvironment,
+// which answers true when the evidence is absent. That leniency is right for
+// the Gate 1 helper: a report reader must not invent a failure out of a field
+// an older bpfcompat never wrote, and RunVerdict uses it to avoid blaming a
+// user's software for our missing metadata. It is not right here. A release
+// gate is asked "do we positively know this candidate still supports the
+// environment we promise?", and "the file does not say" is not a yes. Changing
+// the shared helper would silently restate every existing consumer's contract,
+// so the strictness lives here, where the stricter question is asked.
+//
+// Unknown is kept distinct from mismatch. A file that never recorded a kernel
+// is not evidence that the wrong kernel booted, and the reason text must not
+// claim it is.
+func establishedEnvironment(t *schema.Target) string {
+	if t.Environment == nil || t.Environment.KernelFamilyMatch == nil {
+		return EnvironmentUnknownEvidence
+	}
+	if !*t.Environment.KernelFamilyMatch {
+		return EnvironmentMismatchEvidence
+	}
+	return EnvironmentEstablishedEvidence
+}
+
 func sideOf(t *schema.Target) CellSide {
+	evidence := establishedEnvironment(t)
 	s := CellSide{
 		Present:                true,
 		Verdict:                t.Verdict,
 		Status:                 t.Status,
 		Required:               t.Required,
 		ClassificationCode:     t.ClassificationCode,
-		EnvironmentEstablished: schema.EstablishedRequestedEnvironment(t),
+		EnvironmentEvidence:    evidence,
+		EnvironmentEstablished: evidence == EnvironmentEstablishedEvidence,
 	}
 	if t.Environment != nil {
 		s.RequestedKernelFamily = t.Environment.RequestedKernelFamily
 		s.ObservedKernel = t.Environment.ObservedKernel
 		s.KernelFamilyMatch = t.Environment.KernelFamilyMatch
 	}
+	if t.Profile != nil {
+		s.ProfileArch = t.Profile.Arch
+		s.ProfileDistro = t.Profile.Distro
+		s.ProfileVersion = t.Profile.Version
+		s.ProfileKernelFamily = t.Profile.KernelFamily
+	}
+	if t.Validation != nil {
+		s.AttachMode = t.Validation.AttachMode
+	}
 	return s
 }
 
 // conclusive reports whether a side actually settled the obligation. Only
 // COMPATIBLE and INCOMPATIBLE are answers about the software, and only when the
-// environment that ran was the one the obligation names.
+// environment that ran is positively known to be the one the obligation names.
 func conclusive(s CellSide) bool {
 	if !s.Present || !s.EnvironmentEstablished {
 		return false
@@ -269,18 +526,34 @@ func conclusive(s CellSide) bool {
 // It returns an error rather than a Diff whenever the inputs cannot supply
 // trustworthy comparison keys, so there is no path that produces a diff from
 // evidence the differ had to guess about.
-func Build(baseline, candidate schema.ReportV01, baselinePath, candidatePath, generatedAt string) (Diff, error) {
+func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
+	baseline, candidate := baselineEv.Report, candidateEv.Report
+	// Re-checked here, not only on the load path, so that no caller can reach a
+	// diff without them: these are the conditions under which the comparison
+	// has meaning at all.
+	if err := CheckSchemas(baseline, candidate); err != nil {
+		return Diff{}, err
+	}
 	if err := Validate(baseline, "baseline"); err != nil {
 		return Diff{}, err
 	}
 	if err := Validate(candidate, "candidate"); err != nil {
 		return Diff{}, err
 	}
+	if err := baselineEv.validatePresence(); err != nil {
+		return Diff{}, err
+	}
+	if err := candidateEv.validatePresence(); err != nil {
+		return Diff{}, err
+	}
+	if err := checkDistinctRuns(baselineEv, candidateEv); err != nil {
+		return Diff{}, err
+	}
 	d := Diff{
 		SchemaVersion: SchemaVersion,
 		GeneratedAt:   generatedAt,
-		Baseline:      refOf(baseline, baselinePath),
-		Candidate:     refOf(candidate, candidatePath),
+		Baseline:      refOf(baseline, baselineEv.Path),
+		Candidate:     refOf(candidate, candidateEv.Path),
 	}
 
 	// A change of loader contract makes every cell incomparable rather than
@@ -291,6 +564,13 @@ func Build(baseline, candidate schema.ReportV01, baselinePath, candidatePath, ge
 		d.Notes = append(d.Notes, fmt.Sprintf(
 			"loader contract changed between reports (baseline=%s candidate=%s); every cell is inconclusive because the comparison would not be like-for-like",
 			d.Baseline.LoaderMode, d.Candidate.LoaderMode))
+	}
+	if note, changed := commandContractChanged(baseline, candidate); changed {
+		loaderChanged = true
+		d.Notes = append(d.Notes, note)
+	}
+	if note, changed := validatorIdentityChanged(d.Baseline, d.Candidate); changed {
+		d.Notes = append(d.Notes, note)
 	}
 
 	baseByID := indexTargets(baseline.Targets)
@@ -370,6 +650,19 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Reason = "obligation present in neither report"
 		return cell
 	case !hasBase:
+		// Coverage was only added if the candidate actually established
+		// something. A new obligation whose run hit an infrastructure failure,
+		// or never recorded which kernel it ran, has added a row and no
+		// evidence -- and calling that COVERAGE_ADDED would let a required
+		// obligation nothing settled pass through a green gate. It also closes
+		// the reverse edit: deleting a target from the *baseline* would
+		// otherwise turn an inconclusive required cell into a non-gating one.
+		if !conclusive(cell.Candidate) {
+			cell.Classification = Inconclusive
+			cell.Reason = "candidate adds an obligation the baseline did not test, but did not establish it: " +
+				describeSide("candidate", cell.Candidate)
+			return cell
+		}
 		cell.Classification = CoverageAdded
 		cell.Reason = "candidate tests an environment the baseline did not; new evidence, not a regression"
 		return cell
@@ -408,6 +701,16 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Reason = fmt.Sprintf("the obligation changed: baseline requests kernel family %s, candidate requests %s", bFam, cFam)
 		return cell
 	}
+	if reason, changed := obligationChanged(cell.Baseline, cell.Candidate); changed {
+		cell.Classification = Inconclusive
+		cell.Reason = reason
+		return cell
+	}
+	if reason, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {
+		cell.Classification = Inconclusive
+		cell.Reason = reason
+		return cell
+	}
 
 	// Either side failing to settle the question ends the comparison here.
 	// This is the rule that stops an incomplete baseline from manufacturing a
@@ -435,30 +738,37 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 	return cell
 }
 
-func inconclusiveReason(cell Cell) string {
-	describe := func(side string, s CellSide) string {
-		switch {
-		case !s.Present:
-			return side + " has no evidence for this environment"
-		case !s.EnvironmentEstablished:
-			return fmt.Sprintf("%s requested kernel family %s but ran %s, so it never tested the environment this obligation names",
-				side, s.RequestedKernelFamily, s.ObservedKernel)
-		case s.Verdict == schema.VerdictInfraError:
-			return side + " could not establish compatibility (infrastructure failure)"
-		case s.Verdict == schema.VerdictUnsupported:
-			return side + " could not execute this environment"
-		case s.Verdict == "":
-			return side + " records no verdict"
-		default:
-			return fmt.Sprintf("%s verdict %q is not a compatibility answer", side, s.Verdict)
-		}
+// describeSide says, in one clause, why one side did not settle its obligation.
+func describeSide(side string, s CellSide) string {
+	switch {
+	case !s.Present:
+		return side + " has no evidence for this environment"
+	case s.EnvironmentEvidence == EnvironmentMismatchEvidence:
+		return fmt.Sprintf("%s requested kernel family %s but ran %s, so it never tested the environment this obligation names",
+			side, s.RequestedKernelFamily, s.ObservedKernel)
+	case s.EnvironmentEvidence == EnvironmentUnknownEvidence:
+		// Deliberately not phrased as a mismatch: the report does not say
+		// what booted, which is a different fact from booting the wrong
+		// thing, and only one of them is a finding about the environment.
+		return side + " does not record which kernel it ran (no environment.kernel_family_match), so it cannot support a claim about the environment this obligation names"
+	case s.Verdict == schema.VerdictInfraError:
+		return side + " could not establish compatibility (infrastructure failure)"
+	case s.Verdict == schema.VerdictUnsupported:
+		return side + " could not execute this environment"
+	case s.Verdict == "":
+		return side + " records no verdict"
+	default:
+		return fmt.Sprintf("%s verdict %q is not a compatibility answer", side, s.Verdict)
 	}
+}
+
+func inconclusiveReason(cell Cell) string {
 	var parts []string
 	if !conclusive(cell.Baseline) {
-		parts = append(parts, describe("baseline", cell.Baseline))
+		parts = append(parts, describeSide("baseline", cell.Baseline))
 	}
 	if !conclusive(cell.Candidate) {
-		parts = append(parts, describe("candidate", cell.Candidate))
+		parts = append(parts, describeSide("candidate", cell.Candidate))
 	}
 	return strings.Join(parts, "; ")
 }

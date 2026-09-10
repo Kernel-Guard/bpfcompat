@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,19 @@ import (
 )
 
 func b(v bool) *bool { return &v }
+
+// runStatus mirrors the runner's run-level status vocabulary (pass/fail/error),
+// which differs from the per-target one.
+func runStatus(verdict string) string {
+	switch verdict {
+	case schema.VerdictIncompatible:
+		return "fail"
+	case schema.VerdictInfraError:
+		return "error"
+	default:
+		return "pass"
+	}
+}
 
 // target builds one side's evidence for a profile. Verdict is what the run
 // recorded; the differ must never derive it itself.
@@ -45,23 +60,46 @@ func mismatched(t schema.Target) schema.Target {
 	return t
 }
 
-func report(complete bool, targets ...schema.Target) schema.ReportV01 {
+// runIDs hands every fixture its own run identity. Real run IDs are a
+// timestamp plus a random suffix, and two reports sharing one are the same run
+// read twice -- which the differ refuses, so fixtures must not accidentally
+// claim it.
+var runIDs atomic.Int64
+
+// report builds a self-consistent report: its run-level summary is computed
+// from its own targets exactly as the runner computes it. Reports whose summary
+// contradicts their targets are refused as evidence, so a fixture that hand-set
+// one would be testing the rejection path rather than whatever it meant to
+// test. The contradictory cases are built explicitly, in the tests that are
+// about them.
+func report(targets ...schema.Target) schema.ReportV01 {
 	return schema.ReportV01{
 		SchemaVersion: "v0.1",
-		Run:           schema.RunInfo{ID: "run-x"},
+		Run:           schema.RunInfo{ID: fmt.Sprintf("run-%d", runIDs.Add(1))},
 		Artifact:      schema.Artifact{SHA256: "aaa"},
 		Targets:       targets,
-		Summary:       schema.SummaryInfo{Verdict: schema.VerdictCompatible, Complete: b(complete)},
+		Summary: schema.SummaryInfo{
+			Status:   runStatus(schema.RunVerdict(targets)),
+			Verdict:  schema.RunVerdict(targets),
+			Complete: b(schema.RunComplete(targets)),
+		},
 	}
 }
 
 func build(t *testing.T, baseline, candidate schema.ReportV01) Diff {
 	t.Helper()
-	d, err := Build(baseline, candidate, "base.json", "cand.json", time.Unix(0, 0).UTC().Format(time.RFC3339))
+	d, err := buildErr(baseline, candidate)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	return d
+}
+
+func buildErr(baseline, candidate schema.ReportV01) (Diff, error) {
+	return Build(
+		EvidenceFromReport(baseline, "base.json", "baseline"),
+		EvidenceFromReport(candidate, "cand.json", "candidate"),
+		time.Unix(0, 0).UTC().Format(time.RFC3339))
 }
 
 func onlyCell(t *testing.T, d Diff) Cell {
@@ -134,7 +172,7 @@ func TestComparisonTable(t *testing.T) {
 			if tc.candidate != nil {
 				candTargets = append(candTargets, *tc.candidate)
 			}
-			d := build(t, report(true, baseTargets...), report(true, candTargets...))
+			d := build(t, report(baseTargets...), report(candTargets...))
 			cell := cellFor(t, d, "k")
 			if cell.Classification != tc.want {
 				t.Errorf("classification: want %s, got %s (%s)", tc.want, cell.Classification, cell.Reason)
@@ -161,7 +199,7 @@ func TestIncompleteBaselineCanNeverManufactureARegression(t *testing.T) {
 		{ProfileID: "k", Required: true, Status: "pass"}, // no verdict recorded at all
 	}
 	for _, base := range unproven {
-		d := build(t, report(false, base), report(true, target("k", I, true)))
+		d := build(t, report(base), report(target("k", I, true)))
 		cell := onlyCell(t, d)
 		if cell.Classification == NewRegression {
 			t.Fatalf("baseline %q/%v produced NEW_REGRESSION from an unproven baseline",
@@ -180,12 +218,12 @@ func TestIncompleteBaselineCanNeverManufactureARegression(t *testing.T) {
 // The mirror property: a proven required regression must survive noise.
 func TestProvenRequiredRegressionSurvivesUnrelatedNoise(t *testing.T) {
 	C, I := schema.VerdictCompatible, schema.VerdictIncompatible
-	baseline := report(true,
+	baseline := report(
 		target("gating", C, true),
 		target("flaky-optional", C, false),
 		target("also-required", C, true),
 	)
-	candidate := report(false,
+	candidate := report(
 		target("gating", I, true),                                 // the real regression
 		target("flaky-optional", schema.VerdictInfraError, false), // optional noise
 		target("also-required", schema.VerdictInfraError, true),   // required noise
@@ -208,10 +246,10 @@ func TestProvenRequiredRegressionSurvivesUnrelatedNoise(t *testing.T) {
 
 func TestOrderIndependence(t *testing.T) {
 	C, I := schema.VerdictCompatible, schema.VerdictIncompatible
-	a := report(true, target("a", C, true), target("b", I, true), target("c", C, false))
-	bRep := report(true, target("c", C, false), target("a", I, true), target("b", I, true))
-	shuffled := report(true, target("b", I, true), target("c", C, false), target("a", C, true))
-	shuffledCand := report(true, target("b", I, true), target("a", I, true), target("c", C, false))
+	a := report(target("a", C, true), target("b", I, true), target("c", C, false))
+	bRep := report(target("c", C, false), target("a", I, true), target("b", I, true))
+	shuffled := report(target("b", I, true), target("c", C, false), target("a", C, true))
+	shuffledCand := report(target("b", I, true), target("a", I, true), target("c", C, false))
 
 	d1 := build(t, a, bRep)
 	d2 := build(t, shuffled, shuffledCand)
@@ -228,9 +266,9 @@ func TestOrderIndependence(t *testing.T) {
 
 func TestLoaderContractChangeMakesEveryCellInconclusive(t *testing.T) {
 	C := schema.VerdictCompatible
-	baseline := report(true, target("k", C, true))
+	baseline := report(target("k", C, true))
 	baseline.Validator = &schema.BinaryIdentity{SHA256: "validator"}
-	candidate := report(true, target("k", C, true))
+	candidate := report(target("k", C, true))
 	candidate.Command = &schema.CommandInfo{InvocationSHA256: "inv"}
 
 	d := build(t, baseline, candidate)
@@ -247,7 +285,7 @@ func TestChangedObligationIsInconclusive(t *testing.T) {
 	base := target("k", C, true)
 	cand := target("k", C, true)
 	cand.Environment.RequestedKernelFamily = "6.1" // the profile now promises a different series
-	d := build(t, report(true, base), report(true, cand))
+	d := build(t, report(base), report(cand))
 	cell := onlyCell(t, d)
 	if cell.Classification != Inconclusive {
 		t.Fatalf("a profile that changed which kernel it claims is a different promise; got %s", cell.Classification)
@@ -262,7 +300,7 @@ func TestRequirednessChangeIsNotLikeForLike(t *testing.T) {
 	C, I := schema.VerdictCompatible, schema.VerdictIncompatible
 
 	t.Run("demotion cannot launder a regression into an optional finding", func(t *testing.T) {
-		d := build(t, report(true, target("k", C, true)), report(true, target("k", I, false)))
+		d := build(t, report(target("k", C, true)), report(target("k", I, false)))
 		cell := onlyCell(t, d)
 
 		if cell.Classification == NewRegression && !cell.Required {
@@ -289,7 +327,7 @@ func TestRequirednessChangeIsNotLikeForLike(t *testing.T) {
 		// The mirror direction. Whether a candidate "regressed" against a
 		// promise that did not exist at baseline is not something this evidence
 		// settles, so it is not reasoned about asymmetrically.
-		d := build(t, report(true, target("k", C, false)), report(true, target("k", I, true)))
+		d := build(t, report(target("k", C, false)), report(target("k", I, true)))
 		cell := onlyCell(t, d)
 		if cell.Classification != Inconclusive {
 			t.Fatalf("want %s, got %s", Inconclusive, cell.Classification)
@@ -301,7 +339,7 @@ func TestRequirednessChangeIsNotLikeForLike(t *testing.T) {
 
 	t.Run("unchanged requiredness still compares normally", func(t *testing.T) {
 		for _, req := range []bool{true, false} {
-			d := build(t, report(true, target("k", C, req)), report(true, target("k", I, req)))
+			d := build(t, report(target("k", C, req)), report(target("k", I, req)))
 			cell := onlyCell(t, d)
 			if cell.Classification != NewRegression {
 				t.Fatalf("required=%t: want %s, got %s", req, NewRegression, cell.Classification)
@@ -317,11 +355,11 @@ func TestRequirednessChangeIsNotLikeForLike(t *testing.T) {
 // these was previously tolerated and produced a diff that looked conclusive.
 func TestUnusableComparisonKeysFailClosed(t *testing.T) {
 	C := schema.VerdictCompatible
-	good := report(true, target("k", C, true))
+	good := report(target("k", C, true))
 
-	dup := report(true, target("k", C, true), target("k", schema.VerdictIncompatible, true))
-	blank := report(true, target("k", C, true), target("   ", C, true))
-	empty := report(true)
+	dup := report(target("k", C, true), target("k", schema.VerdictIncompatible, true))
+	blank := report(target("k", C, true), target("   ", C, true))
+	empty := report()
 
 	for _, tc := range []struct {
 		name                string
@@ -336,7 +374,7 @@ func TestUnusableComparisonKeysFailClosed(t *testing.T) {
 		{"zero targets in candidate", good, empty, "no targets"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d, err := Build(tc.baseline, tc.candidate, "b", "c", "now")
+			d, err := buildErr(tc.baseline, tc.candidate)
 			if err == nil {
 				t.Fatalf("expected a refusal, got a diff with %d cells", len(d.Cells))
 			}
@@ -351,7 +389,7 @@ func TestUnusableComparisonKeysFailClosed(t *testing.T) {
 	}
 
 	// A duplicate must never be resolved by silently keeping one of them.
-	d, err := Build(dup, good, "b", "c", "now")
+	d, err := buildErr(dup, good)
 	if err == nil {
 		for i := range d.Cells {
 			if d.Cells[i].ProfileID == "k" {
@@ -377,9 +415,9 @@ func TestUnusableEvidenceReachesExitOneThroughCompare(t *testing.T) {
 		return p
 	}
 	C := schema.VerdictCompatible
-	good := write("good.json", report(true, target("k", C, true)))
-	dup := write("dup.json", report(true, target("k", C, true), target("k", C, true)))
-	empty := write("empty.json", report(true))
+	good := write("good.json", report(target("k", C, true)))
+	dup := write("dup.json", report(target("k", C, true), target("k", C, true)))
+	empty := write("empty.json", report())
 
 	for _, bad := range []string{dup, empty} {
 		if _, err := Compare(bad, good, time.Now()); err == nil {
@@ -392,7 +430,7 @@ func TestUnusableEvidenceReachesExitOneThroughCompare(t *testing.T) {
 }
 
 func TestUnsupportedSchemaFailsClosed(t *testing.T) {
-	good := report(true, target("k", schema.VerdictCompatible, true))
+	good := report(target("k", schema.VerdictCompatible, true))
 	for _, bad := range []string{"", "v0.2", "v1.0", "nonsense"} {
 		other := good
 		other.SchemaVersion = bad
@@ -411,7 +449,7 @@ func TestUnsupportedSchemaFailsClosed(t *testing.T) {
 func TestMalformedAndMissingEvidenceFailClosed(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.json")
-	blob, _ := json.Marshal(report(true, target("k", schema.VerdictCompatible, true)))
+	blob, _ := json.Marshal(report(target("k", schema.VerdictCompatible, true)))
 	if err := os.WriteFile(good, blob, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -433,8 +471,13 @@ func TestMalformedAndMissingEvidenceFailClosed(t *testing.T) {
 }
 
 func TestDiffJSONIsVersionedAndSelfDescribing(t *testing.T) {
-	d := build(t, report(true, target("k", schema.VerdictCompatible, true)),
-		report(false, target("k", schema.VerdictIncompatible, true)))
+	// The candidate is genuinely incomplete: an optional target produced no
+	// compatibility answer, which is what summary.complete records.
+	d := build(t, report(target("k", schema.VerdictCompatible, true)),
+		report(
+			target("k", schema.VerdictIncompatible, true),
+			target("optional-vm", schema.VerdictInfraError, false),
+		))
 	blob, err := json.Marshal(d)
 	if err != nil {
 		t.Fatal(err)
@@ -461,7 +504,7 @@ func TestDiffJSONIsVersionedAndSelfDescribing(t *testing.T) {
 // a file nobody can vouch for.
 func TestTrailingDataAfterTheReportIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	valid, err := json.Marshal(report(true, target("k", schema.VerdictCompatible, true)))
+	valid, err := json.Marshal(report(target("k", schema.VerdictCompatible, true)))
 	if err != nil {
 		t.Fatal(err)
 	}

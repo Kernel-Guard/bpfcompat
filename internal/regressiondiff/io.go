@@ -1,7 +1,6 @@
 package regressiondiff
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,28 +26,16 @@ const (
 	ExitRegressed     = 2
 )
 
-// LoadReport reads one evidence file. A file that is absent, not valid JSON, or
-// carrying anything after the report is an error rather than a partial report,
-// so neither a typo in a path nor a truncated or concatenated file can be
-// mistaken for "nothing regressed".
+// LoadReport reads one evidence file and returns the report alone. It is the
+// convenience wrapper around LoadEvidence for callers that only want the parsed
+// document; anything making a release decision must use LoadEvidence, which
+// keeps the presence facts the raw JSON carries.
 func LoadReport(path string) (schema.ReportV01, error) {
-	blob, err := os.ReadFile(path)
+	ev, err := LoadEvidence(path, "report")
 	if err != nil {
-		return schema.ReportV01{}, fmt.Errorf("read report %s: %w", path, err)
+		return schema.ReportV01{}, err
 	}
-	var report schema.ReportV01
-	dec := json.NewDecoder(bytes.NewReader(blob))
-	if err := dec.Decode(&report); err != nil {
-		return schema.ReportV01{}, fmt.Errorf("parse report %s: %w", path, err)
-	}
-	// Decode stops after one JSON value and is happy to leave the rest of the
-	// file unread. Evidence with anything after the report -- a second value, a
-	// truncated append, stray bytes -- is not evidence we can vouch for, and
-	// comparing only its first value would look entirely successful.
-	if err := requireEOF(dec); err != nil {
-		return schema.ReportV01{}, fmt.Errorf("parse report %s: %w", path, err)
-	}
-	return report, nil
+	return ev.Report, nil
 }
 
 func requireEOF(dec *json.Decoder) error {
@@ -68,20 +55,20 @@ func requireEOF(dec *json.Decoder) error {
 // network, no service. Every failure here is an inability to compare, which the
 // caller reports as exit 1 and never as a verdict on the candidate.
 func Compare(baselinePath, candidatePath string, now time.Time) (Diff, error) {
-	baseline, err := LoadReport(baselinePath)
+	baseline, err := LoadEvidence(baselinePath, "baseline")
 	if err != nil {
 		return Diff{}, err
 	}
-	candidate, err := LoadReport(candidatePath)
+	candidate, err := LoadEvidence(candidatePath, "candidate")
 	if err != nil {
 		return Diff{}, err
 	}
-	if err := CheckSchemas(baseline, candidate); err != nil {
+	baseline.Path = absOrOriginal(baselinePath)
+	candidate.Path = absOrOriginal(candidatePath)
+	if err := CheckSchemas(baseline.Report, candidate.Report); err != nil {
 		return Diff{}, err
 	}
-	return Build(baseline, candidate,
-		absOrOriginal(baselinePath), absOrOriginal(candidatePath),
-		now.UTC().Format(time.RFC3339))
+	return Build(baseline, candidate, now.UTC().Format(time.RFC3339))
 }
 
 // ExitCode maps the diff's overall result onto the process contract.
@@ -96,9 +83,43 @@ func ExitCode(d Diff) int {
 	}
 }
 
+// protectInputs refuses to write output over either input.
+//
+// The diff is held in memory by the time anything is written, so overwriting an
+// input cannot corrupt the comparison -- it destroys something worse. The
+// baseline is the user's record of what their last release supported: it is
+// often the only copy, it may have taken an hour of VM time to produce, and
+// `--out $BASELINE` in a CI script is one absent variable away. Refusing costs
+// a comparison of two strings.
+func protectInputs(d Diff, outPath, kind string) error {
+	abs, err := filepath.Abs(outPath)
+	if err != nil {
+		return fmt.Errorf("resolve diff %s path: %w", kind, err)
+	}
+	for _, in := range []struct{ side, path string }{
+		{"baseline", d.Baseline.Path},
+		{"candidate", d.Candidate.Path},
+	} {
+		if in.path == "" {
+			continue
+		}
+		inAbs, err := filepath.Abs(in.path)
+		if err != nil {
+			continue
+		}
+		if inAbs == abs {
+			return fmt.Errorf("refusing to write the diff %s over the %s report (%s): that is the evidence being compared", kind, in.side, abs)
+		}
+	}
+	return nil
+}
+
 func WriteJSON(outPath string, d Diff) error {
 	if strings.TrimSpace(outPath) == "" {
 		return nil
+	}
+	if err := protectInputs(d, outPath, "JSON"); err != nil {
+		return err
 	}
 	abs, err := filepath.Abs(outPath)
 	if err != nil {
@@ -119,6 +140,9 @@ func WriteJSON(outPath string, d Diff) error {
 func WriteMarkdown(outPath string, d Diff) error {
 	if strings.TrimSpace(outPath) == "" {
 		return nil
+	}
+	if err := protectInputs(d, outPath, "Markdown"); err != nil {
+		return err
 	}
 	abs, err := filepath.Abs(outPath)
 	if err != nil {
