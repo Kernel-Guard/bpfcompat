@@ -493,3 +493,115 @@ func TestOlderEvidenceRemainsReadableAndInconclusive(t *testing.T) {
 		t.Fatalf("want exit %d, got %d", ExitInconclusive, exit)
 	}
 }
+
+// The fold rule must be the decoder's rule, not a description of it. For every
+// spelling below, "foldKey groups these two keys" and "the decoder binds both
+// to one field" have to be the same answer -- in both directions. Lower-casing
+// passed the ASCII half of this table and failed the rest.
+func TestFoldKeyMatchesDecoderBinding(t *testing.T) {
+	for _, tc := range []struct{ name, a, bKey string }{
+		{"identical", "status", "status"},
+		{"leading capital", "status", "Status"},
+		{"all caps", "verdict", "VERDICT"},
+		{"mixed case", "verdict", "vErDiCt"},
+		{"underscore kept", "profile_id", "PROFILE_ID"},
+		// Unicode simple folding: these bind, and a lower-case fold misses them.
+		{"long s", "status", "ſtatus"},
+		{"kelvin sign", "kernel_family_match", "Kernel_family_match"},
+		// Must NOT be grouped: the decoder does not bind these.
+		{"underscore removed", "profile_id", "profileid"},
+		{"go field name", "profile_id", "ProfileID"},
+		{"different word", "status", "statuses"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			grouped := foldKey(tc.a) == foldKey(tc.bKey)
+
+			// What the decoder actually does with both keys in one object: if
+			// the second binds to the same field, it overwrites the first.
+			blob := fmt.Sprintf(`{%q:%q,%q:%q}`, tc.a, "first", tc.bKey, "second")
+			var into map[string]string
+			if err := json.Unmarshal([]byte(blob), &into); err != nil {
+				t.Fatal(err)
+			}
+			binds := decoderBinds(t, tc.a, tc.bKey)
+
+			if grouped != binds {
+				t.Fatalf("foldKey groups=%v but the decoder binds=%v for %q/%q; the rule does not match the decoder",
+					grouped, binds, tc.a, tc.bKey)
+			}
+		})
+	}
+}
+
+// decoderBinds reports whether encoding/json resolves two spellings to one
+// struct field, asked of a struct whose only tagged field is the first
+// spelling.
+func decoderBinds(t *testing.T, tag, other string) bool {
+	t.Helper()
+	blob := fmt.Sprintf(`{%q:%q}`, other, "second")
+	switch tag {
+	case "status":
+		var v struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(blob), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v.Status == "second"
+	case "verdict":
+		var v struct {
+			Verdict string `json:"verdict"`
+		}
+		if err := json.Unmarshal([]byte(blob), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v.Verdict == "second"
+	case "profile_id":
+		var v struct {
+			ProfileID string `json:"profile_id"`
+		}
+		if err := json.Unmarshal([]byte(blob), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v.ProfileID == "second"
+	case "kernel_family_match":
+		var v struct {
+			KernelFamilyMatch string `json:"kernel_family_match"`
+		}
+		if err := json.Unmarshal([]byte(blob), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v.KernelFamilyMatch == "second"
+	default:
+		t.Fatalf("no probe for tag %q", tag)
+		return false
+	}
+}
+
+// End to end: the long-s spelling must be refused like any other alias.
+func TestUnicodeFoldedAliasIsRefused(t *testing.T) {
+	base, _ := greenPair(t)
+	valid := jsonOf(t, report(target("k", schema.VerdictIncompatible, true)))
+	forged := strings.Replace(valid, `"status": "fail",`,
+		"\"status\": \"fail\", \"ſtatus\": \"pass\",", 1)
+	if forged == valid {
+		t.Fatal("fixture did not mutate")
+	}
+
+	// The bypass is only interesting if the decoder really binds it.
+	var probe schema.Target
+	if err := json.Unmarshal([]byte(`{"status":"fail","`+"ſ"+`tatus":"pass"}`), &probe); err != nil {
+		t.Fatal(err)
+	}
+	if probe.Status != "pass" {
+		t.Skip("this Go version does not fold U+017F into ASCII s")
+	}
+
+	d, exit, err := compareFiles(t, base, forged)
+	if err == nil {
+		t.Fatalf("a Unicode-folded alias was accepted as %s", d.Summary.Result)
+	}
+	if exit != ExitInconclusive {
+		t.Fatalf("want exit %d, got %d", ExitInconclusive, exit)
+	}
+}

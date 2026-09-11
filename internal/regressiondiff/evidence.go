@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
@@ -296,9 +297,36 @@ func scanForDuplicateKeys(dec *json.Decoder, path string, depth int) error {
 }
 
 // foldKey normalises a JSON object key the way encoding/json compares one when
-// it falls back from an exact match. strings.EqualFold and the decoder's own
-// fold both walk Unicode simple folding, so folding to lower case here groups
-// exactly the spellings the decoder would treat as one field.
+// it falls back from an exact match.
+//
+// Lower-casing is not that rule and misses real collisions: the decoder folds
+// through Unicode simple folding, where U+017F LATIN SMALL LETTER LONG S is in
+// the same orbit as 's'. `{"status":"fail","ſtatus":"pass"}` therefore decodes
+// to status "pass" -- the long-s key binds to Status and overwrites it -- while
+// strings.ToLower sees two unrelated keys. That is the alias bypass again in a
+// spelling nobody types by accident.
+//
+// Each rune is replaced by the smallest member of its simple-fold orbit, which
+// gives one canonical form per group of spellings the decoder cannot tell
+// apart: 's', 'S' and 'ſ' all become 'S', and 'k', 'K' and U+212A KELVIN SIGN
+// all become 'K'. TestFoldKeyMatchesDecoderBinding holds this to the decoder's
+// actual behaviour rather than to this description of it.
+//
+// Folding per rune keeps the scan linear in the document. Comparing every pair
+// of keys with strings.EqualFold would express the same rule, but a single
+// object with many keys would then cost quadratic time -- a denial of service
+// in the component whose job is to survive hostile input.
 func foldKey(key string) string {
-	return strings.ToLower(key)
+	var b strings.Builder
+	b.Grow(len(key))
+	for _, r := range key {
+		canonical := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < canonical {
+				canonical = f
+			}
+		}
+		b.WriteRune(canonical)
+	}
+	return b.String()
 }

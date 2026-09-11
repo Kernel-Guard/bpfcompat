@@ -3,6 +3,8 @@ package schema
 import (
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The kernel-series comparison is part of the compatibility contract, not an
@@ -21,10 +23,24 @@ var kernelSeriesRe = regexp.MustCompile(`^(\d+)\.(\d+)`)
 // "6.1.155") or an observed release ("5.15.0-152-generic"). The second return
 // is false when no series can be read, which is a different answer from "they
 // do not match".
+//
+// The series must end where a version stops: at the end of the string or at a
+// separator. Matching a bare prefix would read "5.15" out of "5.15forged" and
+// call it the same series as a real 5.15 kernel -- a string that is not a
+// version number at all answering a question about which kernel ran. Every
+// kernel family and observed release this project has recorded (46 distinct
+// releases across the committed evidence, 22 profile families) is followed by
+// "." or ends there, so nothing real is excluded.
 func KernelSeries(s string) (string, bool) {
-	m := kernelSeriesRe.FindStringSubmatch(strings.TrimSpace(s))
+	s = strings.TrimSpace(s)
+	m := kernelSeriesRe.FindStringSubmatch(s)
 	if m == nil {
 		return "", false
+	}
+	if rest := s[len(m[0]):]; rest != "" {
+		if r, _ := utf8.DecodeRuneInString(rest); unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return "", false
+		}
 	}
 	return m[1] + "." + m[2], true
 }
