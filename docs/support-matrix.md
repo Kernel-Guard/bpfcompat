@@ -14,7 +14,7 @@ pinned see [image-pipeline.md](image-pipeline.md).
 
 | Category | Count | Meaning |
 |---|---|---|
-| Runnable (auto-download) | 57 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
+| Runnable (auto-download) | 59 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
 | Manual image required | 10 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
 | Generated lane | 0 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
 | Cataloged, not runnable here | 4 | Present in the catalog but not bootable on the current SSH/cloud-init executor (immutable images, executor limits). Marked non-blocking in matrices. |
@@ -33,7 +33,9 @@ image is fetched on first use and its sha256 is recorded.
 | almalinux-9-5.14-k5.14.0-687.29.1.el9_8 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | almalinux-9-5.14-k5.14.0-687.36.1.el9_8 | almalinux | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | amazon-linux-2-5.10 | amazon-linux | 2 | 5.10 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| amazon-linux-2-5.10-k5.10.260-259.1061.amzn2 | amazon-linux | 2 | 5.10 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | amazon-linux-2023-6.1 | amazon-linux | 2023 | 6.1 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| amazon-linux-2023-6.1-k6.1.177-224.371.amzn2023 | amazon-linux | 2023 | 6.1 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-10-6.12 | centos-stream | 10 | 6.12 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-9-5.14 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | centos-stream-9-5.14-k5.14.0-725.el9 | centos-stream | 9 | 5.14 | x86_64 | ssh | auto-downloads vendor cloud image on first run |

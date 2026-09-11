@@ -553,6 +553,41 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
+func TestGuestKernelInstallCmdAmazon(t *testing.T) {
+	al2Release := "5.10.260-259.1061.amzn2.x86_64"
+	al2 := guestKernelInstallCmd("amazon-linux", "2", al2Release, nil)
+	for _, want := range []string{
+		"sudo yum -y install 'kernel-" + al2Release + "'",
+		"sudo grubby --set-default '/boot/vmlinuz-" + al2Release + "'",
+	} {
+		if !strings.Contains(al2, want) {
+			t.Fatalf("AL2 install command %q missing %q", al2, want)
+		}
+	}
+	if strings.Contains(al2, "--releasever=latest") {
+		t.Fatalf("AL2 install command must not use AL2023 release versioning: %q", al2)
+	}
+
+	al2023Release := "6.1.177-224.371.amzn2023.x86_64"
+	al2023 := guestKernelInstallCmd("amazon-linux", "2023", al2023Release, nil)
+	for _, want := range []string{
+		"sudo dnf -y --releasever=latest install 'kernel-" + al2023Release + "'",
+		"sudo grubby --set-default '/boot/vmlinuz-" + al2023Release + "'",
+	} {
+		if !strings.Contains(al2023, want) {
+			t.Fatalf("AL2023 install command %q missing %q", al2023, want)
+		}
+	}
+}
+
+func TestKernelInstallFamilyIncludesAmazon(t *testing.T) {
+	for _, distro := range []string{"amazon-linux", "amazonlinux", "amzn", "amzn2"} {
+		if got := KernelInstallFamily(distro); got != KernelFamilyAmazon {
+			t.Fatalf("KernelInstallFamily(%q) = %q, want %q", distro, got, KernelFamilyAmazon)
+		}
+	}
+}
+
 func TestGuestCommandLine(t *testing.T) {
 	got := guestCommandLine(
 		"$BPFCOMPAT_BIN --obj $BPFCOMPAT_ARTIFACT",

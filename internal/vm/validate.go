@@ -46,13 +46,19 @@ func ValidateProfile(p Profile) error {
 		}
 		family := KernelInstallFamily(p.Distro)
 		if family == "" {
-			return fmt.Errorf("profile.install_kernel is only supported for debian- and rhel-family profiles (got distro %q)", p.Distro)
+			return fmt.Errorf("profile.install_kernel is only supported for debian-, rhel-, and amazon-family profiles (got distro %q)", p.Distro)
+		}
+		if family == KernelFamilyAmazon && p.Version != "2" && p.Version != "2023" {
+			return fmt.Errorf("amazon profile.install_kernel requires profile.version %q or %q (got %q)", "2", "2023", p.Version)
+		}
+		if family == KernelFamilyAmazon && len(p.KernelPackages) > 0 {
+			return fmt.Errorf("amazon profile.install_kernel resolves the exact signed package from vendor repositories; profile.kernel_packages must be empty")
 		}
 		if !validKernelRelease(p.InstallKernel) {
 			return fmt.Errorf("profile.install_kernel must match [A-Za-z0-9._+-]+ (got %q)", p.InstallKernel)
 		}
 		wantExt := ".deb"
-		if family == KernelFamilyRHEL {
+		if family == KernelFamilyRHEL || family == KernelFamilyAmazon {
 			wantExt = ".rpm"
 		}
 		for _, pkg := range p.KernelPackages {
