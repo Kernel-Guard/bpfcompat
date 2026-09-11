@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"schema_version\":\"v0.1\",\"run\":{\"id\":\"r1\"},\"targets\":[{\"profile_id\":\"k\",\"required\":true,\"status\":\"pass\",\"verdict\":\"COMPATIBLE\",\"environment\":{\"requested_kernel_family\":\"5.15\",\"observed_kernel\":\"5.15.0-1\",\"kernel_family_match\":ntll}}],\"summary\":{\"status\":\"pass\",\"verdict\":\"COMPATIBLE\",\"complete\":true}}")

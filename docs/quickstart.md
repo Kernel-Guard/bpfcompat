@@ -108,6 +108,7 @@ tooling.
 ## Next
 
 - [compatibility-contract.md](compatibility-contract.md) — what a bpfcompat result means: artifact, loader, environment, verdict, and CI exit semantics
+- [release-regression-diff.md](release-regression-diff.md) — `bpfcompat diff`: compare a candidate release against a baseline and gate on *new* regressions only
 - [evidence-schema.md](evidence-schema.md) — the report format + classification taxonomy
 - [verifying-releases.md](verifying-releases.md) — verify signed, attested binaries
 - [case-study-falco-modern-bpf.md](case-study-falco-modern-bpf.md) — a real reference matrix

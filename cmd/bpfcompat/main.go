@@ -47,6 +47,8 @@ func run(args []string) int {
 		return runHistory(args[1:])
 	case "compare":
 		return runCompare(args[1:])
+	case "diff":
+		return runDiff(args[1:])
 	case "serve":
 		return runServe(args[1:])
 	case "runtime":
@@ -1439,6 +1441,7 @@ func printRootUsage() {
 	fmt.Println("  bpfcompat history sign [flags]")
 	fmt.Println("  bpfcompat compare --base-report <file> --head-report <file> [flags]")
 	fmt.Println("  bpfcompat compare --artifact-name <name> --base-version <v1> --head-version <v2> [flags]")
+	fmt.Println("  bpfcompat diff --baseline <report.json> --candidate <report.json> [flags]")
 	fmt.Println("  bpfcompat serve [flags]")
 	fmt.Println("  bpfcompat runtime probe [flags]")
 	fmt.Println("  bpfcompat runtime select --artifact-name <name> [flags]")
