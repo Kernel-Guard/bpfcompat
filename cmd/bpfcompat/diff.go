@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,16 +114,10 @@ func distinctOutputs(outPath, markdownPath string) error {
 	if out == "" || markdown == "" {
 		return nil
 	}
-	outAbs, err := filepath.Abs(out)
-	if err != nil {
-		return fmt.Errorf("resolve --out: %w", err)
-	}
-	markdownAbs, err := filepath.Abs(markdown)
-	if err != nil {
-		return fmt.Errorf("resolve --markdown: %w", err)
-	}
-	if outAbs == markdownAbs {
-		return fmt.Errorf("--out and --markdown are the same file (%s); the Markdown would overwrite the JSON evidence", outAbs)
+	// Compared by file identity, not by path text: a link or a second route to
+	// the same directory is the same file, however differently it is spelled.
+	if regressiondiff.SameFile(out, markdown) {
+		return fmt.Errorf("--out and --markdown are the same file (%s); the Markdown would overwrite the JSON evidence", out)
 	}
 	return nil
 }

@@ -182,6 +182,10 @@ and refuse to be the same file as each other. The baseline is the record of what
 your last release supported; it may be the only copy, and `--out "$BASELINE"` is
 one unset variable away in any CI script.
 
+The comparison is by **file identity**, not by path text: a symbolic link, a
+hard link, or a second route to the same directory is the same file however
+differently it is spelled.
+
 **An unproven baseline can never manufacture a regression.** If the baseline hit
 an infrastructure failure and the candidate is incompatible, that is
 `INCONCLUSIVE`, not `NEW_REGRESSION` — the baseline never proved the environment

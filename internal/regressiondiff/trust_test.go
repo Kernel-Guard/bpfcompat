@@ -697,6 +697,71 @@ func TestOutputNeverOverwritesInputEvidence(t *testing.T) {
 		})
 	}
 
+	// A link is a different name for the same file, and the guard compares
+	// identity rather than spelling. Comparing absolute paths let `--out
+	// alias.json` destroy the baseline it pointed at while the check saw two
+	// unequal strings.
+	t.Run("through a symbolic link", func(t *testing.T) {
+		alias := filepath.Join(dir, "alias.json")
+		if err := os.Symlink(bp, alias); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		defer os.Remove(alias) //nolint:errcheck // best effort cleanup
+		before, err := os.ReadFile(bp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteJSON(alias, d); err == nil {
+			t.Fatal("a symlink to the baseline is still the baseline")
+		}
+		after, err := os.ReadFile(bp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatal("the baseline evidence was destroyed through a symlink")
+		}
+	})
+
+	t.Run("through a hard link", func(t *testing.T) {
+		hard := filepath.Join(dir, "hard.json")
+		if err := os.Link(bp, hard); err != nil {
+			t.Skipf("hard links unavailable: %v", err)
+		}
+		defer os.Remove(hard) //nolint:errcheck // best effort cleanup
+		before, err := os.ReadFile(bp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteMarkdown(hard, d); err == nil {
+			t.Fatal("a hard link to the baseline is still the baseline")
+		}
+		after, err := os.ReadFile(bp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatal("the baseline evidence was destroyed through a hard link")
+		}
+	})
+
+	// Two names for one output file must be recognised as one file; two
+	// genuinely different ones must not.
+	t.Run("output identity", func(t *testing.T) {
+		if !SameFile(bp, bp) {
+			t.Fatal("a path must be the same file as itself")
+		}
+		if SameFile(bp, cp) {
+			t.Fatal("two distinct reports must not compare as one file")
+		}
+		if !SameFile(filepath.Join(dir, "new.json"), filepath.Join(dir, "sub", "..", "new.json")) {
+			t.Fatal("two routes to one not-yet-created file must compare as one file")
+		}
+		if SameFile(filepath.Join(dir, "a.json"), filepath.Join(dir, "b.json")) {
+			t.Fatal("two not-yet-created files with different names are not one file")
+		}
+	})
+
 	// A path that is not an input still writes.
 	out := filepath.Join(dir, "diff.json")
 	if err := WriteJSON(out, d); err != nil {

@@ -90,12 +90,8 @@ func ExitCode(d Diff) int {
 // baseline is the user's record of what their last release supported: it is
 // often the only copy, it may have taken an hour of VM time to produce, and
 // `--out $BASELINE` in a CI script is one absent variable away. Refusing costs
-// a comparison of two strings.
+// two stat calls.
 func protectInputs(d Diff, outPath, kind string) error {
-	abs, err := filepath.Abs(outPath)
-	if err != nil {
-		return fmt.Errorf("resolve diff %s path: %w", kind, err)
-	}
 	for _, in := range []struct{ side, path string }{
 		{"baseline", d.Baseline.Path},
 		{"candidate", d.Candidate.Path},
@@ -103,15 +99,47 @@ func protectInputs(d Diff, outPath, kind string) error {
 		if in.path == "" {
 			continue
 		}
-		inAbs, err := filepath.Abs(in.path)
-		if err != nil {
-			continue
-		}
-		if inAbs == abs {
-			return fmt.Errorf("refusing to write the diff %s over the %s report (%s): that is the evidence being compared", kind, in.side, abs)
+		if SameFile(in.path, outPath) {
+			return fmt.Errorf("refusing to write the diff %s over the %s report (%s): that is the evidence being compared",
+				kind, in.side, in.path)
 		}
 	}
 	return nil
+}
+
+// SameFile reports whether two paths name the same file.
+//
+// Comparing absolute paths is not enough, and the difference is not academic: a
+// symbolic or hard link named anything at all resolves to the baseline report,
+// and `--out` through one destroyed the evidence while the guard saw two
+// unequal strings. Identity is what matters here, so identity is what is
+// compared -- os.SameFile answers it for anything that exists, links included.
+//
+// When a path does not exist yet (the normal case for an output file) there is
+// no inode to compare, so the paths are resolved as far as they can be: the
+// directory through EvalSymlinks, then the base name. That catches two routes
+// to one directory while still allowing an output file that has yet to be
+// created.
+func SameFile(a, b string) bool {
+	if ai, err := os.Stat(a); err == nil {
+		if bi, err := os.Stat(b); err == nil {
+			return os.SameFile(ai, bi)
+		}
+	}
+	return resolvedPath(a) == resolvedPath(b)
+}
+
+func resolvedPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	dir, base := filepath.Split(abs)
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return abs
+	}
+	return filepath.Join(resolvedDir, base)
 }
 
 func WriteJSON(outPath string, d Diff) error {
