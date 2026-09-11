@@ -283,8 +283,12 @@ func TestLoaderContractChangeMakesEveryCellInconclusive(t *testing.T) {
 func TestChangedObligationIsInconclusive(t *testing.T) {
 	C := schema.VerdictCompatible
 	base := target("k", C, true)
+	// The profile now promises a different series, and honestly ran it: the
+	// recorded match must stay consistent with its own inputs, or the report is
+	// refused as forged before the obligation guard is ever reached.
 	cand := target("k", C, true)
-	cand.Environment.RequestedKernelFamily = "6.1" // the profile now promises a different series
+	cand.Environment.RequestedKernelFamily = "6.1"
+	cand.Environment.ObservedKernel = "6.1.0-27-amd64"
 	d := build(t, report(base), report(cand))
 	cell := onlyCell(t, d)
 	if cell.Classification != Inconclusive {

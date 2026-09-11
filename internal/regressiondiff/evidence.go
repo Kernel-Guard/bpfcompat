@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
@@ -41,6 +42,13 @@ type Evidence struct {
 	// requiredPresent is parallel to Report.Targets: true when that target
 	// actually carried a `required` field with a boolean value.
 	requiredPresent []bool
+
+	// commandExitCodePresent is true when a command-mode report actually
+	// carried `command.expected_exit_code`. The field is a plain int, so an
+	// absent one and an explicit 0 are the same Go value, and 0 is the
+	// commonest real success contract -- deleting it would otherwise match any
+	// baseline expecting success.
+	commandExitCodePresent bool
 }
 
 // EvidenceFromReport wraps an already-constructed report.
@@ -54,7 +62,12 @@ func EvidenceFromReport(r schema.ReportV01, path, side string) Evidence {
 	for i := range present {
 		present[i] = true
 	}
-	return Evidence{Report: r, Path: path, Side: side, requiredPresent: present}
+	return Evidence{
+		Report: r, Path: path, Side: side, requiredPresent: present,
+		// A caller holding the struct stated the value definitely, in command
+		// mode or not; absence is a JSON-level concept only.
+		commandExitCodePresent: r.Command != nil,
+	}
 }
 
 // LoadEvidence reads and validates one evidence file.
@@ -89,11 +102,13 @@ func LoadEvidence(path, side string) (Evidence, error) {
 		return Evidence{}, fmt.Errorf("parse report %s: %w", path, err)
 	}
 
+	presentRequired, presentExitCode := rawPresence(blob, len(report.Targets))
 	ev := Evidence{
-		Report:          report,
-		Path:            path,
-		Side:            side,
-		requiredPresent: requiredPresence(blob, len(report.Targets)),
+		Report:                 report,
+		Path:                   path,
+		Side:                   side,
+		requiredPresent:        presentRequired,
+		commandExitCodePresent: presentExitCode,
 	}
 	if err := Validate(report, side); err != nil {
 		return Evidence{}, err
@@ -123,25 +138,37 @@ func readBounded(path string) ([]byte, error) {
 	return blob, nil
 }
 
-// requiredPresence records, for each target, whether `required` was actually
-// written as a boolean. `required: null` counts as absent: it carries no more
-// information than omitting the key.
-func requiredPresence(blob []byte, targets int) []bool {
+// rawPresence recovers the two facts the decoded struct cannot hold: whether
+// each target wrote `required`, and whether a command-mode report wrote
+// `expected_exit_code`. Both are fields whose absence is indistinguishable from
+// a meaningful zero value, and both change a release decision.
+//
+// Deliberately two named fields rather than a general presence engine: these
+// are the only release-decision fields where absence is invisible after
+// decoding. Every other one is a pointer, a string that is empty when absent,
+// or a slice.
+//
+// A `null` counts as absent throughout -- it carries no more information than
+// omitting the key.
+func rawPresence(blob []byte, targets int) (required []bool, commandExitCode bool) {
 	var shallow struct {
 		Targets []struct {
 			Required *bool `json:"required"`
 		} `json:"targets"`
+		Command *struct {
+			ExpectedExitCode *int `json:"expected_exit_code"`
+		} `json:"command"`
 	}
-	present := make([]bool, targets)
+	required = make([]bool, targets)
 	if err := json.Unmarshal(blob, &shallow); err != nil {
-		return present
+		return required, false
 	}
-	for i := range present {
+	for i := range required {
 		if i < len(shallow.Targets) && shallow.Targets[i].Required != nil {
-			present[i] = true
+			required[i] = true
 		}
 	}
-	return present
+	return required, shallow.Command != nil && shallow.Command.ExpectedExitCode != nil
 }
 
 // validatePresence refuses evidence that never states a target's requiredness.
@@ -163,8 +190,8 @@ func (e Evidence) validatePresence() error {
 	return nil
 }
 
-// rejectDuplicateKeys refuses a document containing the same key twice in one
-// object, at any depth.
+// rejectDuplicateKeys refuses a document containing two keys in one object that
+// encoding/json can bind to the same field, at any depth.
 //
 // encoding/json accepts duplicates and keeps the last value, so
 // `"verdict":"INCOMPATIBLE","verdict":"COMPATIBLE"` parses as COMPATIBLE while
@@ -173,6 +200,24 @@ func (e Evidence) validatePresence() error {
 // duplicated field that is evidence of anything. The rule is deliberately
 // blanket rather than a list of fields that matter: an exemption list is a
 // place for the next contract field to be forgotten.
+//
+// Exact spelling is not the boundary, because it is not where encoding/json
+// draws it. Struct field matching prefers an exact tag match and then falls
+// back to a case-insensitive one, so `"verdict"` and `"Verdict"` in the same
+// object both bind to Verdict and the later one wins. Measured against the real
+// schema types: `verdict`/`Verdict`/`VERDICT`/`vErDiCt` collide, as do
+// `profile_id`/`PROFILE_ID`, `required`/`Required`, `summary`/`Summary` and
+// `targets`/`Targets`. Removing the underscore (`profileid`) or spelling the Go
+// field name (`ProfileID`) does not collide, so no such transformation is
+// applied here -- the rule matches the decoder's behaviour and nothing more.
+//
+// Keys are therefore compared case-folded, exactly as the decoder compares
+// them. This does mean two unrelated extension keys differing only in case are
+// refused; the alternative is a path-aware model of which objects are structs,
+// which is the schema written twice and wrong the first time a field is added.
+// A producer emitting `foo` and `Foo` side by side in one object is writing
+// evidence whose meaning depends on decoder internals, which is precisely what
+// this refuses.
 func rejectDuplicateKeys(blob []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(blob))
 	dec.UseNumber()
@@ -207,7 +252,9 @@ func scanForDuplicateKeys(dec *json.Decoder, path string, depth int) error {
 	}
 	switch delim {
 	case '{':
-		seen := make(map[string]struct{})
+		// Keyed by the folded name, holding the spelling first seen, so the
+		// error can show both spellings of a collision.
+		seen := make(map[string]string)
 		for dec.More() {
 			keyTok, err := dec.Token()
 			if err != nil {
@@ -221,10 +268,15 @@ func scanForDuplicateKeys(dec *json.Decoder, path string, depth int) error {
 			if path != "" {
 				child = path + "." + key
 			}
-			if _, dup := seen[key]; dup {
-				return fmt.Errorf("the JSON key %q appears twice in the same object; which value the release decision would be made from is ambiguous", child)
+			folded := foldKey(key)
+			if first, dup := seen[folded]; dup {
+				if first == key {
+					return fmt.Errorf("the JSON key %q appears twice in the same object; which value the release decision would be made from is ambiguous", child)
+				}
+				return fmt.Errorf("the JSON keys %q and %q appear in the same object and decode to the same field (field matching is case-insensitive), so which value the release decision would be made from is ambiguous",
+					first, key)
 			}
-			seen[key] = struct{}{}
+			seen[folded] = key
 			if err := scanForDuplicateKeys(dec, child, depth+1); err != nil {
 				return err
 			}
@@ -242,4 +294,39 @@ func scanForDuplicateKeys(dec *json.Decoder, path string, depth int) error {
 		return errMalformedJSON
 	}
 	return nil
+}
+
+// foldKey normalises a JSON object key the way encoding/json compares one when
+// it falls back from an exact match.
+//
+// Lower-casing is not that rule and misses real collisions: the decoder folds
+// through Unicode simple folding, where U+017F LATIN SMALL LETTER LONG S is in
+// the same orbit as 's'. `{"status":"fail","ſtatus":"pass"}` therefore decodes
+// to status "pass" -- the long-s key binds to Status and overwrites it -- while
+// strings.ToLower sees two unrelated keys. That is the alias bypass again in a
+// spelling nobody types by accident.
+//
+// Each rune is replaced by the smallest member of its simple-fold orbit, which
+// gives one canonical form per group of spellings the decoder cannot tell
+// apart: 's', 'S' and 'ſ' all become 'S', and 'k', 'K' and U+212A KELVIN SIGN
+// all become 'K'. TestFoldKeyMatchesDecoderBinding holds this to the decoder's
+// actual behaviour rather than to this description of it.
+//
+// Folding per rune keeps the scan linear in the document. Comparing every pair
+// of keys with strings.EqualFold would express the same rule, but a single
+// object with many keys would then cost quadratic time -- a denial of service
+// in the component whose job is to survive hostile input.
+func foldKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key))
+	for _, r := range key {
+		canonical := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < canonical {
+				canonical = f
+			}
+		}
+		b.WriteRune(canonical)
+	}
+	return b.String()
 }

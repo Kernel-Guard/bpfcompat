@@ -222,15 +222,34 @@ func validateTarget(t *schema.Target, i int, id, side string) error {
 			"target %d (%s) records status %q and verdict %q, which contradict each other (status %q means %q); this report does not agree with itself",
 			i, id, status, verdict, status, schema.VerdictForStatus(status))}
 	}
-	// kernel_family_match is a claim derived from two other fields: the runner
-	// sets it only after parsing a kernel series out of both the requested
-	// family and the observed kernel. A `true` standing alone, with nothing it
-	// could have been derived from, is an assertion rather than evidence.
+	// kernel_family_match is not testimony, it is arithmetic: the runner derives
+	// it from the requested family and the observed kernel with
+	// schema.KernelFamilyMatch, and this recomputes it with the same primitive.
+	//
+	// Checking only that the inputs exist proves the boolean had something to be
+	// derived from, not that it was. A report claiming `requested 4.18, observed
+	// 5.15.0-206.el8uek, match true` passed that check and let the differ treat a
+	// kernel series nothing tested as established -- the exact environment
+	// identity failure Gate 1 exists to prevent, reintroduced through a field
+	// nobody verified.
 	if env := t.Environment; env != nil && env.KernelFamilyMatch != nil {
 		if strings.TrimSpace(env.RequestedKernelFamily) == "" || strings.TrimSpace(env.ObservedKernel) == "" {
 			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
 				"target %d (%s) states kernel_family_match without recording both the requested kernel family and the observed kernel, so the claim rests on nothing",
 				i, id)}
+		}
+		match, derivable := schema.KernelFamilyMatch(env.RequestedKernelFamily, env.ObservedKernel)
+		if !derivable {
+			// A boolean whose own inputs cannot produce one. The producer would
+			// have left it unset; something else wrote this.
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) states kernel_family_match, but no kernel series can be read from requested family %q and observed kernel %q, so that answer cannot have been derived",
+				i, id, env.RequestedKernelFamily, env.ObservedKernel)}
+		}
+		if match != *env.KernelFamilyMatch {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) records kernel_family_match %t, but requested family %q against observed kernel %q is %t; this report does not agree with itself",
+				i, id, *env.KernelFamilyMatch, env.RequestedKernelFamily, env.ObservedKernel, match)}
 		}
 	}
 	return nil
@@ -338,16 +357,36 @@ func checkDistinctRuns(baseline, candidate Evidence) error {
 // the command that was run (recorded as invocation_sha256, the text itself
 // never being published) and the exit code that counts as success. Change
 // either and a later COMPATIBLE is an answer to a different question.
-func commandContractChanged(baseline, candidate schema.ReportV01) (string, bool) {
-	b, c := baseline.Command, candidate.Command
+func commandContractChanged(baseline, candidate Evidence) (string, bool) {
+	b, c := baseline.Report.Command, candidate.Report.Command
 	if b == nil || c == nil {
 		return "", false
 	}
-	if strings.TrimSpace(b.InvocationSHA256) != "" && strings.TrimSpace(c.InvocationSHA256) != "" &&
-		strings.TrimSpace(b.InvocationSHA256) != strings.TrimSpace(c.InvocationSHA256) {
+	bInv, cInv := strings.TrimSpace(b.InvocationSHA256), strings.TrimSpace(c.InvocationSHA256)
+	switch {
+	case bInv == "" && cInv == "":
+		// Neither side identifies what it ran. Nothing here distinguishes the
+		// two, and the cell-level rules still apply.
+	case bInv == cInv:
+	case bInv == "" || cInv == "":
+		// One side names the command it ran and the other does not. In command
+		// mode the invocation *is* the test; without it on both sides there is
+		// no showing that the same test was executed twice, and dropping the
+		// field must not be a cheaper route to a comparison than keeping it.
+		return "the command under test cannot be shown to be the same: only one report records an invocation_sha256, so it is not established that both runs executed the same test", true
+	default:
 		return "the command under test changed between reports (different invocation_sha256); every cell is inconclusive because the two runs answer different questions", true
 	}
-	if b.ExpectedExitCode != c.ExpectedExitCode {
+
+	// expected_exit_code is a plain int, so a deleted field and an explicit 0
+	// decode identically -- and 0 is the commonest real value, which makes
+	// deletion a quiet way to match any baseline that expects success. Presence
+	// is carried from the raw JSON for exactly that reason.
+	switch {
+	case !baseline.commandExitCodePresent && !candidate.commandExitCodePresent:
+	case baseline.commandExitCodePresent != candidate.commandExitCodePresent:
+		return "the command success contract cannot be shown to be the same: only one report records an expected_exit_code", true
+	case b.ExpectedExitCode != c.ExpectedExitCode:
 		return fmt.Sprintf(
 			"the command success contract changed between reports (expected exit code %d at baseline, %d in the candidate); every cell is inconclusive",
 			b.ExpectedExitCode, c.ExpectedExitCode), true
@@ -399,15 +438,29 @@ func obligationChanged(b, c CellSide) (string, bool) {
 		{"kernel family", b.ProfileKernelFamily, c.ProfileKernelFamily},
 	} {
 		base, cand := strings.TrimSpace(f.base), strings.TrimSpace(f.cand)
-		// Both sides must say, or there is nothing to compare -- an absent
-		// field is unknown, and unknown is handled by the environment rules
-		// rather than being read as a change.
-		if base == "" || cand == "" || base == cand {
+		switch {
+		case base == "" && cand == "":
+			// Neither side states this dimension. That is the shape of older
+			// evidence, which predates the field entirely, and refusing it
+			// would confuse age with tampering. Such a cell is still governed
+			// by every other rule -- in particular an older report carries no
+			// environment evidence either, so it cannot be conclusive anyway.
 			continue
+		case base == cand:
+			continue
+		case base == "" || cand == "":
+			// One side states it and the other does not. Equivalence cannot be
+			// established, and deleting a field must never be an easier route
+			// to a comparison than keeping it: this is the mutation that turned
+			// a changed architecture into an unchanged one.
+			return fmt.Sprintf(
+				"the obligation cannot be shown to be the same: %s is %q at baseline and %q in the candidate, and one side does not say",
+				f.name, base, cand), true
+		default:
+			return fmt.Sprintf(
+				"the obligation changed: this profile names %s %s at baseline and %s in the candidate, so the two results are about different environments",
+				f.name, base, cand), true
 		}
-		return fmt.Sprintf(
-			"the obligation changed: this profile names %s %s at baseline and %s in the candidate, so the two results are about different environments",
-			f.name, base, cand), true
 	}
 	return "", false
 }
@@ -420,12 +473,26 @@ func obligationChanged(b, c CellSide) (string, bool) {
 // candidate cannot inherit the deeper baseline's green.
 func validationDepthChanged(b, c CellSide) (string, bool) {
 	base, cand := strings.TrimSpace(b.AttachMode), strings.TrimSpace(c.AttachMode)
-	if base == "" || cand == "" || base == cand {
+	switch {
+	case base == "" && cand == "":
+		// Neither side records how much of the contract it exercised. Older
+		// evidence looks like this, and it is left to the other rules.
 		return "", false
+	case base == cand:
+		return "", false
+	case base == "" || cand == "":
+		// A candidate that does not say how much it tested cannot inherit a
+		// baseline that does. Losing the evidence and exercising less of the
+		// contract are indistinguishable from here, and neither supports the
+		// baseline's claim.
+		return fmt.Sprintf(
+			"the validation contract cannot be shown to be the same: attach mode %q at baseline and %q in the candidate, and one side does not say",
+			base, cand), true
+	default:
+		return fmt.Sprintf(
+			"the validation contract changed: attach mode %q at baseline and %q in the candidate, so the two runs exercised different amounts of the contract",
+			base, cand), true
 	}
-	return fmt.Sprintf(
-		"the validation contract changed: attach mode %q at baseline and %q in the candidate, so the two runs exercised different amounts of the contract",
-		base, cand), true
 }
 
 func refOf(r schema.ReportV01, path string) ReportRef {
@@ -571,7 +638,7 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 			"loader contract changed between reports (baseline=%s candidate=%s); every cell is inconclusive because the comparison would not be like-for-like",
 			d.Baseline.LoaderMode, d.Candidate.LoaderMode))
 	}
-	if note, changed := commandContractChanged(baseline, candidate); changed {
+	if note, changed := commandContractChanged(baselineEv, candidateEv); changed {
 		if incomparable == "" {
 			incomparable = note
 		}

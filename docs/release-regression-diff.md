@@ -48,13 +48,31 @@ Guards protect the key from matching things that only look alike. A
 - if the two sides exercised **different amounts of the contract** (different
   `validation.attach_mode`), the cell is inconclusive. A load-only candidate
   cannot inherit an attach-tested baseline's green;
+
+**One-sided absence is inconclusive too.** For every dimension above, and for
+the command-mode identity below, three cases are distinguished:
+
+| Baseline | Candidate | Result |
+|---|---|---|
+| present | present, equal | comparable |
+| present | present, different | `INCONCLUSIVE` — the obligation changed |
+| present | **absent** (or the reverse) | `INCONCLUSIVE` — equivalence cannot be established |
+| absent | absent | comparable; this is the shape of older evidence, and age is not tampering |
+
+The one-sided row exists because the alternative rewards deletion: treating a
+missing field as "nothing to compare" made removing the candidate's profile
+metadata a way to turn a changed architecture back into an unchanged one.
+Weakening the evidence must never buy a greener answer.
 - if one report was produced by the generic validator and the other by a
   project's own loader (command mode), the loader contract changed and every
   cell is inconclusive. "Did it regress" has no meaning when the thing doing the
   loading also changed;
 - in command mode, if the **command under test** (`invocation_sha256`) or the
-  **exit code that counts as success** changed, every cell is inconclusive: the
-  two runs answer different questions.
+  **exit code that counts as success** changed — or either is recorded on only
+  one side — every cell is inconclusive: it is not established that the two runs
+  executed the same test. `expected_exit_code` is a plain integer, so its
+  presence is read from the raw JSON; a deleted field would otherwise decode as
+  `0` and silently match any baseline expecting success.
 
 ### What is allowed to change
 
@@ -146,6 +164,17 @@ comparison keys cannot be trusted. Each produces exit `1` with an explanation:
   `"verdict":"INCOMPATIBLE","verdict":"COMPATIBLE"` parses green while a human
   reading the file sees a failure. Which value a release decision came from must
   not depend on a parser's choice;
+- **two keys in one object that differ only by case**, such as `"verdict"` and
+  `"Verdict"`. Struct field matching falls back to a case-insensitive match, so
+  both bind to the same field and the later one wins — the same ambiguity in a
+  different spelling. Keys that differ by more than case (`profileid`,
+  `ProfileID`) bind to nothing and are unaffected, as are ordinary extension
+  fields;
+- a **`kernel_family_match` that disagrees with its own inputs**. The field is
+  arithmetic, not testimony: it is recomputed from the requested family and the
+  observed kernel with the same primitive the runner used to record it. A report
+  claiming `requested 4.18, observed 5.15.0-206.el8uek, match true` is refused,
+  as is one claiming a match whose inputs carry no readable kernel series;
 - a target that **does not state `required`** (absent, or `null`). It
   deserializes to `false`, which would silently demote a proven regression to a
   non-gating optional finding. Deleting the field is not a way to discover that
