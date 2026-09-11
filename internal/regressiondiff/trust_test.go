@@ -492,16 +492,41 @@ func TestSameProfileIDWithADifferentObligationIsInconclusive(t *testing.T) {
 		})
 	}
 
-	// The control: an identical obligation still compares, and a profile block
-	// present on only one side is absence rather than change.
+	// The control: an identical obligation still compares.
 	d := build(t, report(baselineTarget), report(baselineTarget))
 	if got := onlyCell(t, d).Classification; got != UnchangedCompatible {
 		t.Fatalf("an unchanged obligation must still compare: got %s", got)
 	}
+
+	// One-sided absence is not "unknown, so carry on". Gate 2 treated it that
+	// way, which made deleting the candidate's profile block a way to turn a
+	// changed architecture back into an unchanged one -- weakening the evidence
+	// bought a greener answer. Both directions are now inconclusive.
 	half := target("k", C, true)
-	d = build(t, report(baselineTarget), report(half))
+	for _, tc := range []struct {
+		name       string
+		base, cand schema.Target
+	}{
+		{"candidate lost its profile block", baselineTarget, half},
+		{"baseline never had one", half, baselineTarget},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := build(t, report(tc.base), report(tc.cand))
+			cell := onlyCell(t, d)
+			if cell.Classification != Inconclusive {
+				t.Fatalf("want %s, got %s (%s)", Inconclusive, cell.Classification, cell.Reason)
+			}
+			if !strings.Contains(cell.Reason, "one side does not say") {
+				t.Fatalf("the reason must name the missing side: %q", cell.Reason)
+			}
+		})
+	}
+
+	// Both sides silent is the shape of older evidence and stays governed by
+	// the other rules rather than being refused for its age.
+	d = build(t, report(half), report(half))
 	if got := onlyCell(t, d).Classification; got != UnchangedCompatible {
-		t.Fatalf("an absent profile block is unknown, not a changed obligation: got %s", got)
+		t.Fatalf("evidence that predates profile metadata must remain comparable: got %s", got)
 	}
 }
 

@@ -1,24 +1,11 @@
 package runner
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/kernel-guard/bpfcompat/internal/vm"
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
-
-var kernelSeriesRe = regexp.MustCompile(`^(\d+)\.(\d+)`)
-
-// kernelSeries extracts the MAJOR.MINOR series from a kernel family
-// ("5.15", "6.1.155") or an observed release ("5.15.0-152-generic").
-func kernelSeries(s string) (string, bool) {
-	m := kernelSeriesRe.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil {
-		return "", false
-	}
-	return m[1] + "." + m[2], true
-}
 
 // environmentEvidence records which environment actually ran, next to the one
 // the profile asked for.
@@ -39,10 +26,10 @@ func environmentEvidence(profile vm.Profile, observedKernel string) *schema.Envi
 		ImageSourceURL:        strings.TrimSpace(profile.Image.SourceURL),
 		ImageSHA256:           strings.TrimSpace(profile.Image.SHA256),
 	}
-	want, wantOK := kernelSeries(env.RequestedKernelFamily)
-	got, gotOK := kernelSeries(env.ObservedKernel)
-	if wantOK && gotOK {
-		match := want == got
+	// schema.KernelFamilyMatch is the same primitive the release differ uses to
+	// verify this field later. Recording and verifying must not be able to
+	// disagree about what a kernel family is.
+	if match, derivable := schema.KernelFamilyMatch(env.RequestedKernelFamily, env.ObservedKernel); derivable {
 		env.KernelFamilyMatch = &match
 	}
 	if env.RequestedKernelFamily == "" && env.ObservedKernel == "" &&

@@ -105,6 +105,15 @@ func FuzzLoadEvidence(f *testing.F) {
 		strings.Replace(valid, `"kernel_family_match":true`, `"kernel_family_match":null`, 1),
 		strings.Repeat("[", 200) + strings.Repeat("]", 200),
 		"\x00\x01\x02",
+		// Gate 2.1 boundaries.
+		strings.Replace(valid, `"verdict":"COMPATIBLE"`, `"verdict":"INCOMPATIBLE","Verdict":"COMPATIBLE"`, 1),
+		strings.Replace(valid, `"status":"pass"`, `"status":"fail","Status":"pass"`, 1),
+		strings.Replace(valid, `"required":true`, `"required":true,"Required":false`, 1),
+		strings.Replace(valid, `"profile_id":"k"`, `"profile_id":"k","PROFILE_ID":"other"`, 1),
+		// A kernel series nothing tested, asserted as established.
+		strings.Replace(valid, `"requested_kernel_family":"5.15"`, `"requested_kernel_family":"4.18"`, 1),
+		strings.Replace(valid, `"kernel_family_match":true`, `"kernel_family_match":false`, 1),
+		strings.Replace(valid, `"observed_kernel":"5.15.0-1"`, `"observed_kernel":"unknown"`, 1),
 	} {
 		f.Add(seed)
 	}
@@ -158,6 +167,30 @@ func FuzzCompareNeverGreensUnestablishedEvidence(f *testing.F) {
 	f.Add(mk("a", "COMPATIBLE", "pass", true, goodEnv), mk("a", "COMPATIBLE", "pass", true, goodEnv))
 	f.Add(`{}`, `{}`)
 	f.Add(``, mk("b", "COMPATIBLE", "pass", true, goodEnv))
+
+	// Gate 2.1 boundaries, as pairs.
+	forgedEnv := `,"environment":{"requested_kernel_family":"4.18","observed_kernel":"5.15.0-1","kernel_family_match":true}`
+	aliased := strings.Replace(mk("b", "INCOMPATIBLE", "fail", true, goodEnv),
+		`"verdict":"INCOMPATIBLE"`, `"verdict":"INCOMPATIBLE","Verdict":"COMPATIBLE"`, 1)
+	f.Add(mk("a", "COMPATIBLE", "pass", true, goodEnv), aliased)
+	f.Add(mk("a", "COMPATIBLE", "pass", true, goodEnv), mk("b", "COMPATIBLE", "pass", true, forgedEnv))
+	f.Add(mk("a", "COMPATIBLE", "pass", true, forgedEnv), mk("b", "INCOMPATIBLE", "fail", true, goodEnv))
+
+	// One-sided obligation and command identity.
+	profiled := func(runID, profile string) string {
+		return fmt.Sprintf(`{"schema_version":"v0.1","run":{"id":%q},"targets":[{"profile_id":"k","required":true,"status":"pass","verdict":"COMPATIBLE"%s%s}],"summary":{}}`,
+			runID, goodEnv, profile)
+	}
+	withProfile := `,"profile":{"arch":"x86_64","distro":"rhel","version":"9","kernel_family":"5.15"}`
+	f.Add(profiled("a", withProfile), profiled("b", ""))
+	f.Add(profiled("a", ""), profiled("b", withProfile))
+
+	cmd := func(runID, invocation, exitCode string) string {
+		return fmt.Sprintf(`{"schema_version":"v0.1","run":{"id":%q},"command":{%s%s"binary":{"sha256":"L"}},"targets":[{"profile_id":"k","required":true,"status":"pass","verdict":"COMPATIBLE"%s}],"summary":{}}`,
+			runID, invocation, exitCode, goodEnv)
+	}
+	f.Add(cmd("a", `"invocation_sha256":"inv",`, `"expected_exit_code":0,`), cmd("b", ``, `"expected_exit_code":0,`))
+	f.Add(cmd("a", `"invocation_sha256":"inv",`, `"expected_exit_code":0,`), cmd("b", `"invocation_sha256":"inv",`, ``))
 
 	f.Fuzz(func(t *testing.T, baseline, candidate string) {
 		dir := t.TempDir()
@@ -356,4 +389,114 @@ func TestIrrelevantNoiseDoesNotChangeTheDecision(t *testing.T) {
 	if got.Summary.NewRequiredRegressions != 1 {
 		t.Fatalf("the regression was lost under noise: %+v", got.Summary)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Gate 2.1: weakening evidence must never buy a greener answer
+// ---------------------------------------------------------------------------
+
+// fullTarget carries every dimension the comparison reads, so that deleting or
+// aliasing any one of them is a real mutation rather than a no-op.
+func fullTarget(id, verdict string, required bool) schema.Target {
+	tg := target(id, verdict, required)
+	tg.Profile = &schema.TargetEnv{Distro: "rhel", Version: "9", KernelFamily: "5.15", Arch: "x86_64"}
+	tg.Validation = &schema.Validation{AttachMode: "best-effort", LoadStatus: "ok"}
+	return tg
+}
+
+// The Gate 2.1 property, stated the way the contract is: removing, aliasing or
+// contradicting semantic evidence can never turn a non-green comparison into a
+// green one, and can never leave a green one resting on less than it did.
+func TestWeakeningEvidenceNeverBuysGreen(t *testing.T) {
+	C, I, E := schema.VerdictCompatible, schema.VerdictIncompatible, schema.VerdictInfraError
+
+	scenarios := map[string][2]schema.Target{
+		"proven regression":    {fullTarget("k", C, true), fullTarget("k", I, true)},
+		"unchanged compatible": {fullTarget("k", C, true), fullTarget("k", C, true)},
+		"unproven baseline":    {fullTarget("k", E, true), fullTarget("k", I, true)},
+		"optional obligation":  {fullTarget("k", C, false), fullTarget("k", I, false)},
+		"changed architecture": {fullTarget("k", C, true), func() schema.Target {
+			tg := fullTarget("k", C, true)
+			tg.Profile.Arch = "arm64"
+			return tg
+		}()},
+	}
+
+	// Each mutation is something a truncating artifact step, a hand edit or a
+	// hostile PR author can do to the raw JSON.
+	mutations := []struct{ name, find, replace string }{
+		{"profile arch deleted", `"arch": "x86_64"`, `"unused_arch": "x86_64"`},
+		{"profile arch emptied", `"arch": "x86_64"`, `"arch": ""`},
+		{"distro deleted", `"distro": "rhel",`, ``},
+		{"distro version deleted", `"version": "9",`, ``},
+		{"profile kernel family deleted", `"kernel_family": "5.15",`, ``},
+		{"whole profile block deleted", `"profile": {`, `"unused_profile": {`},
+		{"attach mode deleted", `"attach_mode": "best-effort",`, ``},
+		{"whole validation block deleted", `"validation": {`, `"unused_validation": {`},
+		{"environment deleted", `"environment": {`, `"unused_environment": {`},
+		{"kernel_family_match deleted", `"kernel_family_match": true`, `"unused_match": true`},
+		{"kernel_family_match flipped", `"kernel_family_match": true`, `"kernel_family_match": false`},
+		{"observed kernel deleted", `"observed_kernel": "5.15.0-186-generic",`, ``},
+		{"verdict aliased to COMPATIBLE", `"verdict": "INCOMPATIBLE"`, `"verdict": "INCOMPATIBLE", "Verdict": "COMPATIBLE"`},
+		{"status aliased to pass", `"status": "fail"`, `"status": "fail", "Status": "pass"`},
+		{"required aliased to false", `"required": true`, `"required": true, "Required": false`},
+		{"required deleted", `"required": true,`, ``},
+		{"verdict deleted", `"verdict": "`, `"unused_verdict": "`},
+	}
+
+	for name, pair := range scenarios {
+		baseJSON := jsonOf(t, report(pair[0]))
+		candJSON := jsonOf(t, report(pair[1]))
+		original, originalExit, originalErr := compareFiles(t, baseJSON, candJSON)
+		originalGreen := originalErr == nil && originalExit == ExitNoRegressions
+
+		for _, side := range []string{"baseline", "candidate"} {
+			for _, m := range mutations {
+				t.Run(fmt.Sprintf("%s/%s/%s", name, side, m.name), func(t *testing.T) {
+					mutatedBase, mutatedCand := baseJSON, candJSON
+					if side == "baseline" {
+						mutatedBase = strings.Replace(baseJSON, m.find, m.replace, 1)
+					} else {
+						mutatedCand = strings.Replace(candJSON, m.find, m.replace, 1)
+					}
+					if mutatedBase == baseJSON && mutatedCand == candJSON {
+						t.Skip("mutation does not apply to this fixture")
+					}
+
+					d, exit, err := compareFiles(t, mutatedBase, mutatedCand)
+					if err != nil {
+						return // refused: the strongest form of not-green
+					}
+					if exit == ExitNoRegressions {
+						if !originalGreen {
+							t.Fatalf("weakened evidence turned %s (exit %d) into a green result",
+								original.Summary.Result, originalExit)
+						}
+						// Still green: it must still be resting on established
+						// required evidence, not on what the mutation removed.
+						exitZeroRequiresEstablishedRequiredEvidence(t, d, name+"/"+m.name)
+					}
+					requiredRegressionsAreProven(t, d, name+"/"+m.name)
+				})
+			}
+		}
+	}
+}
+
+// Invariant C, restated for Gate 2.1: a required regression must still rest on
+// two proven results after every one of those mutations. Covered above by
+// requiredRegressionsAreProven; this pins the headline case explicitly so a
+// regression in the rule is not hidden among skips.
+func TestProvenRegressionSurvivesGateTwoOneRules(t *testing.T) {
+	C, I := schema.VerdictCompatible, schema.VerdictIncompatible
+	d, exit, err := compareFiles(t,
+		jsonOf(t, report(fullTarget("k", C, true))),
+		jsonOf(t, report(fullTarget("k", I, true))))
+	if err != nil {
+		t.Fatalf("complete, honest evidence must still compare: %v", err)
+	}
+	if exit != ExitRegressed || d.Summary.NewRequiredRegressions != 1 {
+		t.Fatalf("want a gating regression, got exit %d summary %+v", exit, d.Summary)
+	}
+	requiredRegressionsAreProven(t, d, "headline")
 }
