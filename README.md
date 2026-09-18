@@ -32,6 +32,11 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
+**Research & citation:** academic-use metadata is in [CITATION.cff](CITATION.cff), and
+the prospective empirical-study protocol lives in [research/](research/README.md).
+The research directory is a protocol/reproducibility scaffold, not a
+peer-reviewed-results claim.
+
 **Runs upstream, weekly:** two projects have merged scheduled bpfcompat lanes
 into their own CI.
 
