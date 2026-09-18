@@ -11,7 +11,11 @@ on:
       - "scripts/research/verify-profile-lock-v1.sh"
       - "scripts/research/verify-study-matrix-v1.sh"
       - "scripts/research/test-profile-lock-v1.sh"
+      - "scripts/research/analyze-study-v1.py"
+      - "scripts/research/test-analysis-v1.sh"
       - "research/corpus/v1/**"
+      - "research/data/v1/**"
+      - "research/analysis/v1/**"
 
 permissions:
   contents: read
@@ -48,7 +52,9 @@ jobs:
           bash -n scripts/research/test-normalize-study-v1.sh
           bash -n scripts/research/verify-study-matrix-v1.sh
           bash -n scripts/research/test-profile-lock-v1.sh
+          bash -n scripts/research/test-analysis-v1.sh
           python3 -m py_compile scripts/research/normalize-study-v1.py
+          python3 -m py_compile scripts/research/analyze-study-v1.py
           jq -e . research/corpus/v1/study-plan.json >/dev/null
           jq -e . research/corpus/v1/profile-identities.json >/dev/null
           jq -e . research/corpus/v1/materialized-identities.json >/dev/null
@@ -64,6 +70,9 @@ jobs:
 
       - name: Normalization regressions
         run: bash scripts/research/test-normalize-study-v1.sh
+
+      - name: Research dataset and analysis reproducibility
+        run: bash scripts/research/test-analysis-v1.sh
 
   execute:
     name: Execute frozen 10-kernel pilot
