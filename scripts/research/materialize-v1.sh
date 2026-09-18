@@ -47,9 +47,18 @@ done
 rm -rf "$OUT_DIR"
 mkdir -p   "$OUT_DIR/artifacts"   "$OUT_DIR/loaders"   "$OUT_DIR/bin"   "$OUT_DIR/contracts"   "$OUT_DIR/inputs/manifests"   "$OUT_DIR/licenses"   "$OUT_DIR/toolchain"
 
-TMP_DIR="$(mktemp -d)"
+TMP_DIR="$ROOT_DIR/.bpfcompat/research-materialize-v1"
 BPF_WORKTREE="$TMP_DIR/bpfcompat-source"
 FALCO_DIR="$TMP_DIR/falco-libs"
+
+# Stable build paths remove one source of debug/build-id drift. Clean up an
+# interrupted prior worktree before reusing the canonical scratch location.
+git worktree prune
+if git worktree list --porcelain | grep -Fq "worktree $BPF_WORKTREE"; then
+  git worktree remove --force "$BPF_WORKTREE" >/dev/null 2>&1 || true
+fi
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
 
 cleanup() {
   if git worktree list --porcelain | grep -Fq "worktree $BPF_WORKTREE"; then
@@ -68,6 +77,10 @@ echo "[research-materialize] building frozen BPFCompat-derived objects"
 COMMON_CLANG=(
   -O2 -g -target bpf -D__TARGET_ARCH_x86
   -I/usr/include/x86_64-linux-gnu
+  -fdebug-compilation-dir=/src/bpfcompat
+  "-fdebug-prefix-map=$BPF_WORKTREE=/src/bpfcompat"
+  "-ffile-prefix-map=$BPF_WORKTREE=/src/bpfcompat"
+  "-fmacro-prefix-map=$BPF_WORKTREE=/src/bpfcompat"
 )
 
 clang "${COMMON_CLANG[@]}"   -c "$BPF_WORKTREE/examples/simple-pass/simple_pass.bpf.c"   -o "$OUT_DIR/artifacts/simple_pass.bpf.o"
@@ -90,7 +103,8 @@ cp "$BPF_WORKTREE/LICENSE" "$OUT_DIR/licenses/BPFCompat-LICENSE"
 echo "[research-materialize] building pinned cilium/ebpf loader"
 (
   cd "$BPF_WORKTREE/examples/ebpf-go-loader"
-  CGO_ENABLED=0 go build -o "$ROOT_DIR/$OUT_DIR/loaders/ebpf-go-loader" .
+  CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+    -o "$ROOT_DIR/$OUT_DIR/loaders/ebpf-go-loader" .
 )
 
 echo "[research-materialize] downloading pinned BPFCompat execution binaries"
@@ -125,6 +139,11 @@ echo "[research-materialize] building pinned Falco scap-open"
 mkdir -p "$FALCO_DIR/build"
 (
   cd "$FALCO_DIR/build"
+  export SOURCE_DATE_EPOCH
+  SOURCE_DATE_EPOCH="$(git -C "$FALCO_DIR" show -s --format=%ct HEAD)"
+  prefix_flags="-ffile-prefix-map=$ROOT_DIR=/workspace/bpfcompat -fdebug-prefix-map=$ROOT_DIR=/workspace/bpfcompat"
+  export CFLAGS="${CFLAGS:-} $prefix_flags"
+  export CXXFLAGS="${CXXFLAGS:-} $prefix_flags"
   cmake     -DUSE_BUNDLED_DEPS=ON     -DBUILD_LIBSCAP_MODERN_BPF=ON     -DMUSL_OPTIMIZED_BUILD=ON     -DMODERN_BPFTOOL_EXE="$(command -v bpftool)"     -DCREATE_TEST_TARGETS=OFF     -DBUILD_BPF=OFF     -DBUILD_DRIVER=OFF     ..
   make scap-open -j"$(nproc)"
 )
