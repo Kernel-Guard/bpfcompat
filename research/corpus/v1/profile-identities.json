@@ -1,0 +1,17 @@
+{
+  "schema_version": "bpfcompat.research.profile-identities.v1",
+  "corpus_version": "v1",
+  "source_commit": "b7f69fa3ca7b72240f72c60b530932356d4f823b",
+  "profiles": [
+    {"id":"ubuntu-20.04-5.4","path":"vm/profiles/ubuntu-20.04-5.4.yaml","git_blob":"e0a54085819991291d855562592906ddeec7cb04"},
+    {"id":"ubuntu-20.10-5.8","path":"vm/profiles/ubuntu-20.10-5.8.yaml","git_blob":"54690edda7b161cd0fc27b87d84995a2c6de8ec3"},
+    {"id":"ubuntu-22.04-5.15","path":"vm/profiles/ubuntu-22.04-5.15.yaml","git_blob":"864490aa87b8c3ddbae618f4f200a7296b9566c1"},
+    {"id":"debian-12-6.1","path":"vm/profiles/debian-12-6.1.yaml","git_blob":"fc8a8b0680f86b6ef586dc4ec372ecf6941aa705"},
+    {"id":"ubuntu-24.04-6.8","path":"vm/profiles/ubuntu-24.04-6.8.yaml","git_blob":"12d2edf2b17d3bdaccc3e301427816524b36d260"},
+    {"id":"almalinux-8-4.18","path":"vm/profiles/almalinux-8-4.18.yaml","git_blob":"2cb5ad4d509263f49ad1b8750a5017678e3ac059"},
+    {"id":"amazon-linux-2-4.14","path":"vm/profiles/amazon-linux-2-4.14.yaml","git_blob":"04be78a5bb78ae20c5b548544c6ab88cf878f27f"},
+    {"id":"amazon-linux-2-5.10","path":"vm/profiles/amazon-linux-2-5.10.yaml","git_blob":"44f2e2bc594c2bc640231f4b38feb4feaa26e2c3"},
+    {"id":"oracle-linux-9-uek7-5.15","path":"vm/profiles/oracle-linux-9-uek7-5.15.yaml","git_blob":"b4ec79298b4288d895506b40927a3403fe1d83dd"},
+    {"id":"opensuse-leap-15.6-6.4","path":"vm/profiles/opensuse-leap-15.6-6.4.yaml","git_blob":"f15018997244005082168d36477c30e2ad8e52ed"}
+  ]
+}

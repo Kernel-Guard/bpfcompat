@@ -1,0 +1,75 @@
+{
+  "schema_version": "bpfcompat.research.study-plan.v1",
+  "corpus_version": "v1",
+  "matrix": "research/corpus/v1/execution-matrix.yaml",
+  "expected_profiles": 10,
+  "bpfcompat": {
+    "version": "v0.3.7",
+    "commit": "179ff612ed2b5d1afb16dd9c282752028d47c415"
+  },
+  "cases": [
+    {
+      "id": "simple-pass-libbpf",
+      "artifact_id": "bpfcompat-simple-pass",
+      "artifact_path": "artifacts/simple_pass.bpf.o",
+      "mode": "load_attach",
+      "manifest": "research/corpus/v1/manifests/simple-pass.yaml",
+      "base_validation_contract_id": "sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50",
+      "manifest_git_blob": "f813d866b40469815699577ab15ee9b4881e3d3c"
+    },
+    {
+      "id": "ringbuf-modern-libbpf",
+      "artifact_id": "bpfcompat-ringbuf-modern",
+      "artifact_path": "artifacts/ringbuf_modern.bpf.o",
+      "mode": "load_attach",
+      "manifest": "research/corpus/v1/manifests/ringbuf-modern.yaml",
+      "base_validation_contract_id": "sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50",
+      "manifest_git_blob": "e639703c69bc49130f1959a095f5fe8befcec0bd"
+    },
+    {
+      "id": "perfbuf-fallback-libbpf",
+      "artifact_id": "bpfcompat-perfbuf-fallback",
+      "artifact_path": "artifacts/perfbuf_fallback.bpf.o",
+      "mode": "load_attach",
+      "manifest": "research/corpus/v1/manifests/perfbuf-fallback.yaml",
+      "base_validation_contract_id": "sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50",
+      "manifest_git_blob": "7ecad1dcbd7f52cfeb1fde970c2ecc043b86972d"
+    },
+    {
+      "id": "core-relocation-fail-libbpf",
+      "artifact_id": "bpfcompat-core-relocation-fail",
+      "artifact_path": "artifacts/core_relocation_fail.bpf.o",
+      "mode": "load_only",
+      "manifest": "research/corpus/v1/manifests/core-relocation-fail.yaml",
+      "base_validation_contract_id": "sha256:2b193bd305a6fe63c466a30fd31fde0ead09c7d8b8026c3379113d28dfd529f5",
+      "analysis_role": "calibration",
+      "manifest_git_blob": "ba0180d3408d84dcc9e25751969e079359d26c6c"
+    },
+    {
+      "id": "cilium-tracepoint-libbpf",
+      "artifact_id": "cilium-tracepoint-in-c",
+      "artifact_path": "artifacts/cilium_tracepoint_in_c.bpf.o",
+      "mode": "load_attach",
+      "manifest": "research/corpus/v1/manifests/cilium-tracepoint-in-c.yaml",
+      "base_validation_contract_id": "sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50",
+      "manifest_git_blob": "2bb94f2c65469ef04b89936271f5e0754bd3be1a"
+    },
+    {
+      "id": "cilium-tracepoint-ebpf-go",
+      "artifact_id": "cilium-tracepoint-in-c",
+      "artifact_path": "artifacts/cilium_tracepoint_in_c.bpf.o",
+      "mode": "command",
+      "command_binary": "loaders/ebpf-go-loader",
+      "command": "$BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT",
+      "base_validation_contract_id": "sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853"
+    },
+    {
+      "id": "falco-modern-bpf-scap-open",
+      "artifact_id": "falco-modern-bpf-scap-open",
+      "mode": "command",
+      "command_binary": "loaders/scap-open",
+      "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10",
+      "base_validation_contract_id": "sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66"
+    }
+  ]
+}

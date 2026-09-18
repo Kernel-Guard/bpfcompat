@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Added the manual-only research pilot v1 execution protocol: seven frozen
+  validation cases across ten logical kernel profiles, immutable profile and
+  manifest locks, exact-environment derivation from observed kernel plus image
+  evidence, raw-report provenance, and normalization into JSONL research
+  execution records without converting infrastructure failures into eBPF
+  incompatibilities.
 - Added a research pilot v1 materialization pipeline that rebuilds the frozen
   BPF objects and project loaders from pinned source revisions, verifies the
   published BPFCompat v0.3.7 execution binaries, records the build toolchain,

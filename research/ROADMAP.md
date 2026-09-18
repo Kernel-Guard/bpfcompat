@@ -25,10 +25,10 @@
 
 ## Phase 3 — Reproducible study
 
-- [ ] Implement one command/script that normalizes captured BPFCompat reports.
+- [x] Implement a versioned study runner and normalizer for captured BPFCompat reports.
 - [ ] Generate every paper table and figure from normalized data.
 - [ ] Add repeat-run checks for a representative sample.
-- [ ] Document compute, KVM, image, registry, and network prerequisites.
+- [x] Document the v1 execution boundary, KVM/VM prerequisites, exact-environment identity, and collection completeness rules.
 - [ ] Publish raw/processed dataset checksums.
 
 ## Phase 4 — Archival

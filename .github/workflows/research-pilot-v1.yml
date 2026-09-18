@@ -1,0 +1,158 @@
+name: research-pilot-v1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/research-pilot-v1.yml"
+      - "scripts/research/run-study-v1.sh"
+      - "scripts/research/normalize-study-v1.py"
+      - "scripts/research/test-normalize-study-v1.sh"
+      - "scripts/research/verify-profile-lock-v1.sh"
+      - "scripts/research/verify-study-matrix-v1.sh"
+      - "scripts/research/test-profile-lock-v1.sh"
+      - "research/corpus/v1/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.25.14"
+
+jobs:
+  preflight:
+    name: Research pilot preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Static script checks
+        run: |
+          set -euo pipefail
+          bash -n scripts/research/run-study-v1.sh
+          bash -n scripts/research/verify-profile-lock-v1.sh
+          bash -n scripts/research/test-normalize-study-v1.sh
+          bash -n scripts/research/verify-study-matrix-v1.sh
+          bash -n scripts/research/test-profile-lock-v1.sh
+          python3 -m py_compile scripts/research/normalize-study-v1.py
+          jq -e . research/corpus/v1/study-plan.json >/dev/null
+          jq -e . research/corpus/v1/profile-identities.json >/dev/null
+          jq -e . research/corpus/v1/materialized-identities.json >/dev/null
+
+      - name: Verify frozen profile and manifest identities
+        run: bash scripts/research/verify-profile-lock-v1.sh
+
+      - name: Validate research matrix/profile set
+        run: bash scripts/research/verify-study-matrix-v1.sh
+
+      - name: Lock-verifier negative regression
+        run: bash scripts/research/test-profile-lock-v1.sh
+
+      - name: Normalization regressions
+        run: bash scripts/research/test-normalize-study-v1.sh
+
+  execute:
+    name: Execute frozen 10-kernel pilot
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install build and VM dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang llvm pkg-config autoconf automake libtool \
+            libbpf-dev libelf-dev libzstd-dev zlib1g-dev jq curl \
+            qemu-system-x86 qemu-utils cloud-image-utils openssh-client
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo "::warning::/dev/kvm absent; BPFCompat will use TCG and the study will be substantially slower."
+          fi
+
+      - name: Install checksum-verified bpftool v7.5.0
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz \
+            https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz.sha256sum \
+            https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz.sha256sum
+          (
+            cd /tmp
+            sha256sum -c bpftool-v7.5.0-amd64.tar.gz.sha256sum
+          )
+          tar -xzf /tmp/bpftool-v7.5.0-amd64.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/bpftool /usr/local/bin/bpftool
+          bpftool version
+
+      - name: Re-materialize and verify frozen study inputs
+        run: |
+          set -euo pipefail
+          bash scripts/research/materialize-v1.sh dist/research-corpus-v1
+          bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1
+          bash scripts/research/verify-profile-lock-v1.sh
+
+      - name: Execute and normalize pilot v1
+        run: >-
+          bash scripts/research/run-study-v1.sh
+          dist/research-corpus-v1
+          reports/research-v1
+
+      - name: Publish collection summary
+        if: always()
+        run: |
+          if [[ -s reports/research-v1/normalized/collection-summary.json ]]; then
+            {
+              echo "## Research pilot v1 collection"
+              echo
+              echo '~~~json'
+              cat reports/research-v1/normalized/collection-summary.json
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload research reports and normalized dataset
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: research-pilot-v1-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            reports/research-v1/
+            dist/research-corpus-v1/materialization.json
+            dist/research-corpus-v1/SHA256SUMS
+            .bpfcompat/research-v1/**/targets/**/serial.log
+            .bpfcompat/research-v1/**/targets/**/qemu.log
+            .bpfcompat/research-v1/**/targets/**/libbpf.log
+            .bpfcompat/research-v1/**/targets/**/validator-result.json
+            .bpfcompat/research-v1/**/targets/**/validator.stderr
+            .bpfcompat/research-v1/**/targets/**/validator-exit-code

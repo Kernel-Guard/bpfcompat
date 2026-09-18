@@ -1,0 +1,26 @@
+name: research-pilot-v1
+# Research observations are non-gating at the BPFCompat matrix layer.
+# The study normalizer separately enforces completeness and preserves every
+# incompatible/inconclusive target instead of turning expected negatives into
+# CI failures.
+profiles:
+  - id: ubuntu-20.04-5.4
+    required: false
+  - id: ubuntu-20.10-5.8
+    required: false
+  - id: ubuntu-22.04-5.15
+    required: false
+  - id: debian-12-6.1
+    required: false
+  - id: ubuntu-24.04-6.8
+    required: false
+  - id: almalinux-8-4.18
+    required: false
+  - id: amazon-linux-2-4.14
+    required: false
+  - id: amazon-linux-2-5.10
+    required: false
+  - id: oracle-linux-9-uek7-5.15
+    required: false
+  - id: opensuse-leap-15.6-6.4
+    required: false
