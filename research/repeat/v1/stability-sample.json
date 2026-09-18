@@ -1,0 +1,60 @@
+{
+  "schema_version": "bpfcompat.research.repeat-sample.v1",
+  "corpus_version": "v1",
+  "canonical_run_id": "35393833464",
+  "canonical_run_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "sampling_design": "purposeful_stratified_post_collection",
+  "repeats_per_tuple": 3,
+  "interpretation": "This is a post-collection stability check, not a preregistered or population-random sample. It intentionally covers compatible, incompatible, vendor-backport, real-loader, project-loader, and inconclusive environment-mismatch strata.",
+  "tuples": [
+    {
+      "id": "positive-controlled-modern",
+      "case_id": "simple-pass-libbpf",
+      "profile_id": "ubuntu-22.04-5.15",
+      "stratum": "compatible_controlled",
+      "rationale": "Positive controlled baseline on a modern LTS kernel."
+    },
+    {
+      "id": "negative-ringbuf-boundary",
+      "case_id": "ringbuf-modern-libbpf",
+      "profile_id": "ubuntu-20.04-5.4",
+      "stratum": "incompatible_controlled",
+      "rationale": "Known below-upstream-threshold ring-buffer rejection."
+    },
+    {
+      "id": "positive-ringbuf-backport",
+      "case_id": "ringbuf-modern-libbpf",
+      "profile_id": "almalinux-8-4.18",
+      "stratum": "compatible_vendor_backport",
+      "rationale": "Older-numbered vendor kernel that passed the ring-buffer probe."
+    },
+    {
+      "id": "negative-falco-real-loader",
+      "case_id": "falco-modern-bpf-scap-open",
+      "profile_id": "amazon-linux-2-4.14",
+      "stratum": "incompatible_real_loader",
+      "rationale": "Real Falco loader negative case."
+    },
+    {
+      "id": "positive-falco-real-loader",
+      "case_id": "falco-modern-bpf-scap-open",
+      "profile_id": "ubuntu-22.04-5.15",
+      "stratum": "compatible_real_loader",
+      "rationale": "Real Falco loader positive case."
+    },
+    {
+      "id": "positive-cilium-project-loader",
+      "case_id": "cilium-tracepoint-ebpf-go",
+      "profile_id": "ubuntu-22.04-5.15",
+      "stratum": "compatible_project_loader",
+      "rationale": "cilium/ebpf project-loader path."
+    },
+    {
+      "id": "inconclusive-oracle-environment",
+      "case_id": "simple-pass-libbpf",
+      "profile_id": "oracle-linux-9-uek7-5.15",
+      "stratum": "inconclusive_environment_mismatch",
+      "rationale": "Canonical run requested 5.15 but booted 6.12 UEK; rerun checks whether the exact environment and inconclusive result are stable."
+    }
+  ]
+}

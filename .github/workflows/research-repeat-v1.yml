@@ -1,0 +1,156 @@
+name: research-repeat-v1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/research-repeat-v1.yml"
+      - "research/repeat/v1/**"
+      - "research/data/v1/**"
+      - "research/corpus/v1/**"
+      - "scripts/research/run-repeat-v1.sh"
+      - "scripts/research/analyze-repeat-v1.py"
+      - "scripts/research/materialize-v1.sh"
+      - "scripts/research/verify-materialization-v1.sh"
+      - "scripts/research/verify-profile-lock-v1.sh"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.25.14"
+
+jobs:
+  preflight:
+    name: Repeat stability preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          bash -n scripts/research/run-repeat-v1.sh
+          python3 -m py_compile scripts/research/analyze-repeat-v1.py
+          python3 scripts/research/analyze-repeat-v1.py --self-test
+          jq -e . research/repeat/v1/stability-sample.json >/dev/null
+
+      - name: Verify sample bindings
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sample=json.loads(Path("research/repeat/v1/stability-sample.json").read_text())
+          plan=json.loads(Path("research/corpus/v1/study-plan.json").read_text())
+          lock=json.loads(Path("research/corpus/v1/profile-identities.json").read_text())
+          cases={x["id"] for x in plan["cases"]}
+          profiles={x["id"] for x in lock["profiles"]}
+          ids=set()
+          for row in sample["tuples"]:
+              assert row["id"] not in ids, f"duplicate tuple id: {row['id']}"
+              ids.add(row["id"])
+              assert row["case_id"] in cases, row
+              assert row["profile_id"] in profiles, row
+              shard=Path("research/data/v1/processed/executions")/f"{row['case_id']}.jsonl"
+              matches=[json.loads(x) for x in shard.read_text().splitlines()
+                       if x.strip() and json.loads(x)["logical_profile_id"]==row["profile_id"]]
+              assert len(matches)==1, row
+          assert sample["repeats_per_tuple"]==3
+          assert len(sample["tuples"])==7
+          print("[research-repeat-v1] sample bindings PASS")
+          PY
+
+  execute:
+    name: Execute 21-attempt repeat stability sample
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install build and VM dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang llvm pkg-config autoconf automake libtool \
+            libbpf-dev libelf-dev libzstd-dev zlib1g-dev jq curl \
+            qemu-system-x86 qemu-utils cloud-image-utils openssh-client
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          else
+            echo "::warning::/dev/kvm absent; repeat sample will use TCG."
+          fi
+
+      - name: Install checksum-verified bpftool v7.5.0
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz \
+            https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz.sha256sum \
+            https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz.sha256sum
+          (cd /tmp && sha256sum -c bpftool-v7.5.0-amd64.tar.gz.sha256sum)
+          tar -xzf /tmp/bpftool-v7.5.0-amd64.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/bpftool /usr/local/bin/bpftool
+
+      - name: Re-materialize frozen v1 inputs
+        run: |
+          set -euo pipefail
+          bash scripts/research/materialize-v1.sh dist/research-corpus-v1
+          bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1
+          bash scripts/research/verify-profile-lock-v1.sh
+
+      - name: Execute repeat stability sample
+        run: >-
+          bash scripts/research/run-repeat-v1.sh
+          dist/research-corpus-v1
+          reports/research-repeat-v1
+          research/repeat/v1/stability-sample.json
+
+      - name: Publish repeat summary
+        if: always()
+        run: |
+          if [[ -s reports/research-repeat-v1/normalized/stability-summary.json ]]; then
+            {
+              echo "## Research pilot v1 repeat stability"
+              echo
+              echo '~~~json'
+              cat reports/research-repeat-v1/normalized/stability-summary.json
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload repeat evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: research-repeat-v1-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            reports/research-repeat-v1/
+            dist/research-corpus-v1/materialization.json
+            dist/research-corpus-v1/SHA256SUMS
+            .bpfcompat/research-repeat-v1/**/targets/**/serial.log
+            .bpfcompat/research-repeat-v1/**/targets/**/qemu.log
+            .bpfcompat/research-repeat-v1/**/targets/**/libbpf.log
+            .bpfcompat/research-repeat-v1/**/targets/**/validator-result.json
+            .bpfcompat/research-repeat-v1/**/targets/**/validator.stderr
+            .bpfcompat/research-repeat-v1/**/targets/**/validator-exit-code
