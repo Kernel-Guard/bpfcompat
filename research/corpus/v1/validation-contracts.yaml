@@ -1,0 +1,77 @@
+schema_version: bpfcompat.research.pilot-contract-selection.v1
+corpus_version: v1
+status: contract-specification-frozen
+
+# The keys below identify frozen pre-execution specifications.
+# A canonical validation-contract SHA-256 is generated after all materialized
+# binary identities are known and is stored in final execution records.
+
+bpfcompat_execution:
+  version: v0.3.7
+  commit: 179ff612ed2b5d1afb16dd9c282752028d47c415
+  cli_asset:
+    name: bpfcompat-linux-amd64
+    sha256: 1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e
+  libbpf_validator_asset:
+    name: bpfcompat-validator-static-linux-amd64
+    sha256: 4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04
+
+contracts:
+  - key: libbpf-v037-load-attach-v1
+    kind: builtin_validator
+    mode: load_attach
+    implementation:
+      bpfcompat_commit: 179ff612ed2b5d1afb16dd9c282752028d47c415
+      validator_sha256: 4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04
+    success_criteria:
+      required_load: pass
+      required_attach: pass
+      infrastructure_errors_are_compatibility_failures: false
+    canonical_id: null
+    canonical_id_requirement: derive before execution after artifact/manifest inputs are materialized
+
+  - key: libbpf-v037-load-only-v1
+    kind: builtin_validator
+    mode: load_only
+    implementation:
+      bpfcompat_commit: 179ff612ed2b5d1afb16dd9c282752028d47c415
+      validator_sha256: 4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04
+    success_criteria:
+      required_load: pass
+      infrastructure_errors_are_compatibility_failures: false
+    canonical_id: null
+    canonical_id_requirement: derive before execution after artifact/manifest inputs are materialized
+
+  - key: cilium-ebpf-v022-load-only-v1
+    kind: project_loader
+    mode: command
+    loader:
+      source_repository: https://github.com/Kernel-Guard/bpfcompat
+      source_revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      source_path: examples/ebpf-go-loader
+      dependency: github.com/cilium/ebpf@v0.22.0
+      go_mod_blob_sha: 14cecbd3887532062fa867d5d603d4cf7d1afde4
+      go_sum_blob_sha: 02d7cd8e91fa4cb75e9942d711bdd0edaf89c009
+      build: CGO_ENABLED=0 go build -o ebpf-go-loader .
+      binary_sha256: null
+    command: $BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT
+    expected_exit_codes: [0]
+    semantics: load every map and program through cilium/ebpf; no attach claim
+    canonical_id: null
+    materialization_requirement: capture exact Go toolchain and archive binary sha256 before execution
+
+  - key: falco-modern-bpf-scap-open-v1
+    kind: project_loader
+    mode: command
+    loader:
+      source_repository: https://github.com/falcosecurity/libs
+      source_revision: 1800b330ce92b532456178abfcbfba3dd157f974
+      build_recipe: .github/workflows/bpfcompat-compatibility.yml
+      bpftool_version: v7.5.0
+      output: build/libscap/examples/01-open/scap-open
+      binary_sha256: null
+    command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
+    expected_exit_codes: [0]
+    semantics: real Falco modern_bpf loader path plus bounded event capture
+    canonical_id: null
+    materialization_requirement: archive static scap-open binary and sha256 before execution
