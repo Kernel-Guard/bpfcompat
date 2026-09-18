@@ -61,10 +61,16 @@ research-corpus-v1/
 └── SHA256SUMS
 ```
 
+The generated identities are frozen in
+`research/corpus/v1/materialized-identities.json`. Every subsequent CI
+materialization is compared against that committed identity lock, so a compiler,
+dependency, recipe, or source drift that changes the study inputs fails before
+matrix execution.
+
 The Actions artifact is a staging archive, not the final scholarly archive. It
-currently has finite retention. After the materialized identities are reviewed,
-the final dataset/release must be placed in a durable archival system before a
-paper or DOI claims long-term reproducibility.
+currently has finite retention. The identity lock records the successful
+workflow evidence, but the final dataset/release must still be placed in a
+durable archival system before a paper or DOI claims long-term reproducibility.
 
 ## Important boundary
 
