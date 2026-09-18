@@ -156,12 +156,12 @@ cp "$tmp/unexpected.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail unexpected python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/unexpected"
 grep -q "unexpected profile ids" "$tmp/unexpected.stderr"
 
-jq '.artifact.sha256 = ("2" * 64)' "$base_report" > "$tmp/bad-artifact.json"
+jq '.artifact.sha256 = "2222222222222222222222222222222222222222222222222222222222222222"' "$base_report" > "$tmp/bad-artifact.json"
 cp "$tmp/bad-artifact.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail bad-artifact python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-artifact"
 grep -q "artifact digest mismatch" "$tmp/bad-artifact.stderr"
 
-jq '.validator.sha256 = ("3" * 64)' "$base_report" > "$tmp/bad-validator.json"
+jq '.validator.sha256 = "3333333333333333333333333333333333333333333333333333333333333333"' "$base_report" > "$tmp/bad-validator.json"
 cp "$tmp/bad-validator.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail bad-validator python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-validator"
 grep -q "validator digest mismatch" "$tmp/bad-validator.stderr"
@@ -187,7 +187,7 @@ jq -e '.collection_complete == false and (.missing_cases | index("second-case"))
 cp "$base_report" "$tmp/reports/simple-pass-libbpf.json"
 jq '
   .run.id = "fixture-two" |
-  .targets[0].environment.image_sha256 = ("4" * 64)
+  .targets[0].environment.image_sha256 = "4444444444444444444444444444444444444444444444444444444444444444"
 ' "$base_report" > "$tmp/reports/second-case.json"
 rm -rf "$tmp/out/drift"; mkdir -p "$tmp/out/drift"
 expect_fail environment-drift python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-two.json" --out-dir "$tmp/out/drift"
