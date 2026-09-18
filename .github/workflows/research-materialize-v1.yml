@@ -46,15 +46,15 @@ jobs:
       - name: Install checksum-verified bpftool v7.5.0
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/bpftool.tar.gz \
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz \
             https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz
-          curl -fsSL -o /tmp/bpftool.sha256sum \
+          curl -fsSL -o /tmp/bpftool-v7.5.0-amd64.tar.gz.sha256sum \
             https://github.com/libbpf/bpftool/releases/download/v7.5.0/bpftool-v7.5.0-amd64.tar.gz.sha256sum
           (
             cd /tmp
-            sha256sum -c bpftool.sha256sum
+            sha256sum -c bpftool-v7.5.0-amd64.tar.gz.sha256sum
           )
-          tar -xzf /tmp/bpftool.tar.gz -C /tmp
+          tar -xzf /tmp/bpftool-v7.5.0-amd64.tar.gz -C /tmp
           sudo install -m 0755 /tmp/bpftool /usr/local/bin/bpftool
           bpftool version
 
