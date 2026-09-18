@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use BPFCompat in research, please cite the software using this metadata."
+title: "BPFCompat: empirical eBPF compatibility testing across real Linux kernels"
+type: software
+authors:
+  - family-names: "Arı"
+    given-names: "Eren"
+    alias: "ErenAri"
+repository-code: "https://github.com/Kernel-Guard/bpfcompat"
+url: "https://github.com/Kernel-Guard/bpfcompat"
+license: "Apache-2.0"
+abstract: >-
+  BPFCompat is an open-source compatibility validator for compiled eBPF
+  artifacts. It boots real Linux distribution kernels in disposable virtual
+  machines, executes libbpf or project-specific loader paths, and records
+  structured load/attach evidence so compatibility is measured empirically
+  rather than inferred only from kernel versions or CO-RE assumptions.
+keywords:
+  - eBPF
+  - BPF
+  - Linux kernel
+  - compatibility
+  - kernel testing
+  - libbpf
+  - systems research
