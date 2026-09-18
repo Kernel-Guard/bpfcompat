@@ -18,6 +18,8 @@
 - [ ] Complete license/redistribution review for every materialized binary and
       archived external artifact.
 - [ ] Capture immutable generated-artifact, loader-binary, and OCI identities.
+      The v1 materialization workflow now produces and verifies these identities;
+      commit/freeze the successful bundle metadata before study execution.
 - [x] Mark existing observations as exploratory versus newly collected evidence.
 
 ## Phase 3 — Reproducible study
