@@ -1,7 +1,10 @@
 # Pilot Corpus v1 — Frozen Selection
 
 This directory freezes the **selection** for BPFCompat's first prospective
-research pilot. It does not contain study results.
+research pilot. Study results are kept separately in
+[`research/data/v1/`](../../data/v1/) and
+[`research/analysis/v1/`](../../analysis/v1/) so the prospective selection
+boundary remains distinct from post-collection evidence.
 
 The selection was made after reviewing the repository's existing Falco,
 Inspektor Gadget, Cilium/ebpf, libbpf-validator, controlled-probe, and kernel
@@ -106,8 +109,15 @@ booted target gets an `exact_environment_id` as required by the corpus schema.
   used to estimate field failure rates.
 - deferred/framework-coupled cases are reported as exclusions, not failures.
 
-## Next step
+## Collection status
 
-Materialize the selected build/loader inputs, capture their immutable digests,
-capture exact environment identities, derive canonical validation-contract
-hashes, and only then execute the v1 matrix.
+Pilot v1 has been materialized and executed. The canonical successful collection
+is workflow run `35393833464` at commit
+`5de550e5cc8c659872a90fc262eb0250c229bf23`, with all 70 planned
+case/profile attempts captured.
+
+The repository dataset snapshot records processed execution evidence,
+exact-environment identities, execution provenance, and raw-report checksums.
+Descriptive analysis is generated deterministically from that snapshot. Further
+work now focuses on representative repeat-run stability, license/redistribution
+review, final paper figures/tables, and durable DOI archival.
