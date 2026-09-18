@@ -1,0 +1,73 @@
+{
+  "schema_version": "bpfcompat.research.materialized-identities.v1",
+  "corpus_version": "v1",
+  "identity_status": "frozen",
+  "source_revisions": {
+    "bpfcompat_selection_source": "b8ef57f4e02ebecee4649f7657ea8eea6af46ca9",
+    "falco": "1800b330ce92b532456178abfcbfba3dd157f974",
+    "cilium_tracepoint_upstream": "f035193453c32429bc2f6b6d623c4dfa200ad48f",
+    "bpfcompat_execution": "179ff612ed2b5d1afb16dd9c282752028d47c415"
+  },
+  "artifacts": [
+    {
+      "id": "bpfcompat-simple-pass",
+      "path": "artifacts/simple_pass.bpf.o",
+      "sha256": "sha256:41647d6d49fc72763fe8e2e7ee0a3b74f92d317de2595d8c95a4ca29b6fd0b0f"
+    },
+    {
+      "id": "bpfcompat-ringbuf-modern",
+      "path": "artifacts/ringbuf_modern.bpf.o",
+      "sha256": "sha256:be6dfff7c0568a2b0e927df8b5b4649afa08aa04b9c8c9222a1961f8f562894c"
+    },
+    {
+      "id": "bpfcompat-perfbuf-fallback",
+      "path": "artifacts/perfbuf_fallback.bpf.o",
+      "sha256": "sha256:0e4f7e468faf779f4540acf2d074e1511fcea60084ffe1d8d6ad95f53d566b98"
+    },
+    {
+      "id": "bpfcompat-core-relocation-fail",
+      "path": "artifacts/core_relocation_fail.bpf.o",
+      "sha256": "sha256:848471790f58008600eb6a7ecb1ac3fb3969653d9a7f8820ce846d917b5f05b0"
+    },
+    {
+      "id": "cilium-tracepoint-in-c",
+      "path": "artifacts/cilium_tracepoint_in_c.bpf.o",
+      "sha256": "sha256:16e1ce980c2c5bf6e839dac79e1710b4d185cbbca649e1e5421e1ab1fe7e5cc8"
+    },
+    {
+      "id": "cilium-ebpf-v022-loader",
+      "path": "loaders/ebpf-go-loader",
+      "sha256": "sha256:2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4"
+    },
+    {
+      "id": "falco-modern-bpf-scap-open",
+      "path": "loaders/scap-open",
+      "sha256": "sha256:736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd"
+    },
+    {
+      "id": "bpfcompat-v037-cli",
+      "path": "bin/bpfcompat-linux-amd64",
+      "sha256": "sha256:1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e"
+    },
+    {
+      "id": "bpfcompat-v037-validator",
+      "path": "bin/bpfcompat-validator-static-linux-amd64",
+      "sha256": "sha256:4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04"
+    }
+  ],
+  "validation_contracts": {
+    "libbpf-v037-load-attach-v1": "sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50",
+    "libbpf-v037-load-only-v1": "sha256:2b193bd305a6fe63c466a30fd31fde0ead09c7d8b8026c3379113d28dfd529f5",
+    "cilium-ebpf-v022-load-only-v1": "sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853",
+    "falco-modern-bpf-scap-open-v1": "sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66"
+  },
+  "evidence": {
+    "workflow": "research-materialize-v1",
+    "github_actions_run_id": 35354767486,
+    "verified_attempts": [1, 2],
+    "verified_head_sha": "c14dda3e0da8e87264e756e29301ed229bca804d",
+    "attempt_1_artifact_id": 10551786209,
+    "attempt_2_artifact_id": 10556110799,
+    "result": "two clean workflow attempts; each materialized twice and passed identity comparison"
+  }
+}

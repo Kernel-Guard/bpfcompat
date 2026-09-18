@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Added a research pilot v1 materialization pipeline that rebuilds the frozen
+  BPF objects and project loaders from pinned source revisions, verifies the
+  published BPFCompat v0.3.7 execution binaries, records the build toolchain,
+  derives canonical validation-contract hashes, and uploads an integrity-checked
+  SHA-256 bundle without running the compatibility study itself.
 - Froze the prospective research pilot v1 selection: explicit inclusion rules,
   pinned Falco and Cilium source provenance, a ten-profile logical kernel set,
   libbpf/cilium-ebpf/Falco validation-contract specifications, and documented
