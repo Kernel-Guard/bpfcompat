@@ -2,8 +2,13 @@
 
 - Project: `cilium/ebpf`
 - Source file: `examples/tracepoint_in_c/tracepoint.c`
-- URL: <https://github.com/cilium/ebpf/blob/main/examples/tracepoint_in_c/tracepoint.c>
+- Upstream revision: `f035193453c32429bc2f6b6d623c4dfa200ad48f`
+- Permalink: <https://github.com/cilium/ebpf/blob/f035193453c32429bc2f6b6d623c4dfa200ad48f/examples/tracepoint_in_c/tracepoint.c>
 - Retrieved: 2026-05-15
+
+The pinned revision is the latest commit that touched this source file before
+the recorded retrieval date. Pinning the file revision makes the provenance
+reproducible instead of depending on the moving `main` branch.
 
 ## Local Adaptations
 
