@@ -20,8 +20,7 @@ done < <(jq -r '.profiles[] | [.id, .path, .git_blob] | @tsv' "$LOCK")
 PLAN="research/corpus/v1/study-plan.json"
 [[ -s "$PLAN" ]] || fail "missing study plan: $PLAN"
 
-while IFS=
-\t' read -r case_id path expected; do
+while IFS=$'\t' read -r case_id path expected; do
   [[ -s "$path" ]] || fail "missing study manifest for $case_id at $path"
   actual="$(git hash-object "$path")"
   [[ "$actual" == "$expected" ]] ||
