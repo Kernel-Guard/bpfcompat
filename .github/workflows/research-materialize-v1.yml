@@ -7,6 +7,7 @@ on:
       - ".github/workflows/research-materialize-v1.yml"
       - "scripts/research/materialize-v1.sh"
       - "scripts/research/verify-materialization-v1.sh"
+      - "scripts/research/compare-materializations-v1.sh"
       - "research/corpus/v1/**"
 
 permissions:
@@ -58,27 +59,39 @@ jobs:
           sudo install -m 0755 /tmp/bpftool /usr/local/bin/bpftool
           bpftool version
 
-      - name: Materialize pilot v1
-        run: bash scripts/research/materialize-v1.sh dist/research-corpus-v1
+      - name: Materialize pilot v1 (pass A)
+        run: bash scripts/research/materialize-v1.sh dist/research-corpus-v1-a
 
-      - name: Verify materialization bundle
-        run: bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1
+      - name: Verify materialization bundle A
+        run: bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1-a
+
+      - name: Materialize pilot v1 (pass B)
+        run: bash scripts/research/materialize-v1.sh dist/research-corpus-v1-b
+
+      - name: Verify materialization bundle B
+        run: bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1-b
+
+      - name: Assert reproducible identities
+        run: >-
+          bash scripts/research/compare-materializations-v1.sh
+          dist/research-corpus-v1-a
+          dist/research-corpus-v1-b
 
       - name: Publish identity summary
         if: always()
         run: |
-          if [[ -s dist/research-corpus-v1/materialization.json ]]; then
+          if [[ -s dist/research-corpus-v1-a/materialization.json ]]; then
             {
               echo "## Research pilot v1 materialization"
               echo
               echo '~~~json'
-              cat dist/research-corpus-v1/materialization.json
+              cat dist/research-corpus-v1-a/materialization.json
               echo '~~~'
               echo
               echo "### SHA256SUMS"
               echo
               echo '~~~text'
-              cat dist/research-corpus-v1/SHA256SUMS
+              cat dist/research-corpus-v1-a/SHA256SUMS
               echo '~~~'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -87,6 +100,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: research-corpus-v1-materialization-${{ github.run_id }}
-          path: dist/research-corpus-v1/
+          path: dist/research-corpus-v1-a/
           if-no-files-found: error
           retention-days: 90
