@@ -118,7 +118,6 @@ jobs:
           are frozen in research/corpus/v1/artifacts.yaml. Corrections create a new
           dataset version rather than editing v1 rows in place.
           MD
-          sed -i 's/^          //' research/data/v1/README.md
 
           cat > research/analysis/v1/analysis-plan.json <<'JSON'
           {
@@ -151,7 +150,6 @@ jobs:
             }
           }
           JSON
-          sed -i 's/^          //' research/analysis/v1/analysis-plan.json
 
           cat > scripts/research/analyze-study-v1.py <<'PY'
           #!/usr/bin/env python3
@@ -236,7 +234,6 @@ jobs:
           lines=["# Pilot v1 generated results","", "This file is generated from the canonical v1 dataset; it is descriptive pilot analysis, not a population estimate.","", "## Collection","",f"- 70/70 execution records collected.",f"- Overall: {overall['compatible']} compatible, {overall['incompatible']} incompatible, {overall['inconclusive']} inconclusive.",f"- Non-calibration: {noncal_o['compatible']} compatible, {noncal_o['incompatible']} incompatible, {noncal_o['inconclusive']} inconclusive.","","## RQ1 — kernel-version predictiveness","",f"For the controlled BPF_MAP_TYPE_RINGBUF probe, a simple Linux 5.8 threshold agreed with {rq1['agreement']}/{rq1['evaluable']} conclusive observations ({rq1['agreement_pct']}%). The exception was {', '.join(rq1['below_threshold_compatible_profiles'])}, whose observed 4.18 vendor kernel supported the probe.","","## RQ2 — failure taxonomy","",f"Outside calibration there were {tax['non_calibration']['incompatible']} incompatible observations among {tax['non_calibration']['evaluable']} evaluable executions: "+", ".join(f"{k} = {v}" for k,v in tax['non_calibration']['taxonomy'].items())+".","","## RQ3 — loader-path observation","",f"The paired Cilium-derived paths had {rq3['verdict_disagreements']} verdict disagreements across {rq3['conclusive_pairs']} conclusive environments. The contracts differ (load+attach vs load-only), so this is not a pure loader-effect estimate.","","## RQ4 — vendor/environment variation","",f"The dataset contains {rq4['exact_environments']} exact environments across 10 logical profiles and {rq4['cross_vendor_version_inversions']} cross-vendor version inversions. Patch-level longitudinal change is not evaluable in v1.","","## Limitations",""]+[f"- {x}" for x in limitations]
           (od/"RESULTS.md").write_text("\n".join(lines)+"\n")
           PY
-          sed -i 's/^          //' scripts/research/analyze-study-v1.py
           chmod +x scripts/research/analyze-study-v1.py
 
           cat > scripts/research/test-analysis-v1.sh <<'SH'
@@ -250,7 +247,6 @@ jobs:
           jq -e '.overall.attempts==70 and .rq1_version_predictiveness.disagreement==1 and .rq2_failure_taxonomy.non_calibration.incompatible==4 and .rq3_loader_pair_observations[0].verdict_disagreements==0' research/analysis/v1/generated/analysis-summary.json >/dev/null
           echo "[test-analysis-v1] PASS"
           SH
-          sed -i 's/^          //' scripts/research/test-analysis-v1.sh
           chmod +x scripts/research/test-analysis-v1.sh
 
           cat > research/analysis/v1/README.md <<'MD'
@@ -268,7 +264,6 @@ jobs:
           variation but cannot estimate patch-level longitudinal change from one exact
           environment per logical profile.
           MD
-          sed -i 's/^          //' research/analysis/v1/README.md
 
           python3 scripts/research/analyze-study-v1.py
           (
@@ -286,3 +281,4 @@ jobs:
           git diff --cached --stat
           git commit -m "research: publish canonical pilot v1 dataset and analysis"
           git push origin HEAD:research/publish-pilot-v1-dataset
+
