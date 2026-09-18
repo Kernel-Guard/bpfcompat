@@ -1,0 +1,11 @@
+scope,classification_code,count,evaluable_denominator,rate_evaluable_pct
+all,COMMAND_VALIDATION_FAILURE,2,63,3.175
+all,CORE_RELOCATION_FAILURE,8,63,12.698
+all,MISSING_BTF,1,63,1.587
+all,UNSUPPORTED_MAP_TYPE,2,63,3.175
+non_calibration,COMMAND_VALIDATION_FAILURE,2,54,3.704
+non_calibration,UNSUPPORTED_MAP_TYPE,2,54,3.704
+primary_real_world,COMMAND_VALIDATION_FAILURE,2,9,22.222
+controlled_probe,UNSUPPORTED_MAP_TYPE,2,27,7.407
+calibration,CORE_RELOCATION_FAILURE,8,9,88.889
+calibration,MISSING_BTF,1,9,11.111

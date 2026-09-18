@@ -1,0 +1,11 @@
+logical_profile_id,environment_id,same_exact_environment,left_verdict,right_verdict,both_conclusive,verdict_disagreement,contracts_comparable
+almalinux-8-4.18,sha256:6f4a1bd0e9c63fe5f7f2902a5f693a4bb366c607742ad4df2f2efe94c5db8144,true,compatible,compatible,true,false,false
+amazon-linux-2-4.14,sha256:6204b062fb4b85925457e0d585434758e8b292369b9333433428904df98ba117,true,compatible,compatible,true,false,false
+amazon-linux-2-5.10,sha256:50777ced54463ac814bd22b3f8d3d61607d49a14522780c74ab60e181a5744c2,true,compatible,compatible,true,false,false
+debian-12-6.1,sha256:581a88d78253d5045522c603c154ac4abae0dddf77062b254c3aeacb0a106192,true,compatible,compatible,true,false,false
+opensuse-leap-15.6-6.4,sha256:d5a6da80eb4d68ae55f7654cd39211733ed88c72fbb4cb18f62cf1c9b28e5add,true,compatible,compatible,true,false,false
+oracle-linux-9-uek7-5.15,sha256:9a193ce171dd4778266a5393e89ef3044ca9fb27b1f861dcee71b408dd1e53d6,true,inconclusive,inconclusive,false,false,false
+ubuntu-20.04-5.4,sha256:1433c43e14af8a0fec2f9c03b9459fc4c68ec586456b4d94852f59d9bd169f0f,true,compatible,compatible,true,false,false
+ubuntu-20.10-5.8,sha256:3fc06d4ba98cb42d9281fb46fb718acab139f6321018761ce4dbafa24db30549,true,compatible,compatible,true,false,false
+ubuntu-22.04-5.15,sha256:1fa71e1a3f9deb69c9f7b2553527aa471ff51942e695872dc764a1f5a16f9721,true,compatible,compatible,true,false,false
+ubuntu-24.04-6.8,sha256:0f9927cfa4b18965b4014d92f1f78845ee222ecc3908f3fa41fa87d08958df66,true,compatible,compatible,true,false,false

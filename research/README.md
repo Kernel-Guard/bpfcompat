@@ -4,12 +4,37 @@ This directory defines the research-facing protocol for studying eBPF
 compatibility with BPFCompat. It is intentionally separate from product and CI
 documentation.
 
-**Status:** protocol and reproducibility scaffold. It is not a peer-reviewed
-publication and does not claim that the proposed study has been completed.
+**Status:** the prospective protocol is frozen and pilot corpus v1 has been
+collected and published as a versioned repository dataset. This is not a
+peer-reviewed publication, and the selected pilot must not be presented as a
+representative study of Linux deployments.
 
-Existing BPFCompat case studies motivated the questions below. Those existing
-observations must not be represented as prospectively preregistered evidence.
-The study dataset should be frozen and versioned before confirmatory analysis.
+Existing BPFCompat case studies motivated the questions below. Those earlier
+observations remain exploratory rather than being relabeled as prospectively
+collected evidence. Pilot v1 is tied to one canonical workflow run and immutable
+checksums before descriptive RQ1–RQ4 analysis.
+
+## Collected pilot v1
+
+The canonical pilot collection is GitHub Actions run `35393833464` at commit
+`5de550e5cc8c659872a90fc262eb0250c229bf23`. It produced all **70/70**
+planned execution records: 50 compatible, 13 incompatible, and 7 inconclusive.
+The collection is complete but not fully evaluable because the frozen Oracle
+Linux logical profile requested kernel family 5.15 while the vendor image booted
+6.12 UEK; those seven executions retain their exact observed environment and are
+inconclusive for the requested profile.
+
+Repository snapshot and integrity metadata:
+
+- [`data/v1/`](data/v1/) — immutable processed dataset shards, provenance,
+  raw-report checksums, and dataset manifest;
+- [`analysis/v1/`](analysis/v1/) — deterministic descriptive RQ1–RQ4 tables
+  and machine-readable analysis summary;
+- `scripts/research/analyze-study-v1.py` — analysis generator;
+- `scripts/research/test-analysis-v1.sh` — checksum and reproduction gate.
+
+The full workflow artifact remains staging evidence for later DOI archival; its
+artifact identity is recorded in the dataset manifest.
 
 ## Study objective
 

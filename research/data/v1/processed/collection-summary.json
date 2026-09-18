@@ -1,0 +1,114 @@
+{
+  "case_summaries": [
+    {
+      "case_id": "simple-pass-libbpf",
+      "compatible": 9,
+      "duplicate_profile_ids": [],
+      "incompatible": 0,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/simple-pass-libbpf.json",
+      "targets": 10
+    },
+    {
+      "case_id": "ringbuf-modern-libbpf",
+      "compatible": 7,
+      "duplicate_profile_ids": [],
+      "incompatible": 2,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/ringbuf-modern-libbpf.json",
+      "targets": 10
+    },
+    {
+      "case_id": "perfbuf-fallback-libbpf",
+      "compatible": 9,
+      "duplicate_profile_ids": [],
+      "incompatible": 0,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/perfbuf-fallback-libbpf.json",
+      "targets": 10
+    },
+    {
+      "case_id": "core-relocation-fail-libbpf",
+      "compatible": 0,
+      "duplicate_profile_ids": [],
+      "incompatible": 9,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/core-relocation-fail-libbpf.json",
+      "targets": 10
+    },
+    {
+      "case_id": "cilium-tracepoint-libbpf",
+      "compatible": 9,
+      "duplicate_profile_ids": [],
+      "incompatible": 0,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/cilium-tracepoint-libbpf.json",
+      "targets": 10
+    },
+    {
+      "case_id": "cilium-tracepoint-ebpf-go",
+      "compatible": 9,
+      "duplicate_profile_ids": [],
+      "incompatible": 0,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/cilium-tracepoint-ebpf-go.json",
+      "targets": 10
+    },
+    {
+      "case_id": "falco-modern-bpf-scap-open",
+      "compatible": 7,
+      "duplicate_profile_ids": [],
+      "incompatible": 2,
+      "inconclusive": 1,
+      "missing_profile_ids": [],
+      "profile_set_valid": true,
+      "report": "reports/research-v1/falco-modern-bpf-scap-open.json",
+      "targets": 10
+    }
+  ],
+  "collection_complete": true,
+  "corpus_version": "v1",
+  "environment_drift": {},
+  "execution_provenance_sha256": "sha256:1962bdacb0a22c4d4c5e0639daf181dd5ee0033617175236de608338b66a26bd",
+  "expected_cases": 7,
+  "expected_execution_attempts": 70,
+  "expected_profiles_per_case": 10,
+  "fully_evaluable": false,
+  "github_run_id": "35393833464",
+  "github_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "invalid_profile_sets": [],
+  "missing_cases": [],
+  "missing_environments": [],
+  "observed_execution_records": 70,
+  "profile_environment_counts": {
+    "almalinux-8-4.18": 1,
+    "amazon-linux-2-4.14": 1,
+    "amazon-linux-2-5.10": 1,
+    "debian-12-6.1": 1,
+    "opensuse-leap-15.6-6.4": 1,
+    "oracle-linux-9-uek7-5.15": 1,
+    "ubuntu-20.04-5.4": 1,
+    "ubuntu-20.10-5.8": 1,
+    "ubuntu-22.04-5.15": 1,
+    "ubuntu-24.04-6.8": 1
+  },
+  "schema_version": "bpfcompat.research.collection-summary.v1",
+  "totals": {
+    "compatible": 50,
+    "incompatible": 13,
+    "inconclusive": 7
+  },
+  "wrong_target_counts": []
+}

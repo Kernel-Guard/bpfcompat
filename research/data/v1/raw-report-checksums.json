@@ -1,0 +1,41 @@
+{
+  "schema_version": "bpfcompat.research.raw-report-checksums.v1",
+  "canonical_workflow_run_id": "35393833464",
+  "reports": [
+    {
+      "case_id": "simple-pass-libbpf",
+      "artifact_path": "reports/research-v1/simple-pass-libbpf.json",
+      "sha256": "sha256:11aa46fb6121044ca46fd37ce77f1c53fbb90d2619863844d6b214739f2f39c4"
+    },
+    {
+      "case_id": "ringbuf-modern-libbpf",
+      "artifact_path": "reports/research-v1/ringbuf-modern-libbpf.json",
+      "sha256": "sha256:e9634b02c64319c1ce972f0d9d07a3be7729919f36f1edb65f9ed05f5d6858fd"
+    },
+    {
+      "case_id": "perfbuf-fallback-libbpf",
+      "artifact_path": "reports/research-v1/perfbuf-fallback-libbpf.json",
+      "sha256": "sha256:1d2a5b6bf4b9df84ba334cd7c607c4b3d410a1d8409a2b7daf1029958f469d2b"
+    },
+    {
+      "case_id": "core-relocation-fail-libbpf",
+      "artifact_path": "reports/research-v1/core-relocation-fail-libbpf.json",
+      "sha256": "sha256:0443027cbbb066dd7d8bf44b94cf5e545134ee73cd8f12aa4066caf42e3a2a18"
+    },
+    {
+      "case_id": "cilium-tracepoint-libbpf",
+      "artifact_path": "reports/research-v1/cilium-tracepoint-libbpf.json",
+      "sha256": "sha256:8629ff349528e905187b445e62a9abed1f750ff5894e8e5c52f5faa8e09bc488"
+    },
+    {
+      "case_id": "cilium-tracepoint-ebpf-go",
+      "artifact_path": "reports/research-v1/cilium-tracepoint-ebpf-go.json",
+      "sha256": "sha256:2fc770230d8499bc7970b7d6b9c76160887dda853be4729f36cec6de6361851c"
+    },
+    {
+      "case_id": "falco-modern-bpf-scap-open",
+      "artifact_path": "reports/research-v1/falco-modern-bpf-scap-open.json",
+      "sha256": "sha256:8c971e76da55fecb68e07987c980b71cc5c516b90f9275fd183eec04473d2f13"
+    }
+  ]
+}
