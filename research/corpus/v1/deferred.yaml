@@ -1,0 +1,42 @@
+schema_version: bpfcompat.research.pilot-deferred.v1
+corpus_version: v1
+
+deferred:
+  - id: inspektor-gadget-trace-open
+    project: inspektor-gadget/inspektor-gadget
+    candidate_reference: ghcr.io/inspektor-gadget/gadget/trace_open:latest
+    reason: existing BPFCompat case-study evidence uses a mutable OCI tag
+    observed_strength:
+      - standalone artifact has useful ring-buffer/backport contrast
+      - upstream project now resolves manifest digests in its BPFCompat workflow
+    promotion_requirements:
+      - freeze exact OCI manifest digest
+      - freeze extracted eBPF ELF sha256
+      - retain registry reference and source/release provenance
+    disposition: add only in a later corpus version; do not mutate frozen v1
+
+  - id: inspektor-gadget-trace-exec
+    project: inspektor-gadget/inspektor-gadget
+    candidate_reference: ghcr.io/inspektor-gadget/gadget/trace_exec:latest
+    reason: existing BPFCompat case-study evidence uses a mutable OCI tag
+    observed_strength:
+      - clean standalone load/attach case on modern kernels
+      - upstream project now resolves manifest digests in its BPFCompat workflow
+    promotion_requirements:
+      - freeze exact OCI manifest digest
+      - freeze extracted eBPF ELF sha256
+      - retain registry reference and source/release provenance
+    disposition: add only in a later corpus version; do not mutate frozen v1
+
+excluded_from_primary:
+  - id: inspektor-gadget-trace-dns
+    project: inspektor-gadget/inspektor-gadget
+    reason: framework-coupled runtime contract dominates standalone validation
+    evidence:
+      - program type can be supplied, but CO-RE relocation depends on Inspektor Gadget socket-enricher BTF
+    disposition: candidate for a separate framework-loader study, not a v1 kernel-compatibility failure
+
+  - id: historical-falco-bpf-probe-object
+    project: falcosecurity/libs
+    reason: case-study object has a SHA-256 but source is described only as master, without the exact historical commit
+    disposition: replaced in v1 by a newly materialized scap-open build from pinned commit 1800b330ce92b532456178abfcbfba3dd157f974

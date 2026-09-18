@@ -10,12 +10,15 @@
 
 ## Phase 2 — Frozen pilot corpus
 
-- [ ] Define explicit artifact/project inclusion criteria.
-- [ ] Freeze a versioned pilot artifact manifest.
-- [ ] Freeze a versioned kernel-environment manifest.
-- [ ] Record licenses and redistribution constraints.
-- [ ] Capture immutable artifact and OCI identities.
-- [ ] Mark existing observations as exploratory versus newly collected evidence.
+- [x] Define explicit artifact/project inclusion criteria.
+- [x] Freeze a versioned pilot artifact **selection** manifest; generated binary
+      identities are captured before execution.
+- [x] Freeze a versioned logical kernel-profile selection; exact environment
+      identities are captured after boot as required by the corpus schema.
+- [ ] Complete license/redistribution review for every materialized binary and
+      archived external artifact.
+- [ ] Capture immutable generated-artifact, loader-binary, and OCI identities.
+- [x] Mark existing observations as exploratory versus newly collected evidence.
 
 ## Phase 3 — Reproducible study
 

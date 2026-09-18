@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Froze the prospective research pilot v1 selection: explicit inclusion rules,
+  pinned Falco and Cilium source provenance, a ten-profile logical kernel set,
+  libbpf/cilium-ebpf/Falco validation-contract specifications, and documented
+  Inspektor Gadget deferrals where existing evidence is not yet content-addressed.
 - Added CFF citation metadata and a research protocol scaffold defining the
   prospective eBPF compatibility study questions, evidence rules, corpus
   metadata, reproducibility boundary, and academic-readiness roadmap. Existing

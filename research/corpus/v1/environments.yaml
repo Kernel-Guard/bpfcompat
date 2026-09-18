@@ -1,0 +1,55 @@
+schema_version: bpfcompat.research.pilot-environment-selection.v1
+corpus_version: v1
+status: logical-selection-frozen
+
+# These are planned logical profiles, not final exact-environment records.
+# Each execution must create the exact_environment_id required by
+# research/corpus/SCHEMA.md from observed kernel/image/profile state.
+
+profiles:
+  - id: ubuntu-20.04-5.4
+    source_matrices: [quirk-library, tier2-kernel-boundaries]
+    rationale: upstream side below the 5.8 ring-buffer boundary
+
+  - id: ubuntu-20.10-5.8
+    source_matrices: [quirk-library, tier2-kernel-boundaries]
+    rationale: first selected upstream-side ring-buffer-capable boundary profile
+
+  - id: ubuntu-22.04-5.15
+    source_matrices: [quirk-library, tier2-kernel-boundaries, falco-upstream]
+    rationale: Falco program-variant fallback band and widely deployed LTS base
+
+  - id: debian-12-6.1
+    source_matrices: [quirk-library, falco-upstream]
+    rationale: modern LTS-era kernel with newer helper/iterator support
+
+  - id: ubuntu-24.04-6.8
+    source_matrices: [tier2-kernel-boundaries, falco-upstream]
+    rationale: modern Ubuntu LTS comparison target
+
+  - id: almalinux-8-4.18
+    source_matrices: [quirk-library, tier1-enterprise-cloud, falco-upstream]
+    rationale: older-numbered RHEL-family kernel with ring-buffer/BPF backports
+
+  - id: amazon-linux-2-4.14
+    source_matrices: [quirk-library, tier1-enterprise-cloud]
+    rationale: old no-embedded-BTF vendor kernel without the RHEL ring-buffer backport
+
+  - id: amazon-linux-2-5.10
+    source_matrices: [quirk-library, tier1-enterprise-cloud]
+    rationale: same vendor family at a newer kernel line for longitudinal contrast
+
+  - id: oracle-linux-9-uek7-5.15
+    source_matrices: [quirk-library, tier1-enterprise-cloud]
+    rationale: UEK rebase/version-string trap case
+
+  - id: opensuse-leap-15.6-6.4
+    source_matrices: [quirk-library, tier1-enterprise-cloud]
+    rationale: SUSE/openSUSE vendor-kernel tier
+
+collection_requirements:
+  architecture: x86_64
+  exact_environment_id: required_before_verdict
+  observed_kernel_release: required
+  image_identity: capture_when_available
+  profile_revision: required

@@ -1,0 +1,116 @@
+schema_version: bpfcompat.research.pilot-selection.v1
+corpus_version: v1
+status: selection-frozen
+selection_base_commit: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+
+cases:
+  - id: falco-modern-bpf-scap-open
+    class: project_loader
+    analysis_role: primary_real_world
+    project: falcosecurity/libs
+    source:
+      repository: https://github.com/falcosecurity/libs
+      revision: 1800b330ce92b532456178abfcbfba3dd157f974
+      workflow_path: .github/workflows/bpfcompat-compatibility.yml
+    license: Apache-2.0
+    materialization:
+      kind: build_at_collection
+      output: build/libscap/examples/01-open/scap-open
+      sha256: null
+      requirement: archive binary and record sha256 before first execution
+    validation_contract_key: falco-modern-bpf-scap-open-v1
+    notes:
+      - Real project loader; modern_bpf probe skeleton is embedded.
+      - Build follows the upstream compatibility workflow at the pinned revision.
+
+  - id: cilium-tracepoint-in-c
+    class: artifact_only
+    analysis_role: primary_oss_derived
+    project: cilium/ebpf
+    source:
+      repository: https://github.com/cilium/ebpf
+      revision: f035193453c32429bc2f6b6d623c4dfa200ad48f
+      path: examples/tracepoint_in_c/tracepoint.c
+      local_derivative_revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      local_path: examples/oss/cilium-tracepoint-in-c/tracepoint.bpf.c
+    license: Dual-MIT-GPL
+    adaptations:
+      - replace common.h with system libbpf headers
+      - replace u32/u64 aliases with __u32/__u64
+    materialization:
+      kind: build_at_collection
+      output: examples/oss/cilium-tracepoint-in-c/tracepoint.bpf.o
+      sha256: null
+      requirement: archive object, build record, and sha256 before first execution
+    validation_contract_keys:
+      - libbpf-v037-load-attach-v1
+      - cilium-ebpf-v022-load-only-v1
+
+  - id: bpfcompat-simple-pass
+    class: controlled_probe
+    analysis_role: controlled_probe
+    project: Kernel-Guard/bpfcompat
+    source:
+      revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      path: examples/simple-pass/simple_pass.bpf.c
+    license: Apache-2.0
+    bpf_license_marker: GPL
+    materialization:
+      kind: build_at_collection
+      output: examples/simple-pass/simple_pass.bpf.o
+      sha256: null
+      requirement: archive object and sha256 before first execution
+    validation_contract_keys:
+      - libbpf-v037-load-attach-v1
+
+  - id: bpfcompat-ringbuf-modern
+    class: controlled_probe
+    analysis_role: controlled_probe
+    project: Kernel-Guard/bpfcompat
+    source:
+      revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      path: examples/ringbuf-modern/ringbuf_modern.bpf.c
+    license: Apache-2.0
+    bpf_license_marker: GPL
+    materialization:
+      kind: build_at_collection
+      output: examples/ringbuf-modern/ringbuf_modern.bpf.o
+      sha256: null
+      requirement: archive object and sha256 before first execution
+    validation_contract_keys:
+      - libbpf-v037-load-attach-v1
+      - cilium-ebpf-v022-load-only-v1
+
+  - id: bpfcompat-perfbuf-fallback
+    class: controlled_probe
+    analysis_role: controlled_probe
+    project: Kernel-Guard/bpfcompat
+    source:
+      revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      path: examples/perfbuf-fallback/perfbuf_fallback.bpf.c
+    license: Apache-2.0
+    bpf_license_marker: GPL
+    materialization:
+      kind: build_at_collection
+      output: examples/perfbuf-fallback/perfbuf_fallback.bpf.o
+      sha256: null
+      requirement: archive object and sha256 before first execution
+    validation_contract_keys:
+      - libbpf-v037-load-attach-v1
+
+  - id: bpfcompat-core-relocation-fail
+    class: controlled_probe
+    analysis_role: calibration
+    project: Kernel-Guard/bpfcompat
+    source:
+      revision: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
+      path: examples/core-relocation-fail/core_relocation_fail.bpf.c
+    license: Apache-2.0
+    materialization:
+      kind: build_at_collection
+      output: examples/core-relocation-fail/core_relocation_fail.bpf.o
+      sha256: null
+      requirement: archive object and sha256 before first execution
+    validation_contract_keys:
+      - libbpf-v037-load-only-v1
+    denominator_policy: never include in real-world compatibility prevalence
