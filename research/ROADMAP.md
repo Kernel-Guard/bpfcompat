@@ -17,9 +17,10 @@
       identities are captured after boot as required by the corpus schema.
 - [ ] Complete license/redistribution review for every materialized binary and
       archived external artifact.
-- [ ] Capture immutable generated-artifact, loader-binary, and OCI identities.
-      The v1 materialization workflow now produces and verifies these identities;
-      commit/freeze the successful bundle metadata before study execution.
+- [x] Capture immutable generated-artifact and loader-binary identities for the
+      frozen v1 selection. The identity lock is committed and enforced by CI.
+      OCI identities remain deferred with Inspektor Gadget rather than being
+      retrofitted into v1.
 - [x] Mark existing observations as exploratory versus newly collected evidence.
 
 ## Phase 3 — Reproducible study
