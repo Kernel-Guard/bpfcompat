@@ -1,0 +1,8 @@
+case_id,analysis_role,attempts,compatible,incompatible,inconclusive,evaluable,incompatible_rate_evaluable_pct
+cilium-tracepoint-ebpf-go,primary_oss_derived,10,9,0,1,9,0.0
+cilium-tracepoint-libbpf,primary_oss_derived,10,9,0,1,9,0.0
+core-relocation-fail-libbpf,calibration,10,0,9,1,9,100.0
+falco-modern-bpf-scap-open,primary_real_world,10,7,2,1,9,22.222
+perfbuf-fallback-libbpf,controlled_probe,10,9,0,1,9,0.0
+ringbuf-modern-libbpf,controlled_probe,10,7,2,1,9,22.222
+simple-pass-libbpf,controlled_probe,10,9,0,1,9,0.0

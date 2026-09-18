@@ -1,0 +1,29 @@
+{
+  "schema_version":"bpfcompat.research.analysis-plan.v1",
+  "corpus_version":"v1",
+  "status":"post-collection analysis implementation; denominator roles were frozen before collection",
+  "canonical_run_id":"35393833464",
+  "canonical_run_sha":"5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "case_roles":{
+    "simple-pass-libbpf":"controlled_probe",
+    "ringbuf-modern-libbpf":"controlled_probe",
+    "perfbuf-fallback-libbpf":"controlled_probe",
+    "core-relocation-fail-libbpf":"calibration",
+    "cilium-tracepoint-libbpf":"primary_oss_derived",
+    "cilium-tracepoint-ebpf-go":"primary_oss_derived",
+    "falco-modern-bpf-scap-open":"primary_real_world"
+  },
+  "rq1":{
+    "case_id":"ringbuf-modern-libbpf",
+    "feature":"BPF_MAP_TYPE_RINGBUF",
+    "upstream_introduction_version":"5.8",
+    "upstream_commit":"457f44363a8894135c85b7a9afd2bd8196db24ab",
+    "source":"https://github.com/torvalds/linux/commit/457f44363a8894135c85b7a9afd2bd8196db24ab"
+  },
+  "rq3":{
+    "left_case":"cilium-tracepoint-libbpf",
+    "right_case":"cilium-tracepoint-ebpf-go",
+    "contracts_comparable":false,
+    "reason":"libbpf is load+attach while cilium/ebpf is load-only; report agreement but do not estimate a pure loader causal effect"
+  }
+}

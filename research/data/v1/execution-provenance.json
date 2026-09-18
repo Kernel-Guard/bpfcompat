@@ -1,0 +1,28 @@
+{
+  "schema_version": "bpfcompat.research.execution-provenance.v1",
+  "corpus_version": "v1",
+  "workflow_source_commit": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "bpfcompat_cli": {
+    "sha256": "sha256:1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e"
+  },
+  "validator": {
+    "sha256": "sha256:4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04"
+  },
+  "loaders": {
+    "cilium-ebpf-v022-loader": {
+      "path": "loaders/ebpf-go-loader",
+      "sha256": "sha256:2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4"
+    },
+    "falco-modern-bpf-scap-open": {
+      "path": "loaders/scap-open",
+      "sha256": "sha256:736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd"
+    }
+  },
+  "inputs": {
+    "materialization_json_sha256": "sha256:d9603466eedbb1950bb18059bb3bfecfe171212aa6cccf4ea0546797d27b0094",
+    "study_plan_sha256": "sha256:90f7562fa331d8f38832e155f2f267e0b35e244417c226245f4d92b523e61408",
+    "execution_matrix_sha256": "sha256:cfc4a35c6c5eb6c2f068435ef4a5080a885b582a6b979dd2985cfe69a4c18873",
+    "profile_lock_sha256": "sha256:702a8beb2859871d69d84f56c37e7ff4b1d1144fc0ccee8788aaee45cc84f63a",
+    "runner_script_sha256": "sha256:bade1871a6e3fdc3c7c1084a91a20f8dad745d10d776f780bc3bef3155084a54"
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "canonical_run_id": "35393833464",
+  "canonical_run_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "collection_complete": true,
+  "corpus_version": "v1",
+  "fully_evaluable": false,
+  "limitations": [
+    "Selected stratified x86_64 pilot; not representative of global Linux deployments.",
+    "Controlled probes and calibration are not mixed into real-world prevalence claims.",
+    "Cilium paths use load+attach versus load-only, so agreement is not a pure loader-effect estimate.",
+    "Oracle requested 5.15 but booted 6.12 UEK; seven executions are inconclusive for the requested profile.",
+    "One exact environment per logical profile prevents patch-level longitudinal inference."
+  ],
+  "non_calibration": {
+    "attempts": 60,
+    "compatible": 50,
+    "evaluable": 54,
+    "incompatible": 4,
+    "inconclusive": 6
+  },
+  "overall": {
+    "attempts": 70,
+    "compatible": 50,
+    "evaluable": 63,
+    "incompatible": 13,
+    "inconclusive": 7
+  },
+  "rq1_version_predictiveness": {
+    "agreement": 8,
+    "agreement_pct": 88.889,
+    "below_threshold_compatible_profiles": [
+      "almalinux-8-4.18"
+    ],
+    "disagreement": 1,
+    "evaluable": 9,
+    "false_negative": 1,
+    "false_positive": 0,
+    "feature": "BPF_MAP_TYPE_RINGBUF",
+    "sensitivity_pct": 85.714,
+    "specificity_pct": 100.0,
+    "true_negative": 2,
+    "true_positive": 6,
+    "upstream_commit": "457f44363a8894135c85b7a9afd2bd8196db24ab",
+    "upstream_introduction_version": "5.8"
+  },
+  "rq2_failure_taxonomy": {
+    "all": {
+      "attempts": 70,
+      "compatible": 50,
+      "evaluable": 63,
+      "incompatible": 13,
+      "inconclusive": 7,
+      "taxonomy": {
+        "COMMAND_VALIDATION_FAILURE": 2,
+        "CORE_RELOCATION_FAILURE": 8,
+        "MISSING_BTF": 1,
+        "UNSUPPORTED_MAP_TYPE": 2
+      }
+    },
+    "calibration": {
+      "attempts": 10,
+      "compatible": 0,
+      "evaluable": 9,
+      "incompatible": 9,
+      "inconclusive": 1,
+      "taxonomy": {
+        "CORE_RELOCATION_FAILURE": 8,
+        "MISSING_BTF": 1
+      }
+    },
+    "controlled_probe": {
+      "attempts": 30,
+      "compatible": 25,
+      "evaluable": 27,
+      "incompatible": 2,
+      "inconclusive": 3,
+      "taxonomy": {
+        "UNSUPPORTED_MAP_TYPE": 2
+      }
+    },
+    "non_calibration": {
+      "attempts": 60,
+      "compatible": 50,
+      "evaluable": 54,
+      "incompatible": 4,
+      "inconclusive": 6,
+      "taxonomy": {
+        "COMMAND_VALIDATION_FAILURE": 2,
+        "UNSUPPORTED_MAP_TYPE": 2
+      }
+    },
+    "primary_oss_derived": {
+      "attempts": 20,
+      "compatible": 18,
+      "evaluable": 18,
+      "incompatible": 0,
+      "inconclusive": 2,
+      "taxonomy": {}
+    },
+    "primary_real_world": {
+      "attempts": 10,
+      "compatible": 7,
+      "evaluable": 9,
+      "incompatible": 2,
+      "inconclusive": 1,
+      "taxonomy": {
+        "COMMAND_VALIDATION_FAILURE": 2
+      }
+    }
+  },
+  "rq3_loader_pair_observations": [
+    {
+      "conclusive_pairs": 9,
+      "contracts_comparable": false,
+      "interpretation_constraint": "libbpf is load+attach while cilium/ebpf is load-only; report agreement but do not estimate a pure loader causal effect",
+      "verdict_disagreement_pct": 0.0,
+      "verdict_disagreements": 0,
+      "verdict_matrix": {
+        "compatible__compatible": 9,
+        "inconclusive__inconclusive": 1
+      }
+    }
+  ],
+  "rq4_vendor_and_environment_variation": {
+    "cross_vendor_version_inversions": 2,
+    "exact_environments": 10,
+    "logical_profiles": 10,
+    "patch_level_longitudinal_evaluable": false,
+    "ringbuf_below_upstream_threshold_compatible_profiles": [
+      "almalinux-8-4.18"
+    ]
+  },
+  "schema_version": "bpfcompat.research.analysis-summary.v1"
+}

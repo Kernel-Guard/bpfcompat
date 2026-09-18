@@ -1,0 +1,44 @@
+{
+  "schema_version": "bpfcompat.research.dataset-manifest.v1",
+  "dataset_version": "v1",
+  "status": "canonical-pilot-collection",
+  "canonical_workflow_run": {
+    "id": "35393833464",
+    "run_number": 12,
+    "head_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+    "branch": "main",
+    "conclusion": "success"
+  },
+  "actions_artifact": {
+    "id": "10566859006",
+    "name": "research-pilot-v1-35393833464",
+    "sha256": "sha256:7aae7b5c099739ef0bcad74fbb3731aaafb1177f1ba128020729b08803610910",
+    "size_bytes": 1238941,
+    "retention_note": "Actions artifact is staging evidence and should be copied into the later DOI archive."
+  },
+  "archived_files": {
+    "execution_provenance": "execution-provenance.json",
+    "raw_report_checksums": "raw-report-checksums.json",
+    "processed_collection_summary": "processed/collection-summary.json",
+    "processed_exact_environments": "processed/exact-environments.json",
+    "processed_execution_shards": "processed/executions/<case>.jsonl"
+  },
+  "processed": {
+    "canonical_executions_jsonl_sha256": "sha256:45124f57aa5d42e0c04c430605eb49a299cbf794f8dab92e6e25caa034301caa",
+    "storage_note": "Canonical executions.jsonl is stored losslessly as case-specific JSONL shards; concatenating in analysis-plan case order reproduces this SHA-256."
+  },
+  "collection": {
+    "attempts": 70,
+    "compatible": 50,
+    "incompatible": 13,
+    "inconclusive": 7,
+    "collection_complete": true,
+    "fully_evaluable": false
+  },
+  "notes": [
+    "Processed summary/environment files are verbatim outputs from the successful workflow artifact.",
+    "Raw reports are referenced by SHA-256 and artifact path instead of duplicated into Git history.",
+    "Oracle requested 5.15 but booted 6.12 UEK; seven executions are inconclusive for the requested logical profile.",
+    "Denominator roles remain those frozen before collection in research/corpus/v1/artifacts.yaml."
+  ]
+}

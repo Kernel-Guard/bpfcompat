@@ -1,0 +1,11 @@
+logical_profile_id,observed_kernel_release,observed_series,version_prediction,observed_verdict,conclusive,agreement,classification_code
+amazon-linux-2-4.14,4.14.26-54.32.amzn2.x86_64,4.14,incompatible,incompatible,true,true,UNSUPPORTED_MAP_TYPE
+almalinux-8-4.18,4.18.0-553.158.1.el8_10.x86_64,4.18,incompatible,compatible,true,false,
+ubuntu-20.04-5.4,5.4.0-216-generic,5.4,incompatible,incompatible,true,true,UNSUPPORTED_MAP_TYPE
+ubuntu-20.10-5.8,5.8.0-63-generic,5.8,compatible,compatible,true,true,
+amazon-linux-2-5.10,5.10.260-259.1054.amzn2.x86_64,5.10,compatible,compatible,true,true,
+ubuntu-22.04-5.15,5.15.0-186-generic,5.15,compatible,compatible,true,true,
+debian-12-6.1,6.1.0-53-cloud-amd64,6.1,compatible,compatible,true,true,
+opensuse-leap-15.6-6.4,6.4.0-150600.23.100-default,6.4,compatible,compatible,true,true,
+ubuntu-24.04-6.8,6.8.0-139-generic,6.8,compatible,compatible,true,true,
+oracle-linux-9-uek7-5.15,6.12.0-107.59.3.3.el9uek.x86_64,6.12,compatible,inconclusive,false,,
