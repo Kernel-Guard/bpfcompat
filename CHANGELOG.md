@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Published the canonical research pilot v1 repository dataset from successful
+  workflow run `35393833464`: 70/70 normalized execution records, exact
+  environment and execution provenance, raw-report and processed-data SHA-256
+  locks, lossless per-case execution shards, and deterministic descriptive
+  RQ1–RQ4 tables guarded by a reproduction test. The full Actions artifact is
+  content-addressed in the dataset manifest for later durable archival.
 - Added the manual-only research pilot v1 execution protocol: seven frozen
   validation cases across ten logical kernel profiles, immutable profile and
   manifest locks, exact-environment derivation from observed kernel plus image
