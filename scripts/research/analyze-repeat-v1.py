@@ -185,6 +185,8 @@ def main() -> int:
     ap.add_argument("--sample", default="research/repeat/v1/stability-sample.json")
     ap.add_argument("--data-dir", default="research/data/v1")
     ap.add_argument("--profile-lock", default="research/corpus/v1/profile-identities.json")
+    ap.add_argument("--identity-lock", default="research/corpus/v1/materialized-identities.json")
+    ap.add_argument("--provenance")
     ap.add_argument("--out-dir", default="reports/research-repeat-v1/normalized")
     args = ap.parse_args()
 
@@ -193,9 +195,48 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sample = json.loads(Path(args.sample).read_text())
+    sample_path = Path(args.sample)
+    sample = json.loads(sample_path.read_text())
     if sample.get("schema_version") != "bpfcompat.research.repeat-sample.v1":
         raise SystemExit("unsupported repeat sample schema")
+
+    manifest = json.loads((data_dir / "dataset-manifest.json").read_text())
+    canonical_run = manifest.get("canonical_workflow_run") or {}
+    if str(canonical_run.get("id")) != str(sample.get("canonical_run_id")):
+        raise SystemExit("repeat sample canonical run id does not match dataset manifest")
+    if canonical_run.get("head_sha") != sample.get("canonical_run_sha"):
+        raise SystemExit("repeat sample canonical run SHA does not match dataset manifest")
+
+    provenance_path = (
+        Path(args.provenance)
+        if args.provenance
+        else reports_dir / "repeat-provenance.json"
+    )
+    if not provenance_path.is_file():
+        raise SystemExit(f"missing repeat provenance: {provenance_path}")
+    provenance = json.loads(provenance_path.read_text())
+    if provenance.get("schema_version") != "bpfcompat.research.repeat-provenance.v1":
+        raise SystemExit("unsupported repeat provenance schema")
+    if provenance.get("sample_sha256") != sha256_file(sample_path):
+        raise SystemExit("repeat provenance sample digest mismatch")
+
+    identity_lock = json.loads(Path(args.identity_lock).read_text())
+    identities = {
+        item["id"]: "sha256:" + item["sha256"].removeprefix("sha256:")
+        for item in identity_lock.get("artifacts") or []
+    }
+    expected = {
+        "bpfcompat_cli_sha256": identities["bpfcompat-v037-cli"],
+        "validator_sha256": identities["bpfcompat-v037-validator"],
+    }
+    for field, digest in expected.items():
+        if provenance.get(field) != digest:
+            raise SystemExit(f"repeat provenance identity drift: {field}")
+    loaders = provenance.get("loaders") or {}
+    if loaders.get("cilium-ebpf-v022-loader") != identities["cilium-ebpf-v022-loader"]:
+        raise SystemExit("repeat provenance cilium loader identity drift")
+    if loaders.get("falco-modern-bpf-scap-open") != identities["falco-modern-bpf-scap-open"]:
+        raise SystemExit("repeat provenance Falco loader identity drift")
     repeats = int(sample.get("repeats_per_tuple") or 0)
     tuples = sample.get("tuples")
     if repeats <= 0 or not isinstance(tuples, list) or not tuples:
@@ -206,6 +247,8 @@ def main() -> int:
         p["id"]: "git-blob:" + p["git_blob"]
         for p in lock.get("profiles") or []
     }
+
+    provenance_sha256 = sha256_file(provenance_path)
 
     rows: list[dict[str, Any]] = []
     missing: list[str] = []
@@ -260,6 +303,7 @@ def main() -> int:
                 "canonical_environment_id": canonical["environment_id"],
                 "canonical_raw_report_sha256": canonical["raw_report_sha256"],
                 "repeat_raw_report_sha256": sha256_file(report_path),
+                "repeat_provenance_sha256": provenance_sha256,
                 "comparison": comparison,
                 **norm,
             }
@@ -295,6 +339,7 @@ def main() -> int:
         "canonical_run_id": sample["canonical_run_id"],
         "canonical_run_sha": sample["canonical_run_sha"],
         "sampling_design": sample["sampling_design"],
+        "repeat_provenance_sha256": provenance_sha256,
         "planned_tuples": len(tuples),
         "repeats_per_tuple": repeats,
         "planned_attempts": expected,
