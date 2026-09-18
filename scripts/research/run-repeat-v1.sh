@@ -28,16 +28,26 @@ jq -n \
   --arg workflow_source_commit "$(git rev-parse HEAD)" \
   --arg sample_sha256 "sha256:$(sha256sum "$SAMPLE" | awk '{print $1}')" \
   --arg materialization_sha256 "sha256:$(sha256sum "$BUNDLE/materialization.json" | awk '{print $1}')" \
+  --arg study_plan_sha256 "sha256:$(sha256sum "$PLAN" | awk '{print $1}')" \
+  --arg profile_lock_sha256 "sha256:$(sha256sum research/corpus/v1/profile-identities.json | awk '{print $1}')" \
   --arg cli_sha256 "sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-linux-amd64" | awk '{print $1}')" \
   --arg validator_sha256 "sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-validator-static-linux-amd64" | awk '{print $1}')" \
+  --arg cilium_loader_sha256 "sha256:$(sha256sum "$BUNDLE/loaders/ebpf-go-loader" | awk '{print $1}')" \
+  --arg falco_loader_sha256 "sha256:$(sha256sum "$BUNDLE/loaders/scap-open" | awk '{print $1}')" \
   '{
     schema_version:"bpfcompat.research.repeat-provenance.v1",
     corpus_version:"v1",
     workflow_source_commit:$workflow_source_commit,
     sample_sha256:$sample_sha256,
     materialization_sha256:$materialization_sha256,
+    study_plan_sha256:$study_plan_sha256,
+    profile_lock_sha256:$profile_lock_sha256,
     bpfcompat_cli_sha256:$cli_sha256,
-    validator_sha256:$validator_sha256
+    validator_sha256:$validator_sha256,
+    loaders:{
+      "cilium-ebpf-v022-loader":$cilium_loader_sha256,
+      "falco-modern-bpf-scap-open":$falco_loader_sha256
+    }
   }' > "$REPORTS/repeat-provenance.json"
 
 repeats="$(jq -er '.repeats_per_tuple | select(type == "number" and . > 0)' "$SAMPLE")"
