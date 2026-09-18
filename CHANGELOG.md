@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 ### Added
+- Added CFF citation metadata and a research protocol scaffold defining the
+  prospective eBPF compatibility study questions, evidence rules, corpus
+  metadata, reproducibility boundary, and academic-readiness roadmap. Existing
+  case studies remain exploratory evidence rather than being relabeled as
+  preregistered research.
 - Consumer canary now covers the **stable** release as well as the candidate.
   `stable-prebuilt` pins the exact commit of the release `release.yaml` calls
   stable and installs no build toolchain, so a regression in
