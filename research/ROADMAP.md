@@ -26,10 +26,12 @@
 ## Phase 3 — Reproducible study
 
 - [x] Implement a versioned study runner and normalizer for captured BPFCompat reports.
-- [ ] Generate every paper table and figure from normalized data.
+- [x] Generate pilot v1 descriptive RQ1–RQ4 tables from normalized data.
+- [ ] Generate every final paper table and figure from normalized data.
 - [ ] Add repeat-run checks for a representative sample.
 - [x] Document the v1 execution boundary, KVM/VM prerequisites, exact-environment identity, and collection completeness rules.
-- [ ] Publish raw/processed dataset checksums.
+- [x] Publish raw/processed dataset checksums and bind the repository snapshot to
+      the canonical successful workflow artifact.
 
 ## Phase 4 — Archival
 
