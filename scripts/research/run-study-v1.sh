@@ -17,6 +17,7 @@ fail() {
 
 bash scripts/research/verify-materialization-v1.sh "$BUNDLE"
 bash scripts/research/verify-profile-lock-v1.sh
+bash scripts/research/verify-study-matrix-v1.sh
 
 expected_cli="1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e"
 actual_cli="$(sha256sum "$BUNDLE/bin/bpfcompat-linux-amd64" | awk '{print $1}')"
@@ -33,10 +34,14 @@ run_case() {
   shift
 
   echo "[research-pilot-v1] === $case_id ==="
-  set +e
-  "$@" >"$REPORTS/logs/${case_id}.stdout.log" 2>"$REPORTS/logs/${case_id}.stderr.log"
-  local rc=$?
-  set -e
+  rm -f     "$REPORTS/${case_id}.json"     "$REPORTS/${case_id}.md"     "$REPORTS/logs/${case_id}.stdout.log"     "$REPORTS/logs/${case_id}.stderr.log"     "$REPORTS/logs/${case_id}.exit-code"
+
+  local rc=0
+  if "$@" >"$REPORTS/logs/${case_id}.stdout.log" 2>"$REPORTS/logs/${case_id}.stderr.log"; then
+    rc=0
+  else
+    rc=$?
+  fi
   printf '%s\n' "$rc" > "$REPORTS/logs/${case_id}.exit-code"
 
   # Compatibility negatives are observations, not shell failures. A missing
@@ -49,25 +54,59 @@ run_case() {
   fi
 }
 
-common=(
-  --matrix "$MATRIX"
-  --concurrency 2
-  --timeout 10m
-)
+case_rows="$(mktemp)"
+trap 'rm -f "$case_rows"' EXIT
+if ! jq -ec '.cases[]' "$PLAN" > "$case_rows"; then
+  fail "study plan cases could not be enumerated"
+fi
+[[ -s "$case_rows" ]] || fail "study plan contains no cases"
 
-run_case simple-pass-libbpf   "$BPF" test   --artifact "$BUNDLE/artifacts/simple_pass.bpf.o"   --manifest research/corpus/v1/manifests/simple-pass.yaml   --validation-mode load_attach   "${common[@]}"   --artifact-name research-simple-pass --artifact-version v1   --workdir .bpfcompat/research-v1/simple-pass-libbpf   --out "$REPORTS/simple-pass-libbpf.json"   --markdown "$REPORTS/simple-pass-libbpf.md"
+while IFS= read -r case_json; do
+  case_id="$(jq -er '.id | select(type == "string" and length > 0)' <<<"$case_json")" ||
+    fail "case without a valid id"
+  mode="$(jq -er '.mode | select(type == "string" and length > 0)' <<<"$case_json")" ||
+    fail "$case_id: missing mode"
+  artifact_path="$(jq -r '.artifact_path // empty' <<<"$case_json")"
+  manifest="$(jq -r '.manifest // empty' <<<"$case_json")"
+  command_binary="$(jq -r '.command_binary // empty' <<<"$case_json")"
+  command="$(jq -r '.command // empty' <<<"$case_json")"
 
-run_case ringbuf-modern-libbpf   "$BPF" test   --artifact "$BUNDLE/artifacts/ringbuf_modern.bpf.o"   --manifest research/corpus/v1/manifests/ringbuf-modern.yaml   --validation-mode load_attach   "${common[@]}"   --artifact-name research-ringbuf-modern --artifact-version v1   --workdir .bpfcompat/research-v1/ringbuf-modern-libbpf   --out "$REPORTS/ringbuf-modern-libbpf.json"   --markdown "$REPORTS/ringbuf-modern-libbpf.md"
+  common=(
+    --matrix "$MATRIX"
+    --concurrency 2
+    --timeout 8m
+    --artifact-name "research-$case_id"
+    --artifact-version v1
+    --workdir ".bpfcompat/research-v1/$case_id"
+    --out "$REPORTS/$case_id.json"
+    --markdown "$REPORTS/$case_id.md"
+  )
 
-run_case perfbuf-fallback-libbpf   "$BPF" test   --artifact "$BUNDLE/artifacts/perfbuf_fallback.bpf.o"   --manifest research/corpus/v1/manifests/perfbuf-fallback.yaml   --validation-mode load_attach   "${common[@]}"   --artifact-name research-perfbuf-fallback --artifact-version v1   --workdir .bpfcompat/research-v1/perfbuf-fallback-libbpf   --out "$REPORTS/perfbuf-fallback-libbpf.json"   --markdown "$REPORTS/perfbuf-fallback-libbpf.md"
-
-run_case core-relocation-fail-libbpf   "$BPF" test   --artifact "$BUNDLE/artifacts/core_relocation_fail.bpf.o"   --manifest research/corpus/v1/manifests/core-relocation-fail.yaml   --validation-mode load_only   "${common[@]}"   --artifact-name research-core-relocation-calibration --artifact-version v1   --workdir .bpfcompat/research-v1/core-relocation-fail-libbpf   --out "$REPORTS/core-relocation-fail-libbpf.json"   --markdown "$REPORTS/core-relocation-fail-libbpf.md"
-
-run_case cilium-tracepoint-libbpf   "$BPF" test   --artifact "$BUNDLE/artifacts/cilium_tracepoint_in_c.bpf.o"   --manifest research/corpus/v1/manifests/cilium-tracepoint-in-c.yaml   --validation-mode load_attach   "${common[@]}"   --artifact-name research-cilium-tracepoint --artifact-version v1-libbpf   --workdir .bpfcompat/research-v1/cilium-tracepoint-libbpf   --out "$REPORTS/cilium-tracepoint-libbpf.json"   --markdown "$REPORTS/cilium-tracepoint-libbpf.md"
-
-run_case cilium-tracepoint-ebpf-go   "$BPF" test-command   --cmd '$BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT'   --bin "$BUNDLE/loaders/ebpf-go-loader"   --artifact "$BUNDLE/artifacts/cilium_tracepoint_in_c.bpf.o"   --matrix "$MATRIX"   --concurrency 2   --timeout 10m   --artifact-name research-cilium-tracepoint --artifact-version v1-ebpf-go   --workdir .bpfcompat/research-v1/cilium-tracepoint-ebpf-go   --out "$REPORTS/cilium-tracepoint-ebpf-go.json"   --markdown "$REPORTS/cilium-tracepoint-ebpf-go.md"
-
-run_case falco-modern-bpf-scap-open   "$BPF" test-command   --cmd '$BPFCOMPAT_BIN --modern_bpf --num_events 10'   --bin "$BUNDLE/loaders/scap-open"   --matrix "$MATRIX"   --concurrency 2   --timeout 10m   --artifact-name research-falco-modern-bpf --artifact-version v1   --workdir .bpfcompat/research-v1/falco-modern-bpf-scap-open   --out "$REPORTS/falco-modern-bpf-scap-open.json"   --markdown "$REPORTS/falco-modern-bpf-scap-open.md"
+  case "$mode" in
+    load_only|load_attach)
+      [[ -n "$artifact_path" && -n "$manifest" ]] ||
+        fail "$case_id: libbpf case requires artifact_path and manifest"
+      run_case "$case_id"         "$BPF" test         --artifact "$BUNDLE/$artifact_path"         --manifest "$manifest"         --validation-mode "$mode"         "${common[@]}"
+      ;;
+    command)
+      [[ -n "$command_binary" && -n "$command" ]] ||
+        fail "$case_id: command case requires command_binary and command"
+      args=(
+        "$BPF" test-command
+        --cmd "$command"
+        --bin "$BUNDLE/$command_binary"
+      )
+      if [[ -n "$artifact_path" ]]; then
+        args+=(--artifact "$BUNDLE/$artifact_path")
+      fi
+      args+=("${common[@]}")
+      run_case "$case_id" "${args[@]}"
+      ;;
+    *)
+      fail "$case_id: unsupported study mode $mode"
+      ;;
+  esac
+done < "$case_rows"
 
 python3 scripts/research/normalize-study-v1.py   --reports-dir "$REPORTS"   --out-dir "$REPORTS/normalized"
 
