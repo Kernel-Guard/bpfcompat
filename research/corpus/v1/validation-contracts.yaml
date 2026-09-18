@@ -52,7 +52,7 @@ contracts:
       dependency: github.com/cilium/ebpf@v0.22.0
       go_mod_blob_sha: 14cecbd3887532062fa867d5d603d4cf7d1afde4
       go_sum_blob_sha: 02d7cd8e91fa4cb75e9942d711bdd0edaf89c009
-      build: CGO_ENABLED=0 go build -o ebpf-go-loader .
+      build: CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ebpf-go-loader .
       binary_sha256: null
     command: $BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT
     expected_exit_codes: [0]
