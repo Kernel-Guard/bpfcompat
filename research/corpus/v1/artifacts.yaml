@@ -1,6 +1,6 @@
 schema_version: bpfcompat.research.pilot-selection.v1
 corpus_version: v1
-status: selection-frozen
+status: selection-and-materialized-identities-frozen
 selection_base_commit: b8ef57f4e02ebecee4649f7657ea8eea6af46ca9
 
 cases:
@@ -16,7 +16,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: build/libscap/examples/01-open/scap-open
-      sha256: null
+      sha256: 736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd
       requirement: archive binary and record sha256 before first execution
     validation_contract_key: falco-modern-bpf-scap-open-v1
     notes:
@@ -40,7 +40,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: examples/oss/cilium-tracepoint-in-c/tracepoint.bpf.o
-      sha256: null
+      sha256: 16e1ce980c2c5bf6e839dac79e1710b4d185cbbca649e1e5421e1ab1fe7e5cc8
       requirement: archive object, build record, and sha256 before first execution
     validation_contract_keys:
       - libbpf-v037-load-attach-v1
@@ -58,7 +58,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: examples/simple-pass/simple_pass.bpf.o
-      sha256: null
+      sha256: 41647d6d49fc72763fe8e2e7ee0a3b74f92d317de2595d8c95a4ca29b6fd0b0f
       requirement: archive object and sha256 before first execution
     validation_contract_keys:
       - libbpf-v037-load-attach-v1
@@ -75,7 +75,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: examples/ringbuf-modern/ringbuf_modern.bpf.o
-      sha256: null
+      sha256: be6dfff7c0568a2b0e927df8b5b4649afa08aa04b9c8c9222a1961f8f562894c
       requirement: archive object and sha256 before first execution
     validation_contract_keys:
       - libbpf-v037-load-attach-v1
@@ -93,7 +93,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: examples/perfbuf-fallback/perfbuf_fallback.bpf.o
-      sha256: null
+      sha256: 0e4f7e468faf779f4540acf2d074e1511fcea60084ffe1d8d6ad95f53d566b98
       requirement: archive object and sha256 before first execution
     validation_contract_keys:
       - libbpf-v037-load-attach-v1
@@ -109,7 +109,7 @@ cases:
     materialization:
       kind: build_at_collection
       output: examples/core-relocation-fail/core_relocation_fail.bpf.o
-      sha256: null
+      sha256: 848471790f58008600eb6a7ecb1ac3fb3969653d9a7f8820ce846d917b5f05b0
       requirement: archive object and sha256 before first execution
     validation_contract_keys:
       - libbpf-v037-load-only-v1
