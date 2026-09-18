@@ -9,6 +9,8 @@ on:
       - "scripts/research/normalize-study-v1.py"
       - "scripts/research/test-normalize-study-v1.sh"
       - "scripts/research/verify-profile-lock-v1.sh"
+      - "scripts/research/verify-study-matrix-v1.sh"
+      - "scripts/research/test-profile-lock-v1.sh"
       - "research/corpus/v1/**"
 
 permissions:
@@ -44,6 +46,8 @@ jobs:
           bash -n scripts/research/run-study-v1.sh
           bash -n scripts/research/verify-profile-lock-v1.sh
           bash -n scripts/research/test-normalize-study-v1.sh
+          bash -n scripts/research/verify-study-matrix-v1.sh
+          bash -n scripts/research/test-profile-lock-v1.sh
           python3 -m py_compile scripts/research/normalize-study-v1.py
           jq -e . research/corpus/v1/study-plan.json >/dev/null
           jq -e . research/corpus/v1/profile-identities.json >/dev/null
@@ -52,10 +56,13 @@ jobs:
       - name: Verify frozen profile and manifest identities
         run: bash scripts/research/verify-profile-lock-v1.sh
 
-      - name: Validate research matrix
-        run: go run ./cmd/bpfcompat profile list --matrix research/corpus/v1/execution-matrix.yaml
+      - name: Validate research matrix/profile set
+        run: bash scripts/research/verify-study-matrix-v1.sh
 
-      - name: Normalization regression
+      - name: Lock-verifier negative regression
+        run: bash scripts/research/test-profile-lock-v1.sh
+
+      - name: Normalization regressions
         run: bash scripts/research/test-normalize-study-v1.sh
 
   execute:
@@ -63,7 +70,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     needs: preflight
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
