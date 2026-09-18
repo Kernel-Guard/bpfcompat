@@ -11,7 +11,9 @@ bash scripts/research/verify-materialization-v1.sh dist/research-corpus-v1
 ```
 
 The canonical CI implementation is
-`.github/workflows/research-materialize-v1.yml`.
+`.github/workflows/research-materialize-v1.yml`. CI materializes the corpus twice
+from clean scratch directories and compares the artifact and validation-contract
+identity projection. Any byte-level drift in those identities fails the workflow.
 
 ## What the materializer does
 
@@ -27,7 +29,11 @@ It builds from the frozen source revisions, rather than from the moving checkout
   `validation-contracts.yaml`.
 
 It also records the build toolchain, source revisions, generated artifact
-SHA-256 values, and canonical validation-contract hashes.
+SHA-256 values, and canonical validation-contract hashes. The BPF compilation
+uses fixed debug/source prefix mapping, the Go loader uses `-trimpath` and
+`-buildvcs=false`, and the Falco build uses a stable scratch path plus
+`SOURCE_DATE_EPOCH`/prefix mapping so the canonical CI can verify repeated
+materialization.
 
 ## Canonical contract hashes
 
