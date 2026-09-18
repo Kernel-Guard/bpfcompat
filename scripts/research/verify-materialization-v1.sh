@@ -64,4 +64,27 @@ done < <(
 [[ "$(jq -r '.source_revisions.falco' "$BUNDLE/materialization.json")" ==   "1800b330ce92b532456178abfcbfba3dd157f974" ]] ||
   fail "unexpected Falco source revision"
 
+LOCK="research/corpus/v1/materialized-identities.json"
+if [[ -s "$LOCK" ]]; then
+  actual_lock="$(mktemp)"
+  expected_lock="$(mktemp)"
+  trap 'rm -f "$actual_lock" "$expected_lock"' EXIT
+
+  jq -S '{
+    source_revisions,
+    artifacts,
+    validation_contracts
+  }' "$BUNDLE/materialization.json" > "$actual_lock"
+
+  jq -S '{
+    source_revisions,
+    artifacts,
+    validation_contracts
+  }' "$LOCK" > "$expected_lock"
+
+  if ! diff -u "$expected_lock" "$actual_lock"; then
+    fail "materialized identities differ from the committed v1 identity lock"
+  fi
+fi
+
 echo "[verify-research-materialization] PASS"
