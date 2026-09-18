@@ -29,6 +29,40 @@ export BPFCOMPAT_VALIDATOR_SHA256="4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3
 BPF="$PWD/$BUNDLE/bin/bpfcompat-linux-amd64"
 mkdir -p "$REPORTS/logs" "$REPORTS/normalized"
 
+
+write_execution_provenance() {
+  local out="$REPORTS/execution-provenance.json"
+  local cli_sha validator_sha materialization_sha plan_sha matrix_sha profile_lock_sha runner_sha
+  cli_sha="sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-linux-amd64" | awk '{print $1}')"
+  validator_sha="sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-validator-static-linux-amd64" | awk '{print $1}')"
+  materialization_sha="sha256:$(sha256sum "$BUNDLE/materialization.json" | awk '{print $1}')"
+  plan_sha="sha256:$(sha256sum "$PLAN" | awk '{print $1}')"
+  matrix_sha="sha256:$(sha256sum "$MATRIX" | awk '{print $1}')"
+  profile_lock_sha="sha256:$(sha256sum research/corpus/v1/profile-identities.json | awk '{print $1}')"
+  runner_sha="sha256:$(sha256sum scripts/research/run-study-v1.sh | awk '{print $1}')"
+
+  jq -n     --arg workflow_source_commit "$(git rev-parse HEAD)"     --arg cli_sha "$cli_sha"     --arg validator_sha "$validator_sha"     --arg materialization_sha "$materialization_sha"     --arg plan_sha "$plan_sha"     --arg matrix_sha "$matrix_sha"     --arg profile_lock_sha "$profile_lock_sha"     --arg runner_sha "$runner_sha"     --arg cilium_loader_sha "sha256:$(sha256sum "$BUNDLE/loaders/ebpf-go-loader" | awk '{print $1}')"     --arg falco_loader_sha "sha256:$(sha256sum "$BUNDLE/loaders/scap-open" | awk '{print $1}')"     '{
+      schema_version:"bpfcompat.research.execution-provenance.v1",
+      corpus_version:"v1",
+      workflow_source_commit:$workflow_source_commit,
+      bpfcompat_cli:{sha256:$cli_sha},
+      validator:{sha256:$validator_sha},
+      loaders:{
+        "cilium-ebpf-v022-loader":{path:"loaders/ebpf-go-loader",sha256:$cilium_loader_sha},
+        "falco-modern-bpf-scap-open":{path:"loaders/scap-open",sha256:$falco_loader_sha}
+      },
+      inputs:{
+        materialization_json_sha256:$materialization_sha,
+        study_plan_sha256:$plan_sha,
+        execution_matrix_sha256:$matrix_sha,
+        profile_lock_sha256:$profile_lock_sha,
+        runner_script_sha256:$runner_sha
+      }
+    }' > "$out"
+}
+
+write_execution_provenance
+
 run_case() {
   local case_id="$1"
   shift

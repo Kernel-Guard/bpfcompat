@@ -44,6 +44,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   CI instead of silently leaving the documented consumer path untested.
 
 ### Fixed
+- Fixed research pilot v1 normalization to match the actually frozen
+  BPFCompat v0.3.7 `ReportV01` schema. The runner now records execution-time
+  CLI/validator/loader hashes before the study; normalization derives the
+  v0.3.7 verdict and kernel-family match from report fields, validates any
+  newer structured fields when present, preserves exact observed environments
+  for requested-kernel mismatches, and fails closed on provenance drift.
 - Release-asset verification regression coverage now exercises the cases the
   contract actually depends on: extra `SHA256SUMS` entries for assets that were
   never downloaded must pass (the v0.3.6 arm64 failure), while a missing,

@@ -55,10 +55,23 @@ normalizer constructs a canonical record from:
 
 The SHA-256 of canonical JSON is the `exact_environment_id`.
 
+The frozen execution binary is BPFCompat v0.3.7. Its `ReportV01` predates the
+later top-level validator provenance, per-target verdict, and structured
+environment fields. The research runner therefore writes
+`execution-provenance.json` *before* any case runs, hashing the exact
+BPFCompat CLI, static validator, and project loader binaries. The normalizer
+binds those hashes to the frozen materialization lock.
+
+For v0.3.7 targets, the normalizer derives the producer verdict only from the
+known `status` taxonomy and derives kernel-family match from the immutable
+profile/host fields. If a later report supplies those fields directly, they
+must agree with the derived values or normalization fails.
+
 A compatible/incompatible verdict without an exact environment identity is
 downgraded to `inconclusive/evidence_unavailable` in the research dataset.
-A kernel-family mismatch is `inconclusive/environment_unavailable`, not a
-compatibility observation.
+A kernel-family mismatch is still assigned an exact identity for the
+environment that actually ran, but its execution verdict is
+`inconclusive/environment_unavailable`, not a compatibility observation.
 
 If the same logical profile resolves to more than one exact environment during a
 single study collection, normalization marks environment drift and the collection
@@ -84,6 +97,7 @@ The workflow keeps raw reports and produces:
 
 ```text
 reports/research-v1/
+├── execution-provenance.json
 ├── <case>.json
 ├── <case>.md
 ├── logs/

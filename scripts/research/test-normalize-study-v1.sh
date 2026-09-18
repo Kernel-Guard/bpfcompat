@@ -5,6 +5,31 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/reports" "$tmp/out"
 
+cat > "$tmp/reports/execution-provenance.json" <<'JSON'
+{
+  "schema_version": "bpfcompat.research.execution-provenance.v1",
+  "corpus_version": "v1",
+  "workflow_source_commit": "fixture",
+  "bpfcompat_cli": {
+    "sha256": "sha256:1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e"
+  },
+  "validator": {
+    "sha256": "sha256:4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04"
+  },
+  "loaders": {
+    "cilium-ebpf-v022-loader": {
+      "path": "loaders/ebpf-go-loader",
+      "sha256": "sha256:2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4"
+    },
+    "falco-modern-bpf-scap-open": {
+      "path": "loaders/scap-open",
+      "sha256": "sha256:736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd"
+    }
+  },
+  "inputs": {}
+}
+JSON
+
 base_report="$tmp/base.json"
 python3 - "$base_report" <<'PY'
 import json
@@ -19,22 +44,22 @@ for p in profiles:
         "profile_id": pid,
         "required": False,
         "status": "pass",
-        "verdict": "COMPATIBLE",
-        "environment": {
-            "requested_kernel_family": "5.15",
-            "observed_kernel": "5.15.0-fixture",
-            "kernel_family_match": True,
-            "image_source_url": "https://example.invalid/image",
-            "image_sha256": "1" * 64,
-        },
         "profile": {
             "distro": "fixture",
             "version": "1",
             "kernel_family": "5.15",
-            "arch": "x86_64",
+            "arch": "x86_64"
         },
-        "host": {"kernel": "5.15.0-fixture", "arch": "x86_64"},
-        "notes": [],
+        "host": {
+            "distro": "fixture",
+            "version": "1",
+            "kernel_family": "5.15",
+            "kernel": "5.15.0-fixture",
+            "arch": "x86_64"
+        },
+        "notes": [
+            "base image sha256: " + ("1" * 64)
+        ]
     })
 
 doc = {
@@ -42,9 +67,6 @@ doc = {
     "run": {"id": "fixture", "started_at": "2026-09-18T00:00:00Z"},
     "artifact": {
         "sha256": "41647d6d49fc72763fe8e2e7ee0a3b74f92d317de2595d8c95a4ca29b6fd0b0f"
-    },
-    "validator": {
-        "sha256": "4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04"
     },
     "targets": targets,
 }
@@ -57,7 +79,7 @@ run_one() {
   local report="$1"
   local out="$2"
   rm -rf "$out"
-  mkdir -p "$out" "$tmp/reports"
+  mkdir -p "$out"
   cp "$report" "$tmp/reports/simple-pass-libbpf.json"
   python3 scripts/research/normalize-study-v1.py     --reports-dir "$tmp/reports"     --study-plan "$tmp/plan-one.json"     --out-dir "$out"
 }
@@ -71,7 +93,7 @@ expect_fail() {
   fi
 }
 
-# Baseline: exact ten-profile collection is complete.
+# Frozen v0.3.7 ReportV01 has no verdict/environment/validator top-level fields.
 run_one "$base_report" "$tmp/out/good"
 jq -e '
   .collection_complete == true and
@@ -82,6 +104,14 @@ jq -e '
   (.missing_environments | length) == 0 and
   (.environment_drift | length) == 0
 ' "$tmp/out/good/collection-summary.json" >/dev/null
+head -n1 "$tmp/out/good/executions.jsonl" |
+  jq -e '
+    .target_verdict == "COMPATIBLE" and
+    .target_verdict_source == "derived_from_status_v0.3.7" and
+    .kernel_family_match == true and
+    .kernel_family_match_source == "derived_from_profile_and_host" and
+    .environment_id != null
+  ' >/dev/null
 
 # Duplicate one profile and omit another while retaining ten rows: incomplete.
 jq '.targets[9] = .targets[0]' "$base_report" > "$tmp/duplicate.json"
@@ -105,75 +135,82 @@ jq -e '
   (.wrong_target_counts | index("simple-pass-libbpf")) != null
 ' "$tmp/out/missing-profile/collection-summary.json" >/dev/null
 
-# Missing kernel-family evidence can never produce compatibility or exact env.
-jq 'del(.targets[0].environment.kernel_family_match)' "$base_report" > "$tmp/missing-match.json"
-rm -rf "$tmp/out/missing-match"; mkdir -p "$tmp/out/missing-match"
-cp "$tmp/missing-match.json" "$tmp/reports/simple-pass-libbpf.json"
-expect_fail missing-match python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json"   --out-dir "$tmp/out/missing-match"
+# Wrong requested kernel is still an exactly identified observed environment,
+# but it is not a compatibility observation about the requested profile.
+jq '
+  .targets[0].profile.kernel_family = "5.15" |
+  .targets[0].host.kernel = "6.12.0-fixture"
+' "$base_report" > "$tmp/mismatch.json"
+run_one "$tmp/mismatch.json" "$tmp/out/mismatch"
+jq -e '
+  .collection_complete == true and
+  .fully_evaluable == false and
+  .totals.inconclusive == 1 and
+  (.missing_environments | length) == 0
+' "$tmp/out/mismatch/collection-summary.json" >/dev/null
+head -n1 "$tmp/out/mismatch/executions.jsonl" |
+  jq -e '
+    .verdict == "inconclusive" and
+    .inconclusive_reason == "environment_unavailable" and
+    .kernel_family_match == false and
+    .environment_id != null
+  ' >/dev/null
+
+# Unparseable observed kernel cannot support an exact environment identity.
+jq '.targets[0].host.kernel = "not-a-kernel"' "$base_report" > "$tmp/unparseable.json"
+rm -rf "$tmp/out/unparseable"; mkdir -p "$tmp/out/unparseable"
+cp "$tmp/unparseable.json" "$tmp/reports/simple-pass-libbpf.json"
+expect_fail unparseable python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json"   --out-dir "$tmp/out/unparseable"
 jq -e '
   .collection_complete == false and
   .fully_evaluable == false and
   (.missing_environments | length) == 1
-' "$tmp/out/missing-match/collection-summary.json" >/dev/null
-head -n1 "$tmp/out/missing-match/executions.jsonl" |
+' "$tmp/out/unparseable/collection-summary.json" >/dev/null
+head -n1 "$tmp/out/unparseable/executions.jsonl" |
   jq -e '.verdict == "inconclusive" and .inconclusive_reason == "evidence_unavailable" and .environment_id == null' >/dev/null
 
-# A genuine requested/observed mismatch is inconclusive, not incompatible.
-jq '
-  .targets[0].environment.requested_kernel_family = "5.4" |
-  .targets[0].profile.kernel_family = "5.4" |
-  .targets[0].environment.kernel_family_match = false
-' "$base_report" > "$tmp/mismatch.json"
-rm -rf "$tmp/out/mismatch"; mkdir -p "$tmp/out/mismatch"
-cp "$tmp/mismatch.json" "$tmp/reports/simple-pass-libbpf.json"
-expect_fail mismatch python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json"   --out-dir "$tmp/out/mismatch"
-head -n1 "$tmp/out/mismatch/executions.jsonl" |
-  jq -e '.verdict == "inconclusive" and .inconclusive_reason == "environment_unavailable" and .environment_id == null' >/dev/null
-
 # Infrastructure failure is collected but remains inconclusive.
-jq '
-  .targets[0].status = "infra_error" |
-  .targets[0].verdict = "INFRA_ERROR"
-' "$base_report" > "$tmp/infra.json"
+jq '.targets[0].status = "infra_error"' "$base_report" > "$tmp/infra.json"
 run_one "$tmp/infra.json" "$tmp/out/infra"
 jq -e '.collection_complete == true and .fully_evaluable == false and .totals.inconclusive == 1'   "$tmp/out/infra/collection-summary.json" >/dev/null
 head -n1 "$tmp/out/infra/executions.jsonl" |
-  jq -e '.verdict == "inconclusive" and .inconclusive_reason == "infrastructure_error"' >/dev/null
+  jq -e '.verdict == "inconclusive" and .inconclusive_reason == "infrastructure_error" and .target_verdict == "INFRA_ERROR"' >/dev/null
 
-# Malformed/tampered evidence is rejected before a dataset is accepted.
-jq '.targets[0].environment.image_sha256 = "banana"' "$base_report" > "$tmp/bad-image.json"
-cp "$tmp/bad-image.json" "$tmp/reports/simple-pass-libbpf.json"
-expect_fail bad-image python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-image"
-grep -q "malformed SHA-256" "$tmp/bad-image.stderr"
-
-jq '.targets[0].status = "pass" | .targets[0].verdict = "INCOMPATIBLE"'   "$base_report" > "$tmp/contradiction.json"
+# If a future/reporting layer adds verdict, contradiction must still hard-fail.
+jq '.targets[0].verdict = "INCOMPATIBLE"' "$base_report" > "$tmp/contradiction.json"
 cp "$tmp/contradiction.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail contradiction python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/contradiction"
 grep -q "contradictory status/verdict" "$tmp/contradiction.stderr"
+
+# Legacy image digest evidence is validated, not merely treated as a note.
+jq '.targets[0].notes = ["base image sha256: banana"]' "$base_report" > "$tmp/bad-image.json"
+cp "$tmp/bad-image.json" "$tmp/reports/simple-pass-libbpf.json"
+expect_fail bad-image python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-image"
+grep -q "malformed base image SHA-256 note" "$tmp/bad-image.stderr"
 
 jq '.targets[0].profile_id = "not-frozen"' "$base_report" > "$tmp/unexpected.json"
 cp "$tmp/unexpected.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail unexpected python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/unexpected"
 grep -q "unexpected profile ids" "$tmp/unexpected.stderr"
 
-jq '.artifact.sha256 = "2222222222222222222222222222222222222222222222222222222222222222"' "$base_report" > "$tmp/bad-artifact.json"
+jq '.artifact.sha256 = "2222222222222222222222222222222222222222222222222222222222222222"'   "$base_report" > "$tmp/bad-artifact.json"
 cp "$tmp/bad-artifact.json" "$tmp/reports/simple-pass-libbpf.json"
 expect_fail bad-artifact python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-artifact"
 grep -q "artifact digest mismatch" "$tmp/bad-artifact.stderr"
 
-jq '.validator.sha256 = "3333333333333333333333333333333333333333333333333333333333333333"' "$base_report" > "$tmp/bad-validator.json"
-cp "$tmp/bad-validator.json" "$tmp/reports/simple-pass-libbpf.json"
-expect_fail bad-validator python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-validator"
-grep -q "validator digest mismatch" "$tmp/bad-validator.stderr"
+# Execution-time validator provenance is mandatory because v0.3.7 does not
+# embed the validator binary identity in ReportV01.
+cp "$tmp/reports/execution-provenance.json" "$tmp/good-provenance.json"
+jq '.validator.sha256 = "sha256:3333333333333333333333333333333333333333333333333333333333333333"'   "$tmp/good-provenance.json" > "$tmp/reports/execution-provenance.json"
+cp "$base_report" "$tmp/reports/simple-pass-libbpf.json"
+expect_fail bad-validator-provenance python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/bad-validator-provenance"
+grep -q "validator identity drift" "$tmp/bad-validator-provenance.stderr"
+cp "$tmp/good-provenance.json" "$tmp/reports/execution-provenance.json"
 
-jq '
-  .targets[0].environment.requested_kernel_family = "not-a-kernel" |
-  .targets[0].profile.kernel_family = "not-a-kernel" |
-  .targets[0].environment.kernel_family_match = true
-' "$base_report" > "$tmp/unparseable-kernel.json"
-cp "$tmp/unparseable-kernel.json" "$tmp/reports/simple-pass-libbpf.json"
-expect_fail unparseable-kernel python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/unparseable-kernel"
-grep -q "kernel series is not derivable" "$tmp/unparseable-kernel.stderr"
+mv "$tmp/reports/execution-provenance.json" "$tmp/reports/execution-provenance.missing"
+expect_fail missing-provenance python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-one.json" --out-dir "$tmp/out/missing-provenance"
+grep -q "missing execution provenance" "$tmp/missing-provenance.stderr"
+mv "$tmp/reports/execution-provenance.missing" "$tmp/reports/execution-provenance.json"
 
 # Missing report is an incomplete collection, not silent success.
 jq '.cases = [.cases[0], (.cases[0] | .id = "second-case")] | .expected_profiles = 10'   research/corpus/v1/study-plan.json > "$tmp/plan-two.json"
@@ -187,7 +224,7 @@ jq -e '.collection_complete == false and (.missing_cases | index("second-case"))
 cp "$base_report" "$tmp/reports/simple-pass-libbpf.json"
 jq '
   .run.id = "fixture-two" |
-  .targets[0].environment.image_sha256 = "4444444444444444444444444444444444444444444444444444444444444444"
+  .targets[0].notes = ["base image sha256: 4444444444444444444444444444444444444444444444444444444444444444"]
 ' "$base_report" > "$tmp/reports/second-case.json"
 rm -rf "$tmp/out/drift"; mkdir -p "$tmp/out/drift"
 expect_fail environment-drift python3 scripts/research/normalize-study-v1.py   --reports-dir "$tmp/reports" --study-plan "$tmp/plan-two.json" --out-dir "$tmp/out/drift"
