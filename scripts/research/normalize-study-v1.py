@@ -66,9 +66,14 @@ def image_digest(target: dict[str, Any], case_id: str, profile_id: str) -> str |
             raw, f"{case_id}/{profile_id}: environment.image_sha256"
         )
     for note in target.get("notes") or []:
-        match = IMAGE_NOTE.match(str(note))
+        text = str(note).strip()
+        match = IMAGE_NOTE.match(text)
         if match:
             return "sha256:" + match.group(1).lower()
+        if text.lower().startswith("base image sha256:"):
+            raise SystemExit(
+                f"{case_id}/{profile_id}: malformed base image SHA-256 note {text!r}"
+            )
     return None
 
 
