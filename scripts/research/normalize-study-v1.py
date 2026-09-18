@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 IMAGE_NOTE = re.compile(r"^base image sha256:\s*([0-9a-fA-F]{64})\s*$")
+CLASSIFICATION_NOTE = re.compile(r"^classification:\s*([A-Z0-9_]+)\s*\(([^)]+)\)\s*$")
 SHA256_RE = re.compile(r"^(?:sha256:)?([0-9a-fA-F]{64})$")
 KERNEL_SERIES_RE = re.compile(r"^(\d+)\.(\d+)")
 
@@ -57,7 +58,7 @@ def normalize_sha256(value: Any, field: str, *, allow_missing: bool = True) -> s
 
 
 def image_digest(target: dict[str, Any], case_id: str, profile_id: str) -> str | None:
-    """Resolve the exact base-image digest from structured evidence or its note."""
+    """Resolve the exact base-image digest from structured evidence or v0.3.7 notes."""
     env = target.get("environment") or {}
     raw = env.get("image_sha256")
     if raw not in (None, ""):
@@ -69,6 +70,19 @@ def image_digest(target: dict[str, Any], case_id: str, profile_id: str) -> str |
         if match:
             return "sha256:" + match.group(1).lower()
     return None
+
+
+def classification_from_target(target: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Return structured classification fields, falling back to v0.3.7 notes."""
+    code = str(target.get("classification_code") or "").strip() or None
+    confidence = str(target.get("classification_confidence") or "").strip() or None
+    if code:
+        return code, confidence
+    for note in target.get("notes") or []:
+        match = CLASSIFICATION_NOTE.match(str(note))
+        if match:
+            return match.group(1), match.group(2).lower()
+    return None, None
 
 
 def kernel_series(value: str) -> str | None:
@@ -83,23 +97,35 @@ def kernel_series(value: str) -> str | None:
     return f"{match.group(1)}.{match.group(2)}"
 
 
-def validate_status_verdict(target: dict[str, Any], case_id: str, profile_id: str) -> str:
-    """Require the report status and verdict to agree with BPFCompat's taxonomy."""
+def validate_status_verdict(
+    target: dict[str, Any],
+    case_id: str,
+    profile_id: str,
+    bpf_version: str,
+) -> tuple[str, str, str]:
+    """Validate status/verdict consistency, deriving v0.3.7's missing verdict."""
     status = str(target.get("status") or "").strip().lower()
-    verdict = str(target.get("verdict") or "").strip().upper()
     if status not in STATUS_TO_VERDICT:
         raise SystemExit(
             f"{case_id}/{profile_id}: unsupported or missing target status {status!r}"
         )
+
     expected = STATUS_TO_VERDICT[status]
-    if not verdict:
-        raise SystemExit(f"{case_id}/{profile_id}: missing target verdict")
-    if verdict != expected:
+    raw_verdict = str(target.get("verdict") or "").strip().upper()
+    if raw_verdict:
+        if raw_verdict != expected:
+            raise SystemExit(
+                f"{case_id}/{profile_id}: contradictory status/verdict: "
+                f"{status!r} requires {expected!r}, got {raw_verdict!r}"
+            )
+        return status, raw_verdict, "report"
+
+    # The frozen v0.3.7 ReportV01 schema has status but no verdict field.
+    if bpf_version != "v0.3.7":
         raise SystemExit(
-            f"{case_id}/{profile_id}: contradictory status/verdict: "
-            f"{status!r} requires {expected!r}, got {verdict!r}"
+            f"{case_id}/{profile_id}: missing target verdict for producer {bpf_version}"
         )
-    return status
+    return status, expected, "derived_from_status_v0.3.7"
 
 
 def validate_kernel_match(
@@ -108,46 +134,49 @@ def validate_kernel_match(
     observed_kernel: str,
     case_id: str,
     profile_id: str,
-) -> bool | None:
-    """Validate kernel_family_match when present and return True/False/unknown."""
+) -> tuple[bool | None, str]:
+    """Validate a reported kernel match or derive it from immutable report fields."""
+    requested_series = kernel_series(requested_family)
+    observed_series = kernel_series(observed_kernel)
+    derived = (
+        requested_series == observed_series
+        if requested_series is not None and observed_series is not None
+        else None
+    )
+
     raw = env.get("kernel_family_match")
     if raw is None:
-        return None
+        return derived, "derived_from_profile_and_host" if derived is not None else "unknown"
     if not isinstance(raw, bool):
         raise SystemExit(
             f"{case_id}/{profile_id}: kernel_family_match must be boolean or null"
         )
-
-    requested_series = kernel_series(requested_family)
-    observed_series = kernel_series(observed_kernel)
-    if requested_series is None or observed_series is None:
+    if derived is None:
         raise SystemExit(
             f"{case_id}/{profile_id}: kernel_family_match is recorded but "
             "requested/observed kernel series is not derivable"
         )
-
-    derived = requested_series == observed_series
     if raw != derived:
         raise SystemExit(
             f"{case_id}/{profile_id}: kernel_family_match={raw} contradicts "
             f"requested {requested_family!r} and observed {observed_kernel!r}"
         )
-    return raw
+    return raw, "report"
 
 
 def verdict_for(
     status: str,
     kernel_match: bool | None,
-    environment_complete: bool,
+    environment_identified: bool,
 ) -> tuple[str, str | None]:
-    """Map validated BPFCompat evidence into the research verdict taxonomy."""
+    """Map validated evidence into the research verdict taxonomy."""
     if status == "infra_error":
         return "inconclusive", "infrastructure_error"
     if status == "unsupported":
         return "inconclusive", "unsupported_execution_path"
     if kernel_match is False:
         return "inconclusive", "environment_unavailable"
-    if kernel_match is not True or not environment_complete:
+    if kernel_match is not True or not environment_identified:
         return "inconclusive", "evidence_unavailable"
     if status == "pass":
         return "compatible", None
@@ -169,6 +198,46 @@ def unique_index(items: list[dict[str, Any]], key: str, label: str) -> dict[str,
     return result
 
 
+def load_execution_provenance(path: Path, artifact_hashes: dict[str, str]) -> tuple[dict[str, Any], str]:
+    """Validate execution-time tool identities that v0.3.7 reports do not embed."""
+    if not path.is_file():
+        raise SystemExit(f"missing execution provenance: {path}")
+    provenance = json.loads(path.read_text())
+    if provenance.get("schema_version") != "bpfcompat.research.execution-provenance.v1":
+        raise SystemExit("unsupported execution provenance schema")
+
+    cli_sha = normalize_sha256(
+        (provenance.get("bpfcompat_cli") or {}).get("sha256"),
+        "execution provenance bpfcompat_cli.sha256",
+        allow_missing=False,
+    )
+    validator_sha = normalize_sha256(
+        (provenance.get("validator") or {}).get("sha256"),
+        "execution provenance validator.sha256",
+        allow_missing=False,
+    )
+    if cli_sha != artifact_hashes["bpfcompat-v037-cli"]:
+        raise SystemExit("execution provenance BPFCompat CLI identity drift")
+    if validator_sha != artifact_hashes["bpfcompat-v037-validator"]:
+        raise SystemExit("execution provenance validator identity drift")
+
+    loaders = provenance.get("loaders")
+    if not isinstance(loaders, dict):
+        raise SystemExit("execution provenance loaders must be an object")
+    for loader_id in ("cilium-ebpf-v022-loader", "falco-modern-bpf-scap-open"):
+        entry = loaders.get(loader_id) or {}
+        observed = normalize_sha256(
+            entry.get("sha256"),
+            f"execution provenance loader {loader_id}",
+            allow_missing=False,
+        )
+        if observed != artifact_hashes[loader_id]:
+            raise SystemExit(
+                f"execution provenance loader identity drift for {loader_id}"
+            )
+    return provenance, sha256_file(path)
+
+
 def main() -> int:
     """Normalize one frozen study collection and return non-zero if incomplete."""
     ap = argparse.ArgumentParser()
@@ -178,6 +247,7 @@ def main() -> int:
     ap.add_argument(
         "--identity-lock", default="research/corpus/v1/materialized-identities.json"
     )
+    ap.add_argument("--execution-provenance")
     ap.add_argument("--out-dir", required=True)
     args = ap.parse_args()
 
@@ -235,6 +305,15 @@ def main() -> int:
     if not bpf_version or not bpf_commit:
         raise SystemExit("study plan is missing BPFCompat version/commit identity")
 
+    provenance_path = (
+        Path(args.execution_provenance)
+        if args.execution_provenance
+        else reports_dir / "execution-provenance.json"
+    )
+    provenance, provenance_hash = load_execution_provenance(
+        provenance_path, artifact_hashes
+    )
+
     environments: dict[str, dict[str, Any]] = {}
     profile_to_env_ids: dict[str, set[str]] = {p: set() for p in expected_profile_ids}
     executions: list[dict[str, Any]] = []
@@ -270,9 +349,6 @@ def main() -> int:
             raise SystemExit(f"{case_id}: report targets must be an array")
 
         raw_artifact = report.get("artifact") or {}
-        command = report.get("command") or {}
-        validator = report.get("validator") or {}
-
         artifact_id = str(case.get("artifact_id") or "").strip()
         if artifact_id not in artifact_hashes:
             raise SystemExit(f"{case_id}: unknown frozen artifact_id {artifact_id!r}")
@@ -291,40 +367,37 @@ def main() -> int:
                 )
 
         if case.get("mode") == "command":
-            binary = command.get("binary") or {}
-            command_binary = str(case.get("command_binary") or "")
-            loader_id_by_path = {
-                "loaders/ebpf-go-loader": "cilium-ebpf-v022-loader",
-                "loaders/scap-open": "falco-modern-bpf-scap-open",
-            }
-            expected_loader_id = loader_id_by_path.get(command_binary)
-            if not expected_loader_id:
+            loader_id = str(case.get("command_binary_artifact_id") or "").strip()
+            if loader_id not in artifact_hashes:
                 raise SystemExit(
-                    f"{case_id}: no frozen loader identity mapping for {command_binary!r}"
+                    f"{case_id}: command case lacks a frozen loader identity binding"
                 )
-            expected_loader = artifact_hashes[expected_loader_id]
+            loader_entry = (provenance.get("loaders") or {}).get(loader_id) or {}
             observed_loader = normalize_sha256(
-                binary.get("sha256"),
-                f"{case_id}: command binary.sha256",
+                loader_entry.get("sha256"),
+                f"{case_id}: execution provenance loader {loader_id}",
                 allow_missing=False,
             )
-            if observed_loader != expected_loader:
+            if observed_loader != artifact_hashes[loader_id]:
                 raise SystemExit(
                     f"{case_id}: command loader digest mismatch: expected "
-                    f"{expected_loader}, got {observed_loader}"
+                    f"{artifact_hashes[loader_id]}, got {observed_loader}"
                 )
         else:
-            expected_validator = artifact_hashes["bpfcompat-v037-validator"]
-            observed_validator = normalize_sha256(
-                validator.get("sha256"),
-                f"{case_id}: validator.sha256",
-                allow_missing=False,
-            )
-            if observed_validator != expected_validator:
-                raise SystemExit(
-                    f"{case_id}: validator digest mismatch: expected "
-                    f"{expected_validator}, got {observed_validator}"
+            # v0.3.7 ReportV01 does not embed validator provenance. The runner
+            # records the actual binary hash before execution and the normalizer
+            # validates it against the frozen materialized identity above.
+            validator_obj = report.get("validator")
+            if isinstance(validator_obj, dict) and validator_obj.get("sha256"):
+                reported_validator = normalize_sha256(
+                    validator_obj.get("sha256"),
+                    f"{case_id}: report validator.sha256",
+                    allow_missing=False,
                 )
+                if reported_validator != artifact_hashes["bpfcompat-v037-validator"]:
+                    raise SystemExit(
+                        f"{case_id}: report validator identity contradicts execution provenance"
+                    )
 
         base_contract = str(case.get("base_validation_contract_id") or "").strip()
         if not SHA256_RE.fullmatch(base_contract):
@@ -369,7 +442,9 @@ def main() -> int:
 
         for target in targets:
             profile_id = str(target.get("profile_id") or "").strip()
-            status = validate_status_verdict(target, case_id, profile_id)
+            status, producer_verdict, verdict_source = validate_status_verdict(
+                target, case_id, profile_id, bpf_version
+            )
 
             env = target.get("environment") or {}
             if not isinstance(env, dict):
@@ -396,7 +471,7 @@ def main() -> int:
             img_sha = image_digest(target, case_id, profile_id)
             profile_revision = profile_locks[profile_id]["profile_revision"]
 
-            kernel_match = validate_kernel_match(
+            kernel_match, kernel_match_source = validate_kernel_match(
                 env,
                 requested_family,
                 observed_kernel,
@@ -404,8 +479,8 @@ def main() -> int:
                 profile_id,
             )
 
-            environment_complete = bool(
-                kernel_match is True
+            environment_identified = bool(
+                kernel_match is not None
                 and observed_kernel
                 and img_sha
                 and requested_family
@@ -416,7 +491,7 @@ def main() -> int:
             )
 
             exact_environment_id: str | None = None
-            if environment_complete:
+            if environment_identified:
                 env_record = {
                     "logical_profile_id": profile_id,
                     "distribution": distro,
@@ -427,7 +502,7 @@ def main() -> int:
                     "image_source": image_source,
                     "image_identity": img_sha,
                     "profile_revision": profile_revision,
-                    "kernel_family_match": True,
+                    "kernel_family_match": kernel_match,
                 }
                 exact_environment_id = canonical_hash(env_record)
                 env_record["exact_environment_id"] = exact_environment_id
@@ -435,15 +510,16 @@ def main() -> int:
                 profile_to_env_ids[profile_id].add(exact_environment_id)
 
             verdict, inconclusive_reason = verdict_for(
-                status, kernel_match, environment_complete
+                status, kernel_match, environment_identified
             )
             case_counts[verdict] += 1
 
-            classification = target.get("classification_code")
+            classification, classification_confidence = classification_from_target(target)
             if verdict == "incompatible" and not classification:
                 classification = "unknown"
             if verdict != "incompatible":
                 classification = None
+                classification_confidence = None
 
             executions.append(
                 {
@@ -453,12 +529,16 @@ def main() -> int:
                     "timestamp_utc": (report.get("run") or {}).get("started_at"),
                     "bpfcompat_version": bpf_version,
                     "bpfcompat_commit": bpf_commit,
+                    "workflow_source_commit": provenance.get("workflow_source_commit"),
+                    "execution_provenance_sha256": provenance_hash,
                     "artifact_id": artifact_id,
                     "artifact_sha256": artifact_hashes.get(artifact_id),
                     "environment_id": exact_environment_id,
                     "logical_profile_id": profile_id,
                     "observed_kernel_release": observed_kernel or None,
                     "architecture": arch or None,
+                    "kernel_family_match": kernel_match,
+                    "kernel_family_match_source": kernel_match_source,
                     "validation_contract_id": validation_contract_id,
                     "base_validation_contract_id": base_contract,
                     "manifest_sha256": manifest_sha,
@@ -467,12 +547,11 @@ def main() -> int:
                     "classification_code": classification,
                     "inconclusive_reason": inconclusive_reason,
                     "target_status": status,
-                    "target_verdict": STATUS_TO_VERDICT[status],
+                    "target_verdict": producer_verdict,
+                    "target_verdict_source": verdict_source,
                     "raw_report_sha256": report_hash,
                     "evidence_path": str(report_path),
-                    "classification_confidence": target.get(
-                        "classification_confidence"
-                    ),
+                    "classification_confidence": classification_confidence,
                     "failed_stage": target.get("failed_stage"),
                 }
             )
@@ -545,6 +624,7 @@ def main() -> int:
         "corpus_version": "v1",
         "github_run_id": os.getenv("GITHUB_RUN_ID"),
         "github_sha": os.getenv("GITHUB_SHA"),
+        "execution_provenance_sha256": provenance_hash,
         "expected_cases": len(case_index),
         "expected_profiles_per_case": expected_profiles,
         "expected_execution_attempts": expected_attempts,
