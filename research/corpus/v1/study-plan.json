@@ -61,7 +61,8 @@
       "mode": "command",
       "command_binary": "loaders/ebpf-go-loader",
       "command": "$BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT",
-      "base_validation_contract_id": "sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853"
+      "base_validation_contract_id": "sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853",
+      "command_binary_artifact_id": "cilium-ebpf-v022-loader"
     },
     {
       "id": "falco-modern-bpf-scap-open",
@@ -69,7 +70,8 @@
       "mode": "command",
       "command_binary": "loaders/scap-open",
       "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10",
-      "base_validation_contract_id": "sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66"
+      "base_validation_contract_id": "sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66",
+      "command_binary_artifact_id": "falco-modern-bpf-scap-open"
     }
   ]
 }
