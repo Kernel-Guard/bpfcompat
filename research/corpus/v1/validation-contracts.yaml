@@ -1,6 +1,6 @@
 schema_version: bpfcompat.research.pilot-contract-selection.v1
 corpus_version: v1
-status: contract-specification-frozen
+status: contract-identities-frozen
 
 # The keys below identify frozen pre-execution specifications.
 # A canonical validation-contract SHA-256 is generated after all materialized
@@ -27,8 +27,8 @@ contracts:
       required_load: pass
       required_attach: pass
       infrastructure_errors_are_compatibility_failures: false
-    canonical_id: null
-    canonical_id_requirement: derive before execution after artifact/manifest inputs are materialized
+    canonical_id: sha256:3e0e015d1fdd127c02f727f7ddda378200e4fe88c3f38f55316d75ec76d36d50
+    canonical_id_requirement: frozen from reproducible materialization
 
   - key: libbpf-v037-load-only-v1
     kind: builtin_validator
@@ -39,8 +39,8 @@ contracts:
     success_criteria:
       required_load: pass
       infrastructure_errors_are_compatibility_failures: false
-    canonical_id: null
-    canonical_id_requirement: derive before execution after artifact/manifest inputs are materialized
+    canonical_id: sha256:2b193bd305a6fe63c466a30fd31fde0ead09c7d8b8026c3379113d28dfd529f5
+    canonical_id_requirement: frozen from reproducible materialization
 
   - key: cilium-ebpf-v022-load-only-v1
     kind: project_loader
@@ -53,12 +53,12 @@ contracts:
       go_mod_blob_sha: 14cecbd3887532062fa867d5d603d4cf7d1afde4
       go_sum_blob_sha: 02d7cd8e91fa4cb75e9942d711bdd0edaf89c009
       build: CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ebpf-go-loader .
-      binary_sha256: null
+      binary_sha256: 2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4
     command: $BPFCOMPAT_BIN $BPFCOMPAT_ARTIFACT
     expected_exit_codes: [0]
     semantics: load every map and program through cilium/ebpf; no attach claim
-    canonical_id: null
-    materialization_requirement: capture exact Go toolchain and archive binary sha256 before execution
+    canonical_id: sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853
+    materialization_requirement: satisfied by reproducible v1 materialization
 
   - key: falco-modern-bpf-scap-open-v1
     kind: project_loader
@@ -69,9 +69,9 @@ contracts:
       build_recipe: .github/workflows/bpfcompat-compatibility.yml
       bpftool_version: v7.5.0
       output: build/libscap/examples/01-open/scap-open
-      binary_sha256: null
+      binary_sha256: 736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd
     command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
     expected_exit_codes: [0]
     semantics: real Falco modern_bpf loader path plus bounded event capture
-    canonical_id: null
-    materialization_requirement: archive static scap-open binary and sha256 before execution
+    canonical_id: sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66
+    materialization_requirement: satisfied by reproducible v1 materialization
