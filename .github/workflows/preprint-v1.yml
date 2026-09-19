@@ -1,0 +1,50 @@
+name: preprint-v1
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/preprint-v1.yml"
+      - "docs/paper/latex/**"
+      - "research/paper/generated/figures/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build arXiv preprint package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install TeX and SVG conversion dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             inkscape             lmodern             poppler-utils             texlive-fonts-recommended             texlive-latex-base             texlive-latex-extra             texlive-latex-recommended
+
+      - name: Build PDF and minimal arXiv source package
+        run: |
+          set -euo pipefail
+          bash docs/paper/latex/build.sh /tmp/preprint-v1
+
+      - name: Inspect rendered PDF
+        run: |
+          set -euo pipefail
+          pdfinfo /tmp/preprint-v1/bpfcompat-preprint-v1.pdf
+          pages="$(pdfinfo /tmp/preprint-v1/bpfcompat-preprint-v1.pdf | awk '/^Pages:/ {print $2}')"
+          test -n "$pages"
+          test "$pages" -ge 1
+
+      - name: Upload preprint artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bpfcompat-preprint-v1-${{ github.run_id }}
+          path: |
+            /tmp/preprint-v1/bpfcompat-preprint-v1.pdf
+            /tmp/preprint-v1/bpfcompat-arxiv-v1.tar.gz
+            /tmp/preprint-v1/preprint-v1-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
