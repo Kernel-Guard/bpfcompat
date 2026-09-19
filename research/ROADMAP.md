@@ -45,7 +45,7 @@
 ## Phase 4 — Archival
 
 - [x] Define the pilot v1 archival/DOI policy and third-party binary boundary.
-- [ ] Generate and verify the final machine-readable archival manifest.
+- [x] Generate and verify the final machine-readable archival manifest from the pinned pilot, repeat, and materialization artifacts; bind it with a compact repository lock and fail-closed redistribution checks.
 - [ ] Create a research-tagged release after repeat stability and final figures
       are frozen.
 - [ ] Archive the release/dataset in a DOI-granting repository such as Zenodo.
