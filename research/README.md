@@ -30,11 +30,29 @@ Repository snapshot and integrity metadata:
   raw-report checksums, and dataset manifest;
 - [`analysis/v1/`](analysis/v1/) — deterministic descriptive RQ1–RQ4 tables
   and machine-readable analysis summary;
+- [`repeat/v1/`](repeat/v1/) — merged post-collection stability protocol; the
+  manual 21-attempt execution is still pending;
 - `scripts/research/analyze-study-v1.py` — analysis generator;
 - `scripts/research/test-analysis-v1.sh` — checksum and reproduction gate.
 
 The full workflow artifact remains staging evidence for later DOI archival; its
 artifact identity is recorded in the dataset manifest.
+
+## Publication readiness
+
+Publication-facing material is kept explicit and evidence-bounded:
+
+- [ARCHIVAL.md](ARCHIVAL.md) — DOI/research-release boundary and archive gates;
+- [LICENSE-REVIEW-V1.md](LICENSE-REVIEW-V1.md) — v1 redistribution review and
+  third-party compiled-loader policy;
+- [paper/PREPRINT.md](paper/PREPRINT.md) — working manuscript scaffold whose
+  numerical claims are constrained to generated v1 analysis;
+- [ROADMAP.md](ROADMAP.md) — remaining repeat-run, figure, archival, DOI, and
+  external academic-use gates.
+
+No university, lab, course, or paper should be listed as an academic reference
+until a public independent source can be verified. A resource-page link is a
+reference, not approval, certification, or endorsement.
 
 ## Study objective
 
