@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use BPFCompat software, cite these software metadata. If you use the pilot v1 research dataset, cite the Zenodo dataset listed under references."
+message: "If you use BPFCompat in research, please cite the software using this metadata."
 title: "BPFCompat: empirical eBPF compatibility testing across real Linux kernels"
 type: software
 authors:
@@ -23,20 +23,3 @@ keywords:
   - kernel testing
   - libbpf
   - systems research
-references:
-  - type: dataset
-    title: "BPFCompat Research Dataset v1: Empirical eBPF Compatibility Across Linux Vendor Kernels"
-    authors:
-      - family-names: "Arı"
-        given-names: "Eren"
-    doi: "10.5281/zenodo.22848155"
-    identifiers:
-      - type: doi
-        value: "10.5281/zenodo.22848154"
-        description: "Concept DOI for the evolving BPFCompat research dataset across versions."
-      - type: url
-        value: "https://github.com/Kernel-Guard/bpfcompat/releases/tag/research-v1"
-        description: "GitHub research-v1 release archived by this dataset."
-    version: "research-v1"
-    date-released: "2026-09-19"
-    url: "https://zenodo.org/records/22848155"
