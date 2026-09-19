@@ -482,16 +482,16 @@ def verify_payload_zip(payload: Path, target: Path) -> None:
                 fail(f"payload ZIP byte mismatch: {name}")
 
 
-def write_archive_lock(
+def archive_lock_document(
     out_dir: Path,
     plan: dict[str, Any],
     rows: list[dict[str, Any]],
     excluded_rows: list[dict[str, Any]],
-) -> Path:
-    """Write a compact repository lock for the generated release manifest."""
+) -> dict[str, Any]:
+    """Return the compact lock document for generated release files."""
     manifest = out_dir / MANIFEST_NAME
     payload_zip = out_dir / PAYLOAD_ZIP_NAME
-    lock = {
+    return {
         "schema_version": "bpfcompat.research.archive-lock.v1",
         "archive_version": plan["archive_version"],
         "manifest": {
@@ -520,9 +520,23 @@ def write_archive_lock(
             for row in sorted(excluded_rows, key=lambda item: item["path"])
         ],
     }
+
+
+def write_archive_lock(
+    out_dir: Path,
+    plan: dict[str, Any],
+    rows: list[dict[str, Any]],
+    excluded_rows: list[dict[str, Any]],
+) -> Path:
+    """Write a compact repository lock for the generated release manifest."""
     path = out_dir / LOCK_NAME
     path.write_text(
-        json.dumps(lock, indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            archive_lock_document(out_dir, plan, rows, excluded_rows),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -536,15 +550,10 @@ def verify_archive_lock(
     excluded_rows: list[dict[str, Any]],
 ) -> None:
     """Verify the compact lock exactly matches the generated release files."""
-    expected_dir = out_dir / ".lock-check"
-    expected_dir.mkdir(exist_ok=True)
-    expected_path = write_archive_lock(expected_dir, plan, rows, excluded_rows)
-    actual = (out_dir / LOCK_NAME).read_text(encoding="utf-8")
-    expected = expected_path.read_text(encoding="utf-8")
-    shutil.rmtree(expected_dir)
+    actual = load_json(out_dir / LOCK_NAME)
+    expected = archive_lock_document(out_dir, plan, rows, excluded_rows)
     if actual != expected:
         fail("archive lock drift")
-
 
 def write_release_checksums(out_dir: Path) -> None:
     """Bind the manifest, compact lock, and deterministic payload ZIP."""
