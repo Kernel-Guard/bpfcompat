@@ -5,6 +5,7 @@ BUNDLE="${1:-dist/research-corpus-v1}"
 REPORTS="${2:-reports/research-repeat-v1}"
 SAMPLE="${3:-research/repeat/v1/stability-sample.json}"
 PLAN="research/corpus/v1/study-plan.json"
+PROJECTION_SCRIPT="scripts/research/project-repeat-manifest-v1.py"
 
 fail() {
   echo "[research-repeat-v1] $*" >&2
@@ -14,6 +15,7 @@ fail() {
 [[ -x "$BUNDLE/bin/bpfcompat-linux-amd64" ]] || fail "missing materialized BPFCompat CLI"
 [[ -x "$BUNDLE/bin/bpfcompat-validator-static-linux-amd64" ]] || fail "missing materialized validator"
 [[ -s "$SAMPLE" && -s "$PLAN" ]] || fail "missing repeat sample or study plan"
+[[ -s "$PROJECTION_SCRIPT" ]] || fail "missing repeat manifest projection helper"
 
 bash scripts/research/verify-materialization-v1.sh "$BUNDLE"
 bash scripts/research/verify-profile-lock-v1.sh
@@ -22,7 +24,7 @@ export BPFCOMPAT_VALIDATOR_BIN="$PWD/$BUNDLE/bin/bpfcompat-validator-static-linu
 export BPFCOMPAT_VALIDATOR_SHA256="4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04"
 
 BPF="$PWD/$BUNDLE/bin/bpfcompat-linux-amd64"
-mkdir -p "$REPORTS/raw" "$REPORTS/logs" "$REPORTS/matrices" "$REPORTS/normalized"
+mkdir -p "$REPORTS/raw" "$REPORTS/logs" "$REPORTS/matrices" "$REPORTS/manifests" "$REPORTS/normalized"
 
 jq -n \
   --arg workflow_source_commit "$(git rev-parse HEAD)" \
@@ -30,6 +32,7 @@ jq -n \
   --arg materialization_sha256 "sha256:$(sha256sum "$BUNDLE/materialization.json" | awk '{print $1}')" \
   --arg study_plan_sha256 "sha256:$(sha256sum "$PLAN" | awk '{print $1}')" \
   --arg profile_lock_sha256 "sha256:$(sha256sum research/corpus/v1/profile-identities.json | awk '{print $1}')" \
+  --arg projection_script_sha256 "sha256:$(sha256sum "$PROJECTION_SCRIPT" | awk '{print $1}')" \
   --arg cli_sha256 "sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-linux-amd64" | awk '{print $1}')" \
   --arg validator_sha256 "sha256:$(sha256sum "$BUNDLE/bin/bpfcompat-validator-static-linux-amd64" | awk '{print $1}')" \
   --arg cilium_loader_sha256 "sha256:$(sha256sum "$BUNDLE/loaders/ebpf-go-loader" | awk '{print $1}')" \
@@ -42,6 +45,7 @@ jq -n \
     materialization_sha256:$materialization_sha256,
     study_plan_sha256:$study_plan_sha256,
     profile_lock_sha256:$profile_lock_sha256,
+    manifest_projection_script_sha256:$projection_script_sha256,
     bpfcompat_cli_sha256:$cli_sha256,
     validator_sha256:$validator_sha256,
     loaders:{
@@ -102,6 +106,7 @@ while IFS= read -r tuple_json; do
   manifest="$(jq -r '.manifest // empty' <<<"$case_json")"
   command_binary="$(jq -r '.command_binary // empty' <<<"$case_json")"
   command="$(jq -r '.command // empty' <<<"$case_json")"
+  manifest_git_blob="$(jq -r '.manifest_git_blob // empty' <<<"$case_json")"
 
   matrix="$REPORTS/matrices/$tuple_id.yaml"
   cat > "$matrix" <<EOF
@@ -110,6 +115,20 @@ profiles:
   - id: $profile_id
     required: false
 EOF
+
+  projected_manifest=""
+  if [[ "$mode" == "load_only" || "$mode" == "load_attach" ]]; then
+    [[ -n "$manifest" && -n "$manifest_git_blob" ]] ||
+      fail "$tuple_id: libbpf case requires frozen manifest identity"
+    projected_manifest="$REPORTS/manifests/$tuple_id.yaml"
+    projection_metadata="$REPORTS/manifests/$tuple_id.json"
+    python3 "$PROJECTION_SCRIPT" \
+      --source "$manifest" \
+      --profile-id "$profile_id" \
+      --expected-git-blob "$manifest_git_blob" \
+      --out "$projected_manifest" \
+      --metadata-out "$projection_metadata"
+  fi
 
   for repeat in $(seq 1 "$repeats"); do
     common=(
@@ -129,7 +148,7 @@ EOF
         run_once "$tuple_id" "$repeat" \
           "$BPF" test \
           --artifact "$BUNDLE/$artifact_path" \
-          --manifest "$manifest" \
+          --manifest "$projected_manifest" \
           --validation-mode "$mode" \
           "${common[@]}"
         ;;
