@@ -98,15 +98,6 @@ def markdown_table(headers: list[str], rows: Iterable[Iterable[Any]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def short_sha(value: str) -> str:
-    """Shorten a SHA-like identifier for visual labels while retaining both ends."""
-    if len(value) <= 24:
-        return value
-    prefix = "sha256:" if value.startswith("sha256:") else ""
-    raw = value[len(prefix):]
-    return f"{prefix}{raw[:10]}…{raw[-8:]}"
-
-
 def parse_series(series: str) -> tuple[int, int]:
     """Parse a major.minor kernel series into an integer tuple."""
     major, minor = series.split(".", 1)
@@ -169,7 +160,7 @@ def figure1_architecture() -> str:
                 x + box_w / 2,
                 box_y + 37,
                 title,
-                font_size=13,
+                font_size=11 if i == 0 else 13,
                 font_weight="700",
                 text_anchor="middle",
             )
@@ -209,9 +200,9 @@ def figure2_ringbuf(rows: list[dict[str, str]]) -> str:
     conclusive = [row for row in rows if row["conclusive"] == "true"]
     conclusive.sort(key=lambda row: parse_series(row["observed_series"]))
 
-    width = 1200
-    left, right = 310, 60
-    top, row_h, bottom = 100, 48, 100
+    width = 1240
+    left, right = 310, 140
+    top, row_h, bottom = 112, 48, 100
     height = top + row_h * len(conclusive) + bottom
 
     versions = sorted({parse_series(row["observed_series"]) for row in conclusive} | {(5, 8)})
@@ -239,7 +230,7 @@ def figure2_ringbuf(rows: list[dict[str, str]]) -> str:
         f'<line x1="{threshold_x:.1f}" y1="{top-28}" x2="{threshold_x:.1f}" y2="{top+row_h*len(conclusive)-15}" stroke="#555555" stroke-width="1.5" stroke-dasharray="6,5"/>',
         svg_text(
             threshold_x + 6,
-            top - 36,
+            top - 12,
             "upstream 5.8 threshold",
             font_size=11,
             fill="#333333",
