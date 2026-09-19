@@ -48,8 +48,10 @@ Publication-facing material is kept explicit and evidence-bounded:
   third-party compiled-loader policy;
 - [paper/PREPRINT.md](paper/PREPRINT.md) — working manuscript scaffold whose
   numerical claims are constrained to generated v1 analysis;
-- [ROADMAP.md](ROADMAP.md) — remaining figure, archival, DOI, and external
-  academic-use gates.
+- [paper/generated/](paper/generated/) — deterministic final pilot-v1 figures,
+  tables, and an input/output SHA-256 manifest enforced by CI;
+- [ROADMAP.md](ROADMAP.md) — remaining archival, DOI, and external academic-use
+  gates.
 
 No university, lab, course, or paper should be listed as an academic reference
 until a public independent source can be verified. A resource-page link is a
