@@ -30,42 +30,16 @@
     "verdict_instability": 0
   },
   "committed_evidence": {
-    "repeat_provenance": {
-      "path": "data/repeat-provenance.json",
-      "sha256": "sha256:7fc550f7fab1590bef5f284e4fc72f331e9ea78ef20af9b0bfd66f1844dbef52"
-    },
-    "stability_summary": {
-      "path": "data/stability-summary.json",
-      "sha256": "sha256:add7441dd16b74d31845f3b35b30edd65e1f102799417dbc068c6c3d105c1a9c"
-    },
-    "results": {
-      "path": "data/RESULTS.md",
-      "sha256": "sha256:51cdea803353736c77a2b944554079f7e6a230ed5614be30badf425c1677c3b0"
-    },
-    "raw_report_checksums": {
-      "path": "data/raw-report-checksums.json",
-      "sha256": "sha256:304f7521eb310b607a4a3cc36d45614e329b83461ce97d838244b1202e229dfd"
-    },
-    "repeat_executions_artifact_sha256": "sha256:844ff0b27d8bcd7ecdb0e3368147b7486305c9cc0f3710c0fc95dc4d25aed11c"
+    "repeat_provenance": "data/repeat-provenance.json",
+    "stability_summary": "data/stability-summary.json",
+    "results": "data/RESULTS.md",
+    "raw_report_checksums": "data/raw-report-checksums.json",
+    "projection_metadata_dir": "data/projection-metadata/"
   },
-  "projection_metadata": [
-    {
-      "path": "data/projection-metadata/inconclusive-oracle-environment.json",
-      "sha256": "sha256:77783e88eb13923d343245eebe007fbc735a8a81623aabd576c156cf5d3ff42b"
-    },
-    {
-      "path": "data/projection-metadata/negative-ringbuf-boundary.json",
-      "sha256": "sha256:e563729f5204fa8bf9e84c2bdf577272f5d41e4c9f4dc0515de5b2bed4a2b6cf"
-    },
-    {
-      "path": "data/projection-metadata/positive-controlled-modern.json",
-      "sha256": "sha256:3b3eedf25d470206b24a7cda9244d40d305f562a2e1ab94ce510121c8926cbe4"
-    },
-    {
-      "path": "data/projection-metadata/positive-ringbuf-backport.json",
-      "sha256": "sha256:3369a03fc3daa362b86e6ac96fb9e49e3aae85640ab099fc780199626a7c8e74"
-    }
-  ],
+  "artifact_evidence": {
+    "repeat_executions_path": "normalized/repeat-executions.jsonl",
+    "repeat_executions_sha256": "sha256:844ff0b27d8bcd7ecdb0e3368147b7486305c9cc0f3710c0fc95dc4d25aed11c"
+  },
   "notes": [
     "The first manual repeat run 35443831085 failed before 12 libbpf-backed attempts because singleton repeat matrices conflicted with frozen manifests listing all study profiles; it is diagnostic only and is not part of this dataset.",
     "The successful repeat runner verifies the frozen manifest Git blob before creating a repeat-only required_profiles singleton projection; program, attach, and validation semantics are unchanged.",
