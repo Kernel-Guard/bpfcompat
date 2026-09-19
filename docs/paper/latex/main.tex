@@ -1,0 +1,313 @@
+\documentclass[10pt]{article}
+\pdfinfoomitdate=1
+\pdftrailerid{}
+\pdfsuppressptexinfo=-1
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=0.78in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{caption}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue,pdfauthor={Eren Ari},pdftitle={Kernel Version Is Not a Capability Contract}}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0.9em}
+\setlength{\parskip}{0.15em}
+\renewcommand{\arraystretch}{1.08}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{Kernel Version Is Not a Capability Contract:}\\Empirical eBPF Artifact Compatibility Across Linux Vendor Kernels}
+\author{Eren Ar{\i}}
+\date{Preprint manuscript --- September 2026\\\small Not peer reviewed}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+eBPF portability is often reasoned about using kernel version, CO-RE, BTF, and upstream feature-introduction points. Those mechanisms are important, but the kernel version string is not itself a complete capability contract: distribution kernels can carry backports, rebases, configuration differences, and distinct userspace loader behavior. This paper presents an empirical pilot study using BPFCompat, a harness that boots real Linux distribution kernels in disposable virtual machines and evaluates compiled eBPF artifacts through libbpf or project-specific loader paths.
+
+The frozen x86\_64 pilot contains seven validation cases across ten logical Linux profiles, yielding 70/70 planned execution records. Overall, 50 observations were compatible, 13 incompatible, and 7 inconclusive. Excluding a deliberately failing calibration case, the study contains 60 attempts: 50 compatible, 4 incompatible, and 6 inconclusive. For a controlled \code{BPF\_MAP\_TYPE\_RINGBUF} probe, a simple upstream Linux 5.8 threshold agreed with 8 of 9 conclusive observations (88.889\%); AlmaLinux 8's observed 4.18 vendor kernel was the below-threshold compatible exception. The dataset also contains two cross-vendor version inversions: for both the ring-buffer probe and the Falco \code{modern\_bpf} real-loader path, the older-numbered AlmaLinux 8/4.18 environment passed while Ubuntu 20.04/5.4 failed. Paired Cilium-derived libbpf and cilium/ebpf paths produced zero verdict disagreements across nine conclusive exact environments, but their validation contracts differ, so this does not estimate a pure loader causal effect. A purposefully stratified post-collection repeat sample reran seven canonical tuples three times each; all 21/21 repeats matched the canonical verdict on the same exact environment, with zero observed environment drift and zero same-environment verdict instability.
+
+These are descriptive results from a selected pilot, not population estimates for Linux deployments. The contribution is the reproducible measurement boundary: immutable artifact identities, exact booted environment identities, explicit validation contracts, raw and normalized evidence, deterministic analysis, generated figures and tables, a frozen GitHub research release, and a DOI-bearing Zenodo dataset.
+\end{abstract}
+
+\noindent\textbf{Dataset:} \url{https://doi.org/10.5281/zenodo.22848155}
+
+\section{Introduction}
+eBPF has become a general kernel programmability mechanism used for networking, observability, tracing, and security. Prior work has studied eBPF's execution model, performance, verifier safety, and application design~\cite{vieira2020ebpfxdp,gershuni2019verifier}. In parallel, BPF CO-RE combines BTF, compiler relocation information, and loader support to make compiled programs more portable across kernel data-structure changes~\cite{linux_libbpf_overview,linux_btf,linux_bpf_docs,nakryiko2020core}.
+
+Portability, however, is broader than type relocation. A compiled eBPF artifact can still depend on a map type, program type, helper, attach mechanism, verifier behavior, kernel configuration, BTF availability, capability model, or project-specific loader contract. Distribution kernels also evolve through stable-update processes, backports, hardware-enablement kernels, and vendor patch series rather than by mirroring upstream version numbers exactly~\cite{ubuntu_kernel_sru,linux_backporting,linux_stable_rules}. Consequently, a release engineering question such as ``will this exact artifact load and attach on the kernels my users run?'' cannot always be reduced to an upstream version comparison.
+
+This paper evaluates that narrower operational question empirically. BPFCompat executes compiled artifacts against real booted vendor environments and records structured evidence from the validation path. The pilot does not attempt to estimate global Linux compatibility, nor does it claim that kernel versions are useless. Instead, it asks whether version ordering alone is sufficient to serve as a capability ordering for the selected artifacts and environments.
+
+The study addresses four research questions:
+\begin{itemize}
+  \item \textbf{RQ1:} How predictive is kernel version of observed eBPF compatibility?
+  \item \textbf{RQ2:} Why do otherwise portable eBPF artifacts fail?
+  \item \textbf{RQ3:} How much does the loader path affect the observed verdict?
+  \item \textbf{RQ4:} How do vendor and exact-environment differences affect the relationship between version and compatibility?
+\end{itemize}
+
+The central conclusion is deliberately limited: \textbf{within this pilot, kernel version is useful context but is not sufficient as a capability contract.} Observed compatibility is a property of an artifact/loader and an exact runtime environment, not of a version string alone.
+
+\section{Background and Related Work}
+\subsection{eBPF execution and verification}
+eBPF allows user-provided programs to execute in kernel-controlled contexts after passing kernel safety checks. The verifier is a critical part of this model, and research has examined its precision, scalability, and safety properties~\cite{gershuni2019verifier}. Surveys of eBPF and XDP describe the broader execution model and its use in high-performance packet processing~\cite{vieira2020ebpfxdp}. This study does not propose a new verifier. It treats the kernel's actual load or attach result, plus the selected userspace loader contract, as measurement evidence.
+
+\subsection{BTF and CO-RE portability}
+BTF encodes type information used by the kernel and loaders, while \code{.BTF.ext} can carry CO-RE relocation metadata~\cite{linux_btf,linux_bpf_docs}. libbpf's CO-RE flow matches relocation information in a BPF object against BTF from the running kernel~\cite{linux_libbpf_overview}. CO-RE therefore addresses an important portability dimension, but it does not turn every eBPF capability into a stable version-independent interface. Map types, program types, attach hooks, helpers, kernel configuration, verifier behavior, and loader-specific setup remain relevant.
+
+\subsection{Vendor kernels and backports}
+Linux stable trees and distribution kernels routinely integrate fixes and other changes onto maintained kernel lines~\cite{linux_backporting,linux_stable_rules}. Canonical documents stable-update flows that incorporate upstream stable updates, fixes, security patches, and hardware-enablement changes~\cite{ubuntu_kernel_sru}. This motivates preserving both the logical profile requested by a study and the exact environment that actually booted.
+
+\subsection{Loader-path diversity}
+The Linux kernel documentation describes libbpf as a userspace library for loading and managing BPF programs, including CO-RE relocation support~\cite{linux_libbpf_overview}. cilium/ebpf is a separate Go implementation~\cite{cilium_ebpf}, while Falco supplies a real-world project-specific BPF loader path~\cite{falco_libs}. Because these paths are not semantically identical, this paper reports agreement only where the exact environment is shared and preserves the contract difference explicitly.
+
+\section{Study Design}
+\subsection{Unit of observation}
+The primary observation is an execution tuple:
+\begin{center}
+\code{artifact/loader $\times$ exact environment $\times$ architecture $\times$ validation contract}.
+\end{center}
+The study retains both logical-profile identity and exact-environment identity. An unavailable or mismatched requested environment is not silently substituted and counted as a compatibility result.
+
+\subsection{Frozen corpus}
+Pilot v1 contains seven cases (Table~\ref{tab:corpus}). The calibration case is intentionally failing and is never mixed into real-world compatibility prevalence.
+
+\begin{table}[h]
+\centering
+\caption{Frozen pilot-v1 corpus and validation contracts.}
+\label{tab:corpus}
+\small
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Case & Role & Execution contract \\
+\midrule
+\code{simple-pass-libbpf} & controlled & libbpf load + attach \\
+\code{perfbuf-fallback-libbpf} & controlled & libbpf load + attach \\
+\code{ringbuf-modern-libbpf} & controlled & libbpf load + attach \\
+\code{cilium-tracepoint-libbpf} & OSS-derived & libbpf load + attach \\
+\code{cilium-tracepoint-ebpf-go} & OSS-derived & cilium/ebpf load-only command \\
+\code{falco-modern-bpf-scap-open} & real-world & Falco \code{scap-open} command \\
+\code{core-relocation-fail-libbpf} & calibration & libbpf load-only \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Kernel environments}
+Ten logical profiles were selected across Ubuntu, Debian, AlmaLinux, Amazon Linux, openSUSE, and Oracle Linux. Nine profiles booted the requested kernel family. The Oracle logical profile requested kernel family 5.15 but booted \code{6.12.0-107.59.3.3.el9uek.x86\_64}; its seven executions are therefore retained as \emph{inconclusive} for the requested profile rather than relabeled as 5.15 observations.
+
+\subsection{Outcomes and analyses}
+Each execution is normalized to \emph{compatible}, \emph{incompatible}, or \emph{inconclusive}. Infrastructure errors, unavailable requested environments, and insufficient evidence remain inconclusive rather than being converted into compatibility failures.
+
+RQ1 uses the controlled ring-buffer probe and a simple upstream introduction threshold of Linux 5.8. For each conclusive environment, the version-only rule predicts kernels below 5.8 as incompatible and kernels at or above 5.8 as compatible. RQ2 counts evidence-backed normalized failure classifications, keeping calibration separate. RQ3 compares the Cilium-derived object through libbpf load+attach and cilium/ebpf load-only paths on the same exact environments; because the contracts differ, it reports verdict agreement without estimating a pure causal loader effect. RQ4 preserves exact observed kernel versions and searches for cross-vendor version inversions.
+
+\subsection{Repeat-run stability}
+After the canonical collection was frozen, seven tuples were selected using a purposeful stratified design covering compatible controlled behavior, incompatible controlled behavior, a compatible vendor-backport case, compatible and incompatible real-loader cases, a compatible project-loader case, and the inconclusive Oracle environment-mismatch case. Each tuple was repeated three times, for 21 planned attempts. Verdict instability is counted only when the repeat uses the same exact environment; environment drift is measured separately.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/figure-1.pdf}
+\caption{Pilot-v1 study architecture. Every stage preserves the identity needed to reproduce or audit the next stage.}
+\label{fig:architecture}
+\end{figure}
+
+\section{Results}
+\subsection{Collection completeness}
+All 70/70 planned executions were captured (Table~\ref{tab:collection}). The Oracle environment mismatch is responsible for the seven overall inconclusive observations: one per case.
+
+\begin{table}[h]
+\centering
+\caption{Canonical pilot-v1 outcomes.}
+\label{tab:collection}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Scope & Attempts & Evaluable & Comp. & Incomp. & Inconc. \\
+\midrule
+Overall & 70 & 63 & 50 & 13 & 7 \\
+Non-calibration & 60 & 54 & 50 & 4 & 6 \\
+Calibration & 10 & 9 & 0 & 9 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/figure-3.pdf}
+\caption{Pilot-v1 compatibility matrix. Calibration is visually separated from primary and controlled cases.}
+\label{fig:matrix}
+\end{figure}
+
+\subsection{RQ1: kernel-version predictiveness}
+For the ring-buffer probe, the Linux 5.8 threshold agreed with \textbf{8 of 9 conclusive observations (88.889\%)}. The selected rule produced 6 true positives, 2 true negatives, 0 false positives, and 1 false negative, corresponding to 85.714\% sensitivity and 100\% specificity \emph{within this nine-observation pilot comparison}. These percentages are descriptive and are not population performance estimates.
+
+The disagreement was AlmaLinux 8 with observed kernel \code{4.18.0-553.158.1.el8\_10.x86\_64}: the version-only rule predicted incompatible, while the observed verdict was compatible. This rejects strict monotonic capability ordering by raw version number for this feature in the selected environments. The pilot does not isolate which individual vendor patch caused support.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/figure-2.pdf}
+\caption{Ring-buffer version prediction versus observation. The diamond marks the below-threshold compatible AlmaLinux 8/4.18 exception.}
+\label{fig:ringbuf}
+\end{figure}
+
+\subsection{RQ2: observed failure taxonomy}
+Outside calibration, there were four incompatible observations among 54 evaluable attempts: two unsupported-map-type classifications and two command-validation-failure classifications. The unsupported-map observations were the ring-buffer controlled probe on Amazon Linux 2/4.14 and Ubuntu 20.04/5.4. The command failures were produced by the Falco \code{modern\_bpf} real-loader path on those same logical profiles.
+
+The calibration case produced nine evaluable failures: eight \code{CORE\_RELOCATION\_FAILURE} and one \code{MISSING\_BTF}. Calibration results demonstrate classification coverage and remain separate from non-calibration compatibility results.
+
+\subsection{RQ3: paired loader-path observation}
+Across the nine conclusive exact environments, the paired Cilium-derived paths had \textbf{0 verdict disagreements}. Nine pairs were compatible/compatible; the Oracle pair was inconclusive/inconclusive. This is not evidence that libbpf and cilium/ebpf are equivalent loaders: the libbpf path uses load+attach while the cilium/ebpf path uses load-only. The narrower conclusion is that the selected paths did not disagree on verdict in the nine conclusive exact environments tested.
+
+\subsection{RQ4: cross-vendor version inversions}
+The pilot contains \textbf{two cross-vendor version inversions}, both comparing the older-numbered AlmaLinux 8/4.18 environment against Ubuntu 20.04/5.4 (Table~\ref{tab:inversions}).
+
+\begin{table}[h]
+\centering
+\caption{Cross-vendor version inversions.}
+\label{tab:inversions}
+\small
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+Case & Older compatible environment & Newer incompatible environment \\
+\midrule
+\code{ringbuf-modern-libbpf} & AlmaLinux 8 / 4.18.0-553.158.1.el8\_10 & Ubuntu 20.04 / 5.4.0-216 \\
+\code{falco-modern-bpf-scap-open} & AlmaLinux 8 / 4.18.0-553.158.1.el8\_10 & Ubuntu 20.04 / 5.4.0-216 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+These inversions are the strongest direct evidence for the paper's title: within the selected cases, numerical kernel ordering did not imply capability ordering. Patch-level longitudinal change is not evaluable because there is only one canonical exact environment per logical profile.
+
+\subsection{Repeat-run stability}
+The post-collection repeat sample completed \textbf{21/21} planned attempts (Table~\ref{tab:repeat}). This is evidence that the seven selected tuples were stable under the bounded repeat design, not an estimate of nondeterminism across all BPFCompat cases, kernels, clouds, or future package versions.
+
+\begin{table}[h]
+\centering
+\caption{Purposefully stratified repeat-run stability sample.}
+\label{tab:repeat}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Measure & Result \\
+\midrule
+Planned attempts & 21 \\
+Observed attempts & 21 \\
+Stable on same exact environment & 21 \\
+Environment drift & 0 \\
+Same-environment verdict instability & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Discussion}
+\subsection{What the version inversions mean}
+A common compatibility heuristic is monotonic: if a feature entered upstream at version $v$, kernels newer than $v$ are expected to support it and kernels older than $v$ are expected not to. This worked for eight of nine conclusive ring-buffer observations in the pilot, but the AlmaLinux 8/4.18 result demonstrates why it is not a contract. The exact older-numbered vendor kernel accepted a probe that Ubuntu 20.04/5.4 rejected, and the Falco real-loader path exhibited the same ordering inversion. Therefore, for these selected artifacts and vendor environments, capability must be measured from the actual environment rather than inferred solely from the version tuple.
+
+\subsection{Why exact-environment identity matters}
+The Oracle profile provides the complementary failure mode. A study may request a logical kernel family and still boot something different. If the observed kernel identity were discarded, seven rows could be incorrectly attributed to Oracle 5.15. The pilot therefore treats environment materialization as part of the evidence, not merely infrastructure.
+
+\subsection{Loader contracts are part of compatibility}
+Compatibility is not solely a property of a \code{.bpf.o} file. A userspace loader can size maps, select program variants, perform feature probes, apply relocations, and choose attach mechanisms. This motivates a practical hierarchy for release testing: use controlled validators to isolate mechanisms, execute the project's supported loader path where possible, record the success contract and binary identity, and avoid treating different contracts as identical experiments.
+
+\subsection{Implications for CI and release engineering}
+The pilot supports a release-engineering pattern rather than a universal compatibility oracle: freeze the artifact, select target vendor environments, boot and identify exact kernels, execute the real validation path, preserve structured evidence, keep incompatibility separate from infrastructure failure, rerun a bounded stability sample, and archive the evidence used for release decisions. Version rules, CO-RE, BTF, and feature databases remain useful inputs; empirical execution adds evidence about the final artifact/loader/environment combination that those inputs alone do not provide.
+
+\section{Threats to Validity}
+\textbf{Selection bias.} The corpus is intentionally small and stratified. It contains controlled probes, two paths around one Cilium-derived artifact, one Falco real-loader case, and one calibration case. It is not a random or representative sample of the eBPF ecosystem.
+
+\textbf{Environment coverage.} The canonical collection is x86\_64 only and contains one exact environment per logical profile. Wider BPFCompat product coverage is outside the frozen pilot and must not be treated as study observations.
+
+\textbf{Vendor attribution.} The AlmaLinux 8/4.18 compatibility observation is consistent with vendor-side backporting or rebasing, but the pilot does not perform patch-level causal attribution. The claim is observational: the exact kernel accepted the tested artifact.
+
+\textbf{Oracle profile mismatch.} The requested Oracle 5.15 profile booted 6.12 UEK. All seven Oracle rows are therefore inconclusive for the requested profile.
+
+\textbf{Loader comparability.} The paired Cilium-derived paths use different contracts. Their zero observed disagreements cannot be interpreted as proof that loader implementation has no effect.
+
+\textbf{Repeat-sample scope.} The 21-repeat sample was selected purposefully after the canonical collection to cover important strata. It measures stability of those exact tuples only.
+
+\textbf{Load success versus application correctness.} A load/attach or loader-command success proves the operational contract defined for that case. It does not by itself prove semantic correctness, performance, security, or production suitability of the complete application.
+
+\section{Reproducibility and Artifact Availability}
+The exact pilot-v1 dataset is archived at the version DOI \url{https://doi.org/10.5281/zenodo.22848155}; the evolving dataset family has concept DOI \url{https://doi.org/10.5281/zenodo.22848154}. The exact-version DOI should be used for reproducing this paper~\cite{ari2026bpfcompat}.
+
+The corresponding GitHub research release is \url{https://github.com/Kernel-Guard/bpfcompat/releases/tag/research-v1}. It contains the archive manifest, compact archive lock, deterministic payload ZIP, and release checksums. Three figures and four tables are generated deterministically from frozen normalized evidence, with input/output hashes recorded in the repository's paper-asset manifest.
+
+The archive excludes third-party compiled loader binaries where the v1 redistribution review did not establish a complete transitive notice set. Reproducibility is preserved through hashes, source revisions, validation contract identities, notices, and rebuild provenance.
+
+\section{Conclusion}
+The BPFCompat pilot demonstrates a narrow but important result: for the selected eBPF artifacts and vendor environments, raw kernel-version ordering was not a complete capability ordering. A version-only Linux 5.8 threshold correctly predicted eight of nine conclusive ring-buffer observations, yet AlmaLinux 8/4.18 provided a concrete below-threshold compatible counterexample. The same older-versus-newer inversion appeared in the Falco real-loader case.
+
+The engineering implication is not to discard version checks, but to bound their role. When compatibility matters at release time, the strongest evidence comes from the exact compiled artifact, the exact userspace validation contract, and the exact booted kernel environment. The pilot's research contribution is therefore reproducibility as much as the individual compatibility results: every reported number is tied to frozen inputs, exact environment identities, normalized evidence, deterministic analysis, repeat-run provenance, generated paper assets, a research-specific release, and a DOI-bearing archive.
+
+\begin{thebibliography}{12}
+
+\bibitem{vieira2020ebpfxdp}
+M.~A.~M. Vieira, M.~S. Castanho, R.~D.~G. Pac\'ifico, E.~R.~S. Santos,
+E.~P.~M. C\^amara J\'unior, and L.~F.~M. Vieira.
+\newblock Fast Packet Processing with eBPF and XDP: Concepts, Code, Challenges, and Applications.
+\newblock \emph{ACM Computing Surveys}, 53(1):1--36, 2020. doi:10.1145/3371038.
+
+\bibitem{gershuni2019verifier}
+E.~Gershuni, N.~Amit, A.~Gurfinkel, N.~Narodytska, J.~A. Navas,
+N.~Rinetzky, L.~Ryzhyk, and M.~Sagiv.
+\newblock Simple and Precise Static Analysis of Untrusted Linux Kernel Extensions.
+\newblock In \emph{PLDI}, pages 1069--1084, 2019. doi:10.1145/3314221.3314590.
+
+\bibitem{linux_libbpf_overview}
+Linux Kernel contributors.
+\newblock libbpf Overview.
+\newblock \url{https://docs.kernel.org/bpf/libbpf/libbpf_overview.html}.
+
+\bibitem{linux_btf}
+Linux Kernel contributors.
+\newblock BPF Type Format (BTF).
+\newblock \url{https://docs.kernel.org/bpf/btf.html}.
+
+\bibitem{linux_bpf_docs}
+Linux Kernel contributors.
+\newblock BPF Documentation.
+\newblock \url{https://docs.kernel.org/bpf/}.
+
+\bibitem{nakryiko2020core}
+A.~Nakryiko.
+\newblock BPF Portability and CO-RE, 2020.
+\newblock \url{https://nakryiko.com/posts/bpf-portability-and-co-re/}.
+
+\bibitem{ubuntu_kernel_sru}
+Canonical Kernel Team.
+\newblock Kernel Stable Release Updates (SRU).
+\newblock \url{https://documentation.ubuntu.com/kernel/latest/explanation/stable-release-updates/}.
+
+\bibitem{linux_backporting}
+Linux Kernel contributors.
+\newblock Backporting and conflict resolution.
+\newblock \url{https://docs.kernel.org/process/backporting.html}.
+
+\bibitem{linux_stable_rules}
+Linux Kernel contributors.
+\newblock Everything you ever wanted to know about Linux -stable releases.
+\newblock \url{https://docs.kernel.org/process/stable-kernel-rules.html}.
+
+\bibitem{cilium_ebpf}
+Cilium contributors.
+\newblock cilium/ebpf: Pure-Go eBPF library.
+\newblock \url{https://github.com/cilium/ebpf}.
+
+\bibitem{falco_libs}
+Falco contributors.
+\newblock falcosecurity/libs.
+\newblock \url{https://github.com/falcosecurity/libs}.
+
+\bibitem{ari2026bpfcompat}
+E.~Ar{\i}.
+\newblock BPFCompat Research Dataset v1: Empirical eBPF Compatibility Across Linux Vendor Kernels.
+\newblock Zenodo, version research-v1, 2026. doi:10.5281/zenodo.22848155.
+
+\end{thebibliography}
+\end{document}
