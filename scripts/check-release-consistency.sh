@@ -113,11 +113,35 @@ if grep -Eq '^[[:space:]]+push:' "$promotion_workflow"; then
   fail "${promotion_workflow} must never have an automatic push trigger"
 fi
 
+scholarly_workflow=".github/workflows/scholarly-release-v1.yml"
+[[ -f "$scholarly_workflow" ]] ||
+  fail "scholarly research release workflow is missing"
+for required_control in \
+  'branches: [main]' \
+  '- ".github/workflows/scholarly-release-v1.yml"' \
+  'RESEARCH_TAG: research-v1' \
+  'Refuse an existing research v1 tag or release' \
+  'Rebuild and verify release-shaped archive' \
+  'Create annotated research tag' \
+  'Publish GitHub research release' \
+  '--verify-tag' \
+  '--latest=false'; do
+  grep -Fq -- "$required_control" "$scholarly_workflow" ||
+    fail "$scholarly_workflow is missing required control: $required_control"
+done
+if grep -Eq 'workflow_dispatch:|refs/tags/v|tags:[[:space:]]*\[.*v\*|scripts/promote-release\.sh|softprops/action-gh-release@|value=latest' "$scholarly_workflow"; then
+  fail "$scholarly_workflow must remain isolated from product release/promotion paths"
+fi
+if [[ "$(grep -Ec '^[[:space:]]+gh release create ' "$scholarly_workflow")" -ne 1 ]]; then
+  fail "$scholarly_workflow must contain exactly one gh release create call"
+fi
+
 unexpected_release_writers="$(
   grep -ERl --include='*.yml' --include='*.yaml' \
     'gh release (create|upload|edit)|softprops/action-gh-release@' .github/workflows |
     grep -vFx "$release_workflow" |
-    grep -vFx "$promotion_workflow" || true
+    grep -vFx "$promotion_workflow" |
+    grep -vFx "$scholarly_workflow" || true
 )"
 if [[ -n "$unexpected_release_writers" ]]; then
   printf '%s\n' "$unexpected_release_writers" >&2
