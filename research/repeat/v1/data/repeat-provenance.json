@@ -1,0 +1,16 @@
+{
+  "schema_version": "bpfcompat.research.repeat-provenance.v1",
+  "corpus_version": "v1",
+  "workflow_source_commit": "d2a78e05178ea6dd82ead9684f5eedf49066903f",
+  "sample_sha256": "sha256:daf3f51ec5179897d9788c5eed89bbc453690383085043e03eb38034ed54560f",
+  "materialization_sha256": "sha256:a8c3f1745f27037d2cf8cd083176e021497f5b98fe0cd5a9220a10bb2379bab4",
+  "study_plan_sha256": "sha256:90f7562fa331d8f38832e155f2f267e0b35e244417c226245f4d92b523e61408",
+  "profile_lock_sha256": "sha256:702a8beb2859871d69d84f56c37e7ff4b1d1144fc0ccee8788aaee45cc84f63a",
+  "manifest_projection_script_sha256": "sha256:527b041ccc7a2c53282a7f365b2b833a0091600644ba2e33c62d1d72736562e9",
+  "bpfcompat_cli_sha256": "sha256:1365337098474dc0a42484271ee6383d46cb1cd20da09d248f9a0063c5147f0e",
+  "validator_sha256": "sha256:4ae1d5b838be07e6e7c304d753389a239c19eb92f6ba3bd77657e5c9583b9d04",
+  "loaders": {
+    "cilium-ebpf-v022-loader": "sha256:2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4",
+    "falco-modern-bpf-scap-open": "sha256:736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd"
+  }
+}
