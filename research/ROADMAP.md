@@ -15,8 +15,11 @@
       identities are captured before execution.
 - [x] Freeze a versioned logical kernel-profile selection; exact environment
       identities are captured after boot as required by the corpus schema.
-- [ ] Complete license/redistribution review for every materialized binary and
-      archived external artifact.
+- [x] Record a v1 archival/redistribution policy and default exclusion rule for
+      third-party compiled loader binaries whose transitive notice set is not
+      fully established.
+- [ ] Complete any transitive dependency/notice audit required for a
+      third-party compiled binary that is ultimately included in the DOI bundle.
 - [x] Capture immutable generated-artifact and loader-binary identities for the
       frozen v1 selection. The identity lock is committed and enforced by CI.
       OCI identities remain deferred with Inspektor Gadget rather than being
@@ -28,14 +31,21 @@
 - [x] Implement a versioned study runner and normalizer for captured BPFCompat reports.
 - [x] Generate pilot v1 descriptive RQ1–RQ4 tables from normalized data.
 - [ ] Generate every final paper table and figure from normalized data.
-- [ ] Add repeat-run checks for a representative sample.
+- [x] Define a bounded representative repeat-run protocol (PR #152).
+- [ ] Execute the 21-attempt repeat-run workflow from `main`, archive its
+      provenance/results, and evaluate environment drift separately from
+      same-environment verdict instability.
 - [x] Document the v1 execution boundary, KVM/VM prerequisites, exact-environment identity, and collection completeness rules.
 - [x] Publish raw/processed dataset checksums and bind the repository snapshot to
       the canonical successful workflow artifact.
+- [x] Add a preprint working draft with claims constrained to generated v1 data.
 
 ## Phase 4 — Archival
 
-- [ ] Create a research-tagged release after the corpus and protocol are frozen.
+- [x] Define the pilot v1 archival/DOI policy and third-party binary boundary.
+- [ ] Generate and verify the final machine-readable archival manifest.
+- [ ] Create a research-tagged release after repeat stability and final figures
+      are frozen.
 - [ ] Archive the release/dataset in a DOI-granting repository such as Zenodo.
 - [ ] Add the DOI to `CITATION.cff` and the README only after it exists.
 - [ ] Preserve exact code/data versions used for any manuscript.
