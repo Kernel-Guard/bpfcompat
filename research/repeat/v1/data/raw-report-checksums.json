@@ -1,0 +1,27 @@
+{
+  "schema_version": "bpfcompat.research.repeat-raw-checksums.v1",
+  "count": 21,
+  "reports": [
+    {"path":"raw/inconclusive-oracle-environment/repeat-1.json","sha256":"sha256:7c2e440a586ce1c35221cbc402556709b972e753d91e8227164d69b5331207cb","size_bytes":3680},
+    {"path":"raw/inconclusive-oracle-environment/repeat-2.json","sha256":"sha256:0ba66a0687db2914bc295d30000f102ade1269fb8c736751c90bb626cde906ac","size_bytes":3680},
+    {"path":"raw/inconclusive-oracle-environment/repeat-3.json","sha256":"sha256:b2a51f2f0bc9d1b036f52307895f6d581cafd8c27acf2fa927e5f3fc1750ec2f","size_bytes":3680},
+    {"path":"raw/negative-falco-real-loader/repeat-1.json","sha256":"sha256:2a2a802239a5159ef54a5ff1840567c5c1b7efc5301a6b6bd68e0b8964a99a30","size_bytes":4386},
+    {"path":"raw/negative-falco-real-loader/repeat-2.json","sha256":"sha256:3c0e3764a010c7fabe6ad56bd80a2b2df6d9851874611121fc60a7b9655c25a6","size_bytes":4386},
+    {"path":"raw/negative-falco-real-loader/repeat-3.json","sha256":"sha256:f43e2673a1ae4df1571ad94bead9d4acfaaf331646a509e70af4c249f3d8a55d","size_bytes":4386},
+    {"path":"raw/negative-ringbuf-boundary/repeat-1.json","sha256":"sha256:6c57fe27727ef6111e9d4a9f5ce9acfacbf76513f22b36554a5439a67a5ed591","size_bytes":4402},
+    {"path":"raw/negative-ringbuf-boundary/repeat-2.json","sha256":"sha256:de7ce80dc46feb42eaa6319f2932ba3af96763290fc40c19a558947538d89b04","size_bytes":4402},
+    {"path":"raw/negative-ringbuf-boundary/repeat-3.json","sha256":"sha256:026d53ede2f95d484068cf9f003e347c6fd60d81fa33669c44e7c4c20844c048","size_bytes":4402},
+    {"path":"raw/positive-cilium-project-loader/repeat-1.json","sha256":"sha256:4199ea28caf34e335313a53ea45be87669e82ed132c74540c54545c97e6fa7a7","size_bytes":3286},
+    {"path":"raw/positive-cilium-project-loader/repeat-2.json","sha256":"sha256:53bc690811e97bea1df88a55e764a65413c41146415369f36285149ea8a892ba","size_bytes":3286},
+    {"path":"raw/positive-cilium-project-loader/repeat-3.json","sha256":"sha256:44c513a3d6386e7f19a1b0a15cbe71dc9aaaa2456735055ad98683c9d9171ffd","size_bytes":3286},
+    {"path":"raw/positive-controlled-modern/repeat-1.json","sha256":"sha256:cedfb535ec3204fff8df2b6b8f94eb23498ea9d5787015d05df10a36b3fd819d","size_bytes":3423},
+    {"path":"raw/positive-controlled-modern/repeat-2.json","sha256":"sha256:1e59171367ad93cc2bb87233b1bee7bbd8f9ea8370ec552c47ca845cf37b3fc4","size_bytes":3423},
+    {"path":"raw/positive-controlled-modern/repeat-3.json","sha256":"sha256:ebc116612557332cb9b46eb60720fb98e75d6d1a51afe3f49eb660c74234da7c","size_bytes":3423},
+    {"path":"raw/positive-falco-real-loader/repeat-1.json","sha256":"sha256:79541b0f295adb81e5fcec66a30bf890367fb435f4d285c962f3a07a31722000","size_bytes":7284},
+    {"path":"raw/positive-falco-real-loader/repeat-2.json","sha256":"sha256:7835ebc6c595972329fb3c7200c877f9b229f078a399d79cceafca5d944d6e91","size_bytes":7284},
+    {"path":"raw/positive-falco-real-loader/repeat-3.json","sha256":"sha256:bfaecccd536fbb70a608247997f39724d0626c61dd6a127b8d0d3bd478abd633","size_bytes":7284},
+    {"path":"raw/positive-ringbuf-backport/repeat-1.json","sha256":"sha256:1f13f4e7d123610f89bab66a6fea0bbddb6b817712e1940633adae368d788146","size_bytes":3552},
+    {"path":"raw/positive-ringbuf-backport/repeat-2.json","sha256":"sha256:e52668535177618250ac18b05e98956d48d48b203ef1ddaeb44f852349713132","size_bytes":3552},
+    {"path":"raw/positive-ringbuf-backport/repeat-3.json","sha256":"sha256:8347013949bf085c8cb32a4e3fe9fe45f56df10749a9ac95f97f90e895ae8d27","size_bytes":3552}
+  ]
+}
