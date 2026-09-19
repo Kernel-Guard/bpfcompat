@@ -43,6 +43,13 @@ The build fails unless the three source SVGs still match the SHA-256 values in
 the frozen pilot-v1 paper asset manifest. It then converts those exact SVGs to
 PDF for pdfLaTeX.
 
+Ubuntu 24.04 currently ships Inkscape 1.2, which can omit SVG2
+`<use href="#...">` instances during PDF conversion. The build therefore
+creates a temporary conversion-only copy that rewrites that SVG presentation
+syntax to the equivalent `xlink:href` form. The frozen source SVGs remain
+untouched and hash-verified; Figure 3 also requires all 70 matrix-cell
+`<use>` instances to survive this normalization.
+
 The manuscript cites the exact dataset Version DOI:
 
 `10.5281/zenodo.22848155`
