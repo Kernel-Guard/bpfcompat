@@ -54,10 +54,17 @@ requirements must be represented by:
 - exact source revision;
 - deterministic build recipe;
 - validation-contract identity;
-- upstream license/notice material.
+- upstream license/notice material and retained archive paths.
 
 This keeps the study reproducible without making an unsupported redistribution
 claim.
+
+For the final machine-readable archival manifest, plain `include` is reserved
+for BPFCompat-owned provenance. Third-party-derived rows must use
+`include-with-notice` or `exclude-rebuildable`; the validator must reject a
+third-party-derived row marked plain `include`. Every
+`include-with-notice` row must name retained license/notice paths that exist in
+the archive.
 
 ## v1 inclusion policy
 
