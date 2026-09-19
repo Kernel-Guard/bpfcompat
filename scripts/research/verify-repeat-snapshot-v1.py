@@ -3,41 +3,213 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
 REPEAT = ROOT / "research/repeat/v1"
 DATA = REPEAT / "data"
+ARTIFACT_PREFIX = "reports/research-repeat-v1/"
 
 
 def fail(message: str) -> None:
+    """Abort verification with a stable, grep-friendly error prefix."""
     raise SystemExit(f"[verify-repeat-snapshot-v1] {message}")
 
 
-def load_json(path: Path):
+def load_json(path: Path) -> Any:
+    """Load UTF-8 JSON from the repository and fail closed on parse/read errors."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        fail(f"cannot read {path.relative_to(ROOT)}: {exc}")
+        try:
+            display = path.relative_to(ROOT)
+        except ValueError:
+            display = path
+        fail(f"cannot read {display}: {exc}")
+
+
+def sha256_bytes(data: bytes) -> str:
+    """Return a normalized sha256:<hex> digest for in-memory bytes."""
+    return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    """Return a normalized sha256:<hex> digest for a file."""
+    try:
+        return sha256_bytes(path.read_bytes())
+    except OSError as exc:
+        fail(f"cannot hash {path}: {exc}")
 
 
 def git_blob_sha1(path: Path) -> str:
-    data = path.read_bytes()
+    """Return the Git blob SHA-1 for the exact bytes at path."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        fail(f"cannot read Git-blob source {path}: {exc}")
     header = f"blob {len(data)}\0".encode()
     return hashlib.sha1(header + data).hexdigest()
 
 
-def main() -> int:
+def require_exact_fields(
+    mapping: dict[str, Any],
+    expected: dict[str, Any],
+    label: str,
+) -> None:
+    """Require every expected field to exist with both matching type and value."""
+    for key, value in expected.items():
+        if key not in mapping:
+            fail(f"{label} missing required field: {key}")
+        got = mapping[key]
+        if type(got) is not type(value) or got != value:
+            fail(f"{label} drift: {key}")
+
+
+def verify_artifact_member_matches_file(
+    archive: zipfile.ZipFile,
+    member: str,
+    committed: Path,
+) -> None:
+    """Require an artifact member to be byte-identical to a committed file."""
+    try:
+        data = archive.read(member)
+    except KeyError:
+        fail(f"canonical artifact is missing {member}")
+    try:
+        committed_data = committed.read_bytes()
+    except OSError as exc:
+        fail(f"cannot read committed evidence {committed}: {exc}")
+    if data != committed_data:
+        fail(f"artifact/committed evidence mismatch: {member}")
+
+
+def verify_artifact_zip(
+    artifact_zip: Path,
+    artifact: dict[str, Any],
+    reports: list[dict[str, Any]],
+    expected_raw_paths: set[str],
+    manifest: dict[str, Any],
+) -> None:
+    """Verify the pinned artifact archive and bind every raw report to its bytes."""
+    if not artifact_zip.is_file():
+        fail(f"canonical artifact ZIP is missing: {artifact_zip}")
+
+    expected_digest = artifact.get("sha256")
+    if sha256_file(artifact_zip) != expected_digest:
+        fail("canonical repeat artifact ZIP SHA-256 mismatch")
+
+    expected_size = artifact.get("size_bytes")
+    try:
+        actual_size = artifact_zip.stat().st_size
+    except OSError as exc:
+        fail(f"cannot stat canonical artifact ZIP: {exc}")
+    if type(expected_size) is not int or actual_size != expected_size:
+        fail("canonical repeat artifact ZIP size mismatch")
+
+    try:
+        archive = zipfile.ZipFile(artifact_zip)
+    except (OSError, zipfile.BadZipFile) as exc:
+        fail(f"cannot open canonical artifact ZIP: {exc}")
+
+    with archive:
+        bad_member = archive.testzip()
+        if bad_member is not None:
+            fail(f"canonical artifact ZIP CRC failure: {bad_member}")
+
+        names = set(archive.namelist())
+        expected_members = {ARTIFACT_PREFIX + path for path in expected_raw_paths}
+        raw_members = {
+            name
+            for name in names
+            if name.startswith(ARTIFACT_PREFIX + "raw/") and name.endswith(".json")
+        }
+        if raw_members != expected_members:
+            fail("canonical artifact raw-report membership drift")
+
+        for row in reports:
+            path = row["path"]
+            member = ARTIFACT_PREFIX + path
+            try:
+                info = archive.getinfo(member)
+                data = archive.read(info)
+            except KeyError:
+                fail(f"canonical artifact is missing raw report: {path}")
+
+            expected_report_size = row["size_bytes"]
+            if (
+                type(expected_report_size) is not int
+                or info.file_size != expected_report_size
+                or len(data) != expected_report_size
+            ):
+                fail(f"raw report size mismatch against artifact: {path}")
+            if sha256_bytes(data) != row["sha256"]:
+                fail(f"raw report SHA-256 mismatch against artifact: {path}")
+
+        verify_artifact_member_matches_file(
+            archive,
+            ARTIFACT_PREFIX + "normalized/stability-summary.json",
+            DATA / "stability-summary.json",
+        )
+        verify_artifact_member_matches_file(
+            archive,
+            ARTIFACT_PREFIX + "repeat-provenance.json",
+            DATA / "repeat-provenance.json",
+        )
+        verify_artifact_member_matches_file(
+            archive,
+            ARTIFACT_PREFIX + "normalized/RESULTS.md",
+            DATA / "RESULTS.md",
+        )
+
+        projection_dir = DATA / "projection-metadata"
+        for committed in sorted(projection_dir.glob("*.json")):
+            verify_artifact_member_matches_file(
+                archive,
+                ARTIFACT_PREFIX + "manifests/" + committed.name,
+                committed,
+            )
+
+        artifact_evidence = manifest.get("artifact_evidence") or {}
+        repeat_executions_member = (
+            ARTIFACT_PREFIX
+            + str(artifact_evidence.get("repeat_executions_path") or "")
+        )
+        try:
+            repeat_executions = archive.read(repeat_executions_member)
+        except KeyError:
+            fail("canonical artifact is missing repeat-executions.jsonl")
+        if (
+            sha256_bytes(repeat_executions)
+            != artifact_evidence.get("repeat_executions_sha256")
+        ):
+            fail("repeat-executions artifact binding drift")
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse verifier CLI arguments."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--artifact-zip",
+        required=True,
+        help="Downloaded canonical repeat Actions artifact ZIP",
+    )
+    return ap.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Verify committed metadata, provenance, projections, and artifact bytes."""
+    args = parse_args(argv)
+    artifact_zip = Path(args.artifact_zip)
+
     manifest = load_json(REPEAT / "repeat-dataset-manifest.json")
     summary = load_json(DATA / "stability-summary.json")
     provenance = load_json(DATA / "repeat-provenance.json")
@@ -83,8 +255,13 @@ def main() -> int:
     artifact = manifest.get("actions_artifact") or {}
     if artifact.get("id") != "10584409793":
         fail("canonical repeat artifact id drift")
-    if artifact.get("sha256") != "sha256:895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5":
+    if (
+        artifact.get("sha256")
+        != "sha256:895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5"
+    ):
         fail("canonical repeat artifact SHA-256 drift")
+    if artifact.get("size_bytes") != 455756:
+        fail("canonical repeat artifact size drift")
 
     expected_collection = {
         "planned_tuples": 7,
@@ -98,10 +275,8 @@ def main() -> int:
     }
     if manifest.get("collection") != expected_collection:
         fail("repeat dataset collection summary drift")
+    require_exact_fields(summary, expected_collection, "stability summary")
 
-    for key, value in expected_collection.items():
-        if key in summary and summary.get(key) != value:
-            fail(f"stability summary drift: {key}")
     if summary.get("missing") != []:
         fail("repeat summary has missing observations")
     if summary.get("sampling_design") != "purposeful_stratified_post_collection":
@@ -119,7 +294,9 @@ def main() -> int:
         fail("study plan SHA-256 drift")
     if provenance.get("profile_lock_sha256") != sha256_file(profile_lock_path):
         fail("profile lock SHA-256 drift")
-    if provenance.get("manifest_projection_script_sha256") != sha256_file(projection_script):
+    if provenance.get("manifest_projection_script_sha256") != sha256_file(
+        projection_script
+    ):
         fail("repeat projection script SHA-256 drift")
 
     identities = {
@@ -128,12 +305,18 @@ def main() -> int:
     }
     if provenance.get("bpfcompat_cli_sha256") != identities.get("bpfcompat-v037-cli"):
         fail("BPFCompat CLI identity drift")
-    if provenance.get("validator_sha256") != identities.get("bpfcompat-v037-validator"):
+    if provenance.get("validator_sha256") != identities.get(
+        "bpfcompat-v037-validator"
+    ):
         fail("validator identity drift")
     loaders = provenance.get("loaders") or {}
-    if loaders.get("cilium-ebpf-v022-loader") != identities.get("cilium-ebpf-v022-loader"):
+    if loaders.get("cilium-ebpf-v022-loader") != identities.get(
+        "cilium-ebpf-v022-loader"
+    ):
         fail("cilium loader identity drift")
-    if loaders.get("falco-modern-bpf-scap-open") != identities.get("falco-modern-bpf-scap-open"):
+    if loaders.get("falco-modern-bpf-scap-open") != identities.get(
+        "falco-modern-bpf-scap-open"
+    ):
         fail("Falco loader identity drift")
 
     tuples = sample.get("tuples") or []
@@ -155,7 +338,7 @@ def main() -> int:
         digest = str(row.get("sha256") or "")
         if not digest.startswith("sha256:") or len(digest) != 71:
             fail(f"invalid raw report SHA-256: {row!r}")
-        if int(row.get("size_bytes") or 0) <= 0:
+        if type(row.get("size_bytes")) is not int or row["size_bytes"] <= 0:
             fail(f"invalid raw report size: {row!r}")
 
     tuple_summaries = summary.get("tuple_summaries") or []
@@ -164,7 +347,9 @@ def main() -> int:
         fail("tuple summary coverage drift")
     for row in tuples:
         got = by_id[row["id"]]
-        if got.get("case_id") != row["case_id"] or got.get("profile_id") != row["profile_id"]:
+        if got.get("case_id") != row["case_id"] or got.get("profile_id") != row[
+            "profile_id"
+        ]:
             fail(f"tuple binding drift: {row['id']}")
         if got.get("stratum") != row["stratum"]:
             fail(f"tuple stratum drift: {row['id']}")
@@ -179,7 +364,8 @@ def main() -> int:
 
     cases = {row["id"]: row for row in study_plan.get("cases") or []}
     libbpf_tuples = [
-        row for row in tuples
+        row
+        for row in tuples
         if cases[row["case_id"]].get("mode") in {"load_only", "load_attach"}
     ]
     projection_dir = DATA / "projection-metadata"
@@ -239,11 +425,18 @@ def main() -> int:
             if regenerated.get("projected_sha256") != meta.get("projected_sha256"):
                 fail(f"projection is not reproducible: {row['id']}")
 
-    artifact_evidence = manifest.get("artifact_evidence") or {}
-    if artifact_evidence.get("repeat_executions_sha256") != "sha256:844ff0b27d8bcd7ecdb0e3368147b7486305c9cc0f3710c0fc95dc4d25aed11c":
-        fail("repeat-executions artifact binding drift")
+    verify_artifact_zip(
+        artifact_zip,
+        artifact,
+        reports,
+        expected_raw_paths,
+        manifest,
+    )
 
-    print("[verify-repeat-snapshot-v1] PASS: canonical 21/21 repeat snapshot is internally consistent")
+    print(
+        "[verify-repeat-snapshot-v1] PASS: canonical 21/21 repeat snapshot "
+        "and pinned artifact bytes are internally consistent"
+    )
     return 0
 
 
