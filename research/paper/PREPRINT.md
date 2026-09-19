@@ -79,58 +79,60 @@ repository dataset.
 The source of truth for these values is
 `research/analysis/v1/generated/analysis-summary.json`, not this prose.
 
-## Planned figures and tables
+## Generated figures and tables
+
+The final pilot-v1 figures and tables below are generated deterministically from
+committed normalized evidence by
+`scripts/research/generate-paper-assets-v1.py`. Their input and output SHA-256
+values are frozen in
+[`generated/asset-manifest.json`](generated/asset-manifest.json). CI
+regenerates the full directory and requires a byte-for-byte match.
 
 ### Figure 1 — study architecture
 
+[`generated/figures/figure-1-study-architecture.svg`](generated/figures/figure-1-study-architecture.svg)
+
 Artifact/source selection → deterministic materialization → exact vendor VM
-environment → BPFCompat/real-loader execution → normalized evidence → RQ analysis.
+environment → BPFCompat/real-loader execution → normalized evidence → RQ
+analysis.
 
 ### Figure 2 — ring-buffer version prediction versus observation
 
-Plot each conclusive ring-buffer observation by observed kernel series, mark the
-upstream 5.8 threshold, and highlight the AlmaLinux 8 / 4.18 compatible
-below-threshold observation. The plot must make vendor identity visible so it
-cannot be read as a continuous kernel-version benchmark.
+[`generated/figures/figure-2-ringbuf-version.svg`](generated/figures/figure-2-ringbuf-version.svg)
+
+The figure includes the nine conclusive ring-buffer observations, the upstream
+Linux 5.8 threshold, vendor identity, observed verdict, and the AlmaLinux 8 /
+4.18 below-threshold compatible exception. The Oracle logical profile is omitted
+from this figure because the requested 5.15 environment was not observed.
 
 ### Figure 3 — compatibility matrix
 
-Rows: study cases. Columns: exact environments/logical profiles. Cells:
-compatible, incompatible, or inconclusive. Calibration must be visually
-separated from field/primary cases.
+[`generated/figures/figure-3-compatibility-matrix.svg`](generated/figures/figure-3-compatibility-matrix.svg)
+
+Rows are the seven frozen study cases and columns are the ten logical profiles.
+Cells encode compatible, incompatible, or inconclusive using both symbols and
+fill. The calibration case is visually separated from primary/controlled cases.
 
 ### Table 1 — frozen corpus and validation contracts
 
-For each case: artifact class, source revision, loader, execution mode, analysis
-role, and immutable contract identity.
+[`generated/tables/table-1-corpus-contracts.md`](generated/tables/table-1-corpus-contracts.md)
 
 ### Table 2 — failure taxonomy
 
-Report calibration and non-calibration denominators separately. Do not combine
-the nine calibration incompatibilities with the four non-calibration
-incompatibilities.
+[`generated/tables/table-2-failure-taxonomy.md`](generated/tables/table-2-failure-taxonomy.md)
+
+Calibration and non-calibration denominators are kept separate.
 
 ### Table 3 — exact environment provenance
 
-Logical profile, distro/release, requested kernel family, observed kernel
-release, image SHA-256, exact environment ID, and evaluability.
+[`generated/tables/table-3-environments.md`](generated/tables/table-3-environments.md)
 
 ### Table 4 — repeat-run stability
 
-Canonical repeat run `35445834557` executed seven purposefully selected tuples
-three times each:
+[`generated/tables/table-4-repeat-stability.md`](generated/tables/table-4-repeat-stability.md)
 
-| Measure | Result |
-| --- | ---: |
-| Planned attempts | 21 |
-| Observed attempts | 21 |
-| Stable on the same exact environment | 21 |
-| Environment drift | 0 |
-| Same-environment verdict instability | 0 |
-
-This table is a bounded stability check, not an estimate of a population-wide
-nondeterminism rate. The source of truth is
-`research/repeat/v1/data/stability-summary.json`.
+The repeat table remains a bounded post-collection stability check, not an
+estimate of population-wide nondeterminism.
 
 ## Limitations
 

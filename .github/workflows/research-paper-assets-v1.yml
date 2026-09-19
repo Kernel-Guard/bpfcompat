@@ -1,0 +1,52 @@
+name: research-paper-assets-v1
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/research-paper-assets-v1.yml"
+      - "scripts/research/generate-paper-assets-v1.py"
+      - "scripts/research/test-paper-assets-v1.sh"
+      - "research/paper/**"
+      - "research/analysis/v1/**"
+      - "research/data/v1/**"
+      - "research/corpus/v1/**"
+      - "research/repeat/v1/**"
+
+permissions:
+  contents: read
+
+jobs:
+  paper-assets:
+    name: Deterministic paper assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/research/generate-paper-assets-v1.py
+          bash -n scripts/research/test-paper-assets-v1.sh
+
+      - name: Generate paper assets
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/paper-assets-v1
+          python3 scripts/research/generate-paper-assets-v1.py --out-dir /tmp/paper-assets-v1
+
+      - name: Upload generated paper assets
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: research-paper-assets-v1-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: /tmp/paper-assets-v1/
+
+      - name: Verify committed paper assets
+        run: bash scripts/research/test-paper-assets-v1.sh

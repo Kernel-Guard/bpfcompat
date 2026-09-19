@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="602" viewBox="0 0 1160 602">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs><g id="vc"><rect width="82" height="46" fill="#d9ead3" stroke="#777777"/><text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">C</text></g><g id="vi"><rect width="82" height="46" fill="#f4cccc" stroke="#777777"/><text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">I</text></g><g id="vq"><rect width="82" height="46" fill="#eeeeee" stroke="#777777"/><text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">?</text></g></defs>
+<text x="28" y="32" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#111111" font-weight="700">Figure 3. Pilot v1 compatibility matrix</text>
+<text x="28" y="57" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#444444">C = compatible, I = incompatible, ? = inconclusive. Calibration is separated from primary/controlled cases.</text>
+<g transform="translate(341.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">ubuntu-20.04-5.4</text></g>
+<g transform="translate(423.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">ubuntu-20.10-5.8</text></g>
+<g transform="translate(505.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">ubuntu-22.04-5.15</text></g>
+<g transform="translate(587.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">debian-12-6.1</text></g>
+<g transform="translate(669.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">ubuntu-24.04-6.8</text></g>
+<g transform="translate(751.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">almalinux-8-4.18</text></g>
+<g transform="translate(833.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">amazon-linux-2-4.14</text></g>
+<g transform="translate(915.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">amazon-linux-2-5.10</text></g>
+<g transform="translate(997.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">oracle-linux-9-uek7-5.15</text></g>
+<g transform="translate(1079.0,178) rotate(-55)"><text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111111" text-anchor="start">opensuse-leap-15.6-6.4</text></g>
+<text x="288" y="218.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Simple pass / libbpf</text>
+<use href="#vc" x="300" y="190"/>
+<use href="#vc" x="382" y="190"/>
+<use href="#vc" x="464" y="190"/>
+<use href="#vc" x="546" y="190"/>
+<use href="#vc" x="628" y="190"/>
+<use href="#vc" x="710" y="190"/>
+<use href="#vc" x="792" y="190"/>
+<use href="#vc" x="874" y="190"/>
+<use href="#vq" x="956" y="190"/>
+<use href="#vc" x="1038" y="190"/>
+<text x="288" y="264.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Perfbuf fallback / libbpf</text>
+<use href="#vc" x="300" y="236"/>
+<use href="#vc" x="382" y="236"/>
+<use href="#vc" x="464" y="236"/>
+<use href="#vc" x="546" y="236"/>
+<use href="#vc" x="628" y="236"/>
+<use href="#vc" x="710" y="236"/>
+<use href="#vc" x="792" y="236"/>
+<use href="#vc" x="874" y="236"/>
+<use href="#vq" x="956" y="236"/>
+<use href="#vc" x="1038" y="236"/>
+<text x="288" y="310.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Ringbuf modern / libbpf</text>
+<use href="#vi" x="300" y="282"/>
+<use href="#vc" x="382" y="282"/>
+<use href="#vc" x="464" y="282"/>
+<use href="#vc" x="546" y="282"/>
+<use href="#vc" x="628" y="282"/>
+<use href="#vc" x="710" y="282"/>
+<use href="#vi" x="792" y="282"/>
+<use href="#vc" x="874" y="282"/>
+<use href="#vq" x="956" y="282"/>
+<use href="#vc" x="1038" y="282"/>
+<text x="288" y="356.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Cilium tracepoint / libbpf</text>
+<use href="#vc" x="300" y="328"/>
+<use href="#vc" x="382" y="328"/>
+<use href="#vc" x="464" y="328"/>
+<use href="#vc" x="546" y="328"/>
+<use href="#vc" x="628" y="328"/>
+<use href="#vc" x="710" y="328"/>
+<use href="#vc" x="792" y="328"/>
+<use href="#vc" x="874" y="328"/>
+<use href="#vq" x="956" y="328"/>
+<use href="#vc" x="1038" y="328"/>
+<text x="288" y="402.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Cilium tracepoint / cilium/ebpf</text>
+<use href="#vc" x="300" y="374"/>
+<use href="#vc" x="382" y="374"/>
+<use href="#vc" x="464" y="374"/>
+<use href="#vc" x="546" y="374"/>
+<use href="#vc" x="628" y="374"/>
+<use href="#vc" x="710" y="374"/>
+<use href="#vc" x="792" y="374"/>
+<use href="#vc" x="874" y="374"/>
+<use href="#vq" x="956" y="374"/>
+<use href="#vc" x="1038" y="374"/>
+<text x="288" y="448.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="400" text-anchor="end">Falco modern_bpf / scap-open</text>
+<use href="#vi" x="300" y="420"/>
+<use href="#vc" x="382" y="420"/>
+<use href="#vc" x="464" y="420"/>
+<use href="#vc" x="546" y="420"/>
+<use href="#vc" x="628" y="420"/>
+<use href="#vc" x="710" y="420"/>
+<use href="#vi" x="792" y="420"/>
+<use href="#vc" x="874" y="420"/>
+<use href="#vq" x="956" y="420"/>
+<use href="#vc" x="1038" y="420"/>
+<line x1="24" y1="458" x2="1136" y2="458" stroke="#333333" stroke-width="2.5"/>
+<text x="288" y="494.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="700" text-anchor="end">CO-RE failure calibration</text>
+<use href="#vi" x="300" y="466"/>
+<use href="#vi" x="382" y="466"/>
+<use href="#vi" x="464" y="466"/>
+<use href="#vi" x="546" y="466"/>
+<use href="#vi" x="628" y="466"/>
+<use href="#vi" x="710" y="466"/>
+<use href="#vi" x="792" y="466"/>
+<use href="#vi" x="874" y="466"/>
+<use href="#vq" x="956" y="466"/>
+<use href="#vi" x="1038" y="466"/>
+<rect x="300" y="556" width="24" height="20" fill="#d9ead3" stroke="#777777"/>
+<text x="331" y="571" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111">C = compatible</text>
+<rect x="480" y="556" width="24" height="20" fill="#f4cccc" stroke="#777777"/>
+<text x="511" y="571" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111">I = incompatible</text>
+<rect x="660" y="556" width="24" height="20" fill="#eeeeee" stroke="#777777"/>
+<text x="691" y="571" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111">? = inconclusive</text>
+</svg>

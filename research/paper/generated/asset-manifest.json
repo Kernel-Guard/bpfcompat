@@ -1,0 +1,41 @@
+{
+  "claims": {
+    "figures": 3,
+    "pilot_attempts": 70,
+    "repeat_attempts": 21,
+    "tables": 4
+  },
+  "dataset_version": "v1",
+  "generator": {
+    "path": "scripts/research/generate-paper-assets-v1.py",
+    "sha256": "sha256:4e1e7f5b7d3bc76c13069daddc297a2e19bbf59493478aa7f2ee96db6d946477"
+  },
+  "inputs": {
+    "research/analysis/v1/generated/analysis-summary.json": "sha256:8d3a8045bcf0497f61c5dad2fd5f75e1b35151943363c4c560a5054667386339",
+    "research/analysis/v1/generated/case-outcomes.csv": "sha256:075731158d6b1eaffc16f44eaef99210d482614d856ccfb4a0a6c2769d2063aa",
+    "research/analysis/v1/generated/failure-taxonomy.csv": "sha256:aac59416363350ea7512c566f7eff5c8bcea9bb045016eb4890209a449a1879a",
+    "research/analysis/v1/generated/rq1-ringbuf-version.csv": "sha256:9c46adb48b9845f67c3aef68304acabd1d57e9967703a377f665622df8fb57f3",
+    "research/analysis/v1/generated/rq4-environments.csv": "sha256:7c2ff07e763597635b9b5cc35bb8d306317592fb5e46193e5f90aa460f60db06",
+    "research/corpus/v1/materialized-identities.json": "sha256:9aa0c96dcb5e5f4b8e4ef593fce822e3463d9c1cbcab1c94ade8a7b902c39135",
+    "research/corpus/v1/profile-identities.json": "sha256:702a8beb2859871d69d84f56c37e7ff4b1d1144fc0ccee8788aaee45cc84f63a",
+    "research/corpus/v1/study-plan.json": "sha256:90f7562fa331d8f38832e155f2f267e0b35e244417c226245f4d92b523e61408",
+    "research/data/v1/processed/executions/cilium-tracepoint-ebpf-go.jsonl": "sha256:393dbe460ed94a56f4b30bc942d0c16e0d4ae19c5e4b74e4a3bfaf753ade10fb",
+    "research/data/v1/processed/executions/cilium-tracepoint-libbpf.jsonl": "sha256:0c17065fa804fd9147266b1f9a25ac3293d92954d953a6d43202d102a6235068",
+    "research/data/v1/processed/executions/core-relocation-fail-libbpf.jsonl": "sha256:8ab1524d78787a23fa47197a8feda5b10ab96292f23bd1b9761fe048684b3f94",
+    "research/data/v1/processed/executions/falco-modern-bpf-scap-open.jsonl": "sha256:0f74cd12de8ee2dafed3afde6d0f3fb810af96ebb3739ae60573180b908d43ca",
+    "research/data/v1/processed/executions/perfbuf-fallback-libbpf.jsonl": "sha256:7b6d68d4961b5b1c47eab86401db1d6d0a42261c1bb860469bacffaeccc39a0a",
+    "research/data/v1/processed/executions/ringbuf-modern-libbpf.jsonl": "sha256:2345118501edd8070ddf47abd7739fddc49b366ed761dd9636d14ee92e0fb573",
+    "research/data/v1/processed/executions/simple-pass-libbpf.jsonl": "sha256:4821626ab2ae0c3311cb3392696fa1dea697b161cf13c520b1c7b0a4a062f215",
+    "research/repeat/v1/data/stability-summary.json": "sha256:add7441dd16b74d31845f3b35b30edd65e1f102799417dbc068c6c3d105c1a9c"
+  },
+  "outputs": {
+    "figures/figure-1-study-architecture.svg": "sha256:e603453187145edb3400bcdb486e179d76d7657a38b02d0619a7d2eb950cad43",
+    "figures/figure-2-ringbuf-version.svg": "sha256:7fad1b1fa74d42d0cd6e8b870acfe2e200314d63a691f66186d3cb854e6d80f9",
+    "figures/figure-3-compatibility-matrix.svg": "sha256:1c3c8e9f043612e3b55b3f128a12fd5ca7c967ebbdfd4c66a2dd98c2ea49a509",
+    "tables/table-1-corpus-contracts.md": "sha256:30a1957a06448dc2f9357d5702b085894c622ddb9c3f01fef886923c9dfe2405",
+    "tables/table-2-failure-taxonomy.md": "sha256:d89c88141602eea616781551e0e3d654b9ead02513f30439bd020f16277c9c2d",
+    "tables/table-3-environments.md": "sha256:9bc6cbbe72a80c82d0fe532766cadf472fec462510d15c27d471a181a9203a24",
+    "tables/table-4-repeat-stability.md": "sha256:b9a3b360c01f49419391aeecc50f0b5a2b1c7c140d965d3958a79e2dd490375c"
+  },
+  "schema_version": "bpfcompat.research.paper-assets.v1"
+}

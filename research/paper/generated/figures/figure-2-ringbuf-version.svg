@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="644" viewBox="0 0 1240 644">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="28" y="32" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#111111" font-weight="700">Figure 2. Ring-buffer version prediction versus observation</text>
+<text x="28" y="57" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#444444">Conclusive observations only. Shape encodes observed verdict; the diamond marks the below-threshold compatible exception.</text>
+<line x1="606.2" y1="84" x2="606.2" y2="529" stroke="#555555" stroke-width="1.5" stroke-dasharray="6,5"/>
+<text x="612.25" y="100" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#333333">upstream 5.8 threshold</text>
+<line x1="310.0" y1="94" x2="310.0" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="310.0" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">4.14</text>
+<line x1="408.8" y1="94" x2="408.8" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="408.75" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">4.18</text>
+<line x1="507.5" y1="94" x2="507.5" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="507.5" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">5.4</text>
+<line x1="606.2" y1="94" x2="606.2" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="606.25" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">5.8</text>
+<line x1="705.0" y1="94" x2="705.0" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="705.0" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">5.10</text>
+<line x1="803.8" y1="94" x2="803.8" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="803.75" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">5.15</text>
+<line x1="902.5" y1="94" x2="902.5" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="902.5" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">6.1</text>
+<line x1="1001.2" y1="94" x2="1001.2" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="1001.25" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">6.4</text>
+<line x1="1100.0" y1="94" x2="1100.0" y2="529" stroke="#e2e2e2" stroke-width="1"/>
+<text x="1100.0" y="554" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="middle">6.8</text>
+<text x="296" y="117" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">amazon-linux-2-4.14</text>
+<line x1="310" y1="112" x2="1100" y2="112" stroke="#eeeeee" stroke-width="1"/>
+<line x1="302.0" y1="104.0" x2="318.0" y2="120.0" stroke="#111111" stroke-width="2"/>
+<line x1="318.0" y1="104.0" x2="302.0" y2="120.0" stroke="#111111" stroke-width="2"/>
+<text x="324.0" y="117" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">incompatible</text>
+<text x="296" y="165" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">almalinux-8-4.18</text>
+<line x1="310" y1="160" x2="1100" y2="160" stroke="#eeeeee" stroke-width="1"/>
+<polygon points="408.8,150 418.8,160.0 408.8,170 398.8,160.0" fill="#d9ead3" stroke="#111111" stroke-width="2"/>
+<text x="422.75" y="165" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="213" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">ubuntu-20.04-5.4</text>
+<line x1="310" y1="208" x2="1100" y2="208" stroke="#eeeeee" stroke-width="1"/>
+<line x1="499.5" y1="200.0" x2="515.5" y2="216.0" stroke="#111111" stroke-width="2"/>
+<line x1="515.5" y1="200.0" x2="499.5" y2="216.0" stroke="#111111" stroke-width="2"/>
+<text x="521.5" y="213" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">incompatible</text>
+<text x="296" y="261" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">ubuntu-20.10-5.8</text>
+<line x1="310" y1="256" x2="1100" y2="256" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="606.2" cy="256.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="620.25" y="261" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="309" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">amazon-linux-2-5.10</text>
+<line x1="310" y1="304" x2="1100" y2="304" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="705.0" cy="304.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="719.0" y="309" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="357" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">ubuntu-22.04-5.15</text>
+<line x1="310" y1="352" x2="1100" y2="352" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="803.8" cy="352.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="817.75" y="357" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="405" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">debian-12-6.1</text>
+<line x1="310" y1="400" x2="1100" y2="400" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="902.5" cy="400.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="916.5" y="405" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="453" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">opensuse-leap-15.6-6.4</text>
+<line x1="310" y1="448" x2="1100" y2="448" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="1001.2" cy="448.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="1015.25" y="453" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<text x="296" y="501" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" text-anchor="end">ubuntu-24.04-6.8</text>
+<line x1="310" y1="496" x2="1100" y2="496" stroke="#eeeeee" stroke-width="1"/>
+<circle cx="1100.0" cy="496.0" r="8" fill="#d9ead3" stroke="#111111" stroke-width="1.5"/>
+<text x="1114.0" y="501" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#444444">compatible</text>
+<circle cx="310" cy="616" r="7" fill="#d9ead3" stroke="#111111"/>
+<text x="324" y="620" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111">compatible</text>
+<line x1="422" y1="609" x2="436" y2="623" stroke="#111111" stroke-width="2"/>
+<line x1="436" y1="609" x2="422" y2="623" stroke="#111111" stroke-width="2"/>
+<text x="444" y="620" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111">incompatible</text>
+</svg>

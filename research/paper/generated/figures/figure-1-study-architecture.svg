@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="250" viewBox="0 0 1320 250">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="30" y="34" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#111111" font-weight="700">Figure 1. Pilot v1 study architecture</text>
+<text x="30" y="56" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444444">Every stage preserves the identity needed to reproduce or audit the next stage.</text>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#444444"/></marker></defs>
+<rect x="30.0" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="125.83333333333333" y="109" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#111111" font-weight="700" text-anchor="middle">Frozen artifact + loader selection</text>
+<text x="125.83333333333333" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">immutable source identities</text>
+<line x1="221.7" y1="118.0" x2="239.7" y2="118.0" stroke="#444444" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="243.7" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="339.5" y="109" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#111111" font-weight="700" text-anchor="middle">Deterministic materialization</text>
+<text x="339.5" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">binary/object SHA-256</text>
+<line x1="435.3" y1="118.0" x2="453.3" y2="118.0" stroke="#444444" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="457.3" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="553.1666666666666" y="109" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#111111" font-weight="700" text-anchor="middle">Exact vendor VM environment</text>
+<text x="553.1666666666666" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">requested + observed kernel</text>
+<line x1="649.0" y1="118.0" x2="667.0" y2="118.0" stroke="#444444" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="671.0" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="766.8333333333334" y="109" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#111111" font-weight="700" text-anchor="middle">BPFCompat / project loader</text>
+<text x="766.8333333333334" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">load, attach, command contract</text>
+<line x1="862.7" y1="118.0" x2="880.7" y2="118.0" stroke="#444444" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="884.7" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="980.5" y="109" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#111111" font-weight="700" text-anchor="middle">Normalized evidence</text>
+<text x="980.5" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">verdict + failure taxonomy</text>
+<line x1="1076.3" y1="118.0" x2="1094.3" y2="118.0" stroke="#444444" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1098.3" y="72" width="191.7" height="92" rx="8" fill="#f7f7f7" stroke="#555555" stroke-width="1.5"/>
+<text x="1194.1666666666665" y="109" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#111111" font-weight="700" text-anchor="middle">RQ1–RQ4 analysis</text>
+<text x="1194.1666666666665" y="135" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#555555" text-anchor="middle">tables + figures</text>
+<text x="30" y="218" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#333333">Canonical pilot: 70/70 records. Repeat stability snapshot: 21/21 same-environment stable observations.</text>
+</svg>
