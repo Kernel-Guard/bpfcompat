@@ -82,11 +82,12 @@ jobs:
           if-no-files-found: error
           path: |
             /tmp/archive-v1/archive-manifest.json
+            /tmp/archive-v1/archive-lock.json
             /tmp/archive-v1/bpfcompat-research-v1-payload.zip
             /tmp/archive-v1/RELEASE-CHECKSUMS.txt
 
-      - name: Verify committed archival manifest
+      - name: Verify committed archival lock
         run: |
           set -euo pipefail
-          test -f research/archive/v1/archive-manifest.json
-          diff -u research/archive/v1/archive-manifest.json /tmp/archive-v1/archive-manifest.json
+          test -f research/archive/v1/archive-lock.json
+          diff -u research/archive/v1/archive-lock.json /tmp/archive-v1/archive-lock.json
