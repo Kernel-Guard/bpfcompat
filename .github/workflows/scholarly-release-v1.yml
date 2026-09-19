@@ -1,0 +1,200 @@
+name: scholarly-release-v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/scholarly-release-v1.yml"
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: scholarly-release-v1
+  cancel-in-progress: false
+
+env:
+  RESEARCH_TAG: research-v1
+
+jobs:
+  publish:
+    name: Publish immutable research v1 release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Refuse an existing research v1 tag or release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git show-ref --verify --quiet "refs/tags/${RESEARCH_TAG}"; then
+            echo "tag already exists: ${RESEARCH_TAG}" >&2
+            exit 1
+          fi
+          if gh release view "${RESEARCH_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release already exists: ${RESEARCH_TAG}" >&2
+            exit 1
+          fi
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test -z "$(git status --porcelain)"
+
+      - name: Static archive checks
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/research/archive-v1.py
+          bash -n scripts/research/test-archive-v1.sh
+          jq -e '.schema_version == "bpfcompat.research.archive-plan.v1"'             research/archive/v1/archive-plan.json >/dev/null
+          jq -e '.schema_version == "bpfcompat.research.archive-lock.v1"'             research/archive/v1/archive-lock.json >/dev/null
+
+      - name: Download pinned canonical source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pilot_id="$(jq -r '.artifact_sources.pilot.artifact_id' research/archive/v1/archive-plan.json)"
+          repeat_id="$(jq -r '.artifact_sources.repeat.artifact_id' research/archive/v1/archive-plan.json)"
+          materialization_id="$(jq -r '.artifact_sources.materialization.artifact_id' research/archive/v1/archive-plan.json)"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${pilot_id}/zip" > /tmp/pilot.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${repeat_id}/zip" > /tmp/repeat.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${materialization_id}/zip" > /tmp/materialization.zip
+
+      - name: Rebuild and verify release-shaped archive
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/archive-v1
+          python3 scripts/research/archive-v1.py build             --pilot-zip /tmp/pilot.zip             --repeat-zip /tmp/repeat.zip             --materialization-zip /tmp/materialization.zip             --out-dir /tmp/archive-v1
+          python3 scripts/research/archive-v1.py verify             --pilot-zip /tmp/pilot.zip             --repeat-zip /tmp/repeat.zip             --materialization-zip /tmp/materialization.zip             --bundle-dir /tmp/archive-v1
+          diff -u research/archive/v1/archive-lock.json /tmp/archive-v1/archive-lock.json
+
+      - name: Verify release lock invariants
+        run: |
+          set -euo pipefail
+          lock=/tmp/archive-v1/archive-lock.json
+          jq -e '
+            .manifest.file_count == 668 and
+            .manifest.total_bytes == 27743323 and
+            .manifest.sha256 == "sha256:6ed6d38d57db57e75964829278a62c7bb4a12cd8fc5db97baebb05a1fdd5e927" and
+            .payload_zip.size_bytes == 12899271 and
+            .payload_zip.sha256 == "sha256:143a8e8a93e43aebbacfd73465a659ca4cb055db7a576960c9d50ed9bc90a817" and
+            (.excluded_rebuildable | length) == 2
+          ' "$lock" >/dev/null
+
+      - name: Stage release files
+        run: |
+          set -euo pipefail
+          mkdir -p dist/research-v1
+          cp /tmp/archive-v1/archive-manifest.json dist/research-v1/
+          cp /tmp/archive-v1/archive-lock.json dist/research-v1/
+          cp /tmp/archive-v1/bpfcompat-research-v1-payload.zip dist/research-v1/
+          cp /tmp/archive-v1/RELEASE-CHECKSUMS.txt dist/research-v1/
+
+      - name: Attest scholarly archive provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            dist/research-v1/archive-manifest.json
+            dist/research-v1/archive-lock.json
+            dist/research-v1/bpfcompat-research-v1-payload.zip
+            dist/research-v1/RELEASE-CHECKSUMS.txt
+
+      - name: Prepare release notes
+        run: |
+          set -euo pipefail
+          cat > /tmp/research-release-notes.md <<EOF
+          # BPFCompat Research Dataset v1
+
+          This release freezes the first citable BPFCompat empirical compatibility
+          dataset and its reproducibility evidence.
+
+          **Release commit:** \`${GITHUB_SHA}\`
+
+          **Canonical pilot collection**
+          - 70/70 planned executions observed
+          - 50 compatible, 13 incompatible, 7 inconclusive
+          - canonical workflow run: \`35393833464\`
+          - canonical Actions artifact: \`10566859006\`
+
+          **Repeat stability sample**
+          - 21/21 same-exact-environment observations stable
+          - 0 environment drift
+          - 0 same-environment verdict instability
+          - canonical workflow run: \`35445834557\`
+          - canonical Actions artifact: \`10584409793\`
+
+          **Archive lock**
+          - 668 payload files
+          - 27,743,323 uncompressed payload bytes
+          - manifest SHA-256: \`6ed6d38d57db57e75964829278a62c7bb4a12cd8fc5db97baebb05a1fdd5e927\`
+          - payload ZIP SHA-256: \`143a8e8a93e43aebbacfd73465a659ca4cb055db7a576960c9d50ed9bc90a817\`
+
+          The compiled cilium/ebpf project loader and Falco \`scap-open\` binary
+          are intentionally excluded from the DOI-style payload and retained as
+          reproducible identity/contract records because the v1 redistribution
+          review did not establish a complete transitive binary notice set.
+
+          The release includes the machine-readable per-file manifest, compact
+          archive lock, deterministic payload ZIP, and release checksums. GitHub
+          artifact attestations are generated for all four files.
+
+          This is a reproducibility release of the pilot study evidence; it is
+          not a claim of peer review or institutional endorsement.
+          EOF
+
+      - name: Create annotated research tag
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RESEARCH_TAG}" "${GITHUB_SHA}"             -m "BPFCompat Research Dataset v1"
+          test "$(git rev-list -n1 "${RESEARCH_TAG}")" = "${GITHUB_SHA}"
+          git push origin "refs/tags/${RESEARCH_TAG}"
+
+      - name: Publish GitHub research release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cleanup_tag() {
+            if ! gh release view "${RESEARCH_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              git push --delete origin "${RESEARCH_TAG}" || true
+            fi
+          }
+          trap cleanup_tag EXIT
+
+          gh release create "${RESEARCH_TAG}"             --repo "${GITHUB_REPOSITORY}"             --verify-tag             --title "BPFCompat Research Dataset v1"             --notes-file /tmp/research-release-notes.md             --latest=false             dist/research-v1/archive-manifest.json             dist/research-v1/archive-lock.json             dist/research-v1/bpfcompat-research-v1-payload.zip             dist/research-v1/RELEASE-CHECKSUMS.txt
+
+          trap - EXIT
+
+      - name: Verify published tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          test "$(git rev-list -n1 "${RESEARCH_TAG}")" = "${GITHUB_SHA}"
+
+          gh release view "${RESEARCH_TAG}"             --repo "${GITHUB_REPOSITORY}"             --json tagName,isDraft,isPrerelease,assets,url             > /tmp/release.json
+
+          jq -e --arg tag "${RESEARCH_TAG}" '
+            .tagName == $tag and
+            .isDraft == false and
+            .isPrerelease == false and
+            ([.assets[].name] | sort) ==
+              ([
+                "RELEASE-CHECKSUMS.txt",
+                "archive-lock.json",
+                "archive-manifest.json",
+                "bpfcompat-research-v1-payload.zip"
+              ] | sort)
+          ' /tmp/release.json >/dev/null
+
+          cat /tmp/release.json
