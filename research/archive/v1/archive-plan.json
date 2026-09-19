@@ -1,0 +1,151 @@
+{
+  "schema_version": "bpfcompat.research.archive-plan.v1",
+  "archive_version": "v1",
+  "scope": "research reproducibility payload; the exact full repository source tree is bound separately by the research release tag",
+  "artifact_sources": {
+    "pilot": {
+      "artifact_id": 10566859006,
+      "name": "research-pilot-v1-35393833464",
+      "workflow_run_id": 35393833464,
+      "head_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+      "sha256": "sha256:7aae7b5c099739ef0bcad74fbb3731aaafb1177f1ba128020729b08803610910",
+      "size_bytes": 1238941,
+      "include_member_prefixes": [
+        "reports/research-v1/",
+        ".bpfcompat/research-v1/"
+      ]
+    },
+    "repeat": {
+      "artifact_id": 10584409793,
+      "name": "research-repeat-v1-35445834557",
+      "workflow_run_id": 35445834557,
+      "head_sha": "d2a78e05178ea6dd82ead9684f5eedf49066903f",
+      "sha256": "sha256:895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5",
+      "size_bytes": 455756,
+      "include_member_prefixes": [
+        "reports/research-repeat-v1/",
+        ".bpfcompat/research-repeat-v1/"
+      ]
+    },
+    "materialization": {
+      "artifact_id": 10556110799,
+      "name": "research-corpus-v1-materialization-35354767486",
+      "workflow_run_id": 35354767486,
+      "head_sha": "c14dda3e0da8e87264e756e29301ed229bca804d",
+      "sha256": "sha256:3189eaf9c37bfa69f80936691261258bb7dbf969f2d1e911d99d8281535bf829",
+      "size_bytes": 17238475
+    }
+  },
+  "repository_payload": {
+    "exact_paths": [
+      "CITATION.cff",
+      "LICENSE"
+    ],
+    "prefixes": [
+      "research/",
+      "scripts/research/",
+      ".github/workflows/research-",
+      "examples/simple-pass/",
+      "examples/ringbuf-modern/",
+      "examples/perfbuf-fallback/",
+      "examples/core-relocation-fail/",
+      "examples/oss/cilium-tracepoint-in-c/",
+      "examples/ebpf-go-loader/"
+    ],
+    "exclude_prefixes": [
+      "research/archive/v1/generated/"
+    ],
+    "exclude_exact_paths": [
+      "research/archive/v1/archive-lock.json",
+      "research/archive/v1/archive-manifest.json"
+    ],
+    "third_party_derived": {
+      "examples/oss/cilium-tracepoint-in-c/tracepoint.bpf.c": {
+        "owner_upstream": "cilium/ebpf",
+        "source_revision": "f035193453c32429bc2f6b6d623c4dfa200ad48f",
+        "status": "include-with-notice",
+        "license_notice_paths": [
+          "materialized/licenses/Cilium-ebpf-LICENSE"
+        ]
+      }
+    }
+  },
+  "materialization_policy": {
+    "bpfcompat_owned_exact": [
+      "SHA256SUMS",
+      "artifacts/core_relocation_fail.bpf.o",
+      "artifacts/perfbuf_fallback.bpf.o",
+      "artifacts/ringbuf_modern.bpf.o",
+      "artifacts/simple_pass.bpf.o",
+      "bin/bpfcompat-linux-amd64",
+      "bin/bpfcompat-validator-static-linux-amd64",
+      "licenses/BPFCompat-LICENSE",
+      "materialization.json"
+    ],
+    "bpfcompat_owned_prefixes": [
+      "contracts/",
+      "inputs/manifests/",
+      "toolchain/"
+    ],
+    "third_party_include_with_notice": [
+      {
+        "path": "artifacts/cilium_tracepoint_in_c.bpf.o",
+        "owner_upstream": "cilium/ebpf",
+        "source_revision": "f035193453c32429bc2f6b6d623c4dfa200ad48f",
+        "sha256": "sha256:16e1ce980c2c5bf6e839dac79e1710b4d185cbbca649e1e5421e1ab1fe7e5cc8",
+        "license_notice_paths": [
+          "materialized/licenses/Cilium-ebpf-LICENSE"
+        ]
+      },
+      {
+        "path": "licenses/Cilium-ebpf-LICENSE",
+        "owner_upstream": "cilium/ebpf",
+        "source_revision": "f035193453c32429bc2f6b6d623c4dfa200ad48f",
+        "license_notice_paths": [
+          "materialized/licenses/Cilium-ebpf-LICENSE"
+        ]
+      },
+      {
+        "path": "licenses/Falco-libs-LICENSE",
+        "owner_upstream": "falcosecurity/libs",
+        "source_revision": "1800b330ce92b532456178abfcbfba3dd157f974",
+        "license_notice_paths": [
+          "materialized/licenses/Falco-libs-LICENSE",
+          "materialized/licenses/Falco-libs-NOTICES"
+        ]
+      },
+      {
+        "path": "licenses/Falco-libs-NOTICES",
+        "owner_upstream": "falcosecurity/libs",
+        "source_revision": "1800b330ce92b532456178abfcbfba3dd157f974",
+        "license_notice_paths": [
+          "materialized/licenses/Falco-libs-LICENSE",
+          "materialized/licenses/Falco-libs-NOTICES"
+        ]
+      }
+    ],
+    "excluded_rebuildable": [
+      {
+        "path": "loaders/ebpf-go-loader",
+        "owner_upstream": "Kernel-Guard/bpfcompat + github.com/cilium/ebpf@v0.22.0",
+        "source_revision": "b8ef57f4e02ebecee4649f7657ea8eea6af46ca9",
+        "sha256": "sha256:2e0517a0a068cf169ebf6a562cd2354ff9f18da708de7e54af52027a893598a4",
+        "validation_contract_id": "sha256:2bcd1be1d9180b1ef790a3fd6e8bd635168d43dd7b16956535a1d464fd76c853",
+        "license_notice_paths": [
+          "materialized/licenses/Cilium-ebpf-LICENSE"
+        ]
+      },
+      {
+        "path": "loaders/scap-open",
+        "owner_upstream": "falcosecurity/libs",
+        "source_revision": "1800b330ce92b532456178abfcbfba3dd157f974",
+        "sha256": "sha256:736c307379603a8320434217440e346ce03260d31a5e7d58326f5526e2c2f2cd",
+        "validation_contract_id": "sha256:7fe31f06529db32acfc5a6fe5b109700e59cfd7deb79c176f601af5e5090bf66",
+        "license_notice_paths": [
+          "materialized/licenses/Falco-libs-LICENSE",
+          "materialized/licenses/Falco-libs-NOTICES"
+        ]
+      }
+    ]
+  }
+}

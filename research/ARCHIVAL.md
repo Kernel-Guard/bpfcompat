@@ -84,6 +84,29 @@ the archive.
 | Falco `scap-open` binary | Exclude from v1 DOI bundle unless a complete transitive dependency/notice audit is finished | Built with `USE_BUNDLED_DEPS=ON`; Falco Apache-2.0 license and NOTICES are necessary but do not by themselves establish every bundled dependency obligation |
 | VM/base images | Do not redistribute in the DOI bundle | Preserve exact image identities, source locations, and observed environment evidence instead |
 
+## Generated archive bundle
+
+The v1 archive builder is `scripts/research/archive-v1.py`, driven by
+`research/archive/v1/archive-plan.json`.
+
+It produces a release-shaped bundle containing:
+
+- `archive-manifest.json` — one machine-readable row for every payload file;
+- `archive-lock.json` — compact binding for the full manifest, payload ZIP,
+  source Actions artifacts, and excluded rebuildable binaries;
+- `bpfcompat-research-v1-payload.zip` — deterministic payload ZIP;
+- `RELEASE-CHECKSUMS.txt` — release-level SHA-256 bindings.
+
+The full manifest is generated deterministically in CI rather than duplicated
+into Git history. The committed `research/archive/v1/archive-lock.json` is the
+repository gate: CI regenerates the complete archive from the three pinned
+Actions artifacts and requires the generated lock to match byte-for-byte.
+
+The payload contains canonical pilot/repeat evidence, the research
+reproducibility slice, and permitted materialized inputs. The compiled
+cilium/ebpf loader and Falco `scap-open` remain physically absent and are
+represented only by `exclude-rebuildable` identity/contract records.
+
 ## Release gates
 
 A research-tagged release and DOI should not be created until all of the

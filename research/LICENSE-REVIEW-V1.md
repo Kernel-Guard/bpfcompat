@@ -121,3 +121,13 @@ Status semantics are fail-closed:
 
 The archive generator/validator must enforce these rules and fail closed on any
 violation.
+
+## Implemented archive enforcement
+
+The v1 archive policy is enforced by `scripts/research/archive-v1.py` and the
+`research-archive-v1` CI workflow. The builder classifies every member of the
+verified materialization artifact, fails on any unclassified member, rejects
+plain `include` for third-party provenance, requires retained notice paths,
+and verifies that `exclude-rebuildable` loader binaries are absent from the DOI
+payload. Negative regressions exercise both the third-party-status rule and
+excluded-loader injection rule.

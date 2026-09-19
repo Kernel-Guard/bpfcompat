@@ -50,6 +50,8 @@ Publication-facing material is kept explicit and evidence-bounded:
   numerical claims are constrained to generated v1 analysis;
 - [paper/generated/](paper/generated/) — deterministic final pilot-v1 figures,
   tables, and an input/output SHA-256 manifest enforced by CI;
+- [archive/v1/](archive/v1/) — frozen archive policy, compact archive lock, and
+  the inputs used to regenerate the release-shaped DOI payload;
 - [ROADMAP.md](ROADMAP.md) — remaining archival, DOI, and external academic-use
   gates.
 

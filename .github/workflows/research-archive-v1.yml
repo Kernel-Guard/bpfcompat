@@ -1,0 +1,93 @@
+name: research-archive-v1
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/research-archive-v1.yml"
+      - "scripts/research/archive-v1.py"
+      - "scripts/research/test-archive-v1.sh"
+      - "research/archive/v1/**"
+      - "research/ARCHIVAL.md"
+      - "research/LICENSE-REVIEW-V1.md"
+      - "research/data/v1/**"
+      - "research/repeat/v1/**"
+      - "research/corpus/v1/**"
+      - "research/analysis/v1/**"
+      - "research/paper/**"
+      - "scripts/research/**"
+      - "examples/simple-pass/**"
+      - "examples/ringbuf-modern/**"
+      - "examples/perfbuf-fallback/**"
+      - "examples/core-relocation-fail/**"
+      - "examples/oss/cilium-tracepoint-in-c/**"
+      - "examples/ebpf-go-loader/**"
+      - "CITATION.cff"
+      - "LICENSE"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  archive:
+    name: Build and verify archival payload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/research/archive-v1.py
+          bash -n scripts/research/test-archive-v1.sh
+          jq -e . research/archive/v1/archive-plan.json >/dev/null
+
+      - name: Download pinned source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pilot_id="$(jq -r '.artifact_sources.pilot.artifact_id' research/archive/v1/archive-plan.json)"
+          repeat_id="$(jq -r '.artifact_sources.repeat.artifact_id' research/archive/v1/archive-plan.json)"
+          materialization_id="$(jq -r '.artifact_sources.materialization.artifact_id' research/archive/v1/archive-plan.json)"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${pilot_id}/zip" > /tmp/pilot.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${repeat_id}/zip" > /tmp/repeat.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${materialization_id}/zip" > /tmp/materialization.zip
+
+      - name: Archive policy and negative regressions
+        run: >-
+          bash scripts/research/test-archive-v1.sh
+          /tmp/pilot.zip
+          /tmp/repeat.zip
+          /tmp/materialization.zip
+
+      - name: Build release-shaped archive bundle
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/archive-v1
+          python3 scripts/research/archive-v1.py build             --pilot-zip /tmp/pilot.zip             --repeat-zip /tmp/repeat.zip             --materialization-zip /tmp/materialization.zip             --out-dir /tmp/archive-v1
+          python3 scripts/research/archive-v1.py verify             --pilot-zip /tmp/pilot.zip             --repeat-zip /tmp/repeat.zip             --materialization-zip /tmp/materialization.zip             --bundle-dir /tmp/archive-v1
+
+      - name: Upload release-shaped archive
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: research-archive-v1-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            /tmp/archive-v1/archive-manifest.json
+            /tmp/archive-v1/archive-lock.json
+            /tmp/archive-v1/bpfcompat-research-v1-payload.zip
+            /tmp/archive-v1/RELEASE-CHECKSUMS.txt
+
+      - name: Verify committed archival lock
+        run: |
+          set -euo pipefail
+          test -f research/archive/v1/archive-lock.json
+          diff -u research/archive/v1/archive-lock.json /tmp/archive-v1/archive-lock.json
