@@ -91,9 +91,12 @@ For exact `research-v1` reproducibility, cite:
 > Across Linux Vendor Kernels* (Version research-v1) [Dataset]. Zenodo.
 > https://doi.org/10.5281/zenodo.22848155
 
-The repository `CITATION.cff` keeps BPFCompat itself typed as **software** and
-lists this Zenodo object separately as a **dataset** reference. This prevents
-the dataset DOI from being misrepresented as the software project's own DOI.
+The root `CITATION.cff` remains the frozen BPFCompat **software** citation
+metadata. Dataset-specific machine-readable citation metadata is provided in
+`docs/research-v1/CITATION.cff`, where the Zenodo object is typed as
+**dataset** and bound to the exact Version DOI. This prevents the dataset DOI
+from being misrepresented as the software project's own DOI while preserving
+the frozen v1 archive lock.
 
 ## No-mutation policy
 
