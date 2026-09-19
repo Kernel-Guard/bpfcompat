@@ -52,7 +52,8 @@ jobs:
           from pathlib import Path
 
           def git_blob_sha1(data):
-              return hashlib.sha1(f"blob {len(data)}\\0".encode() + data).hexdigest()
+              header=b"blob " + str(len(data)).encode() + bytes([0])
+              return hashlib.sha1(header + data).hexdigest()
 
           sample=json.loads(Path("research/repeat/v1/stability-sample.json").read_text())
           plan=json.loads(Path("research/corpus/v1/study-plan.json").read_text())
