@@ -47,8 +47,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
+
+          def git_blob_sha1(data):
+              return hashlib.sha1(f"blob {len(data)}\\0".encode() + data).hexdigest()
 
           sample=json.loads(Path("research/repeat/v1/stability-sample.json").read_text())
           plan=json.loads(Path("research/corpus/v1/study-plan.json").read_text())
@@ -66,6 +70,10 @@ jobs:
               if case["mode"] in {"load_only", "load_attach"}:
                   assert case.get("manifest"), row
                   assert case.get("manifest_git_blob"), row
+                  manifest=Path(case["manifest"])
+                  data=manifest.read_bytes()
+                  assert git_blob_sha1(data)==case["manifest_git_blob"], row
+                  assert f"  - {row['profile_id']}" in data.decode(), row
               shard=Path("research/data/v1/processed/executions")/f"{row['case_id']}.jsonl"
               matches=[json.loads(x) for x in shard.read_text().splitlines()
                        if x.strip() and json.loads(x)["logical_profile_id"]==row["profile_id"]]
