@@ -34,6 +34,26 @@ Upload the following release assets to Zenodo without modification.
 The release workflow generated GitHub build-provenance attestations for all four
 files before publishing the release.
 
+### Transfer-integrity gate
+
+Before uploading anything to Zenodo:
+
+1. download all four assets from the published `research-v1` GitHub release;
+2. compute SHA-256 for each downloaded file;
+3. compare every digest against the table above and
+   `RELEASE-CHECKSUMS.txt`;
+4. stop the deposit if any filename, size, or SHA-256 differs.
+
+After the Zenodo record is published:
+
+1. download all four files from the published Zenodo record;
+2. recompute SHA-256 for each file;
+3. compare every digest against the same GitHub release values above;
+4. keep the Zenodo/DOI archival gate open if any post-publication digest differs.
+
+The DOI record is considered an exact archival copy of `research-v1` only when
+both the pre-upload and post-publication comparisons pass for all four files.
+
 ## Recommended Zenodo deposit mode
 
 Use a **manual Zenodo upload** for this research record.
@@ -42,6 +62,22 @@ The `research-v1` GitHub release already exists, while Zenodo's GitHub
 integration is intended to ingest releases after a repository is enabled. The
 research object is also primarily a reproducibility dataset/evidence bundle,
 with code included as supporting material.
+
+### Duplicate-record preflight
+
+Before creating the manual Zenodo record:
+
+1. search Zenodo for an existing record matching **BPFCompat Research Dataset
+   v1**, `research-v1`, or the GitHub release URL;
+2. check the Zenodo GitHub integration state for
+   `Kernel-Guard/bpfcompat` and confirm that it has **not** already processed
+   the `research-v1` release;
+3. proceed with the manual deposit only if both checks show that no Zenodo record
+   already represents this release.
+
+If an existing or automatically ingested record is found, do not create a second
+manual record or DOI for the same `research-v1` publication. Reconcile and use
+the existing record instead.
 
 ## Zenodo metadata
 
@@ -115,6 +151,8 @@ tag or GitHub release, that:
 1. records the Zenodo record URL, Version DOI, and Concept DOI;
 2. adds the Version DOI to `CITATION.cff`;
 3. adds DOI links to the repository README and research-facing documentation;
+   a target under `research/**` is allowed only after creating a new research
+   version and archive lock;
 4. records that the Zenodo/DOI archival gate is complete;
 5. leaves the GitHub release asset hashes unchanged.
 
