@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use the BPFCompat pilot v1 research dataset, please cite this exact Zenodo version."
+title: "BPFCompat Research Dataset v1: Empirical eBPF Compatibility Across Linux Vendor Kernels"
+type: dataset
+authors:
+  - family-names: "Arı"
+    given-names: "Eren"
+doi: "10.5281/zenodo.22848155"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22848154"
+    description: "Concept DOI for the evolving BPFCompat research dataset across versions."
+  - type: url
+    value: "https://github.com/Kernel-Guard/bpfcompat/releases/tag/research-v1"
+    description: "GitHub research-v1 release corresponding to this archived dataset."
+version: "research-v1"
+date-released: "2026-09-19"
+repository: "https://zenodo.org/records/22848155"
+url: "https://zenodo.org/records/22848155"
+license:
+  - "Apache-2.0"
+  - "MIT"
+abstract: >-
+  Frozen reproducibility package for an empirical pilot study of compiled eBPF
+  artifact compatibility across Linux vendor kernels and loader paths. The
+  canonical pilot contains 70/70 planned executions: 50 compatible, 13
+  incompatible, and 7 inconclusive. The bounded repeat sample contains 21/21
+  same-exact-environment observations with no observed environment drift or
+  same-environment verdict instability.
+keywords:
+  - eBPF
+  - BPF
+  - Linux kernel
+  - compatibility
+  - vendor kernels
+  - libbpf
+  - BTF
+  - CO-RE
+  - reproducibility
+  - systems research
