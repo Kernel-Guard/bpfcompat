@@ -109,7 +109,7 @@ represented only by `exclude-rebuildable` identity/contract records.
 
 ## Published research release
 
-The immutable research publication point for pilot v1 is:
+The frozen research publication point for pilot v1 is:
 
 - annotated tag: `research-v1`
 - tag target commit:
@@ -131,6 +131,10 @@ The scholarly release workflow rebuilt the archive from the three pinned source
 Actions artifacts, verified the committed archive lock, generated GitHub
 provenance attestations for all four release files, created the annotated tag,
 published the release, and then verified the final tag target and asset set.
+The GitHub API does not mark this release object as immutable, so v1 relies on a
+project no-mutation policy plus the annotated tag, committed lock, checksums,
+asset digests, and attestations. Corrections must create a new research version
+rather than rewriting the published v1 evidence.
 
 The tag is annotated but not GPG-signed; integrity for the release assets is
 provided by the committed archive lock, release checksums, GitHub-reported asset
