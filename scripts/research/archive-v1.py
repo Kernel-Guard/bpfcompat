@@ -88,14 +88,17 @@ def verify_source_zip(path: Path, spec: dict[str, Any], label: str) -> zipfile.Z
     return archive
 
 
-def git_head() -> str:
-    """Return the checked-out repository commit."""
+def git_blob_sha(path: str) -> str:
+    """Return the Git blob identity for one tracked repository path."""
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        blob = subprocess.check_output(
+            ["git", "rev-parse", f"HEAD:{path}"], cwd=ROOT, text=True
         ).strip()
     except (OSError, subprocess.CalledProcessError) as exc:
-        fail(f"cannot resolve repository HEAD: {exc}")
+        fail(f"cannot resolve Git blob for {path}: {exc}")
+    if len(blob) != 40:
+        fail(f"unexpected Git blob identity for {path}: {blob}")
+    return blob
 
 
 def git_tracked_files() -> list[str]:
@@ -168,7 +171,6 @@ def add_repository_files(
     payload: Path,
     plan: dict[str, Any],
     rows: list[dict[str, Any]],
-    head: str,
 ) -> None:
     """Copy the committed research reproducibility slice into the payload."""
     third_party = plan["repository_payload"]["third_party_derived"]
@@ -186,7 +188,7 @@ def add_repository_files(
         else:
             provenance = "bpfcompat-owned"
             owner = "Kernel-Guard/bpfcompat"
-            revision = head
+            revision = f"git-blob:{git_blob_sha(rel)}"
             status = "include"
             notices = []
         copy_bytes(payload, archive_path, data)
@@ -413,7 +415,6 @@ def write_manifest(
     plan: dict[str, Any],
     rows: list[dict[str, Any]],
     excluded_rows: list[dict[str, Any]],
-    head: str,
 ) -> Path:
     """Write the machine-readable archival manifest."""
     payload = out_dir / "payload"
@@ -422,7 +423,7 @@ def write_manifest(
     manifest = {
         "schema_version": "bpfcompat.research.archive-manifest.v1",
         "archive_version": plan["archive_version"],
-        "repository_build_commit": head,
+        "repository_payload_identity": "per-file Git blob plus SHA-256; full source tree bound later by immutable research release tag",
         "scope": plan["scope"],
         "artifact_sources": plan["artifact_sources"],
         "payload": {
@@ -528,9 +529,8 @@ def build(args: argparse.Namespace) -> int:
     )
 
     rows: list[dict[str, Any]] = []
-    head = git_head()
     try:
-        add_repository_files(payload, plan, rows, head)
+        add_repository_files(payload, plan, rows)
         add_evidence_files(
             payload, pilot, plan["artifact_sources"]["pilot"], "pilot", rows
         )
@@ -545,7 +545,7 @@ def build(args: argparse.Namespace) -> int:
         repeat.close()
         materialization.close()
 
-    manifest = write_manifest(out_dir, plan, rows, excluded, head)
+    manifest = write_manifest(out_dir, plan, rows, excluded)
     payload_zip = out_dir / PAYLOAD_ZIP_NAME
     write_deterministic_zip(payload, payload_zip)
     verify_payload_zip(payload, payload_zip)
