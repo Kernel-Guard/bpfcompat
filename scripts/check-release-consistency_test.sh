@@ -10,7 +10,13 @@ unset GITHUB_REF_TYPE GITHUB_REF_NAME
 
 script="scripts/check-release-consistency.sh"
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+scholarly_workflow=".github/workflows/scholarly-release-v1.yml"
+cp "$scholarly_workflow" "$tmp/scholarly-release-v1.yml"
+restore() {
+  cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
+  rm -rf "$tmp"
+}
+trap restore EXIT
 current_release="$(
   awk -F': ' '$1 == "release_version" {print $2; exit}' release.yaml
 )"
@@ -64,5 +70,21 @@ if GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v9.9.9 \
   echo "[release-consistency-test] accepted mismatched release tag" >&2
   exit 1
 fi
+
+sed -i 's/RESEARCH_TAG: research-v1/RESEARCH_TAG: v9.9.9/' "$scholarly_workflow"
+if BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-scholarly-tag.log" 2>&1; then
+  echo "[release-consistency-test] accepted scholarly workflow with product-style tag" >&2
+  exit 1
+fi
+cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
+
+sed -i '/--latest=false/d' "$scholarly_workflow"
+if BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-scholarly-latest.log" 2>&1; then
+  echo "[release-consistency-test] accepted scholarly workflow without --latest=false" >&2
+  exit 1
+fi
+cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
 
 echo "[release-consistency-test] PASS"
