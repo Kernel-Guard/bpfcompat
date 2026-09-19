@@ -32,7 +32,8 @@ newer-numbered kernel failed.
 These results are descriptive evidence from a selected pilot, not population
 estimates for Linux deployments. The study publishes normalized evidence,
 exact-environment identities, checksums, provenance, and deterministic analysis
-scripts so the reported findings can be reproduced from the archived dataset.
+scripts so the reported findings can be reproduced from the committed versioned
+repository dataset.
 
 ## Claimed contributions
 
