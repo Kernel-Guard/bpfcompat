@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   GO_VERSION: "1.25.14"
@@ -86,9 +87,22 @@ jobs:
           print("[research-repeat-v1] sample bindings PASS")
           PY
 
+      - name: Download canonical repeat artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(jq -r '.actions_artifact.id' research/repeat/v1/repeat-dataset-manifest.json)"
+          [[ "$artifact_id" == "10584409793" ]] || {
+            echo "::error::unexpected canonical repeat artifact id: $artifact_id"
+            exit 1
+          }
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > /tmp/research-repeat-v1.zip
+
       - name: Verify committed repeat snapshot
-        if: hashFiles('research/repeat/v1/repeat-dataset-manifest.json') != ''
-        run: python3 scripts/research/verify-repeat-snapshot-v1.py
+        run: >-
+          python3 scripts/research/verify-repeat-snapshot-v1.py
+          --artifact-zip /tmp/research-repeat-v1.zip
 
   execute:
     name: Execute 21-attempt repeat stability sample
