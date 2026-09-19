@@ -46,8 +46,9 @@
 
 - [x] Define the pilot v1 archival/DOI policy and third-party binary boundary.
 - [x] Generate and verify the final machine-readable archival manifest from the pinned pilot, repeat, and materialization artifacts; bind it with a compact repository lock and fail-closed redistribution checks.
-- [ ] Create a research-tagged release after repeat stability and final figures
-      are frozen.
+- [x] Create a research-tagged release after repeat stability and final figures
+      are frozen. Published `research-v1` / **BPFCompat Research Dataset v1**
+      from commit `141c491bd1508600338e7bc27abbc5a117eb7508`.
 - [ ] Archive the release/dataset in a DOI-granting repository such as Zenodo.
 - [ ] Add the DOI to `CITATION.cff` and the README only after it exists.
 - [ ] Preserve exact code/data versions used for any manuscript.
