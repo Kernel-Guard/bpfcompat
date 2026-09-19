@@ -11,6 +11,7 @@ on:
       - "scripts/research/run-repeat-v1.sh"
       - "scripts/research/analyze-repeat-v1.py"
       - "scripts/research/project-repeat-manifest-v1.py"
+      - "scripts/research/verify-repeat-snapshot-v1.py"
       - "scripts/research/materialize-v1.sh"
       - "scripts/research/verify-materialization-v1.sh"
       - "scripts/research/verify-profile-lock-v1.sh"
@@ -39,6 +40,7 @@ jobs:
           bash -n scripts/research/run-repeat-v1.sh
           python3 -m py_compile scripts/research/analyze-repeat-v1.py
           python3 -m py_compile scripts/research/project-repeat-manifest-v1.py
+          python3 -m py_compile scripts/research/verify-repeat-snapshot-v1.py
           python3 scripts/research/analyze-repeat-v1.py --self-test
           python3 scripts/research/project-repeat-manifest-v1.py --self-test
           jq -e . research/repeat/v1/stability-sample.json >/dev/null
@@ -83,6 +85,10 @@ jobs:
           assert len(sample["tuples"])==7
           print("[research-repeat-v1] sample bindings PASS")
           PY
+
+      - name: Verify committed repeat snapshot
+        if: hashFiles('research/repeat/v1/repeat-dataset-manifest.json') != ''
+        run: python3 scripts/research/verify-repeat-snapshot-v1.py
 
   execute:
     name: Execute 21-attempt repeat stability sample
