@@ -41,15 +41,60 @@ grep -Fq '10.5281/zenodo.22848155' "$src" || {
 }
 
 rm -rf "$out"
-mkdir -p "$pkg/figures"
+mkdir -p "$pkg/figures" "$out/svg-compat"
 cp "$src" "$pkg/main.tex"
 
-inkscape "$frozen/figure-1-study-architecture.svg" \
-  --export-type=pdf --export-filename="$pkg/figures/figure-1.pdf"
-inkscape "$frozen/figure-2-ringbuf-version.svg" \
-  --export-type=pdf --export-filename="$pkg/figures/figure-2.pdf"
-inkscape "$frozen/figure-3-compatibility-matrix.svg" \
-  --export-type=pdf --export-filename="$pkg/figures/figure-3.pdf"
+normalize_svg_use_href() {
+  local src_svg="$1"
+  local dst_svg="$2"
+  python3 - "$src_svg" "$dst_svg" <<'PY'
+from pathlib import Path
+import sys
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+text = src.read_text(encoding="utf-8")
+
+# Inkscape 1.2 on Ubuntu 24.04 drops SVG2 <use href="#..."> instances.
+# Normalize only that presentation syntax for conversion; the frozen source SVG
+# remains hash-verified and untouched.
+if '<use href=' in text:
+    if 'xmlns:xlink=' not in text:
+        text = text.replace(
+            '<svg xmlns="http://www.w3.org/2000/svg"',
+            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"',
+            1,
+        )
+    text = text.replace('<use href=', '<use xlink:href=')
+
+dst.write_text(text, encoding="utf-8")
+PY
+}
+
+convert_svg() {
+  local src_svg="$1"
+  local compat_svg="$2"
+  local dst_pdf="$3"
+  normalize_svg_use_href "$src_svg" "$compat_svg"
+  inkscape "$compat_svg" --export-type=pdf --export-filename="$dst_pdf"
+}
+
+convert_svg \
+  "$frozen/figure-1-study-architecture.svg" \
+  "$out/svg-compat/figure-1.svg" \
+  "$pkg/figures/figure-1.pdf"
+convert_svg \
+  "$frozen/figure-2-ringbuf-version.svg" \
+  "$out/svg-compat/figure-2.svg" \
+  "$pkg/figures/figure-2.pdf"
+convert_svg \
+  "$frozen/figure-3-compatibility-matrix.svg" \
+  "$out/svg-compat/figure-3.svg" \
+  "$pkg/figures/figure-3.pdf"
+
+# Figure 3 has 70 matrix cells represented by <use> instances. Ensure the
+# compatibility normalization preserved all of them before LaTeX compilation.
+test "$(grep -o 'xlink:href=' "$out/svg-compat/figure-3.svg" | wc -l)" -eq 70
 
 (
   cd "$pkg"
