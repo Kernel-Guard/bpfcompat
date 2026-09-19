@@ -8,7 +8,7 @@
   "dataset_version": "v1",
   "generator": {
     "path": "scripts/research/generate-paper-assets-v1.py",
-    "sha256": "sha256:55101ed5a3001a7044b4b21001936449dd13de5cfb57a5bcaf912f2ab1aa64e1"
+    "sha256": "sha256:4e1e7f5b7d3bc76c13069daddc297a2e19bbf59493478aa7f2ee96db6d946477"
   },
   "inputs": {
     "research/analysis/v1/generated/analysis-summary.json": "sha256:8d3a8045bcf0497f61c5dad2fd5f75e1b35151943363c4c560a5054667386339",
