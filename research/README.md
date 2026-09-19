@@ -30,8 +30,9 @@ Repository snapshot and integrity metadata:
   raw-report checksums, and dataset manifest;
 - [`analysis/v1/`](analysis/v1/) — deterministic descriptive RQ1–RQ4 tables
   and machine-readable analysis summary;
-- [`repeat/v1/`](repeat/v1/) — merged post-collection stability protocol; the
-  manual 21-attempt execution is still pending;
+- [`repeat/v1/`](repeat/v1/) — canonical post-collection stability snapshot:
+  21/21 attempts stable on the same exact environment, with 0 environment drift
+  and 0 same-environment verdict instability;
 - `scripts/research/analyze-study-v1.py` — analysis generator;
 - `scripts/research/test-analysis-v1.sh` — checksum and reproduction gate.
 
@@ -47,8 +48,8 @@ Publication-facing material is kept explicit and evidence-bounded:
   third-party compiled-loader policy;
 - [paper/PREPRINT.md](paper/PREPRINT.md) — working manuscript scaffold whose
   numerical claims are constrained to generated v1 analysis;
-- [ROADMAP.md](ROADMAP.md) — remaining repeat-run, figure, archival, DOI, and
-  external academic-use gates.
+- [ROADMAP.md](ROADMAP.md) — remaining figure, archival, DOI, and external
+  academic-use gates.
 
 No university, lab, course, or paper should be listed as an academic reference
 until a public independent source can be verified. A resource-page link is a
