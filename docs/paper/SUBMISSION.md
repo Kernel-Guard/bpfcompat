@@ -34,14 +34,24 @@ This checklist applies to
 
 - [ ] Confirm author display name and affiliation exactly as they should appear.
 - [ ] Add ORCID only if verified by the author.
-- [ ] Convert the Markdown manuscript into the target venue format (LaTeX/PDF).
-- [ ] Convert or embed the three frozen SVG figures without altering their
-      underlying data.
+- [x] Convert the Markdown manuscript into an arXiv-oriented LaTeX/PDF source package.
+- [x] Bind the three frozen SVG figures by SHA-256 and convert them to PDF at build time without altering the empirical data.
 - [ ] Confirm every bibliography entry against its primary publisher/source.
 - [ ] Run spelling/grammar and reference-link checks.
-- [ ] Render the final PDF and visually inspect every figure/table.
-- [ ] Confirm that the final PDF cites the exact Version DOI.
-- [ ] Record the final manuscript SHA-256 before submission.
+- [x] Render the LaTeX PDF locally and visually inspect the title page, tables, figures, and references.
+- [x] Confirm that the final PDF cites the exact Version DOI.
+- [ ] Record the CI-built PDF and arXiv source-package SHA-256 values immediately before external submission.
+
+## Submission-format package
+
+The maintained arXiv-oriented source now lives under `docs/paper/latex/`.
+`build.sh` verifies the frozen figure hashes, converts the exact SVG assets to
+PDF, compiles the manuscript with pdfLaTeX, rejects unresolved references or
+overfull boxes, and produces a minimal upload tarball.
+
+The repository CI workflow `.github/workflows/preprint-v1.yml` independently
+builds the PDF and source package and publishes them as a temporary workflow
+artifact for review.
 
 ## Suggested preprint classification
 
