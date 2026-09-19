@@ -320,7 +320,7 @@ def figure3_matrix(
     profiles: list[str],
     matrix: dict[tuple[str, str], str],
 ) -> str:
-    """Render the 7x10 compatibility matrix as SVG."""
+    """Render the 7x10 compatibility matrix as a compact deterministic SVG."""
     left, top = 300, 190
     cell_w, cell_h = 82, 46
     width = left + cell_w * len(profiles) + 40
@@ -329,6 +329,14 @@ def figure3_matrix(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<defs>'
+        '<g id="vc"><rect width="82" height="46" fill="#d9ead3" stroke="#777777"/>'
+        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">C</text></g>'
+        '<g id="vi"><rect width="82" height="46" fill="#f4cccc" stroke="#777777"/>'
+        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">I</text></g>'
+        '<g id="vq"><rect width="82" height="46" fill="#eeeeee" stroke="#777777"/>'
+        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">?</text></g>'
+        '</defs>',
         svg_text(28, 32, "Figure 3. Pilot v1 compatibility matrix", font_size=20, font_weight="700"),
         svg_text(
             28,
@@ -347,6 +355,11 @@ def figure3_matrix(
             + "</g>"
         )
 
+    symbol = {
+        "compatible": "vc",
+        "incompatible": "vi",
+        "inconclusive": "vq",
+    }
     for row_idx, case_id in enumerate(CASE_ORDER):
         y = top + row_idx * cell_h
         calibration = case_id == "core-relocation-fail-libbpf"
@@ -368,17 +381,7 @@ def figure3_matrix(
             verdict = matrix[(case_id, profile)]
             x = left + col * cell_w
             parts.append(
-                f'<rect x="{x}" y="{y}" width="{cell_w}" height="{cell_h}" fill="{VERDICT_FILL[verdict]}" stroke="#777777" stroke-width="1"/>'
-            )
-            parts.append(
-                svg_text(
-                    x + cell_w / 2,
-                    y + cell_h / 2 + 6,
-                    VERDICT_SYMBOL[verdict],
-                    font_size=16,
-                    font_weight="700",
-                    text_anchor="middle",
-                )
+                f'<use href="#{symbol[verdict]}" x="{x}" y="{y}"/>'
             )
 
     legend_y = height - 32
@@ -391,12 +394,18 @@ def figure3_matrix(
         parts.append(
             f'<rect x="{legend_x}" y="{legend_y-14}" width="24" height="20" fill="{VERDICT_FILL[verdict]}" stroke="#777777"/>'
         )
-        parts.append(svg_text(legend_x + 31, legend_y + 1, f"{VERDICT_SYMBOL[verdict]} = {label}", font_size=11))
+        parts.append(
+            svg_text(
+                legend_x + 31,
+                legend_y + 1,
+                f"{VERDICT_SYMBOL[verdict]} = {label}",
+                font_size=11,
+            )
+        )
         legend_x += 180
 
     parts.append("</svg>\n")
     return "\n".join(parts)
-
 
 def source_revision_for_case(case_id: str, identities: dict[str, Any]) -> str:
     """Resolve the frozen source revision displayed for a study case."""
