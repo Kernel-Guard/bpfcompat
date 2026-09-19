@@ -107,39 +107,6 @@ reproducibility slice, and permitted materialized inputs. The compiled
 cilium/ebpf loader and Falco `scap-open` remain physically absent and are
 represented only by `exclude-rebuildable` identity/contract records.
 
-## Published research release
-
-The frozen research publication point for pilot v1 is:
-
-- annotated tag: `research-v1`
-- tag target commit:
-  `141c491bd1508600338e7bc27abbc5a117eb7508`
-- GitHub release: **BPFCompat Research Dataset v1**
-- GitHub release ID: `392145710`
-- published: `2026-09-19T16:58:52Z`
-
-Published assets and GitHub-reported SHA-256 digests:
-
-| Asset | Size | SHA-256 |
-| --- | ---: | --- |
-| `archive-manifest.json` | 458,992 B | `6ed6d38d57db57e75964829278a62c7bb4a12cd8fc5db97baebb05a1fdd5e927` |
-| `archive-lock.json` | 1,506 B | `44e0ebe3d32c2c388002a4f44e5d0bf9a476a20ee702c137471a6be89235ddf3` |
-| `bpfcompat-research-v1-payload.zip` | 12,899,271 B | `143a8e8a93e43aebbacfd73465a659ca4cb055db7a576960c9d50ed9bc90a817` |
-| `RELEASE-CHECKSUMS.txt` | 272 B | `bc96087d78bdd8419189b2e51927f3e5c2908dad81155313663af3f29125fdd9` |
-
-The scholarly release workflow rebuilt the archive from the three pinned source
-Actions artifacts, verified the committed archive lock, generated GitHub
-provenance attestations for all four release files, created the annotated tag,
-published the release, and then verified the final tag target and asset set.
-The GitHub API does not mark this release object as immutable, so v1 relies on a
-project no-mutation policy plus the annotated tag, committed lock, checksums,
-asset digests, and attestations. Corrections must create a new research version
-rather than rewriting the published v1 evidence.
-
-The tag is annotated but not GPG-signed; integrity for the release assets is
-provided by the committed archive lock, release checksums, GitHub-reported asset
-digests, and GitHub build-provenance attestations.
-
 ## Release gates
 
 A research-tagged release and DOI should not be created until all of the
