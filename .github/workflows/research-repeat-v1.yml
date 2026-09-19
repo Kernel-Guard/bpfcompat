@@ -10,6 +10,7 @@ on:
       - "research/corpus/v1/**"
       - "scripts/research/run-repeat-v1.sh"
       - "scripts/research/analyze-repeat-v1.py"
+      - "scripts/research/project-repeat-manifest-v1.py"
       - "scripts/research/materialize-v1.sh"
       - "scripts/research/verify-materialization-v1.sh"
       - "scripts/research/verify-profile-lock-v1.sh"
@@ -37,7 +38,9 @@ jobs:
           set -euo pipefail
           bash -n scripts/research/run-repeat-v1.sh
           python3 -m py_compile scripts/research/analyze-repeat-v1.py
+          python3 -m py_compile scripts/research/project-repeat-manifest-v1.py
           python3 scripts/research/analyze-repeat-v1.py --self-test
+          python3 scripts/research/project-repeat-manifest-v1.py --self-test
           jq -e . research/repeat/v1/stability-sample.json >/dev/null
 
       - name: Verify sample bindings
@@ -50,7 +53,8 @@ jobs:
           sample=json.loads(Path("research/repeat/v1/stability-sample.json").read_text())
           plan=json.loads(Path("research/corpus/v1/study-plan.json").read_text())
           lock=json.loads(Path("research/corpus/v1/profile-identities.json").read_text())
-          cases={x["id"] for x in plan["cases"]}
+          case_map={x["id"]: x for x in plan["cases"]}
+          cases=set(case_map)
           profiles={x["id"] for x in lock["profiles"]}
           ids=set()
           for row in sample["tuples"]:
@@ -58,6 +62,10 @@ jobs:
               ids.add(row["id"])
               assert row["case_id"] in cases, row
               assert row["profile_id"] in profiles, row
+              case=case_map[row["case_id"]]
+              if case["mode"] in {"load_only", "load_attach"}:
+                  assert case.get("manifest"), row
+                  assert case.get("manifest_git_blob"), row
               shard=Path("research/data/v1/processed/executions")/f"{row['case_id']}.jsonl"
               matches=[json.loads(x) for x in shard.read_text().splitlines()
                        if x.strip() and json.loads(x)["logical_profile_id"]==row["profile_id"]]
