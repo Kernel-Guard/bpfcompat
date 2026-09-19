@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 src="$root/docs/paper/latex/main.tex"
 frozen="$root/research/paper/generated/figures"
-out="\${1:-$root/docs/paper/latex/build}"
+out="${1:-$root/docs/paper/latex/build}"
 pkg="$out/arxiv-v1"
 
 for cmd in sha256sum inkscape pdflatex tar; do
