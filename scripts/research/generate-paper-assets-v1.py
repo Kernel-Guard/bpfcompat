@@ -326,17 +326,23 @@ def figure3_matrix(
     width = left + cell_w * len(profiles) + 40
     height = top + cell_h * len(CASE_ORDER) + 90
 
+    defs = "".join(
+        [
+            '<defs>',
+            '<g id="vc"><rect width="82" height="46" fill="#d9ead3" stroke="#777777"/>',
+            '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">C</text></g>',
+            '<g id="vi"><rect width="82" height="46" fill="#f4cccc" stroke="#777777"/>',
+            '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">I</text></g>',
+            '<g id="vq"><rect width="82" height="46" fill="#eeeeee" stroke="#777777"/>',
+            '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">?</text></g>',
+            '</defs>',
+        ]
+    )
+
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
-        '<defs>'
-        '<g id="vc"><rect width="82" height="46" fill="#d9ead3" stroke="#777777"/>'
-        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">C</text></g>'
-        '<g id="vi"><rect width="82" height="46" fill="#f4cccc" stroke="#777777"/>'
-        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">I</text></g>'
-        '<g id="vq"><rect width="82" height="46" fill="#eeeeee" stroke="#777777"/>'
-        '<text x="41" y="29" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="#111111">?</text></g>'
-        '</defs>',
+        defs,
         svg_text(28, 32, "Figure 3. Pilot v1 compatibility matrix", font_size=20, font_weight="700"),
         svg_text(
             28,
