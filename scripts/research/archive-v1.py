@@ -21,6 +21,7 @@ IDENTITIES_PATH = ROOT / "research/corpus/v1/materialized-identities.json"
 MANIFEST_NAME = "archive-manifest.json"
 PAYLOAD_ZIP_NAME = "bpfcompat-research-v1-payload.zip"
 CHECKSUMS_NAME = "RELEASE-CHECKSUMS.txt"
+LOCK_NAME = "archive-lock.json"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
 
@@ -481,22 +482,86 @@ def verify_payload_zip(payload: Path, target: Path) -> None:
                 fail(f"payload ZIP byte mismatch: {name}")
 
 
-def write_release_checksums(out_dir: Path) -> None:
-    """Bind the manifest and deterministic payload ZIP for release upload."""
+def write_archive_lock(
+    out_dir: Path,
+    plan: dict[str, Any],
+    rows: list[dict[str, Any]],
+    excluded_rows: list[dict[str, Any]],
+) -> Path:
+    """Write a compact repository lock for the generated release manifest."""
     manifest = out_dir / MANIFEST_NAME
     payload_zip = out_dir / PAYLOAD_ZIP_NAME
-    text = (
-        f"{sha256_file(manifest).removeprefix('sha256:')}  {MANIFEST_NAME}\n"
-        f"{sha256_file(payload_zip).removeprefix('sha256:')}  {PAYLOAD_ZIP_NAME}\n"
+    lock = {
+        "schema_version": "bpfcompat.research.archive-lock.v1",
+        "archive_version": plan["archive_version"],
+        "manifest": {
+            "sha256": sha256_file(manifest),
+            "file_count": len(rows),
+            "total_bytes": sum(row["size_bytes"] for row in rows),
+        },
+        "payload_zip": {
+            "sha256": sha256_file(payload_zip),
+            "size_bytes": payload_zip.stat().st_size,
+        },
+        "artifact_sources": {
+            key: {
+                "artifact_id": value["artifact_id"],
+                "sha256": value["sha256"],
+                "size_bytes": value["size_bytes"],
+            }
+            for key, value in sorted(plan["artifact_sources"].items())
+        },
+        "excluded_rebuildable": [
+            {
+                "path": row["path"],
+                "sha256": row["sha256"],
+                "validation_contract_id": row["validation_contract_id"],
+            }
+            for row in sorted(excluded_rows, key=lambda item: item["path"])
+        ],
+    }
+    path = out_dir / LOCK_NAME
+    path.write_text(
+        json.dumps(lock, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return path
+
+
+def verify_archive_lock(
+    out_dir: Path,
+    plan: dict[str, Any],
+    rows: list[dict[str, Any]],
+    excluded_rows: list[dict[str, Any]],
+) -> None:
+    """Verify the compact lock exactly matches the generated release files."""
+    expected_dir = out_dir / ".lock-check"
+    expected_dir.mkdir(exist_ok=True)
+    expected_path = write_archive_lock(expected_dir, plan, rows, excluded_rows)
+    actual = (out_dir / LOCK_NAME).read_text(encoding="utf-8")
+    expected = expected_path.read_text(encoding="utf-8")
+    shutil.rmtree(expected_dir)
+    if actual != expected:
+        fail("archive lock drift")
+
+
+def write_release_checksums(out_dir: Path) -> None:
+    """Bind the manifest, compact lock, and deterministic payload ZIP."""
+    names = [MANIFEST_NAME, LOCK_NAME, PAYLOAD_ZIP_NAME]
+    text = "".join(
+        f"{sha256_file(out_dir / name).removeprefix('sha256:')}  {name}\n"
+        for name in names
     )
     (out_dir / CHECKSUMS_NAME).write_text(text, encoding="utf-8", newline="\n")
 
 
 def verify_release_checksums(out_dir: Path) -> None:
     """Verify the release-level checksum file exactly."""
-    expected = (
-        f"{sha256_file(out_dir / MANIFEST_NAME).removeprefix('sha256:')}  {MANIFEST_NAME}\n"
-        f"{sha256_file(out_dir / PAYLOAD_ZIP_NAME).removeprefix('sha256:')}  {PAYLOAD_ZIP_NAME}\n"
+    names = [MANIFEST_NAME, LOCK_NAME, PAYLOAD_ZIP_NAME]
+    expected = "".join(
+        f"{sha256_file(out_dir / name).removeprefix('sha256:')}  {name}\n"
+        for name in names
     )
     actual = (out_dir / CHECKSUMS_NAME).read_text(encoding="utf-8")
     if actual != expected:
@@ -549,6 +614,8 @@ def build(args: argparse.Namespace) -> int:
     payload_zip = out_dir / PAYLOAD_ZIP_NAME
     write_deterministic_zip(payload, payload_zip)
     verify_payload_zip(payload, payload_zip)
+    write_archive_lock(out_dir, plan, rows, excluded)
+    verify_archive_lock(out_dir, plan, rows, excluded)
     write_release_checksums(out_dir)
     verify_release_checksums(out_dir)
 
@@ -596,6 +663,7 @@ def verify(args: argparse.Namespace) -> int:
         fail("archive manifest byte count drift")
     validate_rows(payload, rows, excluded)
     verify_payload_zip(payload, out_dir / PAYLOAD_ZIP_NAME)
+    verify_archive_lock(out_dir, plan, rows, excluded)
     verify_release_checksums(out_dir)
     print("[archive-v1] VERIFY PASS")
     return 0
