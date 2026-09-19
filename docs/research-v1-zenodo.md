@@ -1,11 +1,11 @@
-# BPFCompat Research Dataset v1 — Zenodo deposit checklist
+# BPFCompat Research Dataset v1 — Zenodo archival record
 
-This document records the **post-release** DOI workflow for the already-published
-BPFCompat research dataset. It intentionally lives outside `research/**` so the
-frozen `research-v1` archive payload and its committed archive lock remain
-unchanged.
+This document records the **post-release** DOI state for the frozen
+BPFCompat `research-v1` dataset. It intentionally lives outside
+`research/**` so the published v1 archive payload and committed archive lock
+remain unchanged.
 
-## Current publication state
+## Published identifiers
 
 - GitHub tag: `research-v1`
 - tag type: annotated tag
@@ -13,151 +13,100 @@ unchanged.
   `141c491bd1508600338e7bc27abbc5a117eb7508`
 - GitHub release: **BPFCompat Research Dataset v1**
 - GitHub release ID: `392145710`
-- published: `2026-09-19T16:58:52Z`
-- DOI: **not yet minted**
+- GitHub release publication time: `2026-09-19T16:58:52Z`
+- Zenodo record: `https://zenodo.org/records/22848155`
+- **Version DOI:** `10.5281/zenodo.22848155`
+- **Concept DOI:** `10.5281/zenodo.22848154`
+- Zenodo resource type: Dataset
+- Zenodo version: `research-v1`
+- Zenodo publication date: `2026-09-19`
+- visibility: Public
+- licenses: Apache-2.0 and MIT
 
-The GitHub API does not mark the release object itself immutable. Project policy
-for v1 is therefore **no mutation**: corrections must produce a new research
-version instead of replacing published v1 evidence.
+Use the **Version DOI** when citing or reproducing the exact pilot-v1 evidence.
+Use the **Concept DOI** only when referring to the evolving BPFCompat research
+dataset family across versions.
 
-## Release assets
+## Frozen release assets
 
-Upload the following release assets to Zenodo without modification.
+The DOI record contains the same four files published by the GitHub
+`research-v1` release.
 
-| File | Size | GitHub SHA-256 |
+| File | Size | Canonical SHA-256 |
 | --- | ---: | --- |
 | `archive-manifest.json` | 458,992 B | `6ed6d38d57db57e75964829278a62c7bb4a12cd8fc5db97baebb05a1fdd5e927` |
 | `archive-lock.json` | 1,506 B | `44e0ebe3d32c2c388002a4f44e5d0bf9a476a20ee702c137471a6be89235ddf3` |
 | `bpfcompat-research-v1-payload.zip` | 12,899,271 B | `143a8e8a93e43aebbacfd73465a659ca4cb055db7a576960c9d50ed9bc90a817` |
 | `RELEASE-CHECKSUMS.txt` | 272 B | `bc96087d78bdd8419189b2e51927f3e5c2908dad81155313663af3f29125fdd9` |
 
-The release workflow generated GitHub build-provenance attestations for all four
-files before publishing the release.
+### Integrity evidence
 
-### Transfer-integrity gate
+Before the Zenodo upload, all four downloaded GitHub release assets were
+re-hashed locally with SHA-256 and matched the canonical values above.
 
-Before uploading anything to Zenodo:
+After publication, the Zenodo record displayed the expected file sizes and the
+following MD5 values. Those MD5 values were independently reproduced from the
+canonical GitHub archival artifact:
 
-1. download all four assets from the published `research-v1` GitHub release;
-2. compute SHA-256 for each downloaded file;
-3. compare every digest against the table above and
-   `RELEASE-CHECKSUMS.txt`;
-4. stop the deposit if any filename, size, or SHA-256 differs.
+| File | Canonical / Zenodo MD5 |
+| --- | --- |
+| `archive-manifest.json` | `83c5dced82021323deace2943ff00c72` |
+| `archive-lock.json` | `af401a0eab7cbbe62281c412ceef0261` |
+| `bpfcompat-research-v1-payload.zip` | `ea79cefe6d4a9c2f88448e786bf8dc3d` |
+| `RELEASE-CHECKSUMS.txt` | `f42f8fd12ef2acc398da0e6f0a53368b` |
 
-After the Zenodo record is published:
-
-1. download all four files from the published Zenodo record;
-2. recompute SHA-256 for each file;
-3. compare every digest against the same GitHub release values above;
-4. keep the Zenodo/DOI archival gate open if any post-publication digest differs.
-
-The DOI record is considered an exact archival copy of `research-v1` only when
-both the pre-upload and post-publication comparisons pass for all four files.
-
-## Recommended Zenodo deposit mode
-
-Use a **manual Zenodo upload** for this research record.
-
-The `research-v1` GitHub release already exists, while Zenodo's GitHub
-integration is intended to ingest releases after a repository is enabled. The
-research object is also primarily a reproducibility dataset/evidence bundle,
-with code included as supporting material.
-
-### Duplicate-record preflight
-
-Before creating the manual Zenodo record:
-
-1. search Zenodo for an existing record matching **BPFCompat Research Dataset
-   v1**, `research-v1`, or the GitHub release URL;
-2. check the Zenodo GitHub integration state for
-   `Kernel-Guard/bpfcompat` and confirm that it has **not** already processed
-   the `research-v1` release;
-3. proceed with the manual deposit only if both checks show that no Zenodo record
-   already represents this release.
-
-If an existing or automatically ingested record is found, do not create a second
-manual record or DOI for the same `research-v1` publication. Reconcile and use
-the existing record instead.
+A strict post-publication Zenodo re-download followed by SHA-256 recomputation
+was not completed in the assistant environment because direct Zenodo file
+downloads were unavailable there. DOI finalization therefore proceeded with
+explicit maintainer acceptance of the stronger pre-upload SHA-256 check plus
+the post-publication exact-size and matching-MD5 evidence above. A later
+independent Zenodo re-download may strengthen the audit trail without changing
+the published v1 record.
 
 ## Zenodo metadata
 
-Recommended values:
-
 - **Resource type:** Dataset
 - **Title:** BPFCompat Research Dataset v1: Empirical eBPF Compatibility Across Linux Vendor Kernels
-- **Publication date:** 2026-09-19
 - **Creator:** Eren Arı
-- **Version:** research-v1
+- **Publication date:** 2026-09-19
+- **Version:** `research-v1`
 - **Language:** English
-- **Visibility:** Public
-- **Licenses:** Apache-2.0 and MIT
-- **Keywords:**
-  - eBPF
-  - BPF
-  - Linux kernel
-  - compatibility
-  - vendor kernels
-  - libbpf
-  - BTF
-  - CO-RE
-  - reproducibility
-  - systems research
+- **Publisher:** Zenodo
+- **Repository URL:** `https://github.com/Kernel-Guard/bpfcompat`
+- **Alternate identifier:** `https://github.com/Kernel-Guard/bpfcompat/releases/tag/research-v1`
+- **Programming languages:** Go, Python
+- **Development status:** Active
+- **Keywords:** eBPF, BPF, Linux kernel, compatibility, vendor kernels, libbpf,
+  BTF, CO-RE, reproducibility, systems research
 
-Suggested description:
+The Zenodo description intentionally bounds the evidence: the release is a
+reproducibility archive of pilot evidence and is not a claim of peer review,
+population representativeness, institutional approval, or endorsement.
 
-> BPFCompat Research Dataset v1 is a frozen reproducibility package for an
-> empirical pilot study of compiled eBPF artifact compatibility across Linux
-> vendor kernels and loader paths. The canonical pilot contains 70/70 planned
-> executions: 50 compatible, 13 incompatible, and 7 inconclusive. A bounded
-> post-collection stability sample contains 21/21 same-exact-environment
-> observations with no observed environment drift or same-environment verdict
-> instability. The archive includes normalized evidence, deterministic RQ1–RQ4
-> analysis inputs/outputs, generated paper figures/tables, provenance, exact
-> environment identities, and permitted materialized study inputs.
-> Third-party compiled loader binaries whose complete redistribution notice set
-> was not established are excluded and represented by hashes, source revisions,
-> validation-contract identities, notices, and rebuild provenance. This release
-> is a reproducibility archive of pilot evidence and is not a claim of peer
-> review, population representativeness, institutional approval, or
-> endorsement.
+## Citation
 
-## DOI handling
+For exact `research-v1` reproducibility, cite:
 
-For the Zenodo DOI field:
+> Arı, E. (2026). *BPFCompat Research Dataset v1: Empirical eBPF Compatibility
+> Across Linux Vendor Kernels* (Version research-v1) [Dataset]. Zenodo.
+> https://doi.org/10.5281/zenodo.22848155
 
-1. choose **No** for "Do you already have a DOI for this upload?";
-2. use **Get a DOI now** if the exact version DOI is needed before publication;
-3. do not add the reserved/minted DOI to the frozen `research-v1` release;
-4. after publication, record both:
-   - the **Version DOI** for exact `research-v1` citation;
-   - the **Concept DOI** for the evolving dataset family.
+The root `CITATION.cff` remains the frozen BPFCompat **software** citation
+metadata. Dataset-specific machine-readable citation metadata is provided in
+`docs/research-v1/CITATION.cff`, where the Zenodo object is typed as
+**dataset** and bound to the exact Version DOI. This prevents the dataset DOI
+from being misrepresented as the software project's own DOI while preserving
+the frozen v1 archive lock.
 
-For reproducibility claims and the v1 manuscript, prefer the **Version DOI**.
+## No-mutation policy
 
-## Mixed-license note
+The GitHub API does not mark the release object itself immutable. Project policy
+for v1 is therefore **no mutation**: corrections must produce a new research
+version instead of replacing published v1 evidence.
 
-The archive contains BPFCompat-owned Apache-2.0 material and permitted
-third-party-derived MIT material. File-level provenance, redistribution status,
-and retained notice paths in `archive-manifest.json` are authoritative.
+The `research/**` tree is part of the archived v1 payload. Post-release DOI
+bookkeeping must remain outside that frozen payload unless a new research
+version and archive lock are intentionally created.
 
-The compiled cilium/ebpf project-loader binary and Falco `scap-open` binary are
-not present in the DOI payload.
-
-## After Zenodo publication
-
-Create a new post-release repository PR, without rewriting the `research-v1`
-tag or GitHub release, that:
-
-1. records the Zenodo record URL, Version DOI, and Concept DOI;
-2. adds the Version DOI to `CITATION.cff`;
-3. adds DOI links to the repository README and research-facing documentation;
-   a target under `research/**` is allowed only after creating a new research
-   version and archive lock;
-4. records that the Zenodo/DOI archival gate is complete;
-5. leaves the GitHub release asset hashes unchanged.
-
-## Frozen-v1 note
-
-The `research/**` tree is part of the archived v1 payload. Post-release
-bookkeeping should therefore remain outside that frozen payload unless a new
-research version and archive lock are intentionally created.
+The `research-v1` tag, GitHub release assets, archive lock, and Zenodo record
+must not be rewritten as part of DOI metadata maintenance.

@@ -32,10 +32,17 @@ bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --qu
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
-**Research & citation:** academic-use metadata is in [CITATION.cff](CITATION.cff), and
-the prospective empirical-study protocol lives in [research/](research/README.md).
-The research directory is a protocol/reproducibility scaffold, not a
-peer-reviewed-results claim.
+**Research & citation:** software citation metadata is in [CITATION.cff](CITATION.cff);
+dataset-specific CFF metadata for the frozen pilot is in
+[docs/research-v1/CITATION.cff](docs/research-v1/CITATION.cff), and the
+prospective empirical-study protocol lives in [research/](research/README.md).
+The frozen pilot-v1 dataset is archived on Zenodo with exact-version DOI
+[10.5281/zenodo.22848155](https://doi.org/10.5281/zenodo.22848155); the concept
+DOI for the evolving dataset family is
+[10.5281/zenodo.22848154](https://doi.org/10.5281/zenodo.22848154). Cite the
+version DOI when referring to the exact `research-v1` evidence used for
+reproducibility. The research directory remains an evidence/reproducibility
+scaffold, not a peer-review or institutional-endorsement claim.
 
 **Runs upstream, weekly:** two projects have merged scheduled bpfcompat lanes
 into their own CI.
