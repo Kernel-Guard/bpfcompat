@@ -13,8 +13,14 @@ research archive. It is an engineering reproducibility policy, not legal advice.
 - planned/observed executions: **70/70**
 - repository dataset: `research/data/v1/`
 - deterministic analysis: `research/analysis/v1/`
-- repeat-run protocol: merged in PR #152; the manual 21-attempt execution is
-  still required before the research archive is frozen.
+- canonical repeat workflow run: `35445834557`
+- repeat source commit: `d2a78e05178ea6dd82ead9684f5eedf49066903f`
+- repeat Actions artifact: `10584409793`
+- repeat artifact SHA-256:
+  `895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5`
+- repeat stability: **21/21** stable on the same exact environment,
+  **0** environment drift, **0** same-environment verdict instability
+- repeat repository snapshot: `research/repeat/v1/`
 
 ## Archive layers
 

@@ -27,7 +27,11 @@ booted 6.12 UEK. Excluding the calibration case, the pilot contains 50 compatibl
 8 of 9 conclusive observations; AlmaLinux 8's observed 4.18 vendor kernel was
 the below-threshold compatible exception. The dataset also contains two
 cross-vendor version inversions in which an older-numbered kernel passed while a
-newer-numbered kernel failed.
+newer-numbered kernel failed. A purposefully stratified post-collection repeat
+sample then reran seven canonical tuples three times each. All 21/21 repeats
+matched the canonical verdict on the same exact environment; no environment
+drift or same-environment verdict instability was observed in that bounded
+sample.
 
 These results are descriptive evidence from a selected pilot, not population
 estimates for Linux deployments. The study publishes normalized evidence,
@@ -113,8 +117,20 @@ release, image SHA-256, exact environment ID, and evaluability.
 
 ### Table 4 — repeat-run stability
 
-Populate only after the merged PR #152 manual workflow is executed. Separate
-environment drift from same-environment verdict instability.
+Canonical repeat run `35445834557` executed seven purposefully selected tuples
+three times each:
+
+| Measure | Result |
+| --- | ---: |
+| Planned attempts | 21 |
+| Observed attempts | 21 |
+| Stable on the same exact environment | 21 |
+| Environment drift | 0 |
+| Same-environment verdict instability | 0 |
+
+This table is a bounded stability check, not an estimate of a population-wide
+nondeterminism rate. The source of truth is
+`research/repeat/v1/data/stability-summary.json`.
 
 ## Limitations
 
@@ -131,7 +147,7 @@ environment drift from same-environment verdict instability.
 
 Do not convert this working draft into a submission-ready manuscript until:
 
-1. the 21-attempt repeat-run stability sample is executed and archived;
+1. the committed 21-attempt repeat-run stability snapshot remains verifiable;
 2. final figures/tables are generated from normalized data;
 3. the v1 archival/redistribution manifest passes;
 4. a research-tagged immutable release is created;

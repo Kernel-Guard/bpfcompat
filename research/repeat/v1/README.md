@@ -42,15 +42,32 @@ the exact environment ID and normalized verdict match.
 The workflow is manual-only because it boots real vendor VMs and is intended as
 a bounded research validation, not a routine CI gate.
 
-## Run
+## Canonical repeat collection
 
-After this protocol lands on `main`:
+The canonical successful repeat collection is GitHub Actions run
+`35445834557` at commit
+`d2a78e05178ea6dd82ead9684f5eedf49066903f`. Its Actions artifact is
+`10584409793` with SHA-256
+`895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5`.
 
-```bash
-gh workflow run research-repeat-v1.yml --repo Kernel-Guard/bpfcompat --ref main
-```
+The run completed all **21/21** planned attempts across the seven frozen sample
+tuples. All 21 observations reproduced the canonical verdict on the same exact
+environment. Environment drift was **0** and same-environment verdict
+instability was **0**.
 
-The workflow publishes raw repeat reports, logs, repeat-only manifest
-projections and their provenance metadata, a repeat provenance record,
-`repeat-executions.jsonl`, `stability-summary.json`, and generated
-`RESULTS.md` as a staging Actions artifact.
+Repository evidence:
+
+- `repeat-dataset-manifest.json` binds the canonical run and Actions artifact;
+- `data/stability-summary.json` preserves the generated tuple-level result;
+- `data/repeat-provenance.json` binds the runner inputs and binary identities;
+- `data/raw-report-checksums.json` freezes all 21 raw report paths and hashes;
+- `data/projection-metadata/` preserves the repeat-only manifest projections;
+- `scripts/research/verify-repeat-snapshot-v1.py` verifies the committed hash
+  and provenance chain.
+
+The row-level `repeat-executions.jsonl`, raw reports, VM logs, and generated
+projection YAMLs remain in the content-addressed workflow artifact for later DOI
+archival rather than being duplicated into Git history.
+
+The earlier manual run `35443831085` is diagnostic only: it exposed the
+singleton-matrix/manifest scheduling bug and is not part of the repeat dataset.

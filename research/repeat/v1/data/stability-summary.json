@@ -1,0 +1,97 @@
+{
+  "canonical_run_id": "35393833464",
+  "canonical_run_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23",
+  "collection_complete": true,
+  "corpus_version": "v1",
+  "environment_drift": 0,
+  "interpretation": "Verdict instability is counted only when the exact environment ID matches the canonical run. Environment drift is reported separately and is not treated as nondeterministic compatibility behavior.",
+  "missing": [],
+  "observed_attempts": 21,
+  "planned_attempts": 21,
+  "planned_tuples": 7,
+  "repeat_provenance_sha256": "sha256:7fc550f7fab1590bef5f284e4fc72f331e9ea78ef20af9b0bfd66f1844dbef52",
+  "repeats_per_tuple": 3,
+  "sampling_design": "purposeful_stratified_post_collection",
+  "schema_version": "bpfcompat.research.repeat-summary.v1",
+  "stable_same_environment": 21,
+  "tuple_summaries": [
+    {
+      "case_id": "simple-pass-libbpf",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "ubuntu-22.04-5.15",
+      "stable_same_environment": 3,
+      "stratum": "compatible_controlled",
+      "tuple_id": "positive-controlled-modern",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "ringbuf-modern-libbpf",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "ubuntu-20.04-5.4",
+      "stable_same_environment": 3,
+      "stratum": "incompatible_controlled",
+      "tuple_id": "negative-ringbuf-boundary",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "ringbuf-modern-libbpf",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "almalinux-8-4.18",
+      "stable_same_environment": 3,
+      "stratum": "compatible_vendor_backport",
+      "tuple_id": "positive-ringbuf-backport",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "falco-modern-bpf-scap-open",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "amazon-linux-2-4.14",
+      "stable_same_environment": 3,
+      "stratum": "incompatible_real_loader",
+      "tuple_id": "negative-falco-real-loader",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "falco-modern-bpf-scap-open",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "ubuntu-22.04-5.15",
+      "stable_same_environment": 3,
+      "stratum": "compatible_real_loader",
+      "tuple_id": "positive-falco-real-loader",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "cilium-tracepoint-ebpf-go",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "ubuntu-22.04-5.15",
+      "stable_same_environment": 3,
+      "stratum": "compatible_project_loader",
+      "tuple_id": "positive-cilium-project-loader",
+      "verdict_instability": 0
+    },
+    {
+      "case_id": "simple-pass-libbpf",
+      "environment_drift": 0,
+      "observed_repeats": 3,
+      "planned_repeats": 3,
+      "profile_id": "oracle-linux-9-uek7-5.15",
+      "stable_same_environment": 3,
+      "stratum": "inconclusive_environment_mismatch",
+      "tuple_id": "inconclusive-oracle-environment",
+      "verdict_instability": 0
+    }
+  ],
+  "verdict_instability": 0
+}

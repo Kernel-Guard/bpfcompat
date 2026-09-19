@@ -1,0 +1,25 @@
+{
+  "profile_id": "oracle-linux-9-uek7-5.15",
+  "projected_path": "reports/research-repeat-v1/manifests/inconclusive-oracle-environment.yaml",
+  "projected_required_profiles": [
+    "oracle-linux-9-uek7-5.15"
+  ],
+  "projected_sha256": "sha256:72c544536b5e081353b50d45842969b111240e4b13ed1d0dc5ed59b5ba5ba301",
+  "projection": "required_profiles_singleton",
+  "schema_version": "bpfcompat.research.repeat-manifest-projection.v1",
+  "source_git_blob": "f813d866b40469815699577ab15ee9b4881e3d3c",
+  "source_path": "research/corpus/v1/manifests/simple-pass.yaml",
+  "source_required_profiles": [
+    "ubuntu-20.04-5.4",
+    "ubuntu-20.10-5.8",
+    "ubuntu-22.04-5.15",
+    "debian-12-6.1",
+    "ubuntu-24.04-6.8",
+    "almalinux-8-4.18",
+    "amazon-linux-2-4.14",
+    "amazon-linux-2-5.10",
+    "oracle-linux-9-uek7-5.15",
+    "opensuse-leap-15.6-6.4"
+  ],
+  "source_sha256": "sha256:c2c210941988588e7299bf8e69f1b7c0b643057225a9fe7532a46578622f5dcb"
+}

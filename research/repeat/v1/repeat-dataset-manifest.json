@@ -1,0 +1,49 @@
+{
+  "schema_version": "bpfcompat.research.repeat-dataset-manifest.v1",
+  "dataset_version": "v1",
+  "status": "canonical-repeat-stability-collection",
+  "canonical_pilot_run": {
+    "id": "35393833464",
+    "head_sha": "5de550e5cc8c659872a90fc262eb0250c229bf23"
+  },
+  "repeat_workflow_run": {
+    "id": "35445834557",
+    "head_sha": "d2a78e05178ea6dd82ead9684f5eedf49066903f",
+    "branch": "main",
+    "conclusion": "success"
+  },
+  "actions_artifact": {
+    "id": "10584409793",
+    "name": "research-repeat-v1-35445834557",
+    "sha256": "sha256:895fd41dae147c592d5cdec91bbd99150f9dd14c35afadf72bc14954a192a0e5",
+    "size_bytes": 455756,
+    "retention_note": "Actions artifact is staging evidence; normalized evidence and checksums are bound here and the full artifact is intended for the later DOI archive."
+  },
+  "collection": {
+    "planned_tuples": 7,
+    "repeats_per_tuple": 3,
+    "planned_attempts": 21,
+    "observed_attempts": 21,
+    "collection_complete": true,
+    "stable_same_environment": 21,
+    "environment_drift": 0,
+    "verdict_instability": 0
+  },
+  "committed_evidence": {
+    "repeat_provenance": "data/repeat-provenance.json",
+    "stability_summary": "data/stability-summary.json",
+    "results": "data/RESULTS.md",
+    "raw_report_checksums": "data/raw-report-checksums.json",
+    "projection_metadata_dir": "data/projection-metadata/"
+  },
+  "artifact_evidence": {
+    "repeat_executions_path": "normalized/repeat-executions.jsonl",
+    "repeat_executions_sha256": "sha256:844ff0b27d8bcd7ecdb0e3368147b7486305c9cc0f3710c0fc95dc4d25aed11c"
+  },
+  "notes": [
+    "The first manual repeat run 35443831085 failed before 12 libbpf-backed attempts because singleton repeat matrices conflicted with frozen manifests listing all study profiles; it is diagnostic only and is not part of this dataset.",
+    "The successful repeat runner verifies the frozen manifest Git blob before creating a repeat-only required_profiles singleton projection; program, attach, and validation semantics are unchanged.",
+    "Raw repeat reports and repeat-executions.jsonl remain bound by SHA-256 in the successful workflow artifact rather than being duplicated into Git history.",
+    "This is a purposeful post-collection stability sample and must not be interpreted as a population-wide nondeterminism estimate."
+  ]
+}
