@@ -32,9 +32,11 @@
 - [x] Generate pilot v1 descriptive RQ1–RQ4 tables from normalized data.
 - [ ] Generate every final paper table and figure from normalized data.
 - [x] Define a bounded representative repeat-run protocol (PR #152).
-- [ ] Execute the 21-attempt repeat-run workflow from `main`, archive its
-      provenance/results, and evaluate environment drift separately from
-      same-environment verdict instability.
+- [x] Execute the 21-attempt repeat-run workflow from `main`, bind its
+      provenance/results to the repository snapshot, and evaluate environment
+      drift separately from same-environment verdict instability. Canonical run
+      `35445834557`: 21/21 stable same-environment observations, 0 drift,
+      0 verdict instability.
 - [x] Document the v1 execution boundary, KVM/VM prerequisites, exact-environment identity, and collection completeness rules.
 - [x] Publish raw/processed dataset checksums and bind the repository snapshot to
       the canonical successful workflow artifact.
