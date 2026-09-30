@@ -111,6 +111,34 @@ func TestValidateProfileInstallKernel(t *testing.T) {
 		t.Fatalf("valid Oracle UEK install_kernel rejected: %v", err)
 	}
 
+	amazon2 := ubuntuVMProfile()
+	amazon2.Distro = "amazon-linux"
+	amazon2.Version = "2"
+	amazon2.InstallKernel = "5.10.260-259.1061.amzn2.x86_64"
+	if err := ValidateProfile(amazon2); err != nil {
+		t.Fatalf("valid Amazon Linux 2 install_kernel rejected: %v", err)
+	}
+
+	amazon2023 := ubuntuVMProfile()
+	amazon2023.Distro = "amazon-linux"
+	amazon2023.Version = "2023"
+	amazon2023.InstallKernel = "6.1.177-224.371.amzn2023.x86_64"
+	if err := ValidateProfile(amazon2023); err != nil {
+		t.Fatalf("valid Amazon Linux 2023 install_kernel rejected: %v", err)
+	}
+
+	unknownAmazon := amazon2023
+	unknownAmazon.Version = "future"
+	if err := ValidateProfile(unknownAmazon); err == nil {
+		t.Fatal("expected unknown Amazon version with install_kernel to fail")
+	}
+
+	amazonWithURL := amazon2
+	amazonWithURL.KernelPackages = []string{"https://example.com/kernel.rpm"}
+	if err := ValidateProfile(amazonWithURL); err == nil {
+		t.Fatal("expected Amazon install_kernel with direct package URL to fail")
+	}
+
 	nonUbuntu := ubuntuVMProfile()
 	nonUbuntu.Distro = "debian"
 	nonUbuntu.InstallKernel = "6.1.0-30-cloud-amd64"

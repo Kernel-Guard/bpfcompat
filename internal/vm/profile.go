@@ -18,8 +18,9 @@ type Profile struct {
 	// InstallKernel installs a specific kernel release inside the guest
 	// before validation and reboots into it, so one base image yields a
 	// dense per-release matrix instead of only the kernel the image
-	// shipped with. Debian-family (apt/grub) and RHEL-family (dnf/grubby)
-	// profiles are supported; the release must be a package-exact string
+	// shipped with. Debian-family (apt/grub), RHEL-family (dnf/grubby), and
+	// Amazon Linux (yum or versioned dnf/grubby) profiles are supported; the
+	// release must be a package-exact string
 	// such as "5.15.0-118-generic" or "5.14.0-687.26.1.el9_8.x86_64".
 	InstallKernel string `yaml:"install_kernel,omitempty"`
 	// KernelPackages lists direct package URLs (.deb or .rpm) to install
@@ -92,11 +93,12 @@ func LoadProfile(path string) (Profile, error) {
 
 // Kernel install families. A profile's distro determines how a specific
 // kernel release is installed inside the guest and how the next boot is
-// selected: apt plus grub menu titles on the Debian family, dnf plus grubby
-// on the RHEL family.
+// selected: apt plus grub menu titles on Debian, dnf plus grubby on RHEL,
+// and yum/versioned dnf plus grubby on Amazon Linux.
 const (
 	KernelFamilyDebian = "debian"
 	KernelFamilyRHEL   = "rhel"
+	KernelFamilyAmazon = "amazon"
 )
 
 // KernelInstallFamily maps a profile distro to its kernel install family, or
@@ -111,6 +113,8 @@ func KernelInstallFamily(distro string) string {
 		return KernelFamilyDebian
 	case "almalinux", "rocky", "centos-stream", "rhel", "oracle":
 		return KernelFamilyRHEL
+	case "amazon-linux", "amazonlinux", "amzn", "amzn2":
+		return KernelFamilyAmazon
 	default:
 		return ""
 	}

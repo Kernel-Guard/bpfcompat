@@ -13,10 +13,10 @@ profiles:
   - id: rocky-9-5.14-k5.14.0-687.36.1.el9_8
     required: true
     timeout: 20m
-  - id: amazon-linux-2-5.10
+  - id: amazon-linux-2-5.10-k5.10.260-259.1061.amzn2
     required: true
     timeout: 20m
-  - id: amazon-linux-2023-6.1
+  - id: amazon-linux-2023-6.1-k6.1.177-224.371.amzn2023
     required: true
     timeout: 20m
   - id: oracle-linux-9-uek7-5.15

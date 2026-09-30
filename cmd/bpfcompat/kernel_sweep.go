@@ -26,7 +26,7 @@ import (
 func runKernelSweep(args []string) int {
 	fs := flag.NewFlagSet("kernel-sweep", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	profileID := fs.String("profile", "", "Base profile id (debian- and rhel-family profiles)")
+	profileID := fs.String("profile", "", "Base profile id (debian-, rhel-, or amazon-family profile)")
 	count := fs.Int("count", 4, "Number of most-recent kernel releases to include")
 	series := fs.String("series", "", "Kernel release prefix (default: from the baseline mapping, else <kernel_family>.0-)")
 	crawlerTarget := fs.String("target", "", "kernel-crawler target flavor (default: from the baseline mapping, else the distro default)")
@@ -67,7 +67,7 @@ func runKernelSweep(args []string) int {
 	}
 	family := vm.KernelInstallFamily(base.Distro)
 	if family == "" {
-		fmt.Fprintf(os.Stderr, "kernel-sweep supports debian- and rhel-family profiles only (got distro %q)\n", base.Distro)
+		fmt.Fprintf(os.Stderr, "kernel-sweep supports debian-, rhel-, and amazon-family profiles only (got distro %q)\n", base.Distro)
 		return runner.ExitToolError
 	}
 	if base.InstallKernel != "" {
@@ -134,15 +134,19 @@ func runKernelSweep(args []string) int {
 	written := 0
 	for _, entry := range entries {
 		release := entry.KernelRelease
-		// Direct pool URLs, because the package indexes only carry the
-		// current ABI: superseded releases stay downloadable but are not
-		// installable by name.
-		var debs []string
+		// Direct pool URLs are required for Ubuntu and RHEL-family releases
+		// that have left package indexes. Amazon's repositories retain recent
+		// exact kernels, so those profiles deliberately install by signed
+		// package name (and AL2023 selects releasever=latest in the guest).
+		var packages []string
 		var err error
-		if family == vm.KernelFamilyRHEL {
-			debs, err = freshness.RHELKernelRPMs(entry)
-		} else {
-			debs, err = freshness.UbuntuKernelDebs(entry)
+		switch family {
+		case vm.KernelFamilyRHEL:
+			packages, err = freshness.RHELKernelRPMs(entry)
+		case vm.KernelFamilyDebian:
+			packages, err = freshness.UbuntuKernelDebs(entry)
+		case vm.KernelFamilyAmazon:
+			packages = nil
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "skip %s: %v\n", release, err)
@@ -152,7 +156,7 @@ func runKernelSweep(args []string) int {
 		derived.ID = sweepProfileID(base.ID, release)
 		derived.KernelFamily = sweepKernelFamily(release, base.KernelFamily)
 		derived.InstallKernel = release
-		derived.KernelPackages = debs
+		derived.KernelPackages = packages
 
 		payload, err := yaml.Marshal(derived)
 		if err != nil {
