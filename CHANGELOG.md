@@ -50,6 +50,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   CI instead of silently leaving the documented consumer path untested.
 
 ### Fixed
+- Fixed the CentOS Stream 9 and 10 cloud image URLs: cloud.centos.org renamed
+  the `latest` images to `CentOS-Stream-GenericCloud-<N>-latest.x86_64.qcow2`
+  and the old `GenericCloud-x86_64-<N>-latest` names return HTTP 502, so every
+  CentOS Stream target failed with an infrastructure error.
 - Fixed research pilot v1 normalization to match the actually frozen
   BPFCompat v0.3.7 `ReportV01` schema. The runner now records execution-time
   CLI/validator/loader hashes before the study; normalization derives the
