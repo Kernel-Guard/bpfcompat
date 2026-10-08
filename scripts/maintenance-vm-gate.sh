@@ -12,7 +12,8 @@ validator="$assets/bpfcompat-validator-static-linux-amd64"
 cli="$assets/bpfcompat-linux-amd64"
 chmod +x "$validator" "$cli"
 test -z "$(git -C "$root" status --porcelain -- . ':!dist')"
-test "$("$cli" version --json | jq -r .commit)" = "$(git -C "$root" rev-parse HEAD)"
+source_commit="$(git -C "$root" rev-parse HEAD)"
+test "$("$cli" version --json | jq -r .commit)" = "$source_commit"
 export BPFCOMPAT_VALIDATOR_BIN="$validator"
 validator_sha="$(sha256sum "$validator" | awk '{print $1}')"
 clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I/usr/include/x86_64-linux-gnu \
@@ -38,9 +39,10 @@ positive_rc=$?
 negative_rc=$?
 set -e
 sha256sum "$cli" "$validator" "$work/simple_pass.bpf.o" "$root/examples/unknown-load-fail/invalid_object.bin" vm/cache/*.qcow2 >reports/artifact-identity.sha256
-jq -n --arg commit "$(git -C "$root" rev-parse HEAD)" --argjson positive_exit "$positive_rc" --argjson negative_exit "$negative_rc" \
+jq -n --arg commit "$source_commit" --argjson positive_exit "$positive_rc" --argjson negative_exit "$negative_rc" \
   --arg validator_sha256 "$validator_sha" --arg cli_sha256 "$(sha256sum "$cli" | awk '{print $1}')" \
   '{source_commit:$commit,positive_exit:$positive_exit,negative_exit:$negative_exit,validator_sha256:$validator_sha256,cli_sha256:$cli_sha256}' >reports/release-artifact-identity.json
+test "$(git -C "$root" rev-parse HEAD)" = "$source_commit"
 test "$positive_rc" -eq 0
 test "$negative_rc" -eq 2
 jq -e '.schema_version == "v0.1" and .summary.status == "pass" and (.targets|length==3) and all(.targets[]; .required and .status=="pass" and .validation.load_status=="pass" and .validation.attach_status=="pass" and .validation.attach_attempted>0 and .validation.attach_passed==.validation.attach_attempted and .functional.status=="pass" and (.infra_error // "")=="") and any(.targets[]; .profile_id=="centos-stream-9-5.14-k5.14.0-725.el9" and .host.kernel=="5.14.0-725.el9.x86_64")' reports/release-positive.json >/dev/null
