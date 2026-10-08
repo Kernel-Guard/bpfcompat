@@ -233,10 +233,10 @@ vm-images-extended: vm-images
 	  "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2" \
 	  "vm/cache/rocky-10.qcow2"
 	bash vm/scripts/fetch-cloud-image.sh \
-	  "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-9-latest.x86_64.qcow2" \
+	  "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2" \
 	  "vm/cache/centos-stream-9.qcow2"
 	bash vm/scripts/fetch-cloud-image.sh \
-	  "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-10-latest.x86_64.qcow2" \
+	  "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2" \
 	  "vm/cache/centos-stream-10.qcow2"
 
 vm-images-tier1:

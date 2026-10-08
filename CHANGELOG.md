@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+- CentOS Stream 9/10 cloud image URLs now use the upstream-renamed
+  `CentOS-Stream-GenericCloud-<N>-latest.x86_64.qcow2` filenames. Backported
+  from Alban Crequy's PR #164 for the v0.3.8 maintenance candidate, including
+  the existing Stream 9 kernel-sweep profile and Makefile image downloads.
+- Added offline regression coverage for profile and Makefile URLs and
+  generated-profile inheritance. The v0.3.7 Action checksum fix is unchanged.
+
 ## [0.3.7] - 2026-08-26
 
 ### Fixed
