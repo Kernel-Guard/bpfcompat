@@ -129,3 +129,40 @@ func TestCentOS725SignedPackageURLs(t *testing.T) {
 		t.Fatal("725 installation must select the exact requested kernel")
 	}
 }
+
+func TestCentOS725KeySelectionAndTransport(t *testing.T) {
+	p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-725.el9.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages)
+	for _, expected := range []string{"RPM-GPG-KEY-CentOS-Official-SHA256", "5af55449d6c9bc594e2e2fb7222374cb25a8ad2d8ea6ce3de894a3201944daa2", "--http1.1 --connect-timeout 15 --max-time 120 --retry 2 --retry-max-time 360"} {
+		if !strings.Contains(cmd, expected) {
+			t.Errorf("missing pinned key or bounded transport: %s", expected)
+		}
+	}
+	check := strings.Index(cmd, "sha256sum --check --strict")
+	importKey := strings.Index(cmd, "sudo rpm --import centos-key.asc")
+	verify := strings.Index(cmd, "sudo rpm --checksig")
+	if check < 0 || importKey <= check || verify <= importKey {
+		t.Fatal("key bytes must be checked before import and package verification")
+	}
+	for _, forbidden := range []string{"RPM-GPG-KEY-*", "--nogpgcheck", "|| true", "update-crypto-policies"} {
+		if strings.Contains(cmd, forbidden) {
+			t.Errorf("unsafe key/crypto bypass: %s", forbidden)
+		}
+	}
+	for _, tc := range []struct {
+		release string
+		urls    []string
+	}{
+		{"5.14.0-726.el9.x86_64", p.KernelPackages},
+		{p.InstallKernel, []string{"https://example.org/kernel.rpm"}},
+		{p.InstallKernel, append([]string{"https://example.org/kernel.rpm"}, p.KernelPackages[1:]...)},
+	} {
+		other := guestKernelInstallCmdRHEL(tc.release, tc.urls)
+		if strings.Contains(other, "centos-key.asc") || !strings.Contains(other, "RPM-GPG-KEY-*") {
+			t.Fatal("unrelated RHEL installer changed")
+		}
+	}
+}
