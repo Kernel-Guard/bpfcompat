@@ -14,6 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   the existing Stream 9 kernel-sweep profile and Makefile image downloads.
 - Added offline regression coverage for profile and Makefile URLs and
   generated-profile inheritance. The v0.3.7 Action checksum fix is unchanged.
+- The existing CentOS Stream 9 kernel 725 sweep now fetches the exact signed
+  RPMs from the official CentOS Koji archive after retirement from the rolling
+  mirror. Kernel identity and mandatory guest signature verification are unchanged.
 
 ## [0.3.7] - 2026-08-26
 

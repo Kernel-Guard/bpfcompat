@@ -104,3 +104,28 @@ func TestCentOSMakefileImageURLs(t *testing.T) {
 		t.Errorf("vm-images-extended: want exactly two CentOS URLs, got %d", count)
 	}
 }
+
+func TestCentOS725SignedPackageURLs(t *testing.T) {
+	p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-725.el9.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const prefix = "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/725.el9/data/signed/8483c65d/x86_64/"
+	want := []string{
+		prefix + "kernel-core-5.14.0-725.el9.x86_64.rpm",
+		prefix + "kernel-modules-core-5.14.0-725.el9.x86_64.rpm",
+		prefix + "kernel-modules-5.14.0-725.el9.x86_64.rpm",
+	}
+	if !reflect.DeepEqual(p.KernelPackages, want) {
+		t.Fatalf("725 packages must use exact signed CentOS build artifacts: got %v; want %v", p.KernelPackages, want)
+	}
+	cmd := guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages)
+	verify := strings.Index(cmd, "sudo rpm --checksig ./pkg*.rpm")
+	install := strings.Index(cmd, "sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm")
+	if verify < 0 || install <= verify || strings.Contains(cmd, "--nogpgcheck") {
+		t.Fatalf("signature verification must precede GPG-checked installation: %s", cmd)
+	}
+	if !strings.Contains(cmd, "/boot/vmlinuz-5.14.0-725.el9.x86_64") {
+		t.Fatal("725 installation must select the exact requested kernel")
+	}
+}
