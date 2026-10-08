@@ -9,6 +9,9 @@
 # regenerate it and fail if the committed page has fallen behind the profiles.
 set -euo pipefail
 
+# Stable byte ordering is independent of installed locales and caller locale.
+export LC_ALL=C
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
