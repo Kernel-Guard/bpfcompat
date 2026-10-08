@@ -1,6 +1,8 @@
 name: ghcr-image
 
-# Builds and publishes the bpfcompat container image to GHCR on release tags,
+# Manual preview-only image builder. Never publishes production aliases.
+# Release images are built and promoted only by release-artifacts/promote-release.
+# Former release-tag publisher is deliberately disabled here;
 # cosign-signed (keyless) with a SLSA build-provenance attestation - the same
 # trust posture as the release binaries. The image is the distroless `final`
 # target: the CLI + `serve` API. VM-backed validation needs qemu/kvm on the
@@ -15,8 +17,6 @@ name: ghcr-image
 # interpolated into any run: block.
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ env:
 
 jobs:
   image:
-    name: Build, push, sign (GHCR)
+    name: Build preview only (GHCR)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,10 +73,7 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=sha,format=short,enable=${{ github.ref_type != 'tag' }}
+            type=raw,value=preview-${{ github.sha }}
 
       - name: Build and push
         id: build

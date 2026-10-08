@@ -18,6 +18,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   RPMs from the official CentOS Koji archive after retirement from the rolling
   mirror. Kernel identity and mandatory guest signature verification are unchanged.
 
+### Security
+- Maintenance candidates are staged as drafts, with exact source/artifact
+  identity, signatures, attestations and a separately protected promotion path.
+  Independent container/site workflows cannot publish production release assets.
+- Prebuilt Action downloads now require source-bound GitHub attestations in
+  addition to scoped SHA256 checks; a modern GitHub CLI is required. The installer
+  requires cosign and exact-tag signer identity instead of checksum-only fallback.
+- Release preparation remains blocked where mandatory stability, readiness,
+  provenance or VM evidence is missing; no production approval is implied.
+
+### Changed
+- Release validation uses the already-approved Go 1.25.14 toolchain, enforces
+  50% complete race coverage, and pins govulncheck. Support-document generation
+  uses deterministic byte ordering independent of locale.
+
 ## [0.3.7] - 2026-08-26
 
 ### Fixed

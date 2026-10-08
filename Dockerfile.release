@@ -1,0 +1,9 @@
+# Packages verified release binaries, never recompiles them with another Go.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639 AS final
+ARG TARGETARCH
+WORKDIR /data
+COPY bpfcompat-linux-${TARGETARCH} /usr/local/bin/bpfcompat
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/bpfcompat"]
+CMD ["serve", "--addr", ":8080", "--workdir", "/data/.bpfcompat"]

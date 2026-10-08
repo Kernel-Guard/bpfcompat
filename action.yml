@@ -180,6 +180,18 @@ runs:
         verify_prebuilt_checksums "$tmp" \
           bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
 
+        # Preserve the v0.3.7 checksum scope, then require provenance for the
+        # exact release ref and (for recommended SHA pins) source commit.
+        source_sha="${ACTION_REF:-}"
+        if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+          source_sha="$(git ls-remote https://github.com/Kernel-Guard/bpfcompat.git "refs/tags/${ref}" "refs/tags/${ref}^{}" | awk 'END {print $1}')"
+        fi
+        BPFCOMPAT_EXPECTED_SOURCE_SHA="$source_sha" \
+          BPFCOMPAT_EXPECTED_SOURCE_REF="refs/tags/$ref" \
+          bash "$GITHUB_ACTION_PATH/scripts/verify-release-assets.sh" \
+            "$tmp" Kernel-Guard/bpfcompat \
+            bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
+
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"
         install -m 0755 "$tmp/bpfcompat-linux-amd64" "$GITHUB_ACTION_PATH/bin/bpfcompat"
         install -m 0755 "$tmp/bpfcompat-validator-static-linux-amd64" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin/bpfcompat-validator"

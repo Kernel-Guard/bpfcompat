@@ -1,0 +1,8 @@
+stable_version: 0.3.7
+stable_commit: 179ff612ed2b5d1afb16dd9c282752028d47c415
+release_version: 0.3.8-rc.1
+release_channel: prerelease
+release_operator: ErenAri
+approval_mode: solo-maintainer
+minimum_go: 1.25.14
+report_schema: v0.1

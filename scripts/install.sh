@@ -4,8 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
 #
 # Downloads the prebuilt bpfcompat CLI and its static guest validator from the
-# GitHub release, verifies both against the release SHA256SUMS (and, if cosign is
-# present, the signature over SHA256SUMS), and installs them. The validator goes
+# GitHub release, requires cosign verification of the signed SHA256SUMS and
+# checks both binary hashes before installation. The validator goes
 # to a location the CLI discovers automatically, so `bpfcompat test` works from
 # any directory.
 #
@@ -47,6 +47,7 @@ if [ "$VERSION" = "latest" ]; then
     | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
+printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$' || die "invalid release version"
 base="https://github.com/$REPO/releases/download/$VERSION"
 err "installing bpfcompat $VERSION (linux/$GOARCH)"
 
@@ -84,7 +85,7 @@ if have cosign; then
   curl -fsSLO "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
   curl -fsSLO "$base/SHA256SUMS.crt" || die "cannot fetch SHA256SUMS.crt for signature verification"
   if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-      --certificate-identity-regexp "^https://github.com/$REPO/" \
+      --certificate-identity "https://github.com/$REPO/.github/workflows/release-artifacts.yml@refs/tags/$VERSION" \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
       SHA256SUMS >/dev/null 2>&1; then
     err "cosign signature over SHA256SUMS verified"
@@ -92,10 +93,7 @@ if have cosign; then
     die "cosign signature verification FAILED for SHA256SUMS - refusing to install"
   fi
 else
-  err "WARNING: cosign not installed - cannot cryptographically verify this release."
-  err "         Falling back to checksum-only integrity, which does NOT defend"
-  err "         against a malicious mirror. Install cosign and re-run for full"
-  err "         supply-chain verification."
+  die "cosign is required: checksum-only release installation is not permitted"
 fi
 
 # 2. Strict checksum check, scoped to exactly the files being installed. Every
@@ -104,8 +102,7 @@ fi
 err "verifying checksums"
 : > .install-checklist
 for f in $DL_FILES; do
-  line="$(grep -E "^[0-9a-fA-F]{64}  ${f}\$" SHA256SUMS || true)"
-  [ -n "$line" ] || die "no SHA256SUMS entry for '$f' - refusing to install"
+  line="$(awk -v file="$f" '$2 == file && $1 ~ /^[0-9a-fA-F]{64}$/ {count++; found=$0} END {if(count == 1) print found; else exit 1}' SHA256SUMS)" || die "'$f' needs exactly one valid SHA256SUMS entry"
   printf '%s\n' "$line" >> .install-checklist
 done
 $SHACHK .install-checklist >/dev/null || die "checksum verification failed for: $DL_FILES"
