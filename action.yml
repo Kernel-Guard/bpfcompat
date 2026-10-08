@@ -76,7 +76,7 @@ inputs:
     required: false
     default: "true"
   prebuilt:
-    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-verified against the release SHA256SUMS.
+    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads require scoped SHA256 checks and exact-source release attestations.
     required: false
     default: "auto"
   binary:
@@ -94,6 +94,7 @@ runs:
       env:
         ACTION_REF: ${{ github.action_ref }}
         GITHUB_API_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         echo "resolved=false" >> "$GITHUB_OUTPUT"

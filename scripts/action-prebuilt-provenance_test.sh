@@ -12,7 +12,10 @@ printf 'validator\n' >"$tmp/assets/bpfcompat-validator-static-linux-amd64"
 python3 - "$root/action.yml" <<'PY' >"$tmp/prebuilt.sh"
 import sys, yaml
 with open(sys.argv[1]) as f:
-    print(yaml.safe_load(f)['runs']['steps'][0]['run'])
+    step = yaml.safe_load(f)['runs']['steps'][0]
+    if step['env'].get('GH_TOKEN') != '${{ github.token }}':
+        raise ValueError('Action must pass the caller token to gh')
+    print(step['run'])
 PY
 cat >"$tmp/mock/curl" <<'SH'
 #!/usr/bin/env bash
@@ -32,6 +35,7 @@ cat >"$tmp/mock/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$*" == 'attestation --help' ]] && exit 0
+[[ "${GH_TOKEN:-}" == offline-fixture ]]
 [[ "$*" == attestation\ verify* ]]
 [[ "$*" == *'--repo Kernel-Guard/bpfcompat'* ]]
 [[ "$*" == *'--signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml'* ]]
@@ -42,7 +46,7 @@ SH
 chmod +x "$tmp/mock/curl" "$tmp/mock/gh"
 run() {
   PATH="$tmp/mock:$PATH" TEST_ASSETS="$tmp/assets" ACTION_REF=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-    GITHUB_API_TOKEN=offline-fixture GITHUB_ACTION_PATH="$tmp/action" GITHUB_OUTPUT="$tmp/output" \
+    GITHUB_API_TOKEN=offline-fixture GH_TOKEN=offline-fixture GITHUB_ACTION_PATH="$tmp/action" GITHUB_OUTPUT="$tmp/output" \
     bash "$tmp/prebuilt.sh" >"$tmp/log" 2>&1
 }
 run
