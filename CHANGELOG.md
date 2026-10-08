@@ -17,6 +17,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - The existing CentOS Stream 9 kernel 725 sweep now fetches the exact signed
   RPMs from the official CentOS Koji archive after retirement from the rolling
   mirror. Kernel identity and mandatory guest signature verification are unchanged.
+- Only that exact signed 725 package set imports the digest-pinned official
+  SHA256-self-signed CentOS key, avoiding unrelated unsupported image keys.
+  Its downloads use bounded HTTP/1.1 retries; other distribution installers are unchanged.
 
 ### Security
 - Maintenance candidates are staged as drafts, with exact source/artifact

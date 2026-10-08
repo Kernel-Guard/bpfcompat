@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -164,5 +165,36 @@ func TestCentOS725KeySelectionAndTransport(t *testing.T) {
 		if strings.Contains(other, "centos-key.asc") || !strings.Contains(other, "RPM-GPG-KEY-*") {
 			t.Fatal("unrelated RHEL installer changed")
 		}
+	}
+}
+
+func TestCentOS725RejectsChangedKeyBeforeImport(t *testing.T) {
+	p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-725.el9.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No network, real RPM operations, or host /tmp installer directory.
+	for name, script := range map[string]string{
+		"curl": "#!/bin/sh\nwhile [ \"$#\" -gt 0 ]; do if [ \"$1\" = -o ]; then shift; printf tampered >\"$1\"; exit 0; fi; shift; done; exit 1\n",
+		"sudo": "#!/bin/sh\nprintf invoked >\"$TEST_SUDO_LOG\"; exit 1\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := strings.ReplaceAll(guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages), "/tmp/bpfcompat-kernel", filepath.Join(dir, "kernel"))
+	process := exec.Command("bash", "-c", command)
+	process.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TEST_SUDO_LOG="+filepath.Join(dir, "sudo.log"))
+	output, err := process.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "centos-key.asc: FAILED") {
+		t.Fatalf("changed key must fail its real digest check: err=%v output=%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sudo.log")); !os.IsNotExist(err) {
+		t.Fatal("changed key reached privileged import or installation")
 	}
 }
