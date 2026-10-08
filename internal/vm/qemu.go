@@ -643,9 +643,14 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	var b strings.Builder
 	b.WriteString("set -e; ")
 	if len(packageURLs) > 0 {
+		centOS725 := isCentOS725SignedPackageSet(release, packageURLs)
 		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
 		for i, pkg := range packageURLs {
-			fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
+			if centOS725 {
+				fmt.Fprintf(&b, "curl -fsSL --http1.1 --connect-timeout 15 --max-time 120 --retry 2 --retry-max-time 360 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
+			} else {
+				fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
+			}
 		}
 		// Import the distro signing keys shipped in the image before
 		// verifying. AlmaLinux pre-imports them into the rpm keyring, but
@@ -653,7 +658,17 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 		// an unprimed keyring reports "SIGNATURES NOT OK" for perfectly
 		// good packages. The keys come from the vendor image itself, which
 		// is the same trust anchor dnf uses for the configured repos.
-		b.WriteString("sudo sh -c 'for k in /etc/pki/rpm-gpg/RPM-GPG-KEY-*; do [ -f \"$k\" ] && rpm --import \"$k\"; done'; ")
+		if centOS725 {
+			// https://www.centos.org/keys/ publishes fingerprint
+			// 99DB70FAE1D7CE227FB6488205B555B38483C65D. Pin the SHA256
+			// self-signed encoding's bytes: the legacy SHA1 encoding and
+			// unrelated image keys are unsupported by current guest RPM.
+			b.WriteString("curl -fsSL --http1.1 --connect-timeout 15 --max-time 30 --retry 2 --retry-max-time 90 -o centos-key.asc https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256; ")
+			b.WriteString("printf '%s  centos-key.asc\\n' 5af55449d6c9bc594e2e2fb7222374cb25a8ad2d8ea6ce3de894a3201944daa2 | sha256sum --check --strict; ")
+			b.WriteString("sudo rpm --import centos-key.asc; ")
+		} else {
+			b.WriteString("sudo sh -c 'for k in /etc/pki/rpm-gpg/RPM-GPG-KEY-*; do [ -f \"$k\" ] && rpm --import \"$k\"; done'; ")
+		}
 		b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
 		b.WriteString("sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
 	} else {
@@ -661,6 +676,21 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	}
 	fmt.Fprintf(&b, "sudo grubby --set-default %s", shellQuote("/boot/vmlinuz-"+release))
 	return b.String()
+}
+
+// Limit the maintenance exception to the exact three signed archived RPMs.
+// Other kernels, vendors and package sources retain their existing installer.
+func isCentOS725SignedPackageSet(release string, urls []string) bool {
+	if release != "5.14.0-725.el9.x86_64" || len(urls) != 3 {
+		return false
+	}
+	const prefix = "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/725.el9/data/signed/8483c65d/x86_64/"
+	for i, name := range []string{"kernel-core", "kernel-modules-core", "kernel-modules"} {
+		if urls[i] != prefix+name+"-5.14.0-725.el9.x86_64.rpm" {
+			return false
+		}
+	}
+	return true
 }
 
 // waitProcessExit waits for the guest-initiated QEMU exit (-no-reboot turns
