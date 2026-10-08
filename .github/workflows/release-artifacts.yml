@@ -265,31 +265,23 @@ jobs:
         run: |
           set -euo pipefail
           source="$RUNNER_TEMP/maintenance-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p release-evidence/reports
+          if [[ -d reports ]]; then
+            find reports -maxdepth 1 -type f -name 'action-maintenance.*' -exec cp '{}' release-evidence/reports/ \;
+          fi
           if [[ -d "$source/reports" ]]; then
-            mkdir -p reports
-            cp "$source"/reports/* reports/
+            find "$source/reports" -maxdepth 1 -type f -exec cp '{}' release-evidence/reports/ \;
           fi
           if [[ -d "$source" ]]; then
-            mkdir -p .bpfcompat
             cd "$source"
-            find . -type f \( -name serial.log -o -name qemu.log -o -name libbpf.log -o -name validator-result.json -o -name validator.stderr \) -exec cp --parents '{}' "$GITHUB_WORKSPACE/.bpfcompat/" \;
+            find . -type f \( -name serial.log -o -name qemu.log -o -name libbpf.log -o -name validator-result.json -o -name validator.stderr \) -exec cp --parents '{}' "$GITHUB_WORKSPACE/release-evidence/" \;
           fi
       - name: Upload release-gate evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-gate-evidence-${{ github.run_id }}
-          path: |
-            reports/release-positive.json
-            reports/release-positive.md
-            reports/release-negative.json
-            reports/release-negative.md
-            reports/release-artifact-identity.json
-            reports/artifact-identity.sha256
-            reports/action-maintenance.*
-            .bpfcompat/runs/**/targets/**/serial.log
-            .bpfcompat/runs/**/targets/**/libbpf.log
-            .bpfcompat/runs/**/targets/**/validator-result.json
+          path: release-evidence/
           if-no-files-found: warn
 
   candidate-arm64-cli-gate:

@@ -29,7 +29,7 @@ gh attestation --help >/dev/null 2>&1 || fail "gh lacks attestation support"
 # producing run and provenance of its actual evidence, not just caller claims.
 verify_observation() {
   local file="$1" repo="$2" workflow="$3" run_id="$4" expected_source="${5:-}" expected_event="${6:-}"
-  local run source branch
+  local run source branch verified invocation
   run="$(gh api "repos/$repo/actions/runs/$run_id")" || fail "cannot authenticate observation run $run_id"
   jq -e --arg workflow "$workflow" '
     .path == $workflow and .status == "completed" and .conclusion == "success" and
@@ -41,9 +41,13 @@ verify_observation() {
   source="$(jq -r .head_sha <<<"$run")"
   branch="$(jq -r .head_branch <<<"$run")"
   [[ -z "$expected_source" || "$source" == "$expected_source" ]] || fail "observation source identity mismatch"
-  gh attestation verify "$file" --repo "$repo" --signer-workflow "$repo/$workflow" \
-    --source-digest "$source" --source-ref "refs/heads/$branch" >/dev/null ||
+  jq -e --argjson id "$run_id" '.id == $id and (.run_attempt|type=="number" and .>0)' <<<"$run" >/dev/null || fail "observation run identity mismatch"
+  invocation="https://github.com/$repo/actions/runs/$run_id/attempts/$(jq -r .run_attempt <<<"$run")"
+  verified="$(gh attestation verify "$file" --repo "$repo" --signer-workflow "$repo/$workflow" \
+    --source-digest "$source" --source-ref "refs/heads/$branch" --format json)" ||
     fail "observation $run_id lacks authenticated provenance"
+  jq -e --arg invocation "$invocation" 'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $invocation)' <<<"$verified" >/dev/null ||
+    fail "observation provenance belongs to a different run or attempt"
 }
 
 manifest_dir="$(cd "$(dirname "$input")" && pwd)"
@@ -246,6 +250,8 @@ candidate_tag="$(jq -r '.tag' "$candidate")"
 candidate_commit="$(jq -r '.commit_sha' "$candidate")"
 candidate_image="$(jq -r '.image' "$candidate")"
 candidate_digest="${candidate_image##*@}"
+manual_epoch=0
+previous_canary_epoch=0
 
 while IFS= read -r canary; do
   milestone="$(jq -r '.milestone' <<<"$canary")"
@@ -293,6 +299,18 @@ while IFS= read -r canary; do
 
   canary_run_id="$(jq '.workflow_run_id' "$canary_evidence")"
   canary_completed_at="$(jq -r '.completed_at' "$canary_evidence")"
+  canary_epoch="$(date -u -d "$canary_completed_at" +%s)"
+  [[ "$canary_epoch" -le "$(date -u +%s)" ]] || fail "canary completion is in the future"
+  if [[ "$milestone" == manual ]]; then
+    manual_epoch="$canary_epoch"
+  else
+    minimum_delay=86400
+    [[ "$milestone" == t-plus-72h ]] && minimum_delay=259200
+    [[ "$manual_epoch" -gt 0 && "$canary_epoch" -gt "$previous_canary_epoch" &&
+       $((canary_epoch - manual_epoch)) -ge "$minimum_delay" ]] ||
+      fail "canary ${milestone} does not satisfy its elapsed-time requirement"
+  fi
+  previous_canary_epoch="$canary_epoch"
   printf '%s\n' "$canary_run_id" >>"$tmp/canary_run_ids"
   printf "| %s | \`%s\` | %s |\n" \
     "$milestone" "$canary_run_id" "$canary_completed_at" >>"$tmp/canary_rows"

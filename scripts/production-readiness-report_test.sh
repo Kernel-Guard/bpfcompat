@@ -21,7 +21,7 @@ if [[ "$*" == api\ * ]]; then
   esac
   event=schedule
   [[ "$run_id" == 3000 ]] && event=workflow_dispatch
-  jq -n --arg path "$workflow" --arg sha "$source" --arg branch "$branch" --arg event "$event" '{path:$path,head_sha:$sha,head_branch:$branch,status:"completed",conclusion:"success",event:$event}'
+  jq -n --argjson id "$run_id" --arg path "$workflow" --arg sha "$source" --arg branch "$branch" --arg event "$event" '{id:$id,run_attempt:1,path:$path,head_sha:$sha,head_branch:$branch,status:"completed",conclusion:"success",event:$event}'
   exit 0
 fi
 [[ "$*" == attestation\ verify* ]]
@@ -33,6 +33,14 @@ case "$*" in
   *'--repo Kernel-Guard/bpfcompat'*) [[ "$*" == *'--signer-workflow Kernel-Guard/bpfcompat/.github/workflows/'* ]];;
   *) exit 1;;
 esac
+if [[ "$*" == *'--format json'* ]]; then
+  file="$3"
+  repo=Kernel-Guard/bpfcompat
+  [[ "$*" == *'--repo falcosecurity/libs'* ]] && repo=falcosecurity/libs
+  id="$(jq -r '.workflow_run_id // 2000' "$file")"
+  [[ "${TEST_READINESS_INVOCATION:-pass}" == pass ]] || id=9999
+  jq -n --arg invocation "https://github.com/$repo/actions/runs/$id/attempts/1" '[{verificationResult:{statement:{predicate:{runDetails:{metadata:{invocationId:$invocation}}}}}}]'
+fi
 EOF
 chmod 0700 "$tmp/bin/gh"
 
@@ -253,6 +261,11 @@ if PATH="$tmp/bin:$PATH" \
   exit 1
 fi
 
+if TEST_READINESS_INVOCATION=fail PATH="$tmp/bin:$PATH" "$script" "$tmp/input.json" "$tmp/wrong-run.md" >"$tmp/wrong-run.log" 2>&1; then
+  echo '[production-readiness-test] accepted provenance from another run' >&2; exit 1
+fi
+grep -q 'different run or attempt' "$tmp/wrong-run.log"
+
 cp "$tmp/canary-1/release-candidate-canary.json" "$tmp/canary-1-valid.json"
 jq '.event = "workflow_dispatch"' \
   "$tmp/canary-1/release-candidate-canary.json" >"$tmp/bad-canary.json"
@@ -267,6 +280,18 @@ if PATH="$tmp/bin:$PATH" \
   exit 1
 fi
 mv "$tmp/canary-1-valid.json" "$tmp/canary-1/release-candidate-canary.json"
+
+for index in 1 2; do
+  cp "$tmp/canary-$index/release-candidate-canary.json" "$tmp/canary-time-valid.json"
+  jq '.completed_at = "2026-07-30T16:05:34Z"' "$tmp/canary-time-valid.json" >"$tmp/canary-$index/release-candidate-canary.json"
+  bad_sha="$(sha256sum "$tmp/canary-$index/release-candidate-canary.json" | awk '{print $1}')"
+  jq --argjson index "$index" --arg sha "$bad_sha" '.canaries[$index].evidence_sha256 = $sha' "$tmp/input.json" >"$tmp/early-canary-input.json"
+  if PATH="$tmp/bin:$PATH" "$script" "$tmp/early-canary-input.json" "$tmp/early.md" >"$tmp/early.log" 2>&1; then
+    echo '[production-readiness-test] accepted early labelled canary' >&2; exit 1
+  fi
+  grep -q 'elapsed-time requirement' "$tmp/early.log"
+  mv "$tmp/canary-time-valid.json" "$tmp/canary-$index/release-candidate-canary.json"
+done
 
 cp "$tmp/incident/evidence.md" "$tmp/incident-valid.md"
 printf '%s\n' 'incident marker missing' >"$tmp/incident/evidence.md"

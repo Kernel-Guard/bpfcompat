@@ -27,6 +27,7 @@ jq -n \
     checksums_sha256: $checksums,
     positive_report_sha256: ("c" * 64),
     negative_report_sha256: ("d" * 64),
+    artifact_identity_sha256: ("e" * 64),
     generated_at: "2026-07-30T12:00:00Z"
   }' >"$tmp/evidence.json"
 
@@ -38,6 +39,9 @@ grep -Fq '[promotion-inputs] PASS' "$tmp/pass.log"
 for mutation in \
   '.workflow_run_id = 999' \
   '.workflow_run_attempt = 1' \
+  '.artifact_identity_sha256 = ""' \
+  '.workflow = "evil/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v0.4.0-rc.3"' \
+  '.workflow = "Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v0.4.0-rc.4"' \
   '.commit_sha = ("e" * 40)' \
   '.tag = "v0.4.0-rc.4"' \
   '.channel = "stable"' \

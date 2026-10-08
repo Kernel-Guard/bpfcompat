@@ -56,7 +56,7 @@ jq -e \
   --arg checksums_sha256 "$checksums_sha256" '
     .schema_version == "v0.1" and
     .repository == $repo and
-    (.workflow | contains(".github/workflows/release-artifacts.yml@")) and
+    .workflow == ($repo + "/.github/workflows/release-artifacts.yml@refs/tags/" + $tag) and
     .workflow_run_id == $run_id and
     .workflow_run_attempt == $run_attempt and
     .commit_sha == $commit and
@@ -66,6 +66,7 @@ jq -e \
     .checksums_sha256 == $checksums_sha256 and
     (.positive_report_sha256 | test("^[0-9a-f]{64}$")) and
     (.negative_report_sha256 | test("^[0-9a-f]{64}$")) and
+    (.artifact_identity_sha256 | test("^[0-9a-f]{64}$")) and
     (.generated_at | fromdateiso8601 > 0)
   ' "$evidence" >/dev/null ||
   fail "candidate evidence does not bind the exact promotion inputs"

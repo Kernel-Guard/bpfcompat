@@ -1,6 +1,9 @@
 """Offline workflow wiring tests: no GitHub writes or real publication."""
 import copy
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 import yaml
@@ -81,6 +84,37 @@ class ReleaseControls(unittest.TestCase):
         self.assertIn("'.release_version == $version and .gate_status ==", source)
         promotion = (ROOT / '.github/workflows/promote-release.yml').read_text()
         self.assertIn("'.release_version == $version and .gate_status ==", promotion)
+
+    def test_vm_evidence_paths_and_executable_payload(self):
+        steps = self.stage['jobs']['candidate-vm-gate']['steps']
+        upload = next(s for s in steps if s.get('name') == 'Upload release-gate evidence')
+        self.assertEqual(upload['with']['path'], 'release-evidence/')
+        retain = next(s for s in steps if s.get('name') == 'Retain incomplete VM evidence')['run']
+        self.assertIn('release-evidence/reports', retain)
+        self.assertIn('$GITHUB_WORKSPACE/release-evidence/', retain)
+        self.assertNotIn('id_ed25519', retain)
+        self.assertIn('COPY --chmod=0755', (ROOT / 'Dockerfile.release').read_text())
+
+    def test_incomplete_evidence_retention_excludes_keys(self):
+        steps = self.stage['jobs']['candidate-vm-gate']['steps']
+        command = next(s for s in steps if s.get('name') == 'Retain incomplete VM evidence')['run']
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            workspace = base / 'workspace'
+            workspace.mkdir()
+            source = base / 'maintenance-1-1'
+            target = source / 'positive-work/runs/fixture/targets/centos'
+            target.mkdir(parents=True)
+            (target / 'serial.log').write_text('fixture diagnostic')
+            (target / 'id_ed25519').write_text('fixture must not be retained')
+            (source / 'reports').mkdir()
+            (source / 'reports/release-positive.json').write_text('{}')
+            env = dict(os.environ, RUNNER_TEMP=tmp, GITHUB_WORKSPACE=str(workspace), GITHUB_RUN_ID='1', GITHUB_RUN_ATTEMPT='1')
+            subprocess.run(['bash', '-c', command], cwd=workspace, env=env, check=True)
+            retained = workspace / 'release-evidence'
+            self.assertTrue((retained / 'reports/release-positive.json').exists())
+            self.assertTrue((retained / 'positive-work/runs/fixture/targets/centos/serial.log').exists())
+            self.assertEqual(list(retained.rglob('id_ed25519')), [])
 
 if __name__ == '__main__':
     unittest.main()
