@@ -127,7 +127,8 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
-          path: .
+          path: dist
+          syft-version: v1.54.1
           format: cyclonedx-json
           output-file: dist/bpfcompat.sbom.cdx.json
       - name: Compute checksums

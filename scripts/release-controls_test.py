@@ -17,6 +17,9 @@ def check(stage, promotion, preview):
             raise ValueError('unsafe release workflow wiring')
     jobs = stage['jobs']
     require(jobs['build-and-sign']['permissions']['contents'] == 'read')
+    sbom = next(s for s in jobs['build-and-sign']['steps'] if s.get('name') == 'Generate SBOM')
+    require(sbom['with']['path'] == 'dist')
+    require(sbom['with']['syft-version'] == 'v1.54.1')
     draft = jobs['stage-draft-release']
     require(set(draft['needs']) == {'build-and-sign', 'assemble-candidate-evidence'})
     upload = next(s for s in draft['steps'] if s.get('uses', '').startswith('softprops/action-gh-release@'))
