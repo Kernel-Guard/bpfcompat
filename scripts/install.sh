@@ -111,7 +111,11 @@ err "checksums verified: $DL_FILES"
 # Install, using sudo only when the target dirs are not writable.
 SUDO=""
 if [ ! -w "$(dirname "$BIN_DIR")" ] || { [ -d "$BIN_DIR" ] && [ ! -w "$BIN_DIR" ]; }; then
-  have sudo && SUDO="sudo" || die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
+  if have sudo; then
+    SUDO="sudo"
+  else
+    die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
+  fi
 fi
 
 $SUDO install -d "$BIN_DIR"
