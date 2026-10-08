@@ -78,6 +78,7 @@ jobs:
           python3 scripts/check-maintenance-release.py
           python3 scripts/check-maintenance-release_test.py
           python3 scripts/release-controls_test.py
+          python3 scripts/native-validator-sbom_test.py
           bash scripts/verify-release-assets_test.sh
           bash scripts/action-prebuilt-provenance_test.sh
           bash scripts/install-verification_test.sh

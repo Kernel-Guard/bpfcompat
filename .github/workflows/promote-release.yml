@@ -166,6 +166,7 @@ jobs:
             bpfcompat-linux-arm64
             bpfcompat-validator-static-linux-amd64
             BUILD-TOOLS.txt
+            NATIVE-LINK-INPUTS.json
             bpfcompat.sbom.cdx.json
           )
           if [[ "$channel" == "stable" ]]; then

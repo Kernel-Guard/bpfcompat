@@ -23,6 +23,13 @@ def check(stage, promotion, preview):
     sbom = next(s for s in jobs['build-and-sign']['steps'] if s.get('name') == 'Generate SBOM')
     require(sbom['with']['path'] == 'dist')
     require(sbom['with']['syft-version'] == 'v1.54.1')
+    steps = jobs['build-and-sign']['steps']
+    supplement = next(i for i, s in enumerate(steps) if s.get('name') == 'Supplement actual native validator linker inputs')
+    checksums = next(i for i, s in enumerate(steps) if s.get('name') == 'Compute checksums')
+    require(supplement < checksums)
+    require('NATIVE-LINK-INPUTS.json' in steps[checksums]['run'])
+    native = next(s for s in steps if s.get('name') == 'Install native build dependencies')['run']
+    require('release-native-snapshot.txt' in native and '--snapshot "$snapshot"' in native)
     draft = jobs['stage-draft-release']
     require(set(draft['needs']) == {'build-and-sign', 'assemble-candidate-evidence'})
     upload = next(s for s in draft['steps'] if s.get('uses', '').startswith('softprops/action-gh-release@'))

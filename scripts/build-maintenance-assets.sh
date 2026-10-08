@@ -38,13 +38,16 @@ done
 for pass in 1 2; do
   gcc-13 -O2 -Wall -Wextra -std=c11 -ffile-prefix-map="$root"=. \
     "${bpf_flags[@]}" validator/c-libbpf/src/main.c \
-    -o "$scratch/validator-$pass" -static -Wl,-Bstatic -lbpf -lelf -lzstd -lz -pthread
+    -o "$scratch/validator-$pass" -static -Wl,-t,-Bstatic -lbpf -lelf -lzstd -lz -pthread >"$scratch/link-$pass.txt"
 done
 cmp "$scratch/validator-1" "$scratch/validator-2"
 file "$scratch/validator-1" | grep -q 'statically linked'
 cp "$scratch/validator-1" "$out/bpfcompat-validator-static-linux-amd64"
+python3 scripts/native-validator-sbom.py collect "$scratch/link-1.txt" \
+  "$out/bpfcompat-validator-static-linux-amd64" "$out/NATIVE-LINK-INPUTS.json"
 {
   printf 'commit=%s\nversion=%s\nsource_date_epoch=%s\n' "$commit" "$version" "$SOURCE_DATE_EPOCH"
+  printf 'native_snapshot=%s\n' "$(<scripts/release-native-snapshot.txt)"
   go version
   gcc-13 --version
   pkg-config --modversion libbpf libelf zlib libzstd
@@ -53,5 +56,5 @@ cp "$scratch/validator-1" "$out/bpfcompat-validator-static-linux-amd64"
     printf '%s\n' "$package"
   done <scripts/release-native-packages.txt
 } >"$out/BUILD-TOOLS.txt"
-(cd "$out"; sha256sum bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 BUILD-TOOLS.txt >SHA256SUMS)
+(cd "$out"; sha256sum bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 BUILD-TOOLS.txt NATIVE-LINK-INPUTS.json >SHA256SUMS)
 echo '[maintenance-build] locked native versions and byte-identical repeated builds PASS; cross-runner reproduction NOT VERIFIED by this command'

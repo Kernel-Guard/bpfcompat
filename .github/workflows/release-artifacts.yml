@@ -69,6 +69,7 @@ jobs:
           bash scripts/check-release-state_test.sh
           python3 scripts/check-maintenance-release_test.py
           python3 scripts/release-controls_test.py
+          python3 scripts/native-validator-sbom_test.py
           bash scripts/check-production-environment_test.sh
           bash scripts/check-coverage_test.sh
           bash scripts/promote-release_test.sh
@@ -108,9 +109,11 @@ jobs:
       - name: Install native build dependencies
         run: |
           set -euo pipefail
-          sudo apt-get update
+          snapshot="$(<scripts/release-native-snapshot.txt)"
+          [[ "$snapshot" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]
+          sudo apt-get --snapshot "$snapshot" -o APT::Update::Error-Mode=any update
           mapfile -t packages < <(grep -v '^#' scripts/release-native-packages.txt)
-          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          sudo apt-get --snapshot "$snapshot" install -y --no-install-recommends "${packages[@]}"
       - name: Repeated deterministic candidate builds
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -132,6 +135,8 @@ jobs:
           syft-version: v1.54.1
           format: cyclonedx-json
           output-file: dist/bpfcompat.sbom.cdx.json
+      - name: Supplement actual native validator linker inputs
+        run: python3 scripts/native-validator-sbom.py supplement dist/bpfcompat.sbom.cdx.json dist/NATIVE-LINK-INPUTS.json dist/bpfcompat-validator-static-linux-amd64
       - name: Compute checksums
         run: |
           set -euo pipefail
@@ -141,6 +146,7 @@ jobs:
             bpfcompat-linux-arm64
             bpfcompat-validator-static-linux-amd64
             BUILD-TOOLS.txt
+            NATIVE-LINK-INPUTS.json
             bpfcompat.sbom.cdx.json
           )
           if [[ -s production-readiness.json && -s production-readiness.md ]]; then
@@ -156,6 +162,7 @@ jobs:
             dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
             dist/BUILD-TOOLS.txt
+            dist/NATIVE-LINK-INPUTS.json
             dist/bpfcompat.sbom.cdx.json
       - name: Attest production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
@@ -168,7 +175,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
-          subject-path: dist/bpfcompat-linux-amd64
+          subject-path: |
+            dist/bpfcompat-linux-amd64
+            dist/bpfcompat-linux-arm64
+            dist/bpfcompat-validator-static-linux-amd64
           sbom-path: dist/bpfcompat.sbom.cdx.json
       - name: Install cosign
         if: startsWith(github.ref, 'refs/tags/v')
@@ -503,7 +513,7 @@ jobs:
           BPFCOMPAT_EXPECTED_SOURCE_REF: ${{ github.ref }}
         run: |
           bash scripts/check-release-state.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
-          bash scripts/verify-release-assets.sh dist "$GITHUB_REPOSITORY" bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 BUILD-TOOLS.txt bpfcompat.sbom.cdx.json
+          bash scripts/verify-release-assets.sh dist "$GITHUB_REPOSITORY" bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 BUILD-TOOLS.txt NATIVE-LINK-INPUTS.json bpfcompat.sbom.cdx.json
           gh attestation verify dist/release-candidate-evidence.json --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-artifacts.yml" --source-digest "$GITHUB_SHA" --source-ref "$GITHUB_REF"
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
@@ -525,6 +535,7 @@ jobs:
             dist/bpfcompat.sbom.cdx.sig
             dist/bpfcompat.sbom.cdx.crt
             dist/BUILD-TOOLS.txt
+            dist/NATIVE-LINK-INPUTS.json
             dist/release-candidate-evidence.json
             ${{ needs.build-and-sign.outputs.channel == 'stable' && 'dist/production-readiness.json' || '' }}
             ${{ needs.build-and-sign.outputs.channel == 'stable' && 'dist/production-readiness.md' || '' }}
