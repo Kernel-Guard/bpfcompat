@@ -156,7 +156,7 @@ jobs:
           if [[ "$channel" == stable ]]; then
             version="${RELEASE_TAG#v}"
             bash scripts/production-readiness-report.sh "docs/releases/bpfcompat-${version}-readiness-input.json" candidate/rechecked-readiness.md candidate/rechecked-readiness.json
-            jq -e '.gate_status == "ready"' candidate/rechecked-readiness.json >/dev/null
+            jq -e --arg version "$version" '.release_version == $version and .gate_status == "ready"' candidate/rechecked-readiness.json >/dev/null
           fi
           cmp candidate/run-assets/SHA256SUMS candidate/draft-assets/SHA256SUMS
           cmp "$evidence" candidate/draft-assets/release-candidate-evidence.json

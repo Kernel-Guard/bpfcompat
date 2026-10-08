@@ -78,6 +78,9 @@ class ReleaseControls(unittest.TestCase):
         self.assertNotIn('.validator.sha256', source)
         self.assertNotIn('SKIP_READINESS_ATTESTATION', (ROOT / 'scripts/production-readiness-report.sh').read_text())
         self.assertNotIn('gh release create', (ROOT / '.github/workflows/compatibility-matrix-publish.yml').read_text())
+        self.assertIn("'.release_version == $version and .gate_status ==", source)
+        promotion = (ROOT / '.github/workflows/promote-release.yml').read_text()
+        self.assertIn("'.release_version == $version and .gate_status ==", promotion)
 
 if __name__ == '__main__':
     unittest.main()
