@@ -55,12 +55,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   never as a pass or fail.
 - The published matrix page now reports required targets as pass / fail /
   infra separately, shows the run verdict, and flags incomplete runs; an
-  infrastructure error was previously folded into the failure count. The page
-  is deployed whenever a report exists so it reflects the latest observed
-  state instead of staying stale while the lane is red.
-- The consumer canary matrix includes `centos-stream-9-5.14`, the RHEL-family
-  profile Inspektor Gadget's upstream lane depends on, so a dead vendor image
-  URL in the pinned release is caught by the canary before a consumer sees it.
+  infrastructure error was previously folded into the failure count. Both
+  contrast artifacts are validated even if the first fails, and the page is
+  redeployed from a failed run when `scripts/check-matrix-reports.sh` proves
+  the reports are this run's evidence (v0.1 schema, started after the job,
+  exactly the matrix's profiles, the artifact bytes built in the run). The
+  job itself still fails; the page shows the honest incomplete state instead
+  of staying on the last green week. Without valid reports nothing is
+  deployed.
+- The consumer canary's source-build job (the action at `@main`) now runs
+  `matrices/canary-source.yaml`, which adds `centos-stream-9-5.14`, the
+  RHEL-family profile Inspektor Gadget's upstream lane depends on. The pinned
+  stable and candidate jobs keep `matrices/canary.yaml`: they resolve
+  profiles from the pinned release, where the old CentOS URL is already known
+  to be dead.
 - Removed references to the public demo instance from the README, quickstart
   and ebpf.io listing data; the hosted demo is not maintained. Reworded the
   weekly-matrix claim to describe what the page actually guarantees.

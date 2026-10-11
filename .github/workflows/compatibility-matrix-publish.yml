@@ -44,6 +44,12 @@ jobs:
       id-token: write  # OIDC for Pages deployment
 
     steps:
+      - name: Record job start time
+        # Lower bound for report provenance: a report whose run.started_at is
+        # earlier than this was not produced by this job and is never published.
+        shell: bash
+        run: echo "BPFCOMPAT_JOB_STARTED_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Report KVM acceleration status
@@ -85,6 +91,7 @@ jobs:
           df -h / | tail -1
 
       - name: Build validator and fixture artifacts
+        id: build
         shell: bash
         run: |
           set -euo pipefail
@@ -123,6 +130,12 @@ jobs:
           df -h / | tail -1
 
       - name: Validate ringbuf-modern across the quirk library
+        # Runs whenever the fixtures were built and the prefetch step itself
+        # did not error out (a prefetch exit 2 -- some images missing -- is
+        # handled inside that step). A non-zero exit here (required
+        # INCOMPATIBLE or INFRA_ERROR) still fails the job; it must not stop
+        # the contrast artifact below from being validated and published.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.prefetch.outcome == 'success' }}
         uses: ./
         with:
           artifact: examples/ringbuf-modern/ringbuf_modern.bpf.o
@@ -135,7 +148,10 @@ jobs:
           build: "true"
 
       - name: Validate simple-pass across the quirk library
-        # Images are already prefetched, so this pass only boots VMs.
+        # Images are already prefetched, so this pass only boots VMs. Runs even
+        # if the ringbuf-modern step failed: the page needs both reports to
+        # show that a failure is a feature gap and not a broken kernel.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.prefetch.outcome == 'success' }}
         uses: ./
         with:
           artifact: examples/simple-pass/simple_pass.bpf.o
@@ -183,35 +199,42 @@ jobs:
             .bpfcompat/runs/**/targets/**/validator-result.json
             .bpfcompat/runs/**/targets/**/validator.stderr
 
-      - name: Decide whether there is evidence to publish
-        # The page is regenerated from this run's reports only. Deploying
-        # after a failed validation step is deliberate: the page then shows
-        # the latest observed state with INFRA_ERROR cells and an
-        # "incomplete" banner, instead of silently keeping last week's green
-        # page while the lane is red. No report at all (setup failed before
-        # any VM booted) means nothing is deployed and the previous page stays.
+      - name: Decide whether this run's evidence may be published
+        # Publishing after a failed validation step is deliberate: the job
+        # stays red (that is the workflow verdict), while the page shows the
+        # latest observed state with INFRA_ERROR cells and an "incomplete"
+        # banner instead of silently keeping last week's page. What may be
+        # published is gated here: BOTH expected reports must exist, be v0.1,
+        # have started after this job began, cover exactly the quirk-library
+        # profiles, and name the artifact bytes built in this run. Otherwise
+        # nothing is deployed and the previous page stays.
         id: evidence
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          if ls reports/quirk-library-*.json >/dev/null 2>&1; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          bash scripts/check-matrix-reports.sh reports matrices/quirk-library.yaml \
+            "${BPFCOMPAT_JOB_STARTED_EPOCH:?job start time not recorded}" \
+            quirk-library-ringbuf-modern.json=examples/ringbuf-modern/ringbuf_modern.bpf.o \
+            quirk-library-simple-pass.json=examples/simple-pass/simple_pass.bpf.o
+          rc=$?
+          if [[ "$rc" -eq 0 ]]; then
+            echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::no compatibility report was produced; the published page is left unchanged"
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::this run's reports did not pass the publication checks (rc=$rc); the published page is left unchanged"
           fi
 
       - name: Configure Pages
-        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
+        if: always() && steps.evidence.outputs.publishable == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
+        if: always() && steps.evidence.outputs.publishable == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: public/compatibility
 
       - name: Deploy Pages
-        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
+        if: always() && steps.evidence.outputs.publishable == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

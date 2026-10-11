@@ -102,6 +102,34 @@ else
   bad "successful image not written"
 fi
 
+# Two profiles sharing one local_path must be fetched once: parallel fetches
+# into the same destination would race on the same .part file.
+cat >"$work/vm/profiles/good-a-twin.yaml" <<'YAML'
+id: good-a-twin
+image:
+  source_url: "http://example.invalid/good-a.qcow2"
+  local_path: "vm/cache/shared.qcow2"
+YAML
+cat >"$work/vm/profiles/good-a-twin2.yaml" <<'YAML'
+id: good-a-twin2
+image:
+  source_url: "http://example.invalid/good-a.qcow2"
+  local_path: "vm/cache/shared.qcow2"
+YAML
+cat >"$work/matrices/twins.yaml" <<'YAML'
+name: twins
+profiles:
+  - id: good-a-twin
+  - id: good-a-twin2
+YAML
+: >"$FAKE_CALLS"
+( cd "$work" && bash "$SCRIPT" matrices/twins.yaml "$work/summary-twins.txt" ) >/dev/null 2>&1 || true
+if [[ "$(grep -c 'shared.qcow2' "$FAKE_CALLS")" -eq 1 ]]; then
+  ok "a local_path shared by two profiles is fetched exactly once"
+else
+  bad "shared local_path fetched $(grep -c 'shared.qcow2' "$FAKE_CALLS") times (want 1)"
+fi
+
 # All-good matrix exits 0.
 cat >"$work/matrices/good.yaml" <<'YAML'
 name: good

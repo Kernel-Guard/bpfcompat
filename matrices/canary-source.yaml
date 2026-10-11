@@ -1,0 +1,27 @@
+# Matrix for the consumer canary's SOURCE-BUILD job only.
+#
+# That job runs the action at @main, so the action resolves profiles (and their
+# vendor image URLs) from main. It is the one canary lane that validates the
+# profile data the next release will ship, which is why the RHEL-family
+# CentOS Stream profile lives here and not in matrices/canary.yaml:
+#
+#   - Inspektor Gadget's upstream lane depends on centos-stream-9-5.14 through
+#     `quirk-library`. When cloud.centos.org renamed the image (compose change
+#     2026-08-19, HTTP 502 from 2026-09-28), the consumer broke while every
+#     canary stayed green, because no canary booted that profile.
+#   - The stable and candidate jobs pin published releases, and the action
+#     resolves profiles from the PINNED checkout. Adding this profile to their
+#     matrix would only replay the already-known dead URL in v0.3.7 and turn
+#     the documented stable lane red without new information. They keep the
+#     two-kernel matrices/canary.yaml.
+#
+# Once a release carrying the corrected URL is pinned as stable, this profile
+# can move into matrices/canary.yaml.
+name: consumer-canary-source
+profiles:
+  - id: ubuntu-22.04-5.15
+    required: true
+  - id: debian-12-6.1
+    required: true
+  - id: centos-stream-9-5.14
+    required: true

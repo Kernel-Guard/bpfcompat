@@ -79,6 +79,7 @@ jobs:
           bash vm/scripts/fetch-cloud-image_test.sh
           bash scripts/prefetch-matrix-images_test.sh
           bash scripts/publish-compatibility-site_test.sh
+          bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
       - name: Release-state fail-closed regression

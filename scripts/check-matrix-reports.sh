@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Decide whether this run's compatibility reports may be published.
+#
+#   check-matrix-reports.sh <reports-dir> <matrix.yaml> <not-before-epoch> \
+#       <report.json>=<artifact-path> [<report.json>=<artifact-path> ...]
+#
+# compatibility-matrix-publish deploys the public page even when a validation
+# step failed, so an honest incomplete report (INFRA_ERROR cells, "incomplete"
+# banner) replaces a stale green page. That only stays honest if what is
+# published is provably THIS run's evidence. Every expected report must:
+#   1. exist and parse as JSON;
+#   2. declare schema_version "v0.1";
+#   3. have run.started_at at or after <not-before-epoch> (the job start), so a
+#      leftover file can never be republished as current;
+#   4. cover exactly the profile ids the matrix requests (no more, no fewer);
+#   5. name, in artifact.sha256, the bytes of <artifact-path> built in this run.
+#
+# Exit 0: all expected reports pass -> publish. Exit 1: any check failed ->
+# do not publish (the previous page stays, and the workflow says why).
+# Exit 2: usage error. Target verdicts are NOT judged here: an INFRA_ERROR or
+# INCOMPATIBLE target is exactly what an honest page must show.
+set -euo pipefail
+
+if [[ $# -lt 4 ]]; then
+  echo "Usage: $0 <reports-dir> <matrix.yaml> <not-before-epoch> <report.json>=<artifact-path>..." >&2
+  exit 2
+fi
+
+reports_dir="$1"
+matrix="$2"
+not_before="$3"
+shift 3
+
+command -v jq >/dev/null || { echo "check-matrix-reports: jq is required" >&2; exit 2; }
+[[ "$not_before" =~ ^[0-9]+$ ]] || { echo "check-matrix-reports: not-before must be a Unix epoch" >&2; exit 2; }
+[[ -f "$matrix" ]] || { echo "check-matrix-reports: matrix not found: $matrix" >&2; exit 2; }
+
+# Matrix profile ids, sorted, one per line. Plain awk over the documented
+# matrix layout (`  - id: <profile>`), so no YAML library is needed.
+expected_profiles="$(awk '$1 == "-" && $2 == "id:" {print $3}' "$matrix" | tr -d '"'"'" | sort)"
+if [[ -z "$expected_profiles" ]]; then
+  echo "check-matrix-reports: no profiles found in $matrix" >&2
+  exit 2
+fi
+
+fail=0
+refuse() {
+  echo "::error::refusing to publish: $*"
+  fail=1
+}
+
+for pair in "$@"; do
+  report_name="${pair%%=*}"
+  artifact_path="${pair#*=}"
+  if [[ -z "$report_name" || -z "$artifact_path" || "$report_name" == "$pair" ]]; then
+    echo "check-matrix-reports: expected <report.json>=<artifact-path>, got '$pair'" >&2
+    exit 2
+  fi
+  report="$reports_dir/$report_name"
+
+  if [[ ! -f "$report" ]]; then
+    refuse "$report_name was not produced by this run"
+    continue
+  fi
+  if ! jq -e . "$report" >/dev/null 2>&1; then
+    refuse "$report_name is not valid JSON"
+    continue
+  fi
+
+  schema="$(jq -r '.schema_version // ""' "$report")"
+  if [[ "$schema" != "v0.1" ]]; then
+    refuse "$report_name has schema_version '$schema' (want v0.1)"
+  fi
+
+  started="$(jq -r '.run.started_at // ""' "$report")"
+  started_epoch="$(date -u -d "$started" +%s 2>/dev/null || echo "")"
+  if [[ -z "$started_epoch" ]]; then
+    refuse "$report_name has no parseable run.started_at ('$started')"
+  elif (( started_epoch < not_before )); then
+    refuse "$report_name started at $started, before this job began; it is not this run's evidence"
+  fi
+
+  got_profiles="$(jq -r '(.targets // [])[].profile_id' "$report" | sort)"
+  if [[ "$got_profiles" != "$expected_profiles" ]]; then
+    refuse "$report_name covers profiles [$(echo "$got_profiles" | paste -sd, -)] but the matrix requests [$(echo "$expected_profiles" | paste -sd, -)]"
+  fi
+
+  if [[ ! -f "$artifact_path" ]]; then
+    refuse "artifact $artifact_path for $report_name is missing; cannot bind the report to its bytes"
+  else
+    want_sha="$(sha256sum "$artifact_path" | awk '{print $1}')"
+    got_sha="$(jq -r '.artifact.sha256 // ""' "$report")"
+    if [[ "$got_sha" != "$want_sha" ]]; then
+      refuse "$report_name is about artifact sha256 $got_sha, not the $artifact_path built in this run ($want_sha)"
+    fi
+  fi
+done
+
+if [[ "$fail" -ne 0 ]]; then
+  exit 1
+fi
+echo "check-matrix-reports: $# report(s) are this run's evidence for $matrix; publishable"

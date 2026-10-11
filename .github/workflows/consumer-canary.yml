@@ -263,7 +263,11 @@ jobs:
           artifact: examples/simple-pass/simple_pass.bpf.o
           command: $BPFCOMPAT_BIN --artifact $BPFCOMPAT_ARTIFACT --out /tmp/validator-result.json
           command-binary: validator/c-libbpf/bin/bpfcompat-validator
-          matrix: matrices/canary.yaml
+          # canary-source.yaml adds the RHEL-family centos-stream-9-5.14
+          # profile. Only this job runs the action at @main, so only here does
+          # it exercise the profile data the next release ships; the pinned
+          # stable/candidate jobs keep matrices/canary.yaml (see the matrix).
+          matrix: matrices/canary-source.yaml
           out: reports/canary-source.json
           markdown: reports/canary-source.md
           timeout: 10m

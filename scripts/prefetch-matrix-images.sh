@@ -58,11 +58,18 @@ trap 'rm -f "$plan"' EXIT
 python3 - "$matrix" >"$plan" <<'PY'
 import sys, yaml
 matrix = yaml.safe_load(open(sys.argv[1]))
+seen = set()
 for p in matrix.get("profiles", []):
     pid = p["id"]
     prof = yaml.safe_load(open(f"vm/profiles/{pid}.yaml"))
     img = prof.get("image") or {}
-    print(f"{pid}\t{img.get('source_url') or ''}\t{img.get('local_path') or ''}")
+    dest = img.get("local_path") or ""
+    # One fetch per destination: parallel fetches into the same path would
+    # race on the same .part file.
+    if dest and dest in seen:
+        continue
+    seen.add(dest)
+    print(f"{pid}\t{img.get('source_url') or ''}\t{dest}")
 PY
 
 fetch_one() {
