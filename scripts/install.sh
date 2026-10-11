@@ -43,7 +43,7 @@ VALIDATOR_ASSET="bpfcompat-validator-static-linux-$GOARCH"
 
 VERSION="${BPFCOMPAT_VERSION:-latest}"
 if [ "$VERSION" = "latest" ]; then
-  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  VERSION="$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 "https://api.github.com/repos/$REPO/releases/latest" \
     | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
@@ -56,8 +56,8 @@ trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
 
 DL_FILES="$CLI_ASSET"
-curl -fsSLO "$base/$CLI_ASSET" || die "download failed: $CLI_ASSET ($VERSION)"
-curl -fsSLO "$base/SHA256SUMS" || die "download failed: SHA256SUMS ($VERSION)"
+curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 "$base/$CLI_ASSET" || die "download failed: $CLI_ASSET ($VERSION)"
+curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 "$base/SHA256SUMS" || die "download failed: SHA256SUMS ($VERSION)"
 install_validator=1
 [ "${BPFCOMPAT_NO_VALIDATOR:-0}" = "1" ] && install_validator=0
 # The static C validator is published for amd64 only today. If this release has
@@ -66,7 +66,7 @@ install_validator=1
 # command mode. (SHA256SUMS is integrity-checked below regardless.)
 if [ "$install_validator" = "1" ]; then
   if grep -qE "^[0-9a-fA-F]{64}  ${VALIDATOR_ASSET}\$" SHA256SUMS; then
-    curl -fsSLO "$base/$VALIDATOR_ASSET" || die "download failed: $VALIDATOR_ASSET ($VERSION)"
+    curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 "$base/$VALIDATOR_ASSET" || die "download failed: $VALIDATOR_ASSET ($VERSION)"
     DL_FILES="$DL_FILES $VALIDATOR_ASSET"
   else
     install_validator=0
@@ -82,8 +82,8 @@ fi
 #    cosign is available we REQUIRE it to pass - a failed or unfetchable
 #    signature aborts the install (fail closed).
 if have cosign; then
-  curl -fsSLO "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
-  curl -fsSLO "$base/SHA256SUMS.crt" || die "cannot fetch SHA256SUMS.crt for signature verification"
+  curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
+  curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 "$base/SHA256SUMS.crt" || die "cannot fetch SHA256SUMS.crt for signature verification"
   if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
       --certificate-identity "https://github.com/$REPO/.github/workflows/release-artifacts.yml@refs/tags/$VERSION" \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com \

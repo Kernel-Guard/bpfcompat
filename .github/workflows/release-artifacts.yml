@@ -78,6 +78,7 @@ jobs:
           bash scripts/verify-release-assets_test.sh
           bash scripts/action-prebuilt-provenance_test.sh
           bash scripts/install-verification_test.sh
+          bash scripts/download-hardening_test.sh
           bash scripts/action-prebuilt-checksums_test.sh
           bash scripts/action-artifact-ref-detection_test.sh
           bash scripts/support-matrix_test.sh
