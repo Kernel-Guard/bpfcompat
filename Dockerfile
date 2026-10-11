@@ -26,12 +26,12 @@
 #     drops the build-id, so two builds of the same commit hash produce
 #     byte-identical binaries.
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26.9
 
 #######################################
 # 1. Builder
 #######################################
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:bbb255b0e131db500cf0520adc97441d2260cf629c7fa7e39e025ddf53995a24 AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
 
 WORKDIR /src
 

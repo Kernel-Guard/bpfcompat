@@ -101,7 +101,7 @@ class MaintenanceIdentity(unittest.TestCase):
             self.run_validate(ref='refs/tags/v0.3.8-rc.999')
 
     def test_fixed_policy_fields(self):
-        for key, value in [('report_schema', 'v0.2'), ('minimum_go', '1.25.12'),
+        for key, value in [('report_schema', 'v0.2'), ('minimum_go', '1.25.14'), ('minimum_go', '1.25.12'),
                            ('release_operator', 'someone-else'), ('approval_mode', 'two-person')]:
             with self.subTest(key=key), self.assertRaises(ValueError):
                 metadata = copy.deepcopy(self.metadata)

@@ -59,7 +59,9 @@ def validate(metadata, ref, head, resolve_tag, is_ancestor):
     channel = 'prerelease' if target.group(4) else 'stable'
     require(metadata.get('release_channel') == channel, 'release_channel does not match release_version')
 
-    require(metadata.get('minimum_go') == '1.25.14')
+    # Go 1.25 is unpatched for the 2026-10-08 stdlib advisories (fixed only in
+    # go1.26.9 / go1.27.2); maintenance builds use the patched toolchain.
+    require(metadata.get('minimum_go') == '1.26.9', 'minimum_go must be the patched toolchain 1.26.9')
     require(metadata.get('report_schema') == 'v0.1')
     require(metadata.get('release_operator') == 'ErenAri')
     require(metadata.get('approval_mode') == 'solo-maintainer')

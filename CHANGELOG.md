@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Security
+- Maintenance builds use the Go 1.26.9 toolchain (was 1.25.14): Go 1.25 is
+  unpatched for the eleven standard-library advisories published 2026-10-08.
+  `go.mod` stays `go 1.25.0`, so language and GODEBUG semantics remain those of
+  v0.3.7 apart from the backported security limits. Every shipped CLI is
+  checked to have been compiled by exactly that toolchain, and golangci-lint is
+  pinned to v2.12.2 instead of `latest`.
+
 ### Fixed
 - CentOS Stream 9/10 cloud image URLs now use the upstream-renamed
   `CentOS-Stream-GenericCloud-<N>-latest.x86_64.qcow2` filenames. Backported

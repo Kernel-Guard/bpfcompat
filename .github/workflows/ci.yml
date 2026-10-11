@@ -33,7 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25.14"
+  GO_VERSION: "1.26.9"
   PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
@@ -83,6 +83,7 @@ jobs:
           bash scripts/action-prebuilt-provenance_test.sh
           bash scripts/install-verification_test.sh
           bash scripts/download-hardening_test.sh
+          bash scripts/check-binary-toolchain_test.sh
           bash scripts/check-release-state_test.sh
           bash scripts/check-production-environment_test.sh
           bash scripts/verify-promotion-inputs_test.sh
@@ -118,7 +119,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: latest
+          version: v2.12.2
           # Diff against the PR's own base: a PR into a maintenance branch must
           # not be linted against main, which has diverged from that line.
           args: --timeout=5m --new-from-rev=origin/${{ github.base_ref }}
@@ -136,7 +137,7 @@ jobs:
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent == 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: latest
+          version: v2.12.2
           args: --timeout=5m --new-from-rev=HEAD~1
       - name: golangci-lint (root commit bootstrap)
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent != 'true'
