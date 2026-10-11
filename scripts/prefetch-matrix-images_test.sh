@@ -91,6 +91,11 @@ if grep -q "manual-c" "$FAKE_CALLS"; then
 else
   ok "profile without source_url is skipped"
 fi
+if grep -qxF "manual manual-c vm/cache/manual-c.qcow2" "$summary"; then
+  ok "manual profile keeps its declared local_path in the summary"
+else
+  bad "manual profile summary line lost its local_path"; cat "$summary" >&2
+fi
 if [[ -f "$summary" ]] && grep -qE "^failed .*bad-b.qcow2" "$summary" && grep -qE "^ok .*good-a.qcow2" "$summary"; then
   ok "summary file names the failed and successful images"
 else
@@ -128,6 +133,37 @@ if [[ "$(grep -c 'shared.qcow2' "$FAKE_CALLS")" -eq 1 ]]; then
   ok "a local_path shared by two profiles is fetched exactly once"
 else
   bad "shared local_path fetched $(grep -c 'shared.qcow2' "$FAKE_CALLS") times (want 1)"
+fi
+if grep -qE '^ok good-a-twin ' "$work/summary-twins.txt" && grep -qE '^ok good-a-twin2 ' "$work/summary-twins.txt"; then
+  ok "every profile sharing the destination gets its own outcome line"
+else
+  bad "a profile sharing the destination has no outcome line"; cat "$work/summary-twins.txt" >&2
+fi
+
+# A worker that dies before recording an outcome must not read as success.
+cat >"$work/vm/profiles/vanish.yaml" <<'YAML'
+id: vanish
+image:
+  source_url: "http://example.invalid/vanish.qcow2"
+  local_path: "vm/cache/vanish.qcow2"
+YAML
+cat >"$work/matrices/vanish.yaml" <<'YAML'
+name: vanish
+profiles:
+  - id: vanish
+YAML
+cat >"$work/vanish-fetch.sh" <<'SH'
+#!/usr/bin/env bash
+# Kill the worker that would record this profile's outcome (our grandparent).
+kill -KILL "$(ps -o ppid= -p "$PPID" | tr -d ' ')"
+sleep 5
+SH
+rc=0
+( cd "$work" && BPFCOMPAT_FETCH_SCRIPT="$work/vanish-fetch.sh" bash "$SCRIPT" matrices/vanish.yaml "$work/summary-vanish.txt" ) >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -ne 0 ]] && grep -qE '^failed vanish ' "$work/summary-vanish.txt"; then
+  ok "a worker that dies without an outcome is reported failed, never success (rc=$rc)"
+else
+  bad "lost worker read as success (rc=$rc)"; cat "$work/summary-vanish.txt" >&2 || true
 fi
 
 # All-good matrix exits 0.

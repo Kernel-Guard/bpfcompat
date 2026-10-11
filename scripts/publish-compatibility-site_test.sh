@@ -76,6 +76,29 @@ else
   bad "summary verdict column missing"
 fi
 
+# 4. summary.complete=false must be honoured even when every REQUIRED target
+#    is conclusive (only an optional target is unresolved). jq's `//` treats
+#    false as missing, so `(.summary.complete // true)` silently read it as true.
+mkdir -p "$work/reports2"
+cat >"$work/reports2/quirk-library-optional-gap.json" <<'JSON'
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261011T000000Z-opt"},
+  "artifact": {"basename": "fixture.bpf.o", "sha256": "0000"},
+  "summary": {"status": "pass", "verdict": "COMPATIBLE", "complete": false},
+  "targets": [
+    {"profile_id": "a", "required": true, "status": "pass", "verdict": "COMPATIBLE"},
+    {"profile_id": "b", "required": false, "status": "infra_error", "verdict": "INFRA_ERROR"}
+  ]
+}
+JSON
+( cd "$work" && BPFCOMPAT_COMPATIBILITY_VERSION=test-run2 bash "$SCRIPT" reports2 "$work/public2" ) >/dev/null
+if grep -q '| incomplete |' "$work/public2/index.md"; then
+  ok "summary.complete=false is flagged even when only an optional target is unresolved"
+else
+  bad "summary.complete=false was rendered as complete"; cat "$work/public2/index.md" >&2
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "publish-compatibility-site_test: FAILED" >&2
   exit 1

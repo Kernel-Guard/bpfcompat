@@ -92,6 +92,41 @@ cat >reports/quirk-a.json <<JSON
 JSON
 expect "honest incomplete report (infra_error target) is publishable" 0 "${args[@]}"
 
+# Results must be real v0.1 results, not just the right profile ids.
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "targets":[{"profile_id":"p1"},{"profile_id":"p2"}]}
+JSON
+expect "report without summary or target results refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"pass"}]}
+JSON
+expect "target without a verdict refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"pass","verdict":"PROBABLY_FINE"}]}
+JSON
+expect "unknown verdict value refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"pass","verdict":"COMPATIBLE"}]}
+JSON
+expect "summary without a verdict refuses publication" 1 "${args[@]}"
+
 expect "no expected reports given is a usage error" 2 reports matrices/m.yaml "$not_before"
 
 if [[ "$fail" -ne 0 ]]; then

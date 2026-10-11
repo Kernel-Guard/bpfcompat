@@ -52,69 +52,107 @@ mkdir -p "$(dirname "$summary")"
 export BPFCOMPAT_FETCH_LOG="${summary}.fetch.log"
 : >"$BPFCOMPAT_FETCH_LOG"
 
-# profile<TAB>source_url<TAB>local_path  (source_url empty when absent)
+# Plan: one line per DESTINATION, fields separated by US (0x1f) so an empty
+# source_url survives `read` (a tab IFS would collapse adjacent separators):
+#   <local_path>US<source_url>US<pid>[,<pid>...]
+# Profiles sharing a local_path are fetched once (parallel fetches into one
+# path would race on the same .part file) and each gets its own outcome line.
+# Profiles with no local_path are listed with an empty destination.
+# A second file lists every planned profile id, to check completeness.
 plan="$(mktemp)"
-trap 'rm -f "$plan"' EXIT
-python3 - "$matrix" >"$plan" <<'PY'
+planned="$(mktemp)"
+trap 'rm -f "$plan" "$planned"' EXIT
+python3 - "$matrix" "$planned" >"$plan" <<'PY'
 import sys, yaml
 matrix = yaml.safe_load(open(sys.argv[1]))
-seen = set()
-for p in matrix.get("profiles", []):
-    pid = p["id"]
-    prof = yaml.safe_load(open(f"vm/profiles/{pid}.yaml"))
-    img = prof.get("image") or {}
-    dest = img.get("local_path") or ""
-    # One fetch per destination: parallel fetches into the same path would
-    # race on the same .part file.
-    if dest and dest in seen:
-        continue
-    seen.add(dest)
-    print(f"{pid}\t{img.get('source_url') or ''}\t{dest}")
+groups = {}
+order = []
+with open(sys.argv[2], "w") as ids:
+    for p in matrix.get("profiles", []):
+        pid = p["id"]
+        ids.write(pid + "\n")
+        prof = yaml.safe_load(open(f"vm/profiles/{pid}.yaml"))
+        img = prof.get("image") or {}
+        dest = img.get("local_path") or ""
+        url = img.get("source_url") or ""
+        key = dest if dest else "\0" + pid  # no destination: never grouped
+        if key not in groups:
+            groups[key] = [dest, url, []]
+            order.append(key)
+        groups[key][2].append(pid)
+for key in order:
+    dest, url, pids = groups[key]
+    print("\x1f".join([dest, url, ",".join(pids)]))
 PY
 
+record() { # status dest-or-url detail pids-csv
+  local status="$1" where="$2" detail="$3" pids="$4" pid
+  IFS=',' read -r -a _pids <<<"$pids"
+  for pid in "${_pids[@]}"; do
+    if [[ -n "$detail" ]]; then
+      echo "$status $pid $where $detail" >>"$summary"
+    else
+      echo "$status $pid $where" >>"$summary"
+    fi
+  done
+}
+
 fetch_one() {
-  local pid="$1" url="$2" dest="$3"
+  local dest="$1" url="$2" pids="$3"
   if [[ -z "$dest" ]]; then
-    echo "manual $pid -" >>"$summary"
+    record manual - "" "$pids"
     return 0
   fi
   if [[ -z "$url" ]]; then
-    echo "manual $pid $dest" >>"$summary"
+    record manual "$dest" "" "$pids"
     return 0
   fi
   if [[ -f "$dest" ]]; then
-    echo "cached $pid $dest" >>"$summary"
+    record cached "$dest" "" "$pids"
     return 0
   fi
   local out
   if out="$(bash "$fetch_script" "$url" "$dest" 2>&1)"; then
     printf '%s\n' "$out"
-    echo "ok $pid $dest" >>"$summary"
+    record ok "$dest" "" "$pids"
   else
     printf '%s\n' "$out"
     local reason
     reason="$(printf '%s\n' "$out" | grep -E 'FAILED|curl: \(|wget' | tail -1 || true)"
-    echo "failed $pid $url ${reason:-download failed}" >>"$summary"
-    echo "::warning::prefetch failed for $pid: $url (${reason:-download failed})"
+    record failed "$url" "${reason:-download failed}" "$pids"
+    echo "::warning::prefetch failed for ${pids}: $url (${reason:-download failed})"
   fi
 }
 fetch_line() {
-  local pid url dest
-  IFS=$'\t' read -r pid url dest <<<"$1"
-  fetch_one "$pid" "$url" "$dest"
+  local dest url pids
+  IFS=$'\x1f' read -r dest url pids <<<"$1"
+  fetch_one "$dest" "$url" "$pids"
 }
-export -f fetch_one fetch_line
+export -f record fetch_one fetch_line
 export summary fetch_script
 
-# Parallel, but never short-circuit: xargs' own exit status is ignored on
-# purpose; the summary file is the source of truth.
+# Parallel, and an individual download failure never aborts the others
+# (fetch_one always returns 0 after recording it). xargs' own status is still
+# captured: non-zero means a worker died or could not start, which must not
+# read as success.
+dispatch_rc=0
 # shellcheck disable=SC2016  # $0 is expanded by the child bash, not here
-xargs -a "$plan" -d '\n' -n1 -P"$parallelism" bash -c 'fetch_line "$0"' || true
+xargs -a "$plan" -d '\n' -n1 -P"$parallelism" bash -c 'fetch_line "$0"' || dispatch_rc=$?
+
+# Completeness: every planned profile must have exactly one outcome. A worker
+# killed before recording leaves a gap, which becomes an explicit failure.
+while IFS= read -r pid; do
+  [[ -z "$pid" ]] && continue
+  if ! awk -v p="$pid" '$2 == p {found=1} END {exit !found}' "$summary"; then
+    echo "failed $pid - no outcome recorded (prefetch worker exited before reporting; dispatch rc=$dispatch_rc)" >>"$summary"
+    echo "::warning::prefetch recorded no outcome for $pid"
+  fi
+done <"$planned"
 
 echo "prefetch summary ($matrix):"
 sort "$summary"
 failed="$(grep -c '^failed ' "$summary" || true)"
-if [[ "$failed" -gt 0 ]]; then
-  echo "prefetch: $failed image(s) failed; continuing so the remaining targets are validated and the failures surface as INFRA_ERROR" >&2
+if [[ "$failed" -gt 0 || "$dispatch_rc" -ne 0 ]]; then
+  echo "prefetch: $failed profile(s) without a fetched image (dispatch rc=$dispatch_rc); continuing so the remaining targets are validated and the failures surface as INFRA_ERROR" >&2
   exit 2
 fi

@@ -72,7 +72,9 @@ report_incomplete() {
       elif .status == "fail" or .status == "partial" then "INCOMPATIBLE"
       elif .status == "infra_error" then "INFRA_ERROR"
       else "UNSUPPORTED" end));
-    if (.summary.complete // true) == false then "yes"
+    # Compare directly: jq `//` treats false as missing, so
+    # `(.summary.complete // true)` would read an explicit false as true.
+    if .summary.complete == false then "yes"
     elif ([(.targets // [])[] | select(.required == true) | verdict_of
            | select(. == "INFRA_ERROR" or . == "UNSUPPORTED")] | length) > 0 then "yes"
     else "no" end

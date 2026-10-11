@@ -80,6 +80,25 @@ for pair in "$@"; do
     refuse "$report_name started at $started, before this job began; it is not this run's evidence"
   fi
 
+  # Real v0.1 results, not just the right ids: a summary verdict, and for
+  # every target a boolean `required`, a non-empty `status`, and a verdict
+  # from the contract (docs/compatibility-contract.md). A report without
+  # results must never become a published page.
+  if ! jq -e '
+      def known: . == "COMPATIBLE" or . == "INCOMPATIBLE" or . == "INFRA_ERROR" or . == "UNSUPPORTED";
+      (.summary | type) == "object"
+      and ((.summary.status // "") | type == "string" and length > 0)
+      and ((.summary.verdict // "") | known)
+      and ((.targets | type) == "array")
+      and (.targets | length > 0)
+      and all(.targets[];
+            (.required | type) == "boolean"
+            and ((.status // "") | type == "string" and length > 0)
+            and ((.verdict // "") | known))
+    ' "$report" >/dev/null 2>&1; then
+    refuse "$report_name lacks v0.1 results (summary status/verdict, or per-target required/status/known verdict)"
+  fi
+
   got_profiles="$(jq -r '(.targets // [])[].profile_id' "$report" | sort)"
   if [[ "$got_profiles" != "$expected_profiles" ]]; then
     refuse "$report_name covers profiles [$(echo "$got_profiles" | paste -sd, -)] but the matrix requests [$(echo "$expected_profiles" | paste -sd, -)]"
