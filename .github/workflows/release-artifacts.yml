@@ -80,6 +80,8 @@ jobs:
           bash scripts/install-verification_test.sh
           bash scripts/download-hardening_test.sh
           bash scripts/check-binary-toolchain_test.sh
+          python3 scripts/check-maintenance-scope_test.py
+          bash scripts/maintenance-tech-check_test.sh
           bash scripts/action-prebuilt-checksums_test.sh
           bash scripts/action-artifact-ref-detection_test.sh
           bash scripts/support-matrix_test.sh
@@ -87,7 +89,7 @@ jobs:
           go test -race -count=1 -coverprofile="$RUNNER_TEMP/maintenance-coverage.out" -covermode=atomic ./...
           bash scripts/check-coverage.sh "$RUNNER_TEMP/maintenance-coverage.out" 50.0
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-          make production-tech-check
+          make maintenance-tech-check
       - name: Resolve build metadata
         id: meta
         env:
