@@ -175,12 +175,46 @@ if [[ -n "$bad_action_refs" ]]; then
   fail "documentation contains stale action tags"
 fi
 
+# Go toolchain pins have two owners.
+#
+# Product workflows build what we ship, so they follow release.yaml
+# minimum_go -- both a top-level GO_VERSION env and any literal
+# `go-version: "X"` pin. A stale literal pin is how a security toolchain bump
+# silently misses a lane.
+#
+# The research-v1 workflows reproduce a frozen, DOI-archived dataset whose
+# contract pins the exact toolchain it was produced with
+# (scripts/research/materialize-v1.sh EXPECTED_GO). They must follow that
+# contract and must NOT move with product bumps; changing them would break the
+# archived reproducibility claim. They are dispatch-only and read-only
+# (contents: read) and ship nothing.
+research_contract="scripts/research/materialize-v1.sh"
+research_go="$(sed -n 's/^EXPECTED_GO="go\(.*\)"$/\1/p' "$research_contract" 2>/dev/null || true)"
+is_research_workflow() {
+  [[ "$(basename "$1")" =~ ^research-.*-v1\.ya?ml$ ]]
+}
 while IFS= read -r workflow; do
-  grep -Fq "GO_VERSION: \"${minimum_go}\"" "$workflow" ||
-    fail "$workflow does not use Go ${minimum_go}"
+  if is_research_workflow "$workflow"; then
+    [[ -n "$research_go" ]] ||
+      fail "$research_contract has no EXPECTED_GO contract for $workflow"
+    grep -Fq "GO_VERSION: \"${research_go}\"" "$workflow" ||
+      fail "$workflow does not use the research-v1 contract Go ${research_go:-<missing>}"
+  else
+    grep -Fq "GO_VERSION: \"${minimum_go}\"" "$workflow" ||
+      fail "$workflow does not use Go ${minimum_go}"
+  fi
 done < <(
   grep -ERl --include='*.yml' --include='*.yaml' \
     '^  GO_VERSION: ' .github/workflows
+)
+while IFS= read -r pin; do
+  workflow="${pin%%:*}"
+  is_research_workflow "$workflow" && continue
+  [[ "$pin" == *"go-version: \"${minimum_go}\""* ]] ||
+    fail "${pin} does not pin Go ${minimum_go}"
+done < <(
+  grep -ERn --include='*.yml' --include='*.yaml' \
+    'go-version: "[^"]+"' .github/workflows || true
 )
 
 # The consumer canary is the only lane that consumes a published release the

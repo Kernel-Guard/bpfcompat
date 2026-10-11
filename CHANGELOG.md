@@ -7,6 +7,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Security
+- **Go toolchain 1.25.14 -> 1.26.9.** Eleven standard-library advisories
+  published 2026-10-08 (GO-2026-6610 through GO-2026-6617 and related, in
+  `net/http`, `net/textproto`, `crypto/tls` and `os`) are fixed only in
+  go1.26.9 and go1.27.2; Go 1.25 receives no fix. `go.mod`, `release.yaml`
+  `minimum_go`, every product workflow, the Dockerfile builder (tag and
+  digest moved together to `golang:1.26.9-bookworm@sha256:d9c68c2c…`) and the
+  Hetzner bootstrap now use 1.26.9. `govulncheck` reports no findings.
+- CI, the native ARM64 smoke and the release build now prove which toolchain
+  compiled each shipped binary (`scripts/check-binary-toolchain.sh`, reading
+  the embedded build info), instead of trusting the `go` directive alone.
+- golangci-lint v2.6.2 (built with go1.25) refuses to load a go1.26 module;
+  CI moves to v2.12.2, the smallest release built with Go 1.26. Linting stays
+  diff-scoped, so the newer linters' findings in untouched code do not gate.
+- `check-release-consistency.sh` now also checks literal `go-version:` pins in
+  product workflows, and checks the research-v1 workflows against the frozen
+  research contract (`scripts/research/materialize-v1.sh` `EXPECTED_GO`)
+  instead of `minimum_go`.
+
+### Changed
+- Intentionally retained at Go 1.25.14: the three `research-*-v1` workflows
+  and `scripts/research/materialize-v1.sh`. They reproduce the frozen,
+  DOI-archived research-v1 dataset with the exact toolchain it was produced
+  with; they are `workflow_dispatch`-only, `contents: read`, and ship nothing.
+  `examples/ebpf-go-loader` keeps `go 1.25.0` as its minimum language version
+  and is built by CI with the pinned 1.26.9 toolchain.
+- Go 1.26 behavior relevant to bpfcompat: `net/url.Parse` rejects malformed
+  hosts with unbracketed colons (`urlstrictcolons`), which tightens runtime
+  fetch, freshness-crawler and agent URL parsing; crypto APIs ignore
+  caller-supplied randomness (bpfcompat already uses `crypto/rand` and
+  deterministic Ed25519); the Green Tea GC is the default. Release-style
+  amd64/arm64 builds remain byte-reproducible.
+
 ### Added
 - Published the canonical research pilot v1 repository dataset from successful
   workflow run `35393833464`: 70/70 normalized execution records, exact

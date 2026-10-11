@@ -12,13 +12,25 @@ script="scripts/check-release-consistency.sh"
 tmp="$(mktemp -d)"
 scholarly_workflow=".github/workflows/scholarly-release-v1.yml"
 cp "$scholarly_workflow" "$tmp/scholarly-release-v1.yml"
+research_workflow=".github/workflows/research-materialize-v1.yml"
+research_script="scripts/research/materialize-v1.sh"
+product_pin_workflow=".github/workflows/codeql.yml"
+cp "$research_workflow" "$tmp/research-workflow.yml"
+cp "$research_script" "$tmp/research-script.sh"
+cp "$product_pin_workflow" "$tmp/product-pin-workflow.yml"
 restore() {
   cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
+  cp "$tmp/research-workflow.yml" "$research_workflow"
+  cp "$tmp/research-script.sh" "$research_script"
+  cp "$tmp/product-pin-workflow.yml" "$product_pin_workflow"
   rm -rf "$tmp"
 }
 trap restore EXIT
 current_release="$(
   awk -F': ' '$1 == "release_version" {print $2; exit}' release.yaml
+)"
+current_go="$(
+  awk -F': ' '$1 == "minimum_go" {print $2; exit}' release.yaml
 )"
 
 write_metadata() {
@@ -33,7 +45,7 @@ release_version: ${release}
 release_channel: ${channel}
 release_operator: ${operator}
 approval_mode: ${approval_mode}
-minimum_go: 1.25.14
+minimum_go: ${current_go}
 report_schema: v0.1
 EOF
 }
@@ -86,5 +98,34 @@ if BPFCOMPAT_RELEASE_METADATA=release.yaml \
   exit 1
 fi
 cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
+
+# Go toolchain pins. Product workflows follow release.yaml minimum_go; the
+# frozen research-v1 workflows follow the research contract's EXPECTED_GO
+# (scripts/research/materialize-v1.sh) and must never drift with product bumps.
+research_go="$(sed -n 's/^EXPECTED_GO="go\(.*\)"$/\1/p' "$research_script")"
+
+sed -i "s/GO_VERSION: \"${research_go}\"/GO_VERSION: \"${current_go}\"/" "$research_workflow"
+if [[ "$research_go" != "$current_go" ]] && BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-research-go.log" 2>&1; then
+  echo "[release-consistency-test] accepted a research-v1 workflow that drifted from EXPECTED_GO" >&2
+  exit 1
+fi
+cp "$tmp/research-workflow.yml" "$research_workflow"
+
+sed -i 's/^EXPECTED_GO=.*$/# EXPECTED_GO removed/' "$research_script"
+if BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-research-contract.log" 2>&1; then
+  echo "[release-consistency-test] accepted research-v1 workflows without an EXPECTED_GO contract" >&2
+  exit 1
+fi
+cp "$tmp/research-script.sh" "$research_script"
+
+sed -i "s/go-version: \"${current_go}\"/go-version: \"1.0.0\"/" "$product_pin_workflow"
+if BPFCOMPAT_RELEASE_METADATA=release.yaml \
+  "$script" >"$tmp/bad-product-pin.log" 2>&1; then
+  echo "[release-consistency-test] accepted a product workflow with a stale literal go-version pin" >&2
+  exit 1
+fi
+cp "$tmp/product-pin-workflow.yml" "$product_pin_workflow"
 
 echo "[release-consistency-test] PASS"

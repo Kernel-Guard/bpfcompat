@@ -33,7 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25.14"
+  GO_VERSION: "1.26.9"
 
 jobs:
   test:
@@ -67,6 +67,8 @@ jobs:
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Compiling-toolchain proof regression
+        run: bash scripts/check-binary-toolchain_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
       - name: Release-state fail-closed regression
@@ -124,7 +126,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.6.2
+          version: v2.12.2
           args: --timeout=5m --new-from-rev=origin/main
       - name: Check push diff base
         id: push-diff-base
@@ -140,7 +142,7 @@ jobs:
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent == 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.6.2
+          version: v2.12.2
           args: --timeout=5m --new-from-rev=HEAD~1
       - name: golangci-lint (root commit bootstrap)
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent != 'true'
@@ -176,6 +178,12 @@ jobs:
       # exercise the Go side so the CI gate stays portable.
       - name: go build
         run: go build ./...
+      - name: Prove the compiling toolchain
+        # go.mod only states a minimum; this asserts the stdlib actually
+        # linked into the CLI comes from the pinned toolchain.
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -buildid=' -o "$RUNNER_TEMP/bpfcompat" ./cmd/bpfcompat
+          bash scripts/check-binary-toolchain.sh "go${GO_VERSION}" "$RUNNER_TEMP/bpfcompat"
       # Standalone example module (own go.mod, so `go build ./...` skips it).
       - name: go build (examples/ebpf-go-loader)
         run: cd examples/ebpf-go-loader && CGO_ENABLED=0 go build ./...

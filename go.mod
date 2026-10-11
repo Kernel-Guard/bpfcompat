@@ -1,6 +1,6 @@
 module github.com/kernel-guard/bpfcompat
 
-go 1.25.14
+go 1.26.9
 
 require (
 	github.com/google/go-containerregistry v0.21.7
