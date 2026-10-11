@@ -97,21 +97,29 @@ jobs:
         # enterprise images (AlmaLinux/Rocky/CentOS/Amazon/Oracle) blew the
         # per-target timeout on a cold runner ("wait for SSH: not ready"),
         # while the small Ubuntu/Debian images validated fine.
+        #
+        # The prefetch never aborts the lane. Runs 33499929031 (HTTP/2
+        # PROTOCOL_ERROR), 36565005828 and 37464388426 (HTTP 502 for a renamed
+        # CentOS Stream image) each failed here under `set -e` + xargs, so no
+        # VM booted, no report existed, and the public page silently stayed
+        # on the previous week. Now each image is retried, every outcome is
+        # written to a summary that is uploaded as evidence, and validation
+        # proceeds: a target whose image is still missing is recorded as
+        # INFRA_ERROR by bpfcompat itself -- never as a PASS or a FAIL.
+        id: prefetch
         shell: bash
         run: |
-          set -euo pipefail
-          python3 - <<'PY' > /tmp/quirk-images.txt
-          import yaml
-          m = yaml.safe_load(open('matrices/quirk-library.yaml'))
-          for p in m['profiles']:
-              prof = yaml.safe_load(open(f"vm/profiles/{p['id']}.yaml"))
-              img = prof.get('image', {})
-              if img.get('source_url') and img.get('local_path'):
-                  print(img['source_url'], img['local_path'])
-          PY
-          cat /tmp/quirk-images.txt
-          xargs -a /tmp/quirk-images.txt -n2 -P6 bash vm/scripts/fetch-cloud-image.sh
-          ls -lh vm/cache/
+          set -uo pipefail
+          mkdir -p reports
+          bash scripts/prefetch-matrix-images.sh matrices/quirk-library.yaml reports/prefetch-summary.txt
+          rc=$?
+          echo "prefetch_rc=$rc" >> "$GITHUB_OUTPUT"
+          if [[ "$rc" -eq 2 ]]; then
+            echo "::warning::one or more quirk-library images could not be prefetched; affected targets will surface as INFRA_ERROR, not as compatibility verdicts (see reports/prefetch-summary.txt)"
+          elif [[ "$rc" -ne 0 ]]; then
+            exit "$rc"
+          fi
+          ls -lh vm/cache/ || true
           df -h / | tail -1
 
       - name: Validate ringbuf-modern across the quirk library
@@ -167,22 +175,43 @@ jobs:
             public/compatibility/index.md
             reports/quirk-library-*.json
             reports/quirk-library-*.md
+            reports/prefetch-summary.txt
+            reports/prefetch-summary.txt.fetch.log
             .bpfcompat/runs/**/targets/**/serial.log
             .bpfcompat/runs/**/targets/**/qemu.log
             .bpfcompat/runs/**/targets/**/libbpf.log
             .bpfcompat/runs/**/targets/**/validator-result.json
             .bpfcompat/runs/**/targets/**/validator.stderr
 
+      - name: Decide whether there is evidence to publish
+        # The page is regenerated from this run's reports only. Deploying
+        # after a failed validation step is deliberate: the page then shows
+        # the latest observed state with INFRA_ERROR cells and an
+        # "incomplete" banner, instead of silently keeping last week's green
+        # page while the lane is red. No report at all (setup failed before
+        # any VM booted) means nothing is deployed and the previous page stays.
+        id: evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ls reports/quirk-library-*.json >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no compatibility report was produced; the published page is left unchanged"
+          fi
+
       - name: Configure Pages
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
+        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
+        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: public/compatibility
 
       - name: Deploy Pages
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true')
+        if: always() && steps.evidence.outputs.present == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy_pages == 'true'))
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

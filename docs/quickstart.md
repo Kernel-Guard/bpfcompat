@@ -13,9 +13,9 @@ Action (or the CLI) on **your own runner**:
   disposable QEMU/KVM VM on your runner; nothing is uploaded to us.
 - **No host execution by default.** Validation happens *inside* throwaway guests;
   runtime host-loading is disabled by default and gated behind explicit approval.
-- **The public demo is a demo only** (`bpfcompat.kernelguard.net`): disposable VMs,
-  sanitized reports, no artifact retention, host-execution hard-disabled. Use it to
-  evaluate — run real workloads in your own CI.
+- **There is no hosted service to upload to.** The experimental web UI
+  (`bpfcompat serve`, see [experimental.md](experimental.md)) runs on your own
+  machine; the public demo instance is not maintained and should not be relied on.
 
 Details: [security-model.md](security-model.md) · [threat-model.md](threat-model.md).
 

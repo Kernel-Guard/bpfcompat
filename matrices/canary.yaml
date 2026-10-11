@@ -8,3 +8,12 @@ profiles:
     required: true
   - id: debian-12-6.1
     required: true
+  # RHEL-family vendor image. Inspektor Gadget's upstream lane depends on this
+  # profile through `quirk-library`; when cloud.centos.org renamed the image
+  # (2026-08-19 compose change, HTTP 502 from 2026-09-28) the consumer broke
+  # for two weeks while this canary stayed green. The published action pinned
+  # below resolves profiles from ITS OWN checkout, so this row reproduces the
+  # consumer's view: it goes red when the pinned release's image URL is dead
+  # and stays red until a release carrying the fix is pinned here.
+  - id: centos-stream-9-5.14
+    required: true

@@ -40,6 +40,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   deterministic Ed25519); the Green Tea GC is the default. Release-style
   amd64/arm64 builds remain byte-reproducible.
 
+### Fixed
+- **Public compatibility matrix lane no longer aborts on one failed image
+  download.** Five of the seven weekly `compatibility-matrix-publish` runs
+  between 2026-08-18 and 2026-10-06 failed in the prefetch step (HTTP 502 for
+  the renamed CentOS Stream image; one HTTP/2 `PROTOCOL_ERROR`), before any VM
+  booted, so no report existed and the published page silently kept the last
+  successful week. `vm/scripts/fetch-cloud-image.sh` now retries transient
+  failures, downloads to a `.part` file so a failed fetch never masquerades as
+  a cached image, and reports the URL with its HTTP status; the new
+  `scripts/prefetch-matrix-images.sh` attempts every image and writes a
+  per-image summary that the lane uploads as evidence. Validation proceeds and
+  a target whose image is missing is recorded by bpfcompat as `INFRA_ERROR`,
+  never as a pass or fail.
+- The published matrix page now reports required targets as pass / fail /
+  infra separately, shows the run verdict, and flags incomplete runs; an
+  infrastructure error was previously folded into the failure count. The page
+  is deployed whenever a report exists so it reflects the latest observed
+  state instead of staying stale while the lane is red.
+- The consumer canary matrix includes `centos-stream-9-5.14`, the RHEL-family
+  profile Inspektor Gadget's upstream lane depends on, so a dead vendor image
+  URL in the pinned release is caught by the canary before a consumer sees it.
+- Removed references to the public demo instance from the README, quickstart
+  and ebpf.io listing data; the hosted demo is not maintained. Reworded the
+  weekly-matrix claim to describe what the page actually guarantees.
+
 ### Added
 - Published the canonical research pilot v1 repository dataset from successful
   workflow run `35393833464`: 70/70 normalized execution records, exact

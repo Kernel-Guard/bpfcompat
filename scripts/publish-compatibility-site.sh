@@ -40,13 +40,42 @@ report_field() {
   jq -r "$filter // \"-\"" "$report"
 }
 
+# Required targets split three ways. An infrastructure error (image download,
+# boot, SSH, wrong kernel) is never a compatibility failure: the verdict
+# contract (docs/compatibility-contract.md) reserves INCOMPATIBLE for
+# execution evidence about the artifact, so the page must not fold INFRA_ERROR
+# into the failure count. Verdict is preferred; status is the fallback for
+# reports older than the verdict contract.
 required_counts() {
   local report="$1"
   jq -r '
-    [(.targets // [])[] | select(.required == true)] as $required |
-    ($required | map(select(.status == "pass")) | length) as $pass |
-    ($required | length - $pass) as $fail |
-    "\($pass)/\($fail)"
+    def verdict_of: (.verdict // (
+      if .status == "pass" then "COMPATIBLE"
+      elif .status == "fail" or .status == "partial" then "INCOMPATIBLE"
+      elif .status == "infra_error" then "INFRA_ERROR"
+      else "UNSUPPORTED" end));
+    [(.targets // [])[] | select(.required == true) | verdict_of] as $v |
+    ($v | map(select(. == "COMPATIBLE")) | length) as $pass |
+    ($v | map(select(. == "INCOMPATIBLE")) | length) as $fail |
+    ($v | map(select(. == "INFRA_ERROR" or . == "UNSUPPORTED")) | length) as $infra |
+    "\($pass)\t\($fail)\t\($infra)"
+  ' "$report"
+}
+
+# A run is incomplete when summary.complete is false, or when any required
+# target lacks a conclusive verdict (older reports have no summary.complete).
+report_incomplete() {
+  local report="$1"
+  jq -r '
+    def verdict_of: (.verdict // (
+      if .status == "pass" then "COMPATIBLE"
+      elif .status == "fail" or .status == "partial" then "INCOMPATIBLE"
+      elif .status == "infra_error" then "INFRA_ERROR"
+      else "UNSUPPORTED" end));
+    if (.summary.complete // true) == false then "yes"
+    elif ([(.targets // [])[] | select(.required == true) | verdict_of
+           | select(. == "INFRA_ERROR" or . == "UNSUPPORTED")] | length) > 0 then "yes"
+    else "no" end
   ' "$report"
 }
 
@@ -99,13 +128,25 @@ markdown_link() {
   echo "weekly in CI to validate Falco's \`modern_bpf\` probe through its real loader"
   echo "([workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml))."
   echo
-  echo "| Artifact | Run | Status | Required pass/fail | Failure classes | JSON | Markdown |"
-  echo "|---|---|---|---|---|---|---|"
+  incomplete_any="no"
+  for report in "${reports[@]}"; do
+    if [[ "$(report_incomplete "$report")" == "yes" ]]; then incomplete_any="yes"; fi
+  done
+  if [[ "$incomplete_any" == "yes" ]]; then
+    echo "> **Incomplete run.** At least one required kernel could not be established"
+    echo "> (infrastructure error or unsupported environment). Those cells are counted"
+    echo "> under *Required infra*, never as pass or fail; see the per-target table."
+    echo
+  fi
+  echo "| Artifact | Run | Status | Verdict | Complete | Required pass | Required fail | Required infra | Failure classes | JSON | Markdown |"
+  echo "|---|---|---|---|---|---|---|---|---|---|---|"
   for report in "${reports[@]}"; do
     artifact="$(report_field "$report" '.artifact.basename')"
     run_id="$(report_field "$report" '.run.id')"
     status="$(report_field "$report" '.summary.status')"
-    counts="$(required_counts "$report")"
+    verdict="$(report_field "$report" '.summary.verdict')"
+    if [[ "$(report_incomplete "$report")" == "yes" ]]; then complete="incomplete"; else complete="yes"; fi
+    IFS=$'\t' read -r pass_n fail_n infra_n < <(required_counts "$report")
     classes="$(failure_classes "$report")"
     [[ -n "$classes" ]] || classes="-"
     json_href="$(report_link "$report")"
@@ -114,7 +155,7 @@ markdown_link() {
     if [[ -n "$md_href" ]]; then
       md_cell="[md]($md_href)"
     fi
-    echo "| \`$artifact\` | \`$run_id\` | \`$status\` | $counts | $classes | [json]($json_href) | $md_cell |"
+    echo "| \`$artifact\` | \`$run_id\` | \`$status\` | \`$verdict\` | $complete | $pass_n | $fail_n | $infra_n | $classes | [json]($json_href) | $md_cell |"
   done
 } > "$out_dir/index.md"
 
@@ -131,12 +172,17 @@ markdown_link() {
     "$(printf '%s' "$version_label" | html_escape)"
   # Static text only — no report-derived values are interpolated here.
   echo '<p>Runs upstream: <a href="https://github.com/falcosecurity/libs">falcosecurity/libs</a> runs bpfcompat weekly in CI to validate Falco&#39;s <code>modern_bpf</code> probe through its real loader (<a href="https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml">workflow</a>).</p>'
-  echo '<table><thead><tr><th>Artifact</th><th>Run</th><th>Status</th><th>Required pass/fail</th><th>Failure classes</th><th>JSON</th><th>Markdown</th></tr></thead><tbody>'
+  if [[ "$incomplete_any" == "yes" ]]; then
+    echo '<p class="warn">Incomplete run: at least one required kernel could not be established (infrastructure error or unsupported environment). Those cells are counted under <em>Required infra</em>, never as pass or fail; see the per-target table.</p>'
+  fi
+  echo '<table><thead><tr><th>Artifact</th><th>Run</th><th>Status</th><th>Verdict</th><th>Complete</th><th>Required pass</th><th>Required fail</th><th>Required infra</th><th>Failure classes</th><th>JSON</th><th>Markdown</th></tr></thead><tbody>'
   for report in "${reports[@]}"; do
     artifact="$(report_field "$report" '.artifact.basename')"
     run_id="$(report_field "$report" '.run.id')"
     status="$(report_field "$report" '.summary.status')"
-    counts="$(required_counts "$report")"
+    verdict="$(report_field "$report" '.summary.verdict')"
+    if [[ "$(report_incomplete "$report")" == "yes" ]]; then complete="incomplete"; else complete="yes"; fi
+    IFS=$'\t' read -r pass_n fail_n infra_n < <(required_counts "$report")
     classes="$(failure_classes "$report")"
     [[ -n "$classes" ]] || classes="-"
     json_href="$(report_link "$report")"
@@ -145,12 +191,17 @@ markdown_link() {
     if [[ -n "$md_href" ]]; then
       md_cell="$(printf '<a href="%s">md</a>' "$(printf '%s' "$md_href" | html_escape)")"
     fi
-    printf '<tr><td><code>%s</code></td><td><code>%s</code></td><td class="%s">%s</td><td>%s</td><td>%s</td><td><a href="%s">json</a></td><td>%s</td></tr>\n' \
+    printf '<tr><td><code>%s</code></td><td><code>%s</code></td><td class="%s">%s</td><td><code>%s</code></td><td class="%s">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a href="%s">json</a></td><td>%s</td></tr>\n' \
       "$(printf '%s' "$artifact" | html_escape)" \
       "$(printf '%s' "$run_id" | html_escape)" \
       "$(printf '%s' "$status" | html_escape)" \
       "$(printf '%s' "$status" | html_escape)" \
-      "$(printf '%s' "$counts" | html_escape)" \
+      "$(printf '%s' "$verdict" | html_escape)" \
+      "$([[ "$complete" == "yes" ]] && echo pass || echo warn)" \
+      "$(printf '%s' "$complete" | html_escape)" \
+      "$(printf '%s' "$pass_n" | html_escape)" \
+      "$(printf '%s' "$fail_n" | html_escape)" \
+      "$(printf '%s' "$infra_n" | html_escape)" \
       "$(printf '%s' "$classes" | html_escape)" \
       "$(printf '%s' "$json_href" | html_escape)" \
       "$md_cell"
