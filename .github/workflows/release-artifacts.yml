@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: "1.25.14"
+  GO_VERSION: "1.26.9"
   IMAGE: ghcr.io/kernel-guard/bpfcompat
 
 jobs:
@@ -113,6 +113,10 @@ jobs:
             -o dist/bpfcompat-linux-amd64 ./cmd/bpfcompat
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
             -o dist/bpfcompat-linux-arm64 ./cmd/bpfcompat
+      - name: Prove the compiling toolchain of shipped binaries
+        run: |
+          bash scripts/check-binary-toolchain.sh "go${GO_VERSION}" \
+            dist/bpfcompat-linux-amd64 dist/bpfcompat-linux-arm64
       - name: Build static validator
         run: |
           set -euo pipefail

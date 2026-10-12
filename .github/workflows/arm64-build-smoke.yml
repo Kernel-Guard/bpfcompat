@@ -38,6 +38,13 @@ jobs:
       - name: Build Go CLI
         run: make build
 
+      - name: Prove the compiling toolchain (arm64)
+        # This job has no setup-go: the runner's Go switches to the go.mod
+        # version automatically. Assert the binary really came out of it.
+        run: |
+          expected="go$(awk '$1 == "go" {print $2; exit}' go.mod)"
+          bash scripts/check-binary-toolchain.sh "$expected" bin/bpfcompat
+
       - name: Build C validator dynamically
         run: make validator-dynamic
 
