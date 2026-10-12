@@ -83,6 +83,15 @@ def check_maintenance_evidence(doc):
     require('scripts/check-maintenance-scope.py' in bind)
     require(set(jobs['attest']['needs']) == {'bind', 'vm', 'clean-install', 'candidate-action', 'container'})
     require('scripts/maintenance-vm-gate.sh' in '\n'.join(s.get('run', '') for s in jobs['vm']['steps']))
+    # The installer re-downloads by tag; release assets are mutable, so the
+    # installed bytes must equal the bind job's attestation-verified assets.
+    install = jobs['clean-install']
+    require('bind' in install['needs'])
+    require(any(s.get('uses', '').startswith('actions/download-artifact@') and
+                s['with']['name'].startswith('maintenance-candidate-') for s in install['steps']))
+    install_run = '\n'.join(s.get('run', '') for s in install['steps'])
+    require('cmp "$root/bin/bpfcompat" "$RUNNER_TEMP/candidate/bpfcompat-linux-amd64"' in install_run)
+    require('cmp "$root/libexec/bpfcompat-validator" "$RUNNER_TEMP/candidate/bpfcompat-validator-static-linux-amd64"' in install_run)
     attest = jobs['attest']['steps']
     require(any('scripts/maintenance-evidence-summary.py' in s.get('run', '') for s in attest))
     require(any(s.get('uses', '').startswith('actions/attest-build-provenance@') and
@@ -120,6 +129,14 @@ class ReleaseControls(unittest.TestCase):
     def test_maintenance_evidence_without_vm_gate_rejected(self):
         doc = workflow('maintenance-evidence.yml')
         doc['jobs']['attest']['needs'].remove('vm')
+        with self.assertRaises(ValueError):
+            check_maintenance_evidence(doc)
+
+    def test_maintenance_evidence_clean_install_byte_binding_required(self):
+        doc = workflow('maintenance-evidence.yml')
+        for step in doc['jobs']['clean-install']['steps']:
+            if 'run' in step:
+                step['run'] = '\n'.join(l for l in step['run'].splitlines() if not l.strip().startswith('cmp '))
         with self.assertRaises(ValueError):
             check_maintenance_evidence(doc)
 
