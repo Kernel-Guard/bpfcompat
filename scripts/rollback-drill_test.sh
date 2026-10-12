@@ -35,7 +35,11 @@ fi
 echo "docker $*" >>"$MOCK_REG/calls"
 if [[ "$1 $2 $3" == "buildx imagetools inspect" ]]; then
   f="$MOCK_REG/$(key "$4")"
-  [[ -f "$f" ]] || exit 1
+  if [[ -n "${MOCK_INSPECT_ERROR:-}" && "$4" == *rollback-drill-* ]]; then
+    echo "ERROR: unexpected status from HEAD request to https://ghcr.io/v2/: 401 Unauthorized" >&2
+    exit 1
+  fi
+  [[ -f "$f" ]] || { echo "ERROR: $4: not found" >&2; exit 1; }
   digest="$(cat "$f")"
   if [[ -n "${MOCK_INSPECT_LIES:-}" && "$4" == *rollback-drill-* && "$digest" == "$MOCK_INSPECT_LIES_FOR" ]]; then
     digest="sha256:$(printf '0%.0s' {1..64})"
@@ -180,6 +184,9 @@ expect "  restoration failure is not reported as a drill" bash -c "! test -e '$l
 drill "restore is a no-op when the alias is already known-good" 0 "validate drill restore"
 expect "  no-op restore does not write" test "$(grep -c 'imagetools create' "$last/reg/calls")" = 3
 drill "restore with nothing to restore succeeds" 0 "validate restore"
+drill "restore that cannot read the alias exits 3" 3 "validate restore" MOCK_INSPECT_ERROR=1
+expect "  unreadable alias names the manual recovery runbook" \
+  grep -Fq 'docs/runbooks/rollback-drill-recovery.md' "$last/log"
 drill "restore returns a stranded alias to the known-good digest" 0 "validate restore" MOCK_SEED_ALIAS="$candidate"
 expect "  stranded alias restored" test "$(alias_digest "$last/reg")" = "$before"
 drill "restore that cannot write exits 3" 3 "validate restore" MOCK_SEED_ALIAS="$candidate" MOCK_CREATE_FAIL_FROM=1

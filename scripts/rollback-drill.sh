@@ -94,11 +94,17 @@ restore_alias() {
 }
 
 restore() {
-  local current
-  current="$(resolve "$(alias_ref)" 2>/dev/null || true)"
-  if [[ -z "$current" || "$current" == null ]]; then
-    echo "[rollback-drill] $(alias_ref) does not exist; nothing to restore"
-    return 0
+  local out rc=0
+  out="$(docker buildx imagetools inspect "$(alias_ref)" --format '{{json .Manifest}}' 2>&1)" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    # Only a registry answer that the tag does not exist means there is
+    # nothing to restore. Auth, network or registry errors leave the alias
+    # state unknown: that is a stranded alias until proven otherwise.
+    if grep -qiE 'not found|manifest unknown|MANIFEST_UNKNOWN|NAME_UNKNOWN' <<<"$out"; then
+      echo "[rollback-drill] $(alias_ref) does not exist; nothing to restore"
+      return 0
+    fi
+    stranded "cannot read $(alias_ref): ${out}"
   fi
   restore_alias
   echo "[rollback-drill] $(alias_ref) is on the known-good digest ${BEFORE_DIGEST}"
