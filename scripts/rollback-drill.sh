@@ -30,6 +30,20 @@ stranded() {
   exit 3
 }
 
+# The one legacy known-good baseline. v0.3.7 predates the hardened release
+# graph: its image is signed, with SLSA v1 provenance, by ghcr-image.yml at
+# refs/tags/v0.3.7, not release-artifacts.yml (verified 2026-10-12). It is
+# accepted for the KNOWN-GOOD endpoint only, and only when version, digest,
+# signer identity and (in verify) the embedded source commit all match.
+LEGACY_BEFORE_VERSION=v0.3.7
+LEGACY_BEFORE_DIGEST=sha256:05c028e99dd7afd10a8765a361457bbd79c51a89ca1cb62561043c52c2561fc9
+LEGACY_BEFORE_COMMIT=179ff612ed2b5d1afb16dd9c282752028d47c415
+legacy_before() {
+  [[ "${BEFORE_VERSION:-}" == "$LEGACY_BEFORE_VERSION" &&
+     "${BEFORE_DIGEST:-}" == "$LEGACY_BEFORE_DIGEST" &&
+     "${BEFORE_IDENTITY:-}" == "https://github.com/${GITHUB_REPOSITORY:-}/.github/workflows/ghcr-image.yml@refs/tags/${LEGACY_BEFORE_VERSION}" ]]
+}
+
 alias_ref() { echo "${IMAGE}:${DRILL_ALIAS}"; }
 resolve() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
 embedded_version() { docker run --rm "${IMAGE}@$1" version --json | jq -r .version; }
@@ -54,13 +68,7 @@ validate() {
   # Images are signed only by release-artifacts.yml at their own tag.
   local prefix="https://github.com/${repo}/.github/workflows/release-artifacts.yml@refs/tags/"
   local before_identity="${prefix}${BEFORE_VERSION}"
-  # One legacy exception: the v0.3.7 image predates the hardened release
-  # graph and is signed (with SLSA v1 provenance) by ghcr-image.yml at
-  # refs/tags/v0.3.7 -- verified 2026-10-12, digest sha256:05c028e9...
-  # It is accepted for the KNOWN-GOOD endpoint only and only for exactly
-  # v0.3.7; the candidate must always be release-artifacts.yml at its tag.
-  if [[ "$BEFORE_VERSION" == v0.3.7 &&
-        "${BEFORE_IDENTITY:-}" == "https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/tags/v0.3.7" ]]; then
+  if legacy_before; then
     before_identity="$BEFORE_IDENTITY"
   fi
   [[ "${BEFORE_IDENTITY:-}" == "$before_identity" ]] ||
@@ -85,7 +93,13 @@ verify() {
     cosign verify-attestation --type https://slsa.dev/provenance/v1 --certificate-identity "$identity" \
       --certificate-oidc-issuer "$ISSUER" "${IMAGE}@${digest}" >/dev/null ||
       failed "${endpoint} SLSA provenance does not verify for ${identity}"
-    [[ "$(embedded_version "$digest")" == "$version" ]] || failed "${endpoint} image does not embed ${version}"
+    local embedded
+    embedded="$(docker run --rm "${IMAGE}@${digest}" version --json)" || failed "${endpoint} image does not run"
+    [[ "$(jq -r .version <<<"$embedded")" == "$version" ]] || failed "${endpoint} image does not embed ${version}"
+    if [[ "$endpoint" == before ]] && legacy_before; then
+      [[ "$(jq -r .commit <<<"$embedded")" == "$LEGACY_BEFORE_COMMIT" ]] ||
+        failed "legacy known-good image does not embed source commit ${LEGACY_BEFORE_COMMIT}"
+    fi
   done
   echo "[rollback-drill] both endpoints signed, attested and versioned"
 }
