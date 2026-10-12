@@ -119,7 +119,9 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: latest
-          args: --timeout=5m --new-from-rev=origin/main
+          # Diff against the PR's own base: a PR into a maintenance branch must
+          # not be linted against main, which has diverged from that line.
+          args: --timeout=5m --new-from-rev=origin/${{ github.base_ref }}
       - name: Check push diff base
         id: push-diff-base
         if: github.event_name != 'pull_request'
