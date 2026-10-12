@@ -1,0 +1,43 @@
+# Maintenance scope declaration for v0.3.8, verified by
+# scripts/check-maintenance-scope.py against release.yaml stable_commit
+# (the published v0.3.7). Every runtime change and the toolchain change must be
+# declared here; anything undeclared, forbidden or unclassified makes the
+# release ineligible for the maintenance path.
+schema: bpfcompat.maintenance-scope.v1
+
+runtime_changes:
+  - path: internal/vm/qemu.go
+    # Pinned CentOS key + bounded HTTP/1.1 transport, applied only to the exact
+    # three signed archived kernel 5.14.0-725 RPMs (isCentOS725SignedPackageSet).
+    # All other kernels, vendors and package sources keep the generic installer.
+    functions:
+      - guestKernelInstallCmdRHEL
+      - isCentOS725SignedPackageSet
+    exercised_by:
+      - centos-stream-9-5.14-k5.14.0-725.el9
+    tests:
+      - internal/vm/centos_urls_test.go
+      - internal/vm/centos725_restriction_test.go
+    review: >-
+      Reviewed 2026-10-12: the change is confined to the two functions above;
+      the exact-set restriction is pinned by TestCentOS725SignedPackageSetIsExact
+      (13 near misses, mutation-checked) and key/transport ordering by
+      TestCentOS725KeySelectionAndTransport and TestCentOS725RejectsChangedKeyBeforeImport.
+
+toolchain:
+  # Go 1.25 is unpatched for these advisories (fixed only in go1.26.9 and
+  # go1.27.2). IDs are the ones govulncheck reports as reachable from this code
+  # under go1.25.14. go.mod stays `go 1.25.0`.
+  from: "1.25.14"
+  to: "1.26.9"
+  advisories:
+    - GO-2026-6603
+    - GO-2026-6605
+    - GO-2026-6607
+    - GO-2026-6608
+    - GO-2026-6609
+    - GO-2026-6610
+    - GO-2026-6611
+    - GO-2026-6612
+    - GO-2026-6613
+    - GO-2026-6617

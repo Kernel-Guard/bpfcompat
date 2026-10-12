@@ -84,6 +84,9 @@ jobs:
           bash scripts/install-verification_test.sh
           bash scripts/download-hardening_test.sh
           bash scripts/check-binary-toolchain_test.sh
+          python3 scripts/check-maintenance-scope_test.py
+          python3 scripts/check-maintenance-scope_repo_test.py
+          bash scripts/maintenance-tech-check_test.sh
           bash scripts/check-release-state_test.sh
           bash scripts/check-production-environment_test.sh
           bash scripts/verify-promotion-inputs_test.sh
