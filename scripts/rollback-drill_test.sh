@@ -20,6 +20,9 @@ before="sha256:$(printf 'b%.0s' {1..64})"
 candidate="sha256:$(printf 'c%.0s' {1..64})"
 operator="$(awk -F': ' '$1 == "release_operator" {print $2; exit}' "$ROOT_DIR/release.yaml")"
 identity() { echo "https://github.com/${repo}/.github/workflows/release-artifacts.yml@refs/tags/$1"; }
+legacy_identity() { echo "https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/tags/$1"; }
+legacy_digest=sha256:05c028e99dd7afd10a8765a361457bbd79c51a89ca1cb62561043c52c2561fc9
+legacy_commit=179ff612ed2b5d1afb16dd9c282752028d47c415
 
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/docker" <<'EOF'
@@ -57,7 +60,8 @@ fi
 if [[ "$1 $2" == "run --rm" ]]; then
   digest="${3##*@}"
   version="$(cat "$MOCK_REG/version-$digest" 2>/dev/null)" || exit 1
-  jq -n --arg v "$version" '{version: $v}'
+  commit="$(cat "$MOCK_REG/commit-$digest" 2>/dev/null || echo unknown)"
+  jq -n --arg v "$version" --arg c "$commit" '{version: $v, commit: $c}'
   exit 0
 fi
 exit 2
@@ -66,22 +70,32 @@ cat >"$tmp/bin/cosign" <<'EOF'
 #!/usr/bin/env bash
 # Mock signatures: $MOCK_REG/identity-<digest> is the only identity that verifies.
 set -euo pipefail
-identity="" ; ref="${*: -1}"
+identity="" ; ref="${*: -1}" ; subcommand="$1"
 while [[ $# -gt 0 ]]; do
   [[ "$1" == --certificate-identity ]] && identity="$2"
   shift
 done
 [[ "$(cat "$MOCK_REG/identity-${ref##*@}" 2>/dev/null)" == "$identity" ]]
+if [[ "$subcommand" == verify-attestation && -e "$MOCK_REG/no-provenance-${ref##*@}" ]]; then exit 1; fi
 EOF
 chmod 0700 "$tmp/bin/docker" "$tmp/bin/cosign"
 
 reset_registry() {
   reg="$1"
   rm -rf "$reg"; mkdir -p "$reg"
-  printf '%s' "$before" >"$reg/$(printf '%s' "$image:latest" | tr '/:' '__')"
-  echo v0.3.7 >"$reg/version-$before"
+  local known="$before"
+  [[ -n "${MOCK_LEGACY_BEFORE:-}" ]] && known="$legacy_digest"
+  printf '%s' "$known" >"$reg/$(printf '%s' "$image:latest" | tr '/:' '__')"
+  echo v0.3.7 >"$reg/version-$known"
+  echo "${MOCK_LEGACY_COMMIT:-$legacy_commit}" >"$reg/commit-$known"
   echo v0.3.8-rc.1 >"$reg/version-$candidate"
-  identity v0.3.7 >"$reg/identity-$before"
+  echo 39c06ece14e8a402fea18e2dc3cd2fc6dafbabd3 >"$reg/commit-$candidate"
+  if [[ -n "${MOCK_LEGACY_BEFORE:-}" && "${MOCK_LEGACY_SIG:-}" != wrong ]]; then
+    legacy_identity v0.3.7 >"$reg/identity-$known"
+  else
+    identity v0.3.7 >"$reg/identity-$known"
+  fi
+  [[ -n "${MOCK_LEGACY_NO_PROVENANCE:-}" ]] && touch "$reg/no-provenance-$known"
   identity v0.3.8-rc.1 >"$reg/identity-$candidate"
 }
 alias_digest() { cat "$1/$(printf '%s' "$image:rollback-drill-v0.3.8-rc.1" | tr '/:' '__')" 2>/dev/null || echo none; }
@@ -93,6 +107,16 @@ drill() {
   shift 3
   local dir="$tmp/case-$RANDOM$RANDOM"
   mkdir -p "$dir"
+  MOCK_LEGACY_BEFORE="" MOCK_LEGACY_SIG="" MOCK_LEGACY_COMMIT="" MOCK_LEGACY_NO_PROVENANCE=""
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      MOCK_LEGACY_BEFORE=*) MOCK_LEGACY_BEFORE="${arg#*=}" ;;
+      MOCK_LEGACY_SIG=*) MOCK_LEGACY_SIG="${arg#*=}" ;;
+      MOCK_LEGACY_COMMIT=*) MOCK_LEGACY_COMMIT="${arg#*=}" ;;
+      MOCK_LEGACY_NO_PROVENANCE=*) MOCK_LEGACY_NO_PROVENANCE="${arg#*=}" ;;
+    esac
+  done
   reset_registry "$dir/reg"
   local rc=0 sub
   for sub in $subcommands; do
@@ -131,6 +155,43 @@ expect "  alias ends on the known-good digest" test "$(alias_digest "$last/reg")
 expect "  latest is never written" latest_unchanged
 expect "  only the drill alias is ever written" bash -c "! grep 'imagetools create' '$last/reg/calls' | grep -v ':rollback-drill-v0.3.8-rc.1 '"
 expect "  evidence carries the completion marker" grep -Fq '[bpfcompat-rollback-drill:v1]' "$last/evidence/evidence.md"
+
+# v0.3.7 predates the hardened release graph: its image is signed by
+# ghcr-image.yml at refs/tags/v0.3.7. That legacy identity is accepted ONLY
+# for the known-good endpoint, ONLY for v0.3.7, ONLY for its exact digest,
+# and only when its signature, SLSA provenance, embedded version and embedded
+# source commit (v0.3.7 = 179ff612...) all verify.
+L=(MOCK_LEGACY_BEFORE=1 BEFORE_DIGEST="$legacy_digest" BEFORE_IDENTITY="$(legacy_identity v0.3.7)")
+drill "legacy v0.3.7 baseline with exact digest, identity, provenance and commit is accepted" 0 "$full" "${L[@]}"
+expect "  alias ends on the legacy known-good digest" test "$(alias_digest "$last/reg")" = "$legacy_digest"
+# shellcheck disable=SC2016  # $d is a jq variable
+expect "  evidence records the legacy known-good digest" \
+  jq -e --arg d "$legacy_digest" '.before_digest == $d and .final_digest == $d and .latest_digest == $d' "$last/evidence/evidence.json"
+drill "legacy signer with a different baseline digest is rejected" 2 "$full" BEFORE_IDENTITY="$(legacy_identity v0.3.7)"
+expect "  no registry write for a different digest" no_mutation
+drill "legacy signer for another baseline version is rejected" 2 "$full" "${L[@]}" \
+  BEFORE_VERSION=v0.3.6 BEFORE_IDENTITY="$(legacy_identity v0.3.6)"
+drill "legacy identity and digest with another declared version are rejected" 2 "$full" "${L[@]}" \
+  BEFORE_VERSION=v0.3.6
+drill "legacy signer at another tag is rejected" 2 "$full" "${L[@]}" \
+  BEFORE_IDENTITY="$(legacy_identity v0.3.8-rc.1)"
+drill "legacy signer on a branch ref is rejected" 2 "$full" "${L[@]}" \
+  BEFORE_IDENTITY="https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/heads/main"
+drill "another workflow at the v0.3.7 tag is rejected" 2 "$full" "${L[@]}" \
+  BEFORE_IDENTITY="https://github.com/${repo}/.github/workflows/ci.yml@refs/tags/v0.3.7"
+drill "legacy signer on the candidate side is rejected" 2 "$full" \
+  CANDIDATE_IDENTITY="$(legacy_identity v0.3.8-rc.1)"
+drill "legacy signer on the candidate side with a legacy baseline is rejected" 2 "$full" "${L[@]}" \
+  CANDIDATE_IDENTITY="$(legacy_identity v0.3.8-rc.1)"
+drill "legacy baseline whose signature does not verify is rejected before any write" 1 "$full" "${L[@]}" \
+  MOCK_LEGACY_SIG=wrong
+expect "  no registry write after a failed legacy signature" no_mutation
+drill "legacy baseline without SLSA provenance is rejected before any write" 1 "$full" "${L[@]}" \
+  MOCK_LEGACY_NO_PROVENANCE=1
+expect "  no registry write without legacy provenance" no_mutation
+drill "legacy baseline embedding another source commit is rejected before any write" 1 "$full" "${L[@]}" \
+  MOCK_LEGACY_COMMIT=0000000000000000000000000000000000000000
+expect "  no registry write for a wrong embedded commit" no_mutation
 
 # Malformed input: nothing may be written to the registry.
 for bad in latest stable v0.3.7 rollback-drill-latest 'rollback-drill-v0.3.8-rc.1 ' 'rollback-drill-v0.3.8-rc.1;true' ROLLBACK-DRILL-v0.3.8-rc.1; do
