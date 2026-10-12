@@ -51,6 +51,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   the published candidate, re-runs the scope check, boots the maintenance VM
   gate on the published binaries, runs the candidate canary (clean install,
   candidate Action, signed container) and attests `maintenance-evidence.json`.
+- `rollback-drill.yml` backported from main for the maintenance line. It is
+  accepted only from `release/v0.3.8-centos-hotfix`, behind the
+  `production-drill` environment, and writes only a
+  `rollback-drill-vX.Y.Z-rc.N` GHCR alias. Logic moved to
+  `scripts/rollback-drill.sh`. On top of main's checks, signer identities are
+  bound to `release-artifacts.yml` at each version's own tag, the actor must be
+  the release operator, a failed or cancelled run restores the alias, a failed
+  restoration exits 3, and `docs/runbooks/rollback-drill-recovery.md` covers
+  manual recovery.
 
 ### Changed
 - Release validation uses the Go toolchain pinned in release.yaml (see

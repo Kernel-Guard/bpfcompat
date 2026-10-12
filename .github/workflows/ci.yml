@@ -94,6 +94,7 @@ jobs:
           bash scripts/production-readiness-report_test.sh
           bash scripts/maintenance-readiness_test.sh
           python3 scripts/maintenance-evidence-summary_test.py
+          bash scripts/rollback-drill_test.sh
           bash scripts/check-coverage_test.sh
           bash scripts/support-matrix_test.sh
       - name: go test
