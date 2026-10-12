@@ -20,6 +20,7 @@ before="sha256:$(printf 'b%.0s' {1..64})"
 candidate="sha256:$(printf 'c%.0s' {1..64})"
 operator="$(awk -F': ' '$1 == "release_operator" {print $2; exit}' "$ROOT_DIR/release.yaml")"
 identity() { echo "https://github.com/${repo}/.github/workflows/release-artifacts.yml@refs/tags/$1"; }
+legacy_identity() { echo "https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/tags/$1"; }
 
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/docker" <<'EOF'
@@ -81,7 +82,7 @@ reset_registry() {
   printf '%s' "$before" >"$reg/$(printf '%s' "$image:latest" | tr '/:' '__')"
   echo v0.3.7 >"$reg/version-$before"
   echo v0.3.8-rc.1 >"$reg/version-$candidate"
-  identity v0.3.7 >"$reg/identity-$before"
+  if [[ -n "${MOCK_LEGACY_BEFORE:-}" ]]; then legacy_identity v0.3.7 >"$reg/identity-$before"; else identity v0.3.7 >"$reg/identity-$before"; fi
   identity v0.3.8-rc.1 >"$reg/identity-$candidate"
 }
 alias_digest() { cat "$1/$(printf '%s' "$image:rollback-drill-v0.3.8-rc.1" | tr '/:' '__')" 2>/dev/null || echo none; }
@@ -93,6 +94,9 @@ drill() {
   shift 3
   local dir="$tmp/case-$RANDOM$RANDOM"
   mkdir -p "$dir"
+  MOCK_LEGACY_BEFORE=""
+  local arg
+  for arg in "$@"; do [[ "$arg" == MOCK_LEGACY_BEFORE=1 ]] && MOCK_LEGACY_BEFORE=1; done
   reset_registry "$dir/reg"
   local rc=0 sub
   for sub in $subcommands; do
@@ -131,6 +135,21 @@ expect "  alias ends on the known-good digest" test "$(alias_digest "$last/reg")
 expect "  latest is never written" latest_unchanged
 expect "  only the drill alias is ever written" bash -c "! grep 'imagetools create' '$last/reg/calls' | grep -v ':rollback-drill-v0.3.8-rc.1 '"
 expect "  evidence carries the completion marker" grep -Fq '[bpfcompat-rollback-drill:v1]' "$last/evidence/evidence.md"
+
+# v0.3.7 predates the hardened release graph: its image is signed by
+# ghcr-image.yml at the v0.3.7 tag. That exact legacy identity is accepted
+# for the known-good endpoint only, and only for v0.3.7.
+drill "legacy v0.3.7 known-good identity is accepted" 0 "validate" BEFORE_IDENTITY="$(legacy_identity v0.3.7)"
+drill "full drill with the legacy v0.3.7 baseline restores it" 0 "$full" BEFORE_IDENTITY="$(legacy_identity v0.3.7)" \
+  MOCK_LEGACY_BEFORE=1
+expect "  alias ends on the known-good digest" test "$(alias_digest "$last/reg")" = "$before"
+drill "legacy identity for the candidate is rejected" 2 "$full" \
+  CANDIDATE_IDENTITY="$(legacy_identity v0.3.8-rc.1)"
+drill "legacy identity for any other baseline version is rejected" 2 "$full" \
+  BEFORE_VERSION=v0.3.6 BEFORE_IDENTITY="$(legacy_identity v0.3.6)"
+drill "legacy workflow at another tag is rejected" 2 "$full" BEFORE_IDENTITY="$(legacy_identity v0.3.8-rc.1)"
+drill "legacy workflow on a branch ref is rejected" 2 "$full" \
+  BEFORE_IDENTITY="https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/heads/main"
 
 # Malformed input: nothing may be written to the registry.
 for bad in latest stable v0.3.7 rollback-drill-latest 'rollback-drill-v0.3.8-rc.1 ' 'rollback-drill-v0.3.8-rc.1;true' ROLLBACK-DRILL-v0.3.8-rc.1; do

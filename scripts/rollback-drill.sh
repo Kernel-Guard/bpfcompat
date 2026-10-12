@@ -53,7 +53,17 @@ validate() {
     invalid "versions must be vX.Y.Z or vX.Y.Z-rc.N"
   # Images are signed only by release-artifacts.yml at their own tag.
   local prefix="https://github.com/${repo}/.github/workflows/release-artifacts.yml@refs/tags/"
-  [[ "${BEFORE_IDENTITY:-}" == "${prefix}${BEFORE_VERSION}" ]] ||
+  local before_identity="${prefix}${BEFORE_VERSION}"
+  # One legacy exception: the v0.3.7 image predates the hardened release
+  # graph and is signed (with SLSA v1 provenance) by ghcr-image.yml at
+  # refs/tags/v0.3.7 -- verified 2026-10-12, digest sha256:05c028e9...
+  # It is accepted for the KNOWN-GOOD endpoint only and only for exactly
+  # v0.3.7; the candidate must always be release-artifacts.yml at its tag.
+  if [[ "$BEFORE_VERSION" == v0.3.7 &&
+        "${BEFORE_IDENTITY:-}" == "https://github.com/${repo}/.github/workflows/ghcr-image.yml@refs/tags/v0.3.7" ]]; then
+    before_identity="$BEFORE_IDENTITY"
+  fi
+  [[ "${BEFORE_IDENTITY:-}" == "$before_identity" ]] ||
     invalid "known-good identity must be ${prefix}${BEFORE_VERSION}"
   [[ "${CANDIDATE_IDENTITY:-}" == "${prefix}${CANDIDATE_VERSION}" ]] ||
     invalid "candidate identity must be ${prefix}${CANDIDATE_VERSION}"
