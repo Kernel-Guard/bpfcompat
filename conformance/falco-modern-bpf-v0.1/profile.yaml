@@ -1,0 +1,83 @@
+schema_version: bpfcompat_conformance_profile.v0.1
+id: falco-modern-bpf-v0.1
+title: Falco modern_bpf loader compatibility
+program_status: preview
+profile_uri: https://github.com/Kernel-Guard/bpfcompat/blob/main/conformance/falco-modern-bpf-v0.1/profile.yaml
+claim: >-
+  The exact scap-open loader binary identified by SHA-256 completed Falco's
+  modern_bpf initialization and bounded event capture contract on every
+  required kernel in the Falco modern_bpf v0.1 matrix.
+limitations:
+  - This does not test the complete Falco daemon or rules engine.
+  - This does not certify kernels or configurations outside the recorded matrix.
+  - This preview is not affiliated with, sponsored by, or endorsed by Falco or CNCF.
+report_schema_versions:
+  - v0.1
+subject:
+  kind: command_loader
+  binary_basename: scap-open
+  command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
+  expected_exit_code: 0
+matrix:
+  path: matrix.yaml
+  uri: https://github.com/Kernel-Guard/bpfcompat/blob/main/conformance/falco-modern-bpf-v0.1/matrix.yaml
+environments:
+  - profile_id: ubuntu-22.04-5.15
+    distro: ubuntu
+    version: "22.04"
+    kernel_family: "5.15"
+    arch: x86_64
+  - profile_id: debian-12-6.1
+    distro: debian
+    version: "12"
+    kernel_family: "6.1"
+    arch: x86_64
+  - profile_id: ubuntu-24.04-6.8
+    distro: ubuntu
+    version: "24.04"
+    kernel_family: "6.8"
+    arch: x86_64
+  - profile_id: almalinux-8-4.18
+    distro: almalinux
+    version: "8"
+    kernel_family: "4.18"
+    arch: x86_64
+  - profile_id: almalinux-9-5.14
+    distro: almalinux
+    version: "9"
+    kernel_family: "5.14"
+    arch: x86_64
+validity:
+  snapshot_days: 90
+  continuous_max_age_days: 14
+assertions:
+  - id: FALCO-REPORT-001
+    rule: report.schema
+    description: The report uses a schema allowed by this profile.
+  - id: FALCO-FRESHNESS-001
+    rule: report.freshness
+    description: The underlying compatibility run is inside the profile's snapshot validity window.
+  - id: FALCO-SUBJECT-001
+    rule: subject.loader_identity
+    description: The report identifies the exact scap-open loader bytes by SHA-256.
+  - id: FALCO-COMMAND-001
+    rule: command.contract
+    description: The recorded command and expected exit code match the profile contract.
+  - id: FALCO-MATRIX-001
+    rule: matrix.required_profiles
+    description: Every canonical profile appears exactly once and is marked required.
+  - id: FALCO-ENV-001
+    rule: environment.actual_identity
+    description: Every required target records the requested environment and actual host kernel.
+  - id: FALCO-IMAGE-001
+    rule: environment.image_digest
+    description: Every required target records the SHA-256 of the booted base image.
+  - id: FALCO-EVENT-001
+    rule: behavior.command_pass
+    description: scap-open loaded, attached, and captured the bounded event count on every required target.
+properties:
+  - BPFCOMPAT_FALCO_MODERN_BPF_V0_1
+  - BPFCOMPAT_REAL_LOADER
+  - BPFCOMPAT_EVENT_CAPTURE
+  - BPFCOMPAT_ENTERPRISE_BACKPORT_KERNELS
+  - BPFCOMPAT_ARCH_X86_64

@@ -81,6 +81,24 @@ approach"
 These are public review comments quoted verbatim — technical preferences
 expressed during review, not an endorsement of the project.
 
+## Verified Compatibility Preview
+
+The repository now uses that same real-loader path as the first pilot for a
+versioned compatibility program. The normative contract is
+[`falco-modern-bpf-v0.1`](../conformance/falco-modern-bpf-v0.1/spec.md), and the
+weekly external-consumer canary evaluates its five required kernels. Every
+valid evaluation emits an in-toto Test Result. Only a fully conformant run emits
+and signs an in-toto Simple Verification Result for the exact `scap-open`
+SHA-256.
+
+This is deliberately called a **Verified Compatibility Preview**, not a Falco
+certification. Its subject is one exact loader binary and its scope is the
+specified initialization and bounded event-capture contract. It does not cover
+the full Falco daemon or rules engine, and it is not affiliated with or endorsed
+by Falco or CNCF. See
+[`verified-compatibility-preview.md`](verified-compatibility-preview.md) for the
+evidence and verification workflow.
+
 ## Reproduce it
 
 ```bash

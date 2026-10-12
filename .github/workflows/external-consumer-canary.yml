@@ -132,9 +132,14 @@ jobs:
           if-no-files-found: warn
 
   falco:
-    name: Falco (scap-open modern_bpf loader)
+    name: Falco verified compatibility preview
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -166,12 +171,18 @@ jobs:
             -DCREATE_TEST_TARGETS=OFF -DBUILD_BPF=OFF -DBUILD_DRIVER=OFF ..
           make scap-open -j"$(nproc)"
           file libscap/examples/01-open/scap-open
+          cd ../..
+          install -D -m 0755 \
+            libs/build/libscap/examples/01-open/scap-open \
+            reports/falco-conformance/subjects/scap-open
       - name: Validate scap-open across kernels (its real loader path)
+        id: validate
+        continue-on-error: true
         uses: ./
         with:
           command: $BPFCOMPAT_BIN --modern_bpf --num_events 10
           command-binary: libs/build/libscap/examples/01-open/scap-open
-          matrix: matrices/consumer-external.yaml
+          matrix: conformance/falco-modern-bpf-v0.1/matrix.yaml
           out: reports/falco.json
           markdown: reports/falco.md
           timeout: 20m
@@ -183,6 +194,73 @@ jobs:
           actual="$(jq -r '.command.binary.sha256 // empty' reports/falco.json)"
           test -n "$actual"
           test "$actual" = "$expected"
+          test "$(sha256sum reports/falco-conformance/subjects/scap-open | awk '{print $1}')" = "$actual"
+      - name: Evaluate the Falco conformance profile
+        id: evaluate
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +e
+          ./bin/bpfcompat conformance evaluate \
+            --profile conformance/falco-modern-bpf-v0.1/profile.yaml \
+            --report reports/falco.json \
+            --out-dir reports/falco-conformance \
+            --verifier-id https://github.com/Kernel-Guard/bpfcompat/tree/main/conformance/falco-modern-bpf-v0.1 \
+            --report-url "$RUN_URL"
+          rc=$?
+          set -e
+
+          test -s reports/falco-conformance/decision.json
+          test -s reports/falco-conformance/test-result.intoto.json
+          status="$(jq -er '.status' reports/falco-conformance/decision.json)"
+          case "$status:$rc" in
+            conformant:0|nonconformant:2|inconclusive:1) ;;
+            *) echo "evaluator status/exit mismatch: $status/$rc" >&2; exit 1 ;;
+          esac
+
+          statement_subject="$(jq -er 'select((.subject | length) == 1 and .subject[0].name == "scap-open") | .subject[0].digest.sha256' reports/falco-conformance/test-result.intoto.json)"
+          report_subject="$(jq -er '.subject.digest.sha256' reports/falco-conformance/decision.json)"
+          binary_subject="$(sha256sum reports/falco-conformance/subjects/scap-open | awk '{print $1}')"
+          test "$statement_subject" = "$report_subject"
+          test "$statement_subject" = "$binary_subject"
+
+          jq -e '.predicate' reports/falco-conformance/test-result.intoto.json \
+            > reports/falco-conformance/test-result.predicate.json
+          if [[ "$status" == "conformant" ]]; then
+            test -s reports/falco-conformance/verification-result.intoto.json
+            jq -e '.predicate' reports/falco-conformance/verification-result.intoto.json \
+              > reports/falco-conformance/verification-result.predicate.json
+          else
+            test ! -e reports/falco-conformance/verification-result.intoto.json
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Attest the in-toto Test Result
+        id: test_attestation
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: reports/falco-conformance/subjects/scap-open
+          predicate-type: https://in-toto.io/attestation/test-result/v0.1
+          predicate-path: reports/falco-conformance/test-result.predicate.json
+      - name: Attest the passing verification result
+        id: verification_attestation
+        if: steps.evaluate.outputs.status == 'conformant'
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: reports/falco-conformance/subjects/scap-open
+          predicate-type: https://in-toto.io/attestation/svr/v0.2
+          predicate-path: reports/falco-conformance/verification-result.predicate.json
+      - name: Preserve signed attestation bundles
+        if: steps.test_attestation.outcome == 'success'
+        env:
+          TEST_BUNDLE: ${{ steps.test_attestation.outputs.bundle-path }}
+          VERIFICATION_BUNDLE: ${{ steps.verification_attestation.outputs.bundle-path }}
+        run: |
+          install -m 0644 "$TEST_BUNDLE" \
+            reports/falco-conformance/test-result.sigstore.json
+          if [[ -n "$VERIFICATION_BUNDLE" ]]; then
+            install -m 0644 "$VERIFICATION_BUNDLE" \
+              reports/falco-conformance/verification-result.sigstore.json
+          fi
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -190,6 +268,15 @@ jobs:
           name: canary-falco-${{ github.run_id }}
           path: reports/
           if-no-files-found: warn
+      - name: Enforce the conformance decision
+        if: always()
+        env:
+          STATUS: ${{ steps.evaluate.outputs.status }}
+        run: |
+          test "$STATUS" = "conformant" || {
+            echo "Falco conformance decision: ${STATUS:-evaluation unavailable}" >&2
+            exit 1
+          }
 
   report:
     name: File or close the canary tracking issue

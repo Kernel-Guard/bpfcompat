@@ -1,0 +1,87 @@
+{
+  "schema_version": "v0.1",
+  "run": {
+    "id": "20260806T120000Z-falco-preview",
+    "started_at": "2026-08-06T12:00:00Z"
+  },
+  "artifact": {
+    "path": "command://scap-open",
+    "basename": "scap-open",
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "size_bytes": 1048576
+  },
+  "command": {
+    "invocation_sha256": "bb266d2cad7ac34ea7324a97b77654eb159fee225d93d42165587c1aa750ab2b",
+    "expected_exit_code": 0,
+    "binary": {
+      "basename": "scap-open",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size_bytes": 1048576
+    }
+  },
+  "matrix": {
+    "path": "test/bpfcompat/kernel-matrix.yaml",
+    "name": "falco-modern-bpf-poc",
+    "profiles": [
+      "ubuntu-22.04-5.15",
+      "debian-12-6.1",
+      "ubuntu-24.04-6.8",
+      "almalinux-8-4.18",
+      "almalinux-9-5.14"
+    ]
+  },
+  "targets": [
+    {
+      "profile_id": "ubuntu-22.04-5.15",
+      "required": true,
+      "status": "pass",
+      "profile": {"distro": "ubuntu", "version": "22.04", "kernel_family": "5.15", "arch": "x86_64"},
+      "host": {"distro": "ubuntu", "version": "22.04", "kernel_family": "5.15", "kernel": "5.15.0-201-generic", "arch": "x86_64"},
+      "validation": {"load_status": "skipped"},
+      "functional": {"status": "pass", "tests": [{"name": "command", "required": true, "status": "pass", "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10", "expected_exit_code": 0, "exit_code": 0}]},
+      "notes": ["base image sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "command validation passed (exit code 0)"]
+    },
+    {
+      "profile_id": "debian-12-6.1",
+      "required": true,
+      "status": "pass",
+      "profile": {"distro": "debian", "version": "12", "kernel_family": "6.1", "arch": "x86_64"},
+      "host": {"distro": "debian", "version": "12", "kernel_family": "6.1", "kernel": "6.1.0-38-cloud-amd64", "arch": "x86_64"},
+      "validation": {"load_status": "skipped"},
+      "functional": {"status": "pass", "tests": [{"name": "command", "required": true, "status": "pass", "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10", "expected_exit_code": 0, "exit_code": 0}]},
+      "notes": ["base image sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "command validation passed (exit code 0)"]
+    },
+    {
+      "profile_id": "ubuntu-24.04-6.8",
+      "required": true,
+      "status": "pass",
+      "profile": {"distro": "ubuntu", "version": "24.04", "kernel_family": "6.8", "arch": "x86_64"},
+      "host": {"distro": "ubuntu", "version": "24.04", "kernel_family": "6.8", "kernel": "6.8.0-109-generic", "arch": "x86_64"},
+      "validation": {"load_status": "skipped"},
+      "functional": {"status": "pass", "tests": [{"name": "command", "required": true, "status": "pass", "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10", "expected_exit_code": 0, "exit_code": 0}]},
+      "notes": ["base image sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "command validation passed (exit code 0)"]
+    },
+    {
+      "profile_id": "almalinux-8-4.18",
+      "required": true,
+      "status": "pass",
+      "profile": {"distro": "almalinux", "version": "8", "kernel_family": "4.18", "arch": "x86_64"},
+      "host": {"distro": "almalinux", "version": "8", "kernel_family": "4.18", "kernel": "4.18.0-553.75.1.el8_10.x86_64", "arch": "x86_64"},
+      "validation": {"load_status": "skipped"},
+      "functional": {"status": "pass", "tests": [{"name": "command", "required": true, "status": "pass", "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10", "expected_exit_code": 0, "exit_code": 0}]},
+      "notes": ["base image sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "command validation passed (exit code 0)"]
+    },
+    {
+      "profile_id": "almalinux-9-5.14",
+      "required": true,
+      "status": "pass",
+      "profile": {"distro": "almalinux", "version": "9", "kernel_family": "5.14", "arch": "x86_64"},
+      "host": {"distro": "almalinux", "version": "9", "kernel_family": "5.14", "kernel": "5.14.0-570.26.1.el9_6.x86_64", "arch": "x86_64"},
+      "validation": {"load_status": "skipped"},
+      "functional": {"status": "pass", "tests": [{"name": "command", "required": true, "status": "pass", "command": "$BPFCOMPAT_BIN --modern_bpf --num_events 10", "expected_exit_code": 0, "exit_code": 0}]},
+      "notes": ["base image sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "command validation passed (exit code 0)"]
+    }
+  ],
+  "summary": {"status": "pass"},
+  "paths": {"run_dir": ".bpfcompat/runs/20260806T120000Z-falco-preview", "json": "reports/falco.json"}
+}

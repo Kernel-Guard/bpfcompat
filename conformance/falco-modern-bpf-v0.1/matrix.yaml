@@ -1,0 +1,16 @@
+# Canonical required matrix for the Falco modern_bpf compatibility preview.
+# This matches the upstream falcosecurity/libs proof-of-concept matrix. A
+# credential covers only these required profiles, even if a report contains
+# additional informational targets.
+name: falco-modern-bpf-v0.1
+profiles:
+  - id: ubuntu-22.04-5.15
+    required: true
+  - id: debian-12-6.1
+    required: true
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: almalinux-8-4.18
+    required: true
+  - id: almalinux-9-5.14
+    required: true
