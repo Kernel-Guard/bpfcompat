@@ -105,6 +105,36 @@ def check_maintenance_evidence(doc):
             require(action.startswith('./') or re.fullmatch(r'[^@]+@[0-9a-f]{40}', action))
 
 
+def check_rollback_drill(doc):
+    """P4: the drill writes only GHCR, only from the maintenance branch, behind
+    the protected environment, and always attempts restoration."""
+    def require(condition):
+        if not condition:
+            raise ValueError('unsafe rollback-drill wiring')
+    require(set(doc['on']) == {'workflow_dispatch'})
+    require(doc['permissions'] == {'contents': 'read'})
+    require(doc['concurrency']['group'] == 'production-rollback-drill')
+    require(doc['env']['IMAGE'] == 'ghcr.io/kernel-guard/bpfcompat')
+    require(doc['env']['DRILL_ALLOWED_REF'] == 'refs/heads/release/v0.3.8-centos-hotfix')
+    require(set(doc['jobs']) == {'rollback'})
+    job = doc['jobs']['rollback']
+    require(job['environment']['name'] == 'production-drill')
+    require(job['permissions'] == {'contents': 'read', 'packages': 'write'})
+    steps = job['steps']
+    runs = [s.get('run', '') for s in steps]
+    order = [next(i for i, r in enumerate(runs) if 'rollback-drill.sh ' + sub in r)
+             for sub in ('validate', 'verify', 'drill', 'verify-evidence')]
+    require(order == sorted(order))
+    login = next(i for i, s in enumerate(steps) if s.get('uses', '').startswith('docker/login-action@'))
+    require(order[0] < login)
+    restore = next(s for s in steps if 'rollback-drill.sh restore' in s.get('run', ''))
+    require('failure()' in restore.get('if', '') and 'cancelled()' in restore.get('if', ''))
+    for step in steps:
+        require('gh release' not in step.get('run', '') and 'git push' not in step.get('run', ''))
+        action = step.get('uses', './')
+        require(action.startswith('./') or re.fullmatch(r'[^@]+@[0-9a-f]{40}', action))
+
+
 class ReleaseControls(unittest.TestCase):
     def setUp(self):
         self.stage = workflow('release-artifacts.yml')
@@ -154,6 +184,44 @@ class ReleaseControls(unittest.TestCase):
     def test_scope_check_command_is_never_overridden_in_workflows(self):
         for path in (ROOT / '.github/workflows').glob('*.yml'):
             self.assertNotIn('BPFCOMPAT_SCOPE_CHECK_CMD', path.read_text(), path.name)
+
+    def test_rollback_drill_controls(self):
+        check_rollback_drill(workflow('rollback-drill.yml'))
+
+    def test_rollback_drill_from_main_rejected(self):
+        doc = workflow('rollback-drill.yml')
+        doc['env']['DRILL_ALLOWED_REF'] = 'refs/heads/main'
+        with self.assertRaises(ValueError):
+            check_rollback_drill(doc)
+
+    def test_rollback_drill_without_environment_rejected(self):
+        doc = workflow('rollback-drill.yml')
+        del doc['jobs']['rollback']['environment']
+        with self.assertRaises(KeyError):
+            check_rollback_drill(doc)
+
+    def test_rollback_drill_extra_write_scope_rejected(self):
+        doc = workflow('rollback-drill.yml')
+        doc['jobs']['rollback']['permissions']['contents'] = 'write'
+        with self.assertRaises(ValueError):
+            check_rollback_drill(doc)
+
+    def test_rollback_drill_restore_on_cancel_cannot_be_dropped(self):
+        doc = workflow('rollback-drill.yml')
+        for step in doc['jobs']['rollback']['steps']:
+            if 'rollback-drill.sh restore' in step.get('run', ''):
+                step['if'] = 'failure()'
+        with self.assertRaises(ValueError):
+            check_rollback_drill(doc)
+
+    def test_rollback_drill_validation_before_registry_login(self):
+        doc = workflow('rollback-drill.yml')
+        steps = doc['jobs']['rollback']['steps']
+        validate = next(s for s in steps if 'rollback-drill.sh validate' in s.get('run', ''))
+        steps.remove(validate)
+        steps.append(validate)
+        with self.assertRaises(ValueError):
+            check_rollback_drill(doc)
 
     def test_maintenance_tech_gate_cannot_be_dropped(self):
         stage = copy.deepcopy(self.stage)
