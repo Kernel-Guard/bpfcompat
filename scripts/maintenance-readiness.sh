@@ -69,7 +69,7 @@ while IFS= read -r path; do
     release.yaml | CHANGELOG.md | docs/releases/*) ;;
     *) fail "release commit changes ${path} after the candidate; only release metadata may change" ;;
   esac
-done < <(git diff --name-only "$candidate_commit" HEAD)
+done < <(git diff --name-only --no-renames "$candidate_commit" HEAD)
 diff \
   <(git show "${candidate_commit}:release.yaml" | grep -Ev '^release_(version|channel):') \
   <(git show "HEAD:release.yaml" | grep -Ev '^release_(version|channel):') >/dev/null ||

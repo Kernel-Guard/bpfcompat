@@ -213,6 +213,28 @@ run_case "stable commit with code changes after the candidate is rejected" fail 
 build "$tmp/channel" "$head_commit" . . '.channel = "fast-track"'
 run_case "unknown readiness channel is rejected" fail "$tmp/channel"
 
+# A release commit that MOVES a runtime file into docs/releases/ must not pass
+# the metadata-only rule: rename detection would report only the new path.
+clone="$tmp/clone"
+git clone -q "$ROOT_DIR" "$clone"
+cp "$ROOT_DIR/scripts/production-readiness-report.sh" "$ROOT_DIR/scripts/maintenance-readiness.sh" "$clone/scripts/"
+git -C "$clone" -c user.email=t@example.invalid -c user.name=t commit -qam "test: current readiness scripts" --allow-empty
+clone_candidate="$(git -C "$clone" rev-parse HEAD)"
+git -C "$clone" mv internal/vm/qemu.go docs/releases/qemu.go
+git -C "$clone" -c user.email=t@example.invalid -c user.name=t commit -qm "move runtime file"
+build "$tmp/renamed" "$clone_candidate"
+rc=0
+env PATH="$tmp/bin:$PATH" TEST_RUN_SOURCE="$clone_candidate" BPFCOMPAT_SCOPE_CHECK_CMD="$tmp/bin/scope-ok" \
+  bash "$clone/scripts/production-readiness-report.sh" "$tmp/renamed/input.json" "$tmp/renamed/out.md" "$tmp/renamed/out.json" \
+  >"$tmp/renamed/log" 2>&1 || rc=$?
+if [[ "$rc" -ne 0 ]] && grep -q "internal/vm/qemu.go" "$tmp/renamed/log"; then
+  printf 'ok:   release commit that moves a runtime file into docs/releases is rejected\n'
+else
+  printf 'FAIL: release commit that moves a runtime file into docs/releases was accepted (rc=%s)\n' "$rc" >&2
+  cat "$tmp/renamed/log" >&2
+  failures=$((failures + 1))
+fi
+
 if [[ "$failures" -ne 0 ]]; then
   echo "[maintenance-readiness-test] FAILED ($failures)" >&2
   exit 1

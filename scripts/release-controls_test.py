@@ -36,6 +36,9 @@ def check(stage, promotion, preview):
     require(re.search(r'^\s*bash scripts/maintenance-tech-check\.sh\s*$', quality, re.M))
     require('make maintenance-tech-check' not in quality)
     require('make production-tech-check' not in quality)
+    # Readiness verifies attestations and runs with gh: it needs a token.
+    readiness = next(s for s in steps if s.get('name') == 'Stage production readiness evidence')
+    require(readiness['env'].get('GH_TOKEN') == '${{ github.token }}')
     native = next(s for s in steps if s.get('name') == 'Install native build dependencies')['run']
     require('release-native-snapshot.txt' in native and '--snapshot "$snapshot"' in native)
     draft = jobs['stage-draft-release']
