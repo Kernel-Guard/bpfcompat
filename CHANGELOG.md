@@ -40,6 +40,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   deterministic Ed25519); the Green Tea GC is the default. Release-style
   amd64/arm64 builds remain byte-reproducible.
 
+### Fixed
+- **Public compatibility matrix lane no longer aborts on one failed image
+  download.** Five of the seven weekly `compatibility-matrix-publish` runs
+  between 2026-08-18 and 2026-10-06 failed in the prefetch step (HTTP 502 for
+  the renamed CentOS Stream image; one HTTP/2 `PROTOCOL_ERROR`), before any VM
+  booted, so no report existed and the published page silently kept the last
+  successful week. `vm/scripts/fetch-cloud-image.sh` now retries transient
+  failures, downloads to a `.part` file so a failed fetch never masquerades as
+  a cached image, and reports the URL with its HTTP status; the new
+  `scripts/prefetch-matrix-images.sh` attempts every image and writes a
+  per-image summary that the lane uploads as evidence. Validation proceeds and
+  a target whose image is missing is recorded by bpfcompat as `INFRA_ERROR`,
+  never as a pass or fail.
+- The published matrix page now reports required targets as pass / fail /
+  infra separately, shows the run verdict, and flags incomplete runs; an
+  infrastructure error was previously folded into the failure count. Both
+  contrast artifacts are validated even if the first fails, and the page is
+  redeployed from a failed run when `scripts/check-matrix-reports.sh` proves
+  the reports are this run's evidence (v0.1 schema, started after the job,
+  exactly the matrix's profiles, the artifact bytes built in the run). The
+  job itself still fails; the page shows the honest incomplete state instead
+  of staying on the last green week. Without valid reports nothing is
+  deployed.
+- The consumer canary's source-build job (the action at `@main`) now runs
+  `matrices/canary-source.yaml`, which adds `centos-stream-9-5.14`, the
+  RHEL-family profile Inspektor Gadget's upstream lane depends on. The pinned
+  stable and candidate jobs keep `matrices/canary.yaml`: they resolve
+  profiles from the pinned release, where the old CentOS URL is already known
+  to be dead.
+- Removed references to the public demo instance from the README, quickstart
+  and ebpf.io listing data; the hosted demo is not maintained. Reworded the
+  weekly-matrix claim to describe what the page actually guarantees.
+
 ### Added
 - Published the canonical research pilot v1 repository dataset from successful
   workflow run `35393833464`: 70/70 normalized execution records, exact

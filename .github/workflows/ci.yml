@@ -69,6 +69,17 @@ jobs:
         run: bash scripts/action-artifact-ref-detection_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
+      - name: Image prefetch reliability regression
+        # The public matrix lane lost five of seven weekly runs (Aug-Oct 2026)
+        # to a single failed image download aborting the whole prefetch. These
+        # guard the retry/partial-file/logging contract of the fetch script,
+        # the never-abort contract of the matrix prefetch, and the page
+        # generator's rule that an infrastructure error is never a pass/fail.
+        run: |
+          bash vm/scripts/fetch-cloud-image_test.sh
+          bash scripts/prefetch-matrix-images_test.sh
+          bash scripts/publish-compatibility-site_test.sh
+          bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
       - name: Release-state fail-closed regression

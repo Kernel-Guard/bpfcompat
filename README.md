@@ -26,9 +26,6 @@ laptop or as a CI gate — `--quick` needs no matrix file:
 bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
 ```
 
-**Live demo:** [bpfcompat.kernelguard.net](https://bpfcompat.kernelguard.net) — upload a
-`.bpf.o` and see the compatibility matrix.
-
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
 
@@ -158,9 +155,11 @@ bpfcompat test --command '$BPFCOMPAT_BIN --self-test' --command-binary ./build/l
   --matrix matrices/quirk-library.yaml --out report.json
 ```
 
-See [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md). The library
-is re-validated weekly and the resulting matrix is published at
-[kernel-guard.github.io/bpfcompat](https://kernel-guard.github.io/bpfcompat/).
+See [docs/kernel-quirk-library.md](docs/kernel-quirk-library.md). A scheduled
+weekly lane re-validates the library and publishes the resulting matrix at
+[kernel-guard.github.io/bpfcompat](https://kernel-guard.github.io/bpfcompat/);
+the page states the run it was generated from and its timestamp, flags
+incomplete runs, and never reports an infrastructure error as a pass or fail.
 
 ### Distributions covered
 
