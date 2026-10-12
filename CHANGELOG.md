@@ -39,9 +39,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - Release preparation remains blocked where mandatory stability, readiness,
   provenance or VM evidence is missing; no production approval is implied.
 
+### Added
+- Readiness `maintenance` channel (R2/R3): a maintenance release is ready only
+  with two producer-attested `maintenance-evidence.yml` runs (E0, E1) at the
+  rc tag, bound to the exact candidate tag, commit, image digest and checksums
+  and at least 24 hours apart, an eligible machine-verified scope, a release
+  commit that differs from the candidate only in release metadata, and the
+  rollback, incident and operator controls. Third-party runs and unattested
+  observations are rejected.
+- `maintenance-evidence.yml` (dispatch-only on `vX.Y.Z-rc.N` tags) re-verifies
+  the published candidate, re-runs the scope check, boots the maintenance VM
+  gate on the published binaries, runs the candidate canary (clean install,
+  candidate Action, signed container) and attests `maintenance-evidence.json`.
+
 ### Changed
-- Release validation uses the already-approved Go 1.25.14 toolchain, enforces
-  50% complete race coverage, and pins govulncheck. Support-document generation
+- Release validation uses the Go toolchain pinned in release.yaml (see
+  Security), enforces 50% complete race coverage, and pins govulncheck. Support-document generation
   uses deterministic byte ordering independent of locale.
 
 ## [0.3.7] - 2026-08-26

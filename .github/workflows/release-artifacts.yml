@@ -75,6 +75,8 @@ jobs:
           bash scripts/promote-release_test.sh
           bash scripts/verify-promotion-inputs_test.sh
           bash scripts/production-readiness-report_test.sh
+          bash scripts/maintenance-readiness_test.sh
+          python3 scripts/maintenance-evidence-summary_test.py
           bash scripts/verify-release-assets_test.sh
           bash scripts/action-prebuilt-provenance_test.sh
           bash scripts/install-verification_test.sh
@@ -127,6 +129,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         env:
           RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="${RELEASE_VERSION#v}"

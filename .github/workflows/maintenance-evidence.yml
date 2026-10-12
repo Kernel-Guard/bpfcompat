@@ -1,0 +1,338 @@
+name: maintenance-evidence
+
+# First-party, producer-attested maintenance evidence (R3). Dispatched twice
+# against a published vX.Y.Z-rc.N prerelease: E0 after promotion, E1 at least
+# 24 hours after E0 completed (readiness enforces the spacing). Each run
+# re-verifies the exact candidate, re-runs the machine-verified scope, boots
+# the maintenance VM gate (exact kernel 5.14.0-725.el9, positive +
+# expected-INCOMPATIBLE negative) on the published binaries, runs the
+# candidate canary (clean install, candidate Action, signed container) and
+# attests maintenance-evidence.json. It writes nothing but its own artifacts
+# and attestations: no release, tag, alias or promotion is changed.
+#
+#   gh workflow run maintenance-evidence.yml --ref v0.3.8-rc.1 \
+#     -f milestone=e0 -f expected_commit=<sha> -f expected_image_digest=sha256:<digest>
+
+on:
+  workflow_dispatch:
+    inputs:
+      milestone:
+        description: Observation milestone (e0, or e1 at least 24h after e0 completed)
+        required: true
+        type: choice
+        options: [e0, e1]
+      expected_commit:
+        description: Full commit SHA the rc tag must resolve to
+        required: true
+        type: string
+      expected_image_digest:
+        description: Candidate container digest (sha256:<64 hex>)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26.9"
+  IMAGE: ghcr.io/kernel-guard/bpfcompat
+
+jobs:
+  bind:
+    name: Bind to the published candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      tag: ${{ steps.guard.outputs.tag }}
+      started_at: ${{ steps.guard.outputs.started_at }}
+    steps:
+      - name: Refuse anything but an rc tag at the expected commit
+        id: guard
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_DIGEST: ${{ inputs.expected_image_digest }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]] ||
+            { echo "::error::dispatch only on a vX.Y.Z-rc.N tag, got $GITHUB_REF"; exit 1; }
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ && "$GITHUB_SHA" == "$EXPECTED_COMMIT" ]] ||
+            { echo "::error::tag resolves to $GITHUB_SHA, not $EXPECTED_COMMIT"; exit 1; }
+          [[ "$EXPECTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+            { echo "::error::expected_image_digest must be sha256:<64 hex>"; exit 1; }
+          echo "tag=${GITHUB_REF#refs/tags/}" >>"$GITHUB_OUTPUT"
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Machine-verified maintenance scope (pristine checkout)
+        run: python3 scripts/check-maintenance-scope.py --out "$RUNNER_TEMP/maintenance-scope.json"
+      - name: Download and verify the published prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.guard.outputs.tag }}
+          EXPECTED_DIGEST: ${{ inputs.expected_image_digest }}
+          BPFCOMPAT_EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          BPFCOMPAT_EXPECTED_SOURCE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease |
+            jq -e '.isDraft == false and .isPrerelease == true' >/dev/null ||
+            { echo "::error::$TAG is not a published prerelease"; exit 1; }
+          candidate="$RUNNER_TEMP/candidate"
+          mkdir -p "$candidate"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$candidate"
+          bash scripts/verify-release-assets.sh "$candidate" "$GITHUB_REPOSITORY" \
+            bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
+          evidence="$candidate/release-candidate-evidence.json"
+          gh attestation verify "$evidence" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-artifacts.yml" \
+            --source-digest "$GITHUB_SHA" --source-ref "$GITHUB_REF" >/dev/null
+          jq -e --arg tag "$TAG" --arg commit "$GITHUB_SHA" --arg image "${IMAGE}@${EXPECTED_DIGEST}" \
+            --arg checksums "$(sha256sum "$candidate/SHA256SUMS" | awk '{print $1}')" '
+            .repository == "Kernel-Guard/bpfcompat" and .channel == "prerelease" and
+            .tag == $tag and .commit_sha == $commit and .image == $image and
+            .checksums_sha256 == $checksums
+          ' "$evidence" >/dev/null || { echo "::error::candidate evidence does not match the dispatch"; exit 1; }
+          cp "$RUNNER_TEMP/maintenance-scope.json" "$candidate/"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+
+  vm:
+    name: VM gate on published binaries (exact kernel 725)
+    needs: bind
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: maintenance-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist
+      - name: Install VM dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils cloud-image-utils clang llvm \
+            libbpf-dev libelf-dev zlib1g-dev pkg-config jq
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          fi
+      - name: Positive + classified negative on the maintenance profiles
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/maintenance-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          bash scripts/maintenance-vm-gate.sh "$GITHUB_WORKSPACE/dist" "$work"
+          mkdir -p reports
+          cp "$work"/reports/release-positive.json "$work"/reports/release-negative.json \
+            "$work"/reports/release-artifact-identity.json reports/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-vm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: error
+
+  clean-install:
+    name: Candidate canary - clean install
+    needs: bind
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.3"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: maintenance-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate
+      - name: Install the exact prerelease through the public installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.bind.outputs.tag }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/bpfcompat-install"
+          mkdir -p "$root/bin" "$root/libexec" canary
+          BPFCOMPAT_VERSION="$TAG" BPFCOMPAT_BIN_DIR="$root/bin" BPFCOMPAT_LIBEXEC_DIR="$root/libexec" \
+            sh scripts/install.sh
+          "$root/bin/bpfcompat" version --json |
+            jq -e --arg tag "$TAG" --arg commit "$GITHUB_SHA" '.version == $tag and .commit == $commit' >/dev/null
+          test -x "$root/libexec/bpfcompat-validator"
+          # Release assets are mutable even though the tag is not: the installed
+          # bytes must be exactly the assets the bind job verified.
+          cmp "$root/bin/bpfcompat" "$RUNNER_TEMP/candidate/bpfcompat-linux-amd64"
+          cmp "$root/libexec/bpfcompat-validator" "$RUNNER_TEMP/candidate/bpfcompat-validator-static-linux-amd64"
+          jq -n --arg tag "$TAG" --arg commit "$GITHUB_SHA" \
+            '{check: "clean-install", status: "pass", version: $tag, commit: $commit}' >canary/clean-install.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-canary-clean-install-${{ github.run_id }}-${{ github.run_attempt }}
+          path: canary/clean-install.json
+          if-no-files-found: error
+
+  candidate-action:
+    name: Candidate canary - Action contract
+    needs: bind
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: maintenance-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate
+      - name: Install consumer dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils jq
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          fi
+          chmod +x "$RUNNER_TEMP/candidate/bpfcompat-linux-amd64"
+          printf 'name: maintenance-action\nprofiles:\n  - id: centos-stream-9-5.14-k5.14.0-725.el9\n    required: true\n' \
+            >"$RUNNER_TEMP/maintenance-action.yaml"
+      - name: Candidate Action (the tagged action.yml) with the published CLI
+        uses: ./
+        with:
+          command: uname -r && test -d /sys/fs/bpf
+          matrix: ${{ runner.temp }}/maintenance-action.yaml
+          out: reports/maintenance-action.json
+          markdown: reports/maintenance-action.md
+          timeout: 12m
+          concurrency: "1"
+          binary: ${{ runner.temp }}/candidate/bpfcompat-linux-amd64
+          build: "false"
+          prebuilt: "never"
+      - name: Verify the Action report
+        env:
+          TAG: ${{ needs.bind.outputs.tag }}
+        run: |
+          set -euo pipefail
+          jq -e '
+            .summary.status == "pass" and (.targets | length == 1) and
+            ([.targets[] | select(.required and .status != "pass")] | length == 0) and
+            ([.targets[] | select(.status == "infra_error" or (.infra_error // "") != "")] | length == 0)
+          ' reports/maintenance-action.json >/dev/null
+          mkdir -p canary
+          jq -n --arg tag "$TAG" --arg commit "$GITHUB_SHA" \
+            '{check: "candidate-action", status: "pass", version: $tag, commit: $commit}' >canary/candidate-action.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-canary-candidate-action-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            canary/candidate-action.json
+            reports/maintenance-action.json
+          if-no-files-found: error
+
+  container:
+    name: Candidate canary - signed container
+    needs: bind
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.3"
+      - name: Verify digest signature, provenance and embedded identity
+        env:
+          TAG: ${{ needs.bind.outputs.tag }}
+          DIGEST: ${{ inputs.expected_image_digest }}
+        run: |
+          set -euo pipefail
+          image_ref="${IMAGE}@${DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/${TAG}"
+          cosign verify --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image_ref" >/dev/null
+          cosign verify-attestation --type https://slsa.dev/provenance/v1 --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image_ref" >/dev/null
+          docker run --rm "$image_ref" version --json |
+            jq -e --arg tag "$TAG" --arg commit "$GITHUB_SHA" '.version == $tag and .commit == $commit' >/dev/null
+          mkdir -p canary
+          jq -n --arg tag "$TAG" --arg commit "$GITHUB_SHA" --arg digest "$DIGEST" \
+            '{check: "container", status: "pass", version: $tag, commit: $commit, digest: $digest}' >canary/container.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-canary-container-${{ github.run_id }}-${{ github.run_attempt }}
+          path: canary/container.json
+          if-no-files-found: error
+
+  attest:
+    name: Summarize and attest maintenance evidence
+    needs: [bind, vm, clean-install, candidate-action, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: maintenance-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: in
+      - name: Build the evidence (rejects instead of writing a failed summary)
+        env:
+          TAG: ${{ needs.bind.outputs.tag }}
+          MILESTONE: ${{ inputs.milestone }}
+          DIGEST: ${{ inputs.expected_image_digest }}
+          STARTED_AT: ${{ needs.bind.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          c="in/maintenance-candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          v="in/maintenance-vm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          canary() { echo "in/maintenance-canary-$1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"; }
+          mkdir -p evidence
+          jq -n \
+            --arg milestone "$MILESTONE" --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --argjson run_id "$GITHUB_RUN_ID" --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg started_at "$STARTED_AT" --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg tag "$TAG" --arg commit "$GITHUB_SHA" --arg digest "$DIGEST" \
+            --arg checksums "$(sha256sum "$c/SHA256SUMS" | awk '{print $1}')" \
+            --arg evidence_sha "$(sha256sum "$c/release-candidate-evidence.json" | awk '{print $1}')" \
+            --slurpfile scope "$c/maintenance-scope.json" \
+            --slurpfile identity "$v/release-artifact-identity.json" \
+            --slurpfile positive "$v/release-positive.json" \
+            --slurpfile negative "$v/release-negative.json" \
+            --slurpfile ci "$(canary clean-install)/clean-install.json" \
+            --slurpfile ca "$(canary candidate-action)/canary/candidate-action.json" \
+            --slurpfile ct "$(canary container)/container.json" \
+            '{milestone: $milestone, repository: $repository, workflow_ref: $workflow_ref,
+              run_id: $run_id, run_attempt: $run_attempt, started_at: $started_at, completed_at: $completed_at,
+              candidate: {tag: $tag, commit_sha: $commit, image_digest: $digest,
+                          checksums_sha256: $checksums, evidence_sha256: $evidence_sha},
+              scope: $scope[0], identity: $identity[0], positive: $positive[0], negative: $negative[0],
+              canary: {"clean-install": $ci[0], "candidate-action": $ca[0], container: $ct[0]}}' \
+            >evidence/maintenance-evidence-input.json
+          python3 scripts/maintenance-evidence-summary.py \
+            evidence/maintenance-evidence-input.json evidence/maintenance-evidence.json
+          cp "$v"/release-positive.json "$v"/release-negative.json "$c/maintenance-scope.json" evidence/
+      - name: Attest maintenance evidence
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            evidence/maintenance-evidence.json
+            evidence/release-positive.json
+            evidence/release-negative.json
+            evidence/maintenance-scope.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: maintenance-evidence-${{ inputs.milestone }}-${{ needs.bind.outputs.tag }}
+          path: evidence/
+          if-no-files-found: error
