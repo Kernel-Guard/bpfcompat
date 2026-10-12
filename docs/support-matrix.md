@@ -16,7 +16,7 @@ pinned see [image-pipeline.md](image-pipeline.md).
 |---|---|---|
 | Runnable (auto-download) | 44 | Supported transport and a public vendor image URL — runs anywhere with KVM, no manual setup. |
 | Manual image required | 8 | Supported transport, but the image is licensed or has no public URL; the operator imports it (see `make import-required-images`). |
-| Generated lane | 5 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
+| Generated lane | 0 | No vendor image at all — the kernel is built/booted at run time (virtme-ng upstream, Firecracker). |
 | Cataloged, not runnable here | 4 | Present in the catalog but not bootable on the current SSH/cloud-init executor (immutable images, executor limits). Marked non-blocking in matrices. |
 
 ## Runnable now (auto-download)
@@ -94,11 +94,6 @@ recorded kernel release, not an image digest.
 
 | Profile ID | Distro | Version | Kernel family | Arch | Transport / runner | Notes |
 |---|---|---|---|---|---|---|
-| firecracker-dev-one | firecracker-ci-kernel | 6.1.155 | 6.1.155 | x86_64 | firecracker | kernel is built/booted at run time (no vendor image) |
-| kernelorg-feature-ringbuf-era-6.8 | upstream-mainline | feature-ringbuf-era | 6.8 | x86_64 | virtme-ng | kernel is built/booted at run time (no vendor image) |
-| kernelorg-latest-runnable-6.19 | upstream-mainline | latest-runnable | 6.19 | x86_64 | virtme-ng | kernel is built/booted at run time (no vendor image) |
-| kernelorg-lts-5.15 | upstream-mainline | lts | 5.15 | x86_64 | virtme-ng | kernel is built/booted at run time (no vendor image) |
-| kernelorg-lts-6.1 | upstream-mainline | lts | 6.1 | x86_64 | virtme-ng | kernel is built/booted at run time (no vendor image) |
 
 ## Cataloged, not runnable on the current executor
 

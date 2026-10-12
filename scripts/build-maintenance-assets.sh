@@ -7,7 +7,9 @@ version="${1:?version required}"
 out="${2:?absolute output directory required}"
 [[ "$version" =~ ^v0\.3\.8(-rc\.[1-9][0-9]*)?$ ]]
 [[ "$out" == /* ]]
-test "$(go env GOVERSION)" = go1.25.14
+# The build toolchain is release.yaml minimum_go (single source of truth).
+required_go="go$(awk -F': ' '$1 == "minimum_go" {print $2; exit}' release.yaml)"
+test "$(go env GOVERSION)" = "$required_go"
 test "$(go env GOHOSTARCH)" = amd64
 commit="$(git rev-parse HEAD)"
 test -z "$(git status --porcelain)"
@@ -56,5 +58,6 @@ python3 scripts/native-validator-sbom.py collect "$scratch/link-1.txt" \
     printf '%s\n' "$package"
   done <scripts/release-native-packages.txt
 } >"$out/BUILD-TOOLS.txt"
+bash scripts/check-binary-toolchain.sh "$required_go" "$out/bpfcompat-linux-amd64" "$out/bpfcompat-linux-arm64"
 (cd "$out"; sha256sum bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64 BUILD-TOOLS.txt NATIVE-LINK-INPUTS.json >SHA256SUMS)
 echo '[maintenance-build] locked native versions and byte-identical repeated builds PASS; cross-runner reproduction NOT VERIFIED by this command'

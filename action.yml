@@ -105,7 +105,7 @@ runs:
           # so SHA-pinned consumers still get prebuilt binaries instead of
           # silently requiring libbpf build deps on the runner. Any API
           # hiccup or no matching tag falls through to the source build.
-          tags_json="$(curl -fsSL --retry 2 \
+          tags_json="$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
             -H "Authorization: Bearer ${GITHUB_API_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/Kernel-Guard/bpfcompat/tags?per_page=100" || true)"
@@ -129,8 +129,9 @@ runs:
 
         base="https://github.com/Kernel-Guard/bpfcompat/releases/download/${ref}"
         tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
         for asset in bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 SHA256SUMS; do
-          if ! curl -fsSL --retry 2 -o "$tmp/$asset" "$base/$asset"; then
+          if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 -o "$tmp/$asset" "$base/$asset"; then
             echo "Release asset $asset not available for ${ref}; building from source."
             exit 0
           fi

@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: "1.25.14"
+  GO_VERSION: "1.26.9"
   PYTHONDONTWRITEBYTECODE: "1"
   IMAGE: ghcr.io/kernel-guard/bpfcompat
 
@@ -78,6 +78,8 @@ jobs:
           bash scripts/verify-release-assets_test.sh
           bash scripts/action-prebuilt-provenance_test.sh
           bash scripts/install-verification_test.sh
+          bash scripts/download-hardening_test.sh
+          bash scripts/check-binary-toolchain_test.sh
           bash scripts/action-prebuilt-checksums_test.sh
           bash scripts/action-artifact-ref-detection_test.sh
           bash scripts/support-matrix_test.sh
