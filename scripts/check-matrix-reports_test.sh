@@ -37,7 +37,7 @@ write_report() { # path started_at schema sha profiles_json
 {"schema_version":"$3","run":{"id":"r","started_at":"$2"},
  "artifact":{"basename":"art.o","sha256":"$4"},
  "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
- "targets":$(jq -c 'map({profile_id:., required:true, status:"pass", verdict:"COMPATIBLE"})' <<<"$5")}
+ "targets":$(jq -c 'map({profile_id:., required:(. != "p2"), status:"pass", verdict:"COMPATIBLE"})' <<<"$5")}
 JSON
 }
 
@@ -126,6 +126,86 @@ cat >reports/quirk-a.json <<JSON
             {"profile_id":"p2","required":false,"status":"pass","verdict":"COMPATIBLE"}]}
 JSON
 expect "summary without a verdict refuses publication" 1 "${args[@]}"
+
+# summary.complete is what the page's "incomplete" banner relies on. It must
+# be present, and it must be false whenever any target -- required or
+# optional -- produced no answer (docs/compatibility-contract.md).
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE"},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"infra_error","verdict":"INFRA_ERROR","infra_error":"boot timeout"}]}
+JSON
+expect "optional infra error with summary.complete missing refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"infra_error","verdict":"INFRA_ERROR","infra_error":"boot timeout"}]}
+JSON
+expect "complete:true with an INFRA_ERROR target refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"unsupported","verdict":"UNSUPPORTED"}]}
+JSON
+expect "complete:true with an UNSUPPORTED target refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE",
+             "environment":{"kernel_family_match":false}},
+            {"profile_id":"p2","required":false,"status":"pass","verdict":"COMPATIBLE"}]}
+JSON
+expect "complete:true with a kernel-family mismatch refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":"yes"},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"pass","verdict":"COMPATIBLE"}]}
+JSON
+expect "non-boolean summary.complete refuses publication" 1 "${args[@]}"
+
+# The page counts required targets separately, so required flags must be
+# the matrix's, not the report's.
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":true,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":true,"status":"pass","verdict":"COMPATIBLE"}]}
+JSON
+expect "optional profile reported as required refuses publication" 1 "${args[@]}"
+
+cat >reports/quirk-a.json <<JSON
+{"schema_version":"v0.1","run":{"id":"r","started_at":"2026-10-11T11:00:00Z"},
+ "artifact":{"basename":"art.o","sha256":"$art_sha"},
+ "summary":{"status":"pass","verdict":"COMPATIBLE","complete":true},
+ "targets":[{"profile_id":"p1","required":false,"status":"pass","verdict":"COMPATIBLE"},
+            {"profile_id":"p2","required":false,"status":"pass","verdict":"COMPATIBLE"}]}
+JSON
+expect "required profile reported as optional refuses publication" 1 "${args[@]}"
+
+# A matrix entry without `required:` is required (bpfcompat's default).
+cat >matrices/m2.yaml <<'YAML'
+name: m2
+profiles:
+  - id: p1
+  - id: p2
+    required: false
+YAML
+write_report reports/quirk-a.json 2026-10-11T11:00:00Z v0.1 "$art_sha" "$good"
+expect "omitted required defaults to required" 0 reports matrices/m2.yaml "$not_before" "quirk-a.json=art.o"
 
 expect "no expected reports given is a usage error" 2 reports matrices/m.yaml "$not_before"
 

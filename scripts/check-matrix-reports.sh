@@ -12,8 +12,12 @@
 #   2. declare schema_version "v0.1";
 #   3. have run.started_at at or after <not-before-epoch> (the job start), so a
 #      leftover file can never be republished as current;
-#   4. cover exactly the profile ids the matrix requests (no more, no fewer);
-#   5. name, in artifact.sha256, the bytes of <artifact-path> built in this run.
+#   4. cover exactly the profile ids the matrix requests (no more, no fewer),
+#      each with the matrix's `required` flag (omitted means required);
+#   5. name, in artifact.sha256, the bytes of <artifact-path> built in this run;
+#   6. carry a boolean summary.complete that is false whenever any target
+#      produced no answer (INFRA_ERROR, UNSUPPORTED, kernel-family mismatch),
+#      because the page's "incomplete" banner is driven by it.
 #
 # Exit 0: all expected reports pass -> publish. Exit 1: any check failed ->
 # do not publish (the previous page stays, and the workflow says why).
@@ -38,6 +42,13 @@ command -v jq >/dev/null || { echo "check-matrix-reports: jq is required" >&2; e
 # Matrix profile ids, sorted, one per line. Plain awk over the documented
 # matrix layout (`  - id: <profile>`), so no YAML library is needed.
 expected_profiles="$(awk '$1 == "-" && $2 == "id:" {print $3}' "$matrix" | tr -d '"'"'" | sort)"
+# (profile id, required) pairs, sorted. `required` defaults to true, exactly
+# as internal/matrix RequiredBool does.
+expected_required="$(awk '
+  $1 == "-" && $2 == "id:" { if (id != "") print id "\t" req; id = $3; req = "true"; next }
+  $1 == "required:" && id != "" { req = $2 }
+  END { if (id != "") print id "\t" req }
+' "$matrix" | tr -d '"'"'" | sort)"
 if [[ -z "$expected_profiles" ]]; then
   echo "check-matrix-reports: no profiles found in $matrix" >&2
   exit 2
@@ -102,6 +113,23 @@ for pair in "$@"; do
   got_profiles="$(jq -r '(.targets // [])[].profile_id' "$report" | sort)"
   if [[ "$got_profiles" != "$expected_profiles" ]]; then
     refuse "$report_name covers profiles [$(echo "$got_profiles" | paste -sd, -)] but the matrix requests [$(echo "$expected_profiles" | paste -sd, -)]"
+  else
+    got_required="$(jq -r '(.targets // [])[] | "\(.profile_id)\t\(.required)"' "$report" | sort)"
+    if [[ "$got_required" != "$expected_required" ]]; then
+      refuse "$report_name marks required/optional profiles differently from the matrix; required targets are counted separately on the page"
+    fi
+  fi
+
+  # Coverage: complete must be stated, and cannot claim true over a target
+  # that produced no answer (docs/compatibility-contract.md, run-level roll-up).
+  if ! jq -e '
+      (.summary.complete | type) == "boolean"
+      and (if any((.targets // [])[];
+                  .verdict == "INFRA_ERROR" or .verdict == "UNSUPPORTED"
+                  or (.environment.kernel_family_match? == false))
+           then .summary.complete == false else true end)
+    ' "$report" >/dev/null 2>&1; then
+    refuse "$report_name summary.complete is missing, not boolean, or true although a target produced no answer"
   fi
 
   if [[ ! -f "$artifact_path" ]]; then
