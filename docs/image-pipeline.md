@@ -207,13 +207,15 @@ The crawler mapping (distro key, target flavor, release prefix, and the
 than `ubuntu-generic`. `--target` and `--series` override it.
 
 Supported families: **Debian** (`apt`/`dpkg`, boot selected via grub menu
-titles) and **RHEL** — AlmaLinux, Rocky, CentOS Stream — (`dnf`, boot
-selected with `grubby --set-default`, which matches on the vmlinuz path
-rather than a menu string). Deliberately unsupported: Oracle Linux (UEK
-ships from its own repositories, not BaseOS), Amazon Linux (kernels are
-not published in a browsable pool the crawler maps to), and the
-immutable/image-based systems (RHCOS, Fedora CoreOS, Flatcar, Bottlerocket,
-Talos), whose kernels are part of the image rather than packages.
+titles), **RHEL** — AlmaLinux, Rocky, CentOS Stream, and Oracle UEK — (`dnf`,
+boot selected with `grubby --set-default`), and **Amazon Linux**. Amazon
+Linux installs the exact signed `kernel-<release>` package from the vendor
+repository; AL2 uses its rolling `yum` repository, while AL2023 explicitly
+uses `dnf --releasever=latest` so an older image's deterministic repository
+lock cannot hide the current kernel. Every lane verifies the exact `uname -r`
+after reboot before validation. Immutable/image-based systems (RHCOS,
+Fedora CoreOS, Flatcar, Bottlerocket, Talos) remain deliberately unsupported
+because their kernels are part of the image rather than ordinary packages.
 
 ## Adding a profile (checklist)
 
