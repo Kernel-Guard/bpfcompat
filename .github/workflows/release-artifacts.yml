@@ -89,7 +89,7 @@ jobs:
           go test -race -count=1 -coverprofile="$RUNNER_TEMP/maintenance-coverage.out" -covermode=atomic ./...
           bash scripts/check-coverage.sh "$RUNNER_TEMP/maintenance-coverage.out" 50.0
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-          make maintenance-tech-check
+          bash scripts/maintenance-tech-check.sh
       - name: Resolve build metadata
         id: meta
         env:

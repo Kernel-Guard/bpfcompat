@@ -31,7 +31,10 @@ def check(stage, promotion, preview):
     quality = next(s for s in steps if s.get('name') == 'Release quality gates')['run']
     # R1: the maintenance tech gate (machine-verified scope) is mandatory, and
     # the inherited history-based gate is replaced, not silently dropped.
-    require('make maintenance-tech-check' in quality)
+    # Called directly, not via make: a Makefile change is a profile-class
+    # change in the scope check and must not be able to redefine the gate.
+    require(re.search(r'^\s*bash scripts/maintenance-tech-check\.sh\s*$', quality, re.M))
+    require('make maintenance-tech-check' not in quality)
     require('make production-tech-check' not in quality)
     native = next(s for s in steps if s.get('name') == 'Install native build dependencies')['run']
     require('release-native-snapshot.txt' in native and '--snapshot "$snapshot"' in native)
@@ -70,7 +73,7 @@ class ReleaseControls(unittest.TestCase):
         stage = copy.deepcopy(self.stage)
         for step in stage['jobs']['build-and-sign']['steps']:
             if step.get('name') == 'Release quality gates':
-                step['run'] = step['run'].replace('make maintenance-tech-check', 'true')
+                step['run'] = step['run'].replace('bash scripts/maintenance-tech-check.sh', 'true')
         with self.assertRaises(ValueError):
             check(stage, self.promotion, self.preview)
 
