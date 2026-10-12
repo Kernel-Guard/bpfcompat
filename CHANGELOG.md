@@ -65,6 +65,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - Release validation uses the Go toolchain pinned in release.yaml (see
   Security), enforces 50% complete race coverage, and pins govulncheck. Support-document generation
   uses deterministic byte ordering independent of locale.
+- The pinned native build snapshot moves from `20260601T000000Z` to
+  `20261012T000000Z`: `libc6-dev` 2.39-0ubuntu8.7 -> 8.9 and `zlib1g-dev`
+  1:1.3.dfsg-3.1ubuntu2.1 -> 2.2, matching the runtime libraries the current
+  ubuntu-24.04 runner image ships (apt cannot install dev packages built for
+  older runtime libraries). The other six pins are unchanged.
 
 ## [0.3.7] - 2026-08-26
 
