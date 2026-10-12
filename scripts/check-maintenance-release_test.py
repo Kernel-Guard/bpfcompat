@@ -91,10 +91,15 @@ class MaintenanceIdentity(unittest.TestCase):
                 self.run_validate(metadata=metadata)
 
     def test_channel_must_match_release_version(self):
-        metadata = copy.deepcopy(self.metadata)
-        metadata['release_channel'] = 'stable'
-        with self.assertRaises(ValueError):
-            self.run_validate(metadata=metadata)
+        # Both directions, independent of the state the real release.yaml is
+        # in: the stable release commit flips it to 0.3.8/stable, and the
+        # release gate runs this suite on that commit too.
+        for version, channel in (('0.3.8-rc.1', 'stable'), ('0.3.8', 'prerelease')):
+            metadata = copy.deepcopy(self.metadata)
+            metadata.update(release_version=version, release_channel=channel)
+            with self.subTest(version=version, channel=channel):
+                with self.assertRaisesRegex(ValueError, 'release_channel does not match release_version'):
+                    self.run_validate(metadata=metadata)
 
     def test_wrong_tag(self):
         with self.assertRaisesRegex(ValueError, 'tag does not match'):
