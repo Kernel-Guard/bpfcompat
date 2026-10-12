@@ -74,36 +74,101 @@ def classify(path):
     return 'UNCLASSIFIED'
 
 
-FUNC = re.compile(r'^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]')
+FUNC = re.compile(r'^func\s+(?:\(([^)]*)\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]')
+# Attached doc comments are `// text` or a bare `//`. Anything else directly
+# after the slashes (`//go:`, `//export`, `//line`, `//extern`, ...) is a
+# compiler/linker directive: it changes build semantics and is never part of
+# the function below it.
+DOC_LINE = re.compile(r'^//( |$)')
+
+
+def _func_key(receiver, name):
+    """Methods are keyed Type.Name so same-named methods never collide."""
+    if not receiver:
+        return name
+    rtype = receiver.split()[-1].lstrip('*').split('[')[0]
+    return '%s.%s' % (rtype, name)
+
+
+def _body_end(lines, start):
+    """0-based index of the line where the declaration starting at `start`
+    closes. Braces inside strings, runes, raw strings and comments are
+    ignored. A declaration ends on the line where its brace depth returns to
+    zero with no further `{` on that line, so one-line bodies and brace-using
+    signatures such as `func f() interface{} {` are both handled."""
+    depth = 0
+    opened = False
+    in_block = False
+    in_raw = False
+    for j in range(start, len(lines)):
+        line = lines[j]
+        k = 0
+        closed_here = False
+        while k < len(line):
+            c = line[k]
+            if in_block:
+                if line.startswith('*/', k):
+                    in_block = False
+                    k += 2
+                    continue
+                k += 1
+                continue
+            if in_raw:
+                if c == '`':
+                    in_raw = False
+                k += 1
+                continue
+            if line.startswith('//', k):
+                break
+            if line.startswith('/*', k):
+                in_block = True
+                k += 2
+                continue
+            if c == '`':
+                in_raw = True
+            elif c in '"\'':
+                quote = c
+                k += 1
+                while k < len(line) and line[k] != quote:
+                    k += 2 if line[k] == '\\' else 1
+            elif c == '{':
+                depth += 1
+                opened = True
+                closed_here = False
+            elif c == '}':
+                depth -= 1
+                if opened and depth == 0:
+                    closed_here = True
+            k += 1
+        if closed_here and depth == 0:
+            return j
+        if not opened and j > start and not in_block and not in_raw and line.strip() == '':
+            return j - 1  # bodiless declaration (assembly stub)
+    return len(lines) - 1
 
 
 def function_spans(source):
-    """Top-level func name -> (first line, closing-brace line), 1-based."""
+    """Top-level func key -> (first line, last line), 1-based. Methods are
+    keyed Type.Name. The span includes the attached `// ` doc comment."""
     spans = {}
     lines = source.splitlines()
     i = 0
     while i < len(lines):
         m = FUNC.match(lines[i])
         if m:
-            # The doc comment directly attached above a function belongs to
-            # it. A `//go:` directive never does: it changes build or link
-            # semantics, so it must stay outside and be judged on its own.
             k = i
-            while k > 0 and lines[k - 1].startswith('//') and not lines[k - 1].startswith('//go:'):
+            while k > 0 and DOC_LINE.match(lines[k - 1]):
                 k -= 1
-            start = k + 1
-            j = i
-            while j < len(lines) and lines[j] != '}':
-                j += 1
-            spans[m.group(1)] = (start, j + 1)
-            i = j + 1
+            end = _body_end(lines, i)
+            spans[_func_key(m.group(1), m.group(2))] = (k + 1, end + 1)
+            i = end + 1
             continue
         i += 1
     return spans
 
 
 def evaluate(changed_paths, declaration, read_head, read_base, changed_head_lines,
-             vm_gate_profiles, base_toolchain, head_toolchain):
+             vm_gate_profiles, base_toolchain, head_toolchain, changed_base_lines=None):
     violations = []
     classes = {}
     runtime_report = []
@@ -143,9 +208,27 @@ def evaluate(changed_paths, declaration, read_head, read_base, changed_head_line
                     outside.append(line)
                 else:
                     touched.add(owner)
+            # Removed lines are judged in the BASELINE file: deleting an
+            # init(), a package-level var or an undeclared function changes the
+            # binary even though no line of the new file shows it.
+            base_source = read_base(path) or ''
+            base_spans = function_spans(base_source)
+            base_lines_src = base_source.splitlines()
+            removed_outside = []
+            for line in (changed_base_lines(path) if changed_base_lines else []):
+                if 1 <= line <= len(base_lines_src) and not base_lines_src[line - 1].strip():
+                    continue
+                owner = next((name for name, (a, b) in base_spans.items() if a <= line <= b), None)
+                if owner is None or owner not in allowed:
+                    removed_outside.append(line)
+                else:
+                    touched.add(owner)
             if outside:
                 violations.append('%s: lines %s change code outside the declared functions %s'
                                   % (path, outside, allowed))
+            if removed_outside:
+                violations.append('%s: removed baseline lines %s lie outside the declared functions %s'
+                                  % (path, removed_outside, allowed))
             for profile in entry.get('exercised_by') or []:
                 if profile not in vm_gate_profiles:
                     violations.append('%s: exercised_by profile %s is not in the maintenance VM gate'
@@ -201,16 +284,17 @@ def _git(*args):
 
 
 def _changed_lines(base, path):
-    out = _git('diff', '-U0', base, '--', path).stdout
-    lines = []
-    for m in re.finditer(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', out, re.M):
-        start, count = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
-        if count == 0:
-            # Pure deletion after line `start`: both neighbours must be owned.
-            lines.extend([max(start, 1), start + 1])
-        else:
-            lines.extend(range(start, start + count))
-    return lines
+    """(head lines added/changed, baseline lines removed/changed), 1-based,
+    for the committed diff base..HEAD. Rename detection is off so a moved
+    file is a deletion plus an addition, never a silent path change."""
+    out = _git('diff', '-U0', '--no-renames', base, 'HEAD', '--', path).stdout
+    head, removed = [], []
+    for m in re.finditer(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', out, re.M):
+        b_start, b_count = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+        h_start, h_count = int(m.group(3)), int(m.group(4) if m.group(4) is not None else 1)
+        removed.extend(range(b_start, b_start + b_count))
+        head.extend(range(h_start, h_start + h_count))
+    return head, removed
 
 
 def main(argv):
@@ -219,14 +303,19 @@ def main(argv):
     release = str(metadata['release_version']).split('-')[0]
     decl_path = ROOT / 'docs' / 'releases' / ('v%s-scope.yaml' % release)
     declaration = yaml.safe_load(decl_path.read_text()) if decl_path.exists() else None
-    diff = _git('diff', '--name-only', base)
+    # The release is a commit: judge exactly base..HEAD. Untracked files
+    # (build output such as dist/) are not part of it; uncommitted changes to
+    # tracked files cannot be judged, so they are an error, never ignored.
+    dirty = _git('status', '--porcelain', '--untracked-files=no').stdout.strip()
+    if dirty:
+        print('uncommitted changes to tracked files; commit them before checking scope:\n' + dirty,
+              file=sys.stderr)
+        sys.exit(2)
+    diff = _git('diff', '--name-only', '--no-renames', base, 'HEAD')
     if diff.returncode != 0:
         print('cannot diff against stable_commit %s: %s' % (base, diff.stderr.strip()), file=sys.stderr)
         sys.exit(2)
-    changed = [p for p in diff.stdout.splitlines() if p]
-    changed += [p for p in _git('ls-files', '--others', '--exclude-standard').stdout.splitlines()
-                if p and classify(p) != 'S5-docs-tests' or p.endswith('_test.go')]
-    changed = sorted(set(changed))
+    changed = sorted({p for p in diff.stdout.splitlines() if p})
 
     def read_head(path):
         p = ROOT / path
@@ -245,8 +334,9 @@ def main(argv):
     head_toolchain = str(metadata.get('minimum_go', ''))
 
     report = evaluate(changed, declaration or {}, read_head, read_base,
-                      lambda p: _changed_lines(base, p), gate_profiles,
-                      base_toolchain, head_toolchain)
+                      lambda p: _changed_lines(base, p)[0], gate_profiles,
+                      base_toolchain, head_toolchain,
+                      changed_base_lines=lambda p: _changed_lines(base, p)[1])
     report['baseline'] = base
     report['declaration'] = str(decl_path.relative_to(ROOT))
     if '--out' in argv:
