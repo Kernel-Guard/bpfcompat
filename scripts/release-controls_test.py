@@ -60,6 +60,39 @@ def check(stage, promotion, preview):
                 action = step.get('uses', './')
                 require(action.startswith('./') or re.fullmatch(r'[^@]+@[0-9a-f]{40}', action))
 
+WRITE_SCOPES = ('id-token', 'attestations')
+
+
+def check_maintenance_evidence(doc):
+    """R3: producer evidence is dispatch-only, rc-tag-bound and least-privilege."""
+    def require(condition):
+        if not condition:
+            raise ValueError('unsafe maintenance-evidence wiring')
+    require(set(doc['on']) == {'workflow_dispatch'})
+    require(doc['permissions'] == {'contents': 'read'})
+    jobs = doc['jobs']
+    for name, job in jobs.items():
+        for scope, level in (job.get('permissions') or {}).items():
+            if level == 'write':
+                require(name == 'attest' and scope in WRITE_SCOPES)
+    guard = next(s for s in jobs['bind']['steps'] if s.get('id') == 'guard')['run']
+    require(r'^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$' in guard)
+    require('"$GITHUB_SHA" == "$EXPECTED_COMMIT"' in guard)
+    bind = '\n'.join(s.get('run', '') for s in jobs['bind']['steps'])
+    require('scripts/verify-release-assets.sh' in bind and 'gh attestation verify' in bind)
+    require('scripts/check-maintenance-scope.py' in bind)
+    require(set(jobs['attest']['needs']) == {'bind', 'vm', 'clean-install', 'candidate-action', 'container'})
+    require('scripts/maintenance-vm-gate.sh' in '\n'.join(s.get('run', '') for s in jobs['vm']['steps']))
+    attest = jobs['attest']['steps']
+    require(any('scripts/maintenance-evidence-summary.py' in s.get('run', '') for s in attest))
+    require(any(s.get('uses', '').startswith('actions/attest-build-provenance@') and
+                'evidence/maintenance-evidence.json' in s['with']['subject-path'] for s in attest))
+    for job in jobs.values():
+        for step in job.get('steps', []):
+            action = step.get('uses', './')
+            require(action.startswith('./') or re.fullmatch(r'[^@]+@[0-9a-f]{40}', action))
+
+
 class ReleaseControls(unittest.TestCase):
     def setUp(self):
         self.stage = workflow('release-artifacts.yml')
@@ -68,6 +101,39 @@ class ReleaseControls(unittest.TestCase):
 
     def test_controls(self):
         check(self.stage, self.promotion, self.preview)
+
+    def test_maintenance_evidence_controls(self):
+        check_maintenance_evidence(workflow('maintenance-evidence.yml'))
+
+    def test_maintenance_evidence_push_trigger_rejected(self):
+        doc = workflow('maintenance-evidence.yml')
+        doc['on']['push'] = {'branches': ['main']}
+        with self.assertRaises(ValueError):
+            check_maintenance_evidence(doc)
+
+    def test_maintenance_evidence_write_scope_rejected(self):
+        doc = workflow('maintenance-evidence.yml')
+        doc['jobs']['bind']['permissions']['contents'] = 'write'
+        with self.assertRaises(ValueError):
+            check_maintenance_evidence(doc)
+
+    def test_maintenance_evidence_without_vm_gate_rejected(self):
+        doc = workflow('maintenance-evidence.yml')
+        doc['jobs']['attest']['needs'].remove('vm')
+        with self.assertRaises(ValueError):
+            check_maintenance_evidence(doc)
+
+    def test_maintenance_evidence_ref_guard_cannot_be_dropped(self):
+        doc = workflow('maintenance-evidence.yml')
+        for step in doc['jobs']['bind']['steps']:
+            if step.get('id') == 'guard':
+                step['run'] = 'true'
+        with self.assertRaises(ValueError):
+            check_maintenance_evidence(doc)
+
+    def test_scope_check_command_is_never_overridden_in_workflows(self):
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            self.assertNotIn('BPFCOMPAT_SCOPE_CHECK_CMD', path.read_text(), path.name)
 
     def test_maintenance_tech_gate_cannot_be_dropped(self):
         stage = copy.deepcopy(self.stage)

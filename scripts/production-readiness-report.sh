@@ -28,7 +28,7 @@ gh attestation --help >/dev/null 2>&1 || fail "gh lacks attestation support"
 # Report hashes alone cannot authenticate production observations. Verify the
 # producing run and provenance of its actual evidence, not just caller claims.
 verify_observation() {
-  local file="$1" repo="$2" workflow="$3" run_id="$4" expected_source="${5:-}" expected_event="${6:-}"
+  local file="$1" repo="$2" workflow="$3" run_id="$4" expected_source="${5:-}" expected_event="${6:-}" ref_kind="${7:-heads}" expected_branch="${8:-}"
   local run source branch verified invocation
   run="$(gh api "repos/$repo/actions/runs/$run_id")" || fail "cannot authenticate observation run $run_id"
   jq -e --arg workflow "$workflow" '
@@ -41,10 +41,11 @@ verify_observation() {
   source="$(jq -r .head_sha <<<"$run")"
   branch="$(jq -r .head_branch <<<"$run")"
   [[ -z "$expected_source" || "$source" == "$expected_source" ]] || fail "observation source identity mismatch"
+  [[ -z "$expected_branch" || "$branch" == "$expected_branch" ]] || fail "observation ref mismatch"
   jq -e --argjson id "$run_id" '.id == $id and (.run_attempt|type=="number" and .>0)' <<<"$run" >/dev/null || fail "observation run identity mismatch"
   invocation="https://github.com/$repo/actions/runs/$run_id/attempts/$(jq -r .run_attempt <<<"$run")"
   verified="$(gh attestation verify "$file" --repo "$repo" --signer-workflow "$repo/$workflow" \
-    --source-digest "$source" --source-ref "refs/heads/$branch" --format json)" ||
+    --source-digest "$source" --source-ref "refs/${ref_kind}/$branch" --format json)" ||
     fail "observation $run_id lacks authenticated provenance"
   jq -e --arg invocation "$invocation" 'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $invocation)' <<<"$verified" >/dev/null ||
     fail "observation provenance belongs to a different run or attempt"
@@ -79,6 +80,77 @@ verify_hash() {
   [[ "$actual" == "$expected" ]] ||
     fail "SHA-256 mismatch for $(basename "$path")"
 }
+
+# Release-candidate evidence: attested by release-artifacts.yml at the rc tag.
+verify_candidate() {
+  candidate="$(evidence_path "$(jq -r '.candidate.evidence' "$input")")"
+  verify_hash "$candidate" "$(jq -r '.candidate.evidence_sha256' "$input")"
+  jq -e --arg release_version "$release_version" '
+    .schema_version == "v0.1" and
+    .repository == "Kernel-Guard/bpfcompat" and
+    .channel == "prerelease" and
+    (.tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc\\.[1-9][0-9]*$")) and
+    (.tag | startswith("v" + $release_version + "-rc.")) and
+    (.commit_sha | test("^[0-9a-f]{40}$")) and
+    (.image | test("@sha256:[0-9a-f]{64}$")) and
+    (.checksums_sha256 | test("^[0-9a-f]{64}$")) and
+    (.positive_report_sha256 | test("^[0-9a-f]{64}$")) and
+    (.negative_report_sha256 | test("^[0-9a-f]{64}$"))
+  ' "$candidate" >/dev/null || fail "release-candidate evidence is invalid"
+
+  command -v gh >/dev/null || fail "gh is required to verify candidate evidence"
+  gh attestation --help >/dev/null 2>&1 ||
+    fail "installed GitHub CLI lacks attestation support"
+  gh attestation verify "$candidate" \
+    --repo Kernel-Guard/bpfcompat \
+    --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+    --source-digest "$(jq -r '.commit_sha' "$candidate")" \
+    --source-ref "refs/tags/$(jq -r '.tag' "$candidate")" \
+    >/dev/null || fail "release-candidate evidence attestation verification failed"
+}
+
+# Rollback drill, fail-closed promotion incident and solo-operator confirmation.
+verify_release_controls() {
+  rollback="$(evidence_path "$(jq -r '.rollback.evidence' "$input")")"
+  verify_hash "$rollback" "$(jq -r '.rollback.evidence_sha256' "$input")"
+  grep -Fq '[bpfcompat-rollback-drill:v1]' "$rollback" ||
+    fail "rollback evidence is missing its completion marker"
+  incident="$(evidence_path "$(jq -r '.incident.evidence' "$input")")"
+  verify_hash "$incident" "$(jq -r '.incident.evidence_sha256' "$input")"
+  grep -Fq '[bpfcompat-promotion-incident:v1]' "$incident" ||
+    fail "incident evidence is missing its fail-closed completion marker"
+  operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
+  verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
+  operator="$(jq -r '.operator.login' "$input")"
+  approval_mode="$(jq -r '.operator.approval_mode' "$input")"
+  metadata_operator="$(
+    awk -F': ' '$1 == "release_operator" {print $2; exit}' release.yaml
+  )"
+  metadata_approval_mode="$(
+    awk -F': ' '$1 == "approval_mode" {print $2; exit}' release.yaml
+  )"
+  [[ "$operator" == "$metadata_operator" ]] ||
+    fail "operator does not match release metadata"
+  [[ "$approval_mode" == "solo-maintainer" &&
+     "$approval_mode" == "$metadata_approval_mode" ]] ||
+    fail "solo-maintainer approval mode is not recorded"
+  grep -Fq '[bpfcompat-solo-promotion:v1]' "$operator_evidence" ||
+    fail "operator evidence is missing its solo-promotion marker"
+  grep -Fq "$operator" "$operator_evidence" ||
+    fail "operator evidence does not identify ${operator}"
+}
+
+# A maintenance release (R1-R3) replaces the scheduled campaigns and RC
+# canary windows with two first-party attested maintenance-evidence runs.
+# It is selectable only when the machine-verified scope is eligible; the
+# channel file enforces that. Every other manifest takes the stable path.
+if jq -e '.channel == "maintenance"' "$input" >/dev/null; then
+  # shellcheck source=scripts/maintenance-readiness.sh
+  source "${ROOT_DIR}/scripts/maintenance-readiness.sh"
+  exit 0
+fi
+jq -e '(has("channel") | not) or .channel == "stable"' "$input" >/dev/null ||
+  fail "unknown readiness channel"
 
 jq -e '
   .schema_version == "v0.1" and
@@ -218,30 +290,7 @@ for profile in \
   ' "$falco_report" >/dev/null || fail "Falco report is missing passing profile ${profile}"
 done
 
-candidate="$(evidence_path "$(jq -r '.candidate.evidence' "$input")")"
-verify_hash "$candidate" "$(jq -r '.candidate.evidence_sha256' "$input")"
-jq -e --arg release_version "$release_version" '
-  .schema_version == "v0.1" and
-  .repository == "Kernel-Guard/bpfcompat" and
-  .channel == "prerelease" and
-  (.tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc\\.[1-9][0-9]*$")) and
-  (.tag | startswith("v" + $release_version + "-rc.")) and
-  (.commit_sha | test("^[0-9a-f]{40}$")) and
-  (.image | test("@sha256:[0-9a-f]{64}$")) and
-  (.checksums_sha256 | test("^[0-9a-f]{64}$")) and
-  (.positive_report_sha256 | test("^[0-9a-f]{64}$")) and
-  (.negative_report_sha256 | test("^[0-9a-f]{64}$"))
-' "$candidate" >/dev/null || fail "release-candidate evidence is invalid"
-
-command -v gh >/dev/null || fail "gh is required to verify candidate evidence"
-gh attestation --help >/dev/null 2>&1 ||
-  fail "installed GitHub CLI lacks attestation support"
-gh attestation verify "$candidate" \
-  --repo Kernel-Guard/bpfcompat \
-  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
-  --source-digest "$(jq -r '.commit_sha' "$candidate")" \
-  --source-ref "refs/tags/$(jq -r '.tag' "$candidate")" \
-  >/dev/null || fail "release-candidate evidence attestation verification failed"
+verify_candidate
 
 : >"$tmp/canary_rows"
 : >"$tmp/canaries.ndjson"
@@ -330,33 +379,7 @@ done < <(jq -c '.canaries[]' "$input")
 [[ "$(sort -u "$tmp/canary_run_ids" | wc -l)" -eq 3 ]] ||
   fail "RC canary workflow run IDs must be unique"
 
-rollback="$(evidence_path "$(jq -r '.rollback.evidence' "$input")")"
-verify_hash "$rollback" "$(jq -r '.rollback.evidence_sha256' "$input")"
-grep -Fq '[bpfcompat-rollback-drill:v1]' "$rollback" ||
-  fail "rollback evidence is missing its completion marker"
-incident="$(evidence_path "$(jq -r '.incident.evidence' "$input")")"
-verify_hash "$incident" "$(jq -r '.incident.evidence_sha256' "$input")"
-grep -Fq '[bpfcompat-promotion-incident:v1]' "$incident" ||
-  fail "incident evidence is missing its fail-closed completion marker"
-operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
-verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
-operator="$(jq -r '.operator.login' "$input")"
-approval_mode="$(jq -r '.operator.approval_mode' "$input")"
-metadata_operator="$(
-  awk -F': ' '$1 == "release_operator" {print $2; exit}' release.yaml
-)"
-metadata_approval_mode="$(
-  awk -F': ' '$1 == "approval_mode" {print $2; exit}' release.yaml
-)"
-[[ "$operator" == "$metadata_operator" ]] ||
-  fail "operator does not match release metadata"
-[[ "$approval_mode" == "solo-maintainer" &&
-   "$approval_mode" == "$metadata_approval_mode" ]] ||
-  fail "solo-maintainer approval mode is not recorded"
-grep -Fq '[bpfcompat-solo-promotion:v1]' "$operator_evidence" ||
-  fail "operator evidence is missing its solo-promotion marker"
-grep -Fq "$operator" "$operator_evidence" ||
-  fail "operator evidence does not identify ${operator}"
+verify_release_controls
 
 mkdir -p "$(dirname "$output")"
 mkdir -p "$(dirname "$output_json")"
