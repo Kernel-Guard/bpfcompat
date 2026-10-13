@@ -47,7 +47,7 @@ probe (`examples/ringbuf-modern/ringbuf_modern.bpf.o`) across the library — se
 | `centos-stream-9-5.14` | 5.14.0-706.el9 | RHEL-9 base: 5.14 carrying many 6.x BPF features | ✅ pass |
 | `amazon-linux-2-4.14` | 4.14.26-…amzn2 | **Backports are not uniform:** Amazon's 4.14 (no embedded BTF) does **not** carry the ring-buffer backport that RHEL's 4.18 does | ❌ `UNSUPPORTED_MAP_TYPE` — a *simple* program loads here, ring buffer does not |
 | `amazon-linux-2-5.10` | 5.10.247-…amzn2 | Amazon backport tier | ✅ pass |
-| `oracle-linux-9-uek7-5.15` | **6.12.0**-…el9uek | **Version-string trap:** the `uek7-5.15` profile actually boots a **6.12** UEK kernel on an EL9 userspace | ✅ pass (test, don't assume from the name) |
+| `oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek` | **6.12.0**-204.92.4.4.el9uek | **Version-string trap:** Oracle's EL9 userspace runs a **6.12** UEK8 kernel. The base `oracle-linux-9-uek7-5.15` profile requests 5.15 but boots 6.12, so it cannot establish the series it names; the library pins the exact UEK8 kernel instead | ✅ pass (test, don't assume from the name) |
 | `opensuse-leap-15.6-6.4` | 6.4.0-…default | SUSE backport tier | ✅ pass |
 | `ubuntu-22.04-5.15` | 5.15.0-173 | **Program-variant fallback band:** a loader must select the `*_old_x` syscall variants; `dump_task` is unsupported | ✅ pass *with the right variant selection* |
 | `debian-12-6.1` | 6.1.0-47 | Newer band: `bpf_loop` variants + both BPF iterators available | ✅ pass with the modern variants |
