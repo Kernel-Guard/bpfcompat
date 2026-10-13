@@ -51,9 +51,10 @@ Only `schedule` events from `latest-kernel-compatibility.yml` count. Manual
 dispatches are shakeouts and cannot satisfy the four-campaign requirement.
 Campaigns must be unique, chronological, and 6-8 days apart. The campaign
 workflow runs on the pinned `ubuntu-24.04` image, not the moving
-`ubuntu-latest` label, so all four campaigns of a window run on the same host
-OS (`scripts/campaign-runner-pin_test.sh`); change the pin only between
-qualification windows. A supported-
+`ubuntu-latest` label, so all four campaigns of a window run on the same
+Ubuntu release (`scripts/campaign-runner-pin_test.sh`); GitHub's weekly image
+builds can still update package point versions (QEMU included) between
+campaigns. Change the pin only between qualification windows. A supported-
 boundary behavior change requires a new release candidate and restarts the
 window; documentation-only changes do not.
 
