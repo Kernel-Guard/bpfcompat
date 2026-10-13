@@ -24,6 +24,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     it reports `ol 8.10` (Oracle Linux 8, UEK R7 5.15).
   - All fields are additive (schema v0.1 stability contract).
 
+### Changed
+- `oracle-linux-9-uek7-5.15` now validates the kernel series its id names.
+  - Its OL9U7 template boots UEK8 6.12, so until now every run of this profile
+    tested 6.12 under a 5.15 label (flagged per run as a kernel-family
+    mismatch since #143).
+  - The profile now installs a pinned UEK R7 kernel
+    (`5.15.0-325.221.6.1.el9uek`) from Oracle's OL9 UEKR7 repository.
+  - The id is unchanged, so no matrix migration is needed. Results for it now
+    describe 5.15, where before they described 6.12.
+  - The 6.12-on-EL9 case stays covered by
+    `oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek`. That profile's id
+    names the image lineage and its `-k` suffix the exact kernel.
+  - A catalog test now requires every `install_kernel` and every recorded
+    baseline kernel to belong to the profile's declared `kernel_family`, and
+    the freshness crawler mapping to track that family.
+
 ### Fixed
 - The CentOS Stream 9 kernel 725 exact-kernel profile fetches the exact signed
   RPMs from the official CentOS Koji archive, since the rolling mirror retired

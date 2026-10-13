@@ -101,13 +101,13 @@ baselines:
       release_prefix: 6.12.0-
       release_contains: el10uek
   - profile: oracle-linux-9-uek7-5.15
-    kernel: 6.12.0-107.59.3.3.el9uek.x86_64
-    recorded: "2026-05-19"
-    note: image now boots UEK8 (6.12) despite the profile name
+    kernel: 5.15.0-325.221.6.1.el9uek.x86_64
+    recorded: "2026-10-13"
+    note: the OL9U7 image boots UEK8 (6.12); the profile installs a pinned UEK R7 (5.15) kernel
     crawler:
       distro: ol
       target: ol
-      release_prefix: 6.12.0-
+      release_prefix: 5.15.0-
       release_contains: el9uek
   - profile: oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek
     kernel: 6.12.0-204.92.4.4.el9uek.x86_64
