@@ -165,6 +165,40 @@ else
   bad "a matched target no longer renders as pass: $matched_row"
 fi
 
+# 8b. A required pass on another distribution (right kernel series) is the same
+#     failure to establish the environment: Required infra, and visible.
+mkdir -p "$work/reports5"
+cat >"$work/reports5/quirk-library-distro.json" <<'JSON'
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261013T000000Z-distro"},
+  "artifact": {"basename": "fixture.bpf.o", "sha256": "0000"},
+  "summary": {"status": "error", "verdict": "INFRA_ERROR", "complete": false},
+  "targets": [
+    {"profile_id": "rhel-8-4.18", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "4.18", "observed_kernel": "4.18.0-553.el8_10.x86_64", "kernel_family_match": true,
+                     "requested_distro": "rhel", "requested_distro_version": "8",
+                     "observed_os_id": "almalinux", "observed_os_version_id": "8.10", "distro_match": false}},
+    {"profile_id": "debian-12-6.1", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "6.1", "observed_kernel": "6.1.0-53-cloud-amd64", "kernel_family_match": true,
+                     "requested_distro": "debian", "requested_distro_version": "12",
+                     "observed_os_id": "debian", "observed_os_version_id": "12", "distro_match": true}}
+  ]
+}
+JSON
+( cd "$work" && BPFCOMPAT_COMPATIBILITY_VERSION=test-run5 bash "$SCRIPT" reports5 "$work/public5" ) >/dev/null
+if grep -qE '\| incomplete \| 1 \| 0 \| 1 \|' "$work/public5/index.md"; then
+  ok "a required pass on another distribution is counted under Required infra"
+else
+  bad "a required pass on another distribution was not counted as infra"; cat "$work/public5/index.md" >&2
+fi
+rhel_row="$(grep '<code>rhel-8-4.18</code>' "$work/public5/index.html" || true)"
+if [[ "$rhel_row" == *'distribution mismatch (requested rhel 8, guest almalinux 8.10)'* && "$rhel_row" == *'class="warn"'* ]]; then
+  ok "the per-target row shows the distribution mismatch"
+else
+  bad "the per-target row hides the distribution mismatch: $rhel_row"
+fi
+
 # 9. A complete, all-pass report whose kernels all match is shown as complete:
 #    honest evidence must not be rendered as a failure either.
 mkdir -p "$work/reports4"

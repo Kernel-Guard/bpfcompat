@@ -679,7 +679,7 @@ func executeTarget(
 		Kernel:       vr.Host.Release,
 		Arch:         vr.Host.Machine,
 	}
-	target.Environment = environmentEvidence(profile, vr.Host.Release)
+	target.Environment = environmentEvidence(profile, vr.Host.Release, execResult.GuestOSID, execResult.GuestOSVersionID)
 	if note, mismatched := environmentMismatchNote(target.Environment); mismatched {
 		target.Notes = append(target.Notes, note)
 	}
@@ -1281,7 +1281,7 @@ func evaluateCommandTarget(
 		Kernel:       execResult.HostRelease,
 		Arch:         execResult.HostMachine,
 	}
-	target.Environment = environmentEvidence(profile, execResult.HostRelease)
+	target.Environment = environmentEvidence(profile, execResult.HostRelease, execResult.GuestOSID, execResult.GuestOSVersionID)
 	if note, mismatched := environmentMismatchNote(target.Environment); mismatched {
 		target.Notes = append(target.Notes, note)
 	}

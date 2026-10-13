@@ -157,6 +157,10 @@ type ExecutionResult struct {
 	CommandStderrTail string
 	HostRelease       string
 	HostMachine       string
+	// GuestOSID / GuestOSVersionID are the guest's /etc/os-release ID and
+	// VERSION_ID (best-effort; empty when unreadable or malformed).
+	GuestOSID        string
+	GuestOSVersionID string
 }
 
 const (
@@ -367,6 +371,13 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 			return
 		}
 		result.Notes = append(result.Notes, fmt.Sprintf("installed kernel booted: %s", booted))
+	}
+
+	// Record which distribution actually booted (best-effort; not fatal). A
+	// bring-your-own image can be another EL rebuild on the same kernel series,
+	// which the kernel-family check cannot see.
+	if osRelease, err := sshOutput(ctx, target, "cat /etc/os-release"); err == nil {
+		result.GuestOSID, result.GuestOSVersionID = parseOSRelease(osRelease)
 	}
 
 	remoteRoot := "/tmp/bpfcompat"
