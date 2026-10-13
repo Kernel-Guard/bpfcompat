@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- Reports record which distribution actually booted:
+  `environment.observed_os_id` and `observed_os_version_id` (the guest's
+  `/etc/os-release`), the profile's `requested_distro` and
+  `requested_distro_version`, and `distro_match`.
+  - A guest of another distribution or major release is treated exactly like
+    a kernel-family mismatch: the run is `INFRA_ERROR`/incomplete, never
+    `INCOMPATIBLE`. `bpfcompat diff` marks the cell not established and
+    refuses a `distro_match` that contradicts its own inputs. The public page
+    counts it under *Required infra*.
+  - An unset `distro_match` is unknown, not a mismatch, so older reports
+    compare exactly as before.
+  - This closes the `rhel-8-4.18` identity gap. The bring-your-own slot
+    accepted any EL8 rebuild on a 4.18 kernel as RHEL, and the image found in
+    it reports `ol 8.10` (Oracle Linux 8, UEK R7 5.15).
+  - All fields are additive (schema v0.1 stability contract).
+
 ### Changed
 - `oracle-linux-9-uek7-5.15` now validates the kernel series its id names.
   - Its OL9U7 template boots UEK8 6.12, so until now every run of this profile

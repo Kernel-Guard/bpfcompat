@@ -62,7 +62,8 @@ required_counts() {
       elif .status == "infra_error" then "INFRA_ERROR"
       else "UNSUPPORTED" end));
     def required_verdict: verdict_of as $v |
-      if $v == "COMPATIBLE" and .environment.kernel_family_match == false then "INFRA_ERROR" else $v end;
+      if $v == "COMPATIBLE" and (.environment.kernel_family_match == false or .environment.distro_match == false)
+      then "INFRA_ERROR" else $v end;
     [(.targets // [])[] | select(.required == true) | required_verdict] as $v |
     ($v | map(select(. == "COMPATIBLE")) | length) as $pass |
     ($v | map(select(. == "INCOMPATIBLE")) | length) as $fail |
@@ -82,7 +83,8 @@ report_incomplete() {
       elif .status == "infra_error" then "INFRA_ERROR"
       else "UNSUPPORTED" end));
     def required_verdict: verdict_of as $v |
-      if $v == "COMPATIBLE" and .environment.kernel_family_match == false then "INFRA_ERROR" else $v end;
+      if $v == "COMPATIBLE" and (.environment.kernel_family_match == false or .environment.distro_match == false)
+      then "INFRA_ERROR" else $v end;
     # Compare directly: jq `//` treats false as missing, so
     # `(.summary.complete // true)` would read an explicit false as true.
     if .summary.complete == false then "yes"
@@ -110,15 +112,19 @@ latest_target_rows() {
     [
       (.profile_id // "-"),
       (.required // false | tostring),
-      (if .environment.kernel_family_match == false then
-         "\(.status // "-") on a kernel family mismatch (requested \(.environment.requested_kernel_family // "-"))"
-       else (.status // "-") end),
+      ([ (if .environment.kernel_family_match == false then
+            "kernel family mismatch (requested \(.environment.requested_kernel_family // "-"))" else empty end),
+         (if .environment.distro_match == false then
+            "distribution mismatch (requested \(.environment.requested_distro // "-") \(.environment.requested_distro_version // "-"), guest \(.environment.observed_os_id // "-") \(.environment.observed_os_version_id // "-"))" else empty end)
+       ] as $why |
+       if ($why | length) > 0 then "\(.status // "-") on a \($why | join(" and "))" else (.status // "-") end),
       (.host.kernel // .profile.kernel // "-"),
       (.functional.status // "-"),
       (.classification_code // "-"),
       # Row style: amber only for a pass that did not establish the requested
-      # kernel; a failure keeps its fail style even on a mismatched kernel.
-      (if .environment.kernel_family_match == false and .status == "pass" then "warn" else (.status // "-") end)
+      # kernel or distribution; a failure keeps its fail style regardless.
+      (if (.environment.kernel_family_match == false or .environment.distro_match == false) and .status == "pass"
+       then "warn" else (.status // "-") end)
     ] | @tsv
   ' "$report"
 }

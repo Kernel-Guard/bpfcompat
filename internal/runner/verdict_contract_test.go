@@ -454,3 +454,72 @@ func TestCommandModeInfraFailureIsNotTheUsersLoader(t *testing.T) {
 		t.Fatal("a guest that never booted must not be classified as the loader failing")
 	}
 }
+
+// The kernel-family check cannot see a different distribution on the same
+// kernel series: an AlmaLinux 8 image dropped into the bring-your-own
+// rhel-8-4.18 slot boots a real 4.18 kernel and would pass as RHEL. The guest's
+// /etc/os-release identity closes that gap, with the same consequence as a
+// kernel mismatch: genuine result, not a claim about the requested environment.
+func TestDistributionMismatchOnTheSameKernelSeriesIsNotEstablished(t *testing.T) {
+	run := func(osID, osVersion string) []schema.Target {
+		dir := t.TempDir()
+		resultPath := filepath.Join(dir, "validator.json")
+		writeValidatorResult(t, resultPath, map[string]any{
+			"status": "pass",
+			"host":   map[string]any{"release": "4.18.0-553.el8_10.x86_64", "machine": "x86_64"},
+			"load":   map[string]any{"status": "pass"},
+		})
+		stubProfile(t, vm.Profile{Distro: "rhel", Version: "8", KernelFamily: "4.18", Arch: "x86_64"})
+		stubExecutor(t, func(ctx context.Context, req vm.ExecutionRequest) vm.ExecutionResult {
+			return vm.ExecutionResult{
+				ProfileID: req.Profile.ID, Status: "pass", ValidatorResultPath: resultPath,
+				GuestOSID: osID, GuestOSVersionID: osVersion,
+				StartedAt: time.Now().UTC(), FinishedAt: time.Now().UTC(),
+			}
+		})
+		return runOneTarget(t, baseCfg(), "rhel-8-4.18", true)
+	}
+
+	alma := run("almalinux", "8.10")
+	env := alma[0].Environment
+	if env == nil || env.DistroMatch == nil || *env.DistroMatch {
+		t.Fatalf("AlmaLinux in a RHEL slot must record distro_match false, got %+v", env)
+	}
+	if env.RequestedDistro != "rhel" || env.ObservedOSID != "almalinux" || env.ObservedOSVersionID != "8.10" {
+		t.Fatalf("distribution identity not recorded: %+v", env)
+	}
+	if env.KernelFamilyMatch == nil || !*env.KernelFamilyMatch {
+		t.Fatal("the kernel family genuinely matched; only the distribution differs")
+	}
+	if alma[0].Status != "pass" || alma[0].Verdict != schema.VerdictCompatible {
+		t.Fatal("the artifact result on the guest that ran must be preserved")
+	}
+	found := false
+	for _, n := range alma[0].Notes {
+		if strings.Contains(n, "profile requests distribution rhel 8") && strings.Contains(n, "almalinux 8.10") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the mismatch must be explained in the notes: %v", alma[0].Notes)
+	}
+	if schema.RunComplete(alma) || schema.RunVerdict(alma) != schema.VerdictInfraError {
+		t.Fatalf("a required target on another distribution must be INFRA_ERROR and incomplete, got %s", schema.RunVerdict(alma))
+	}
+
+	rhel := run("rhel", "8.10")
+	if e := rhel[0].Environment; e == nil || e.DistroMatch == nil || !*e.DistroMatch {
+		t.Fatalf("a RHEL guest in the RHEL slot must record distro_match true, got %+v", e)
+	}
+	if !schema.RunComplete(rhel) || schema.RunVerdict(rhel) != schema.VerdictCompatible {
+		t.Fatal("a matching distribution and kernel must establish the environment")
+	}
+
+	unknown := run("", "")
+	if e := unknown[0].Environment; e == nil || e.DistroMatch != nil {
+		t.Fatalf("no guest identity must leave distro_match unset, got %+v", e)
+	}
+	if !schema.RunComplete(unknown) || schema.RunVerdict(unknown) != schema.VerdictCompatible {
+		t.Fatal("an unknown distribution is not a mismatch")
+	}
+}
