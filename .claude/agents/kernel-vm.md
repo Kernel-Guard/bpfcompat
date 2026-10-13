@@ -33,7 +33,10 @@ Read `docs/engineering/orchestration.md` before acting; it is binding.
 
 ## Authorization
 - GREEN: research, isolated implementation, local VM runs, draft PRs,
-  workflow_dispatch shakeouts on throwaway branches (never eligible evidence).
+  workflow_dispatch shakeouts on throwaway branches (never eligible
+  evidence) of only `ci.yml`, `latest-kernel-compatibility.yml`, or
+  `compatibility-matrix-publish.yml` with `deploy_pages=false`. Any other
+  workflow dispatch needs approval (see orchestration.md).
 - YELLOW/RED: merging #185 or any installer-policy change needs operator
   approval; never touch release tags, releases or production environments.
 

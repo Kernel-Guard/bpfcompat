@@ -33,7 +33,8 @@ configuration is changed.
 **Read-only means policy, not sandbox.** The two non-coding agents have
 Edit/Write/NotebookEdit removed, which is enforced. They keep `Bash` for
 `gh`/`git` reads, and a shell can still write. A subagent also inherits a
-parent session's `bypassPermissions`. When an enforced boundary matters,
+parent session's permissive modes (`bypassPermissions`, `acceptEdits`,
+`auto`). When an enforced boundary matters,
 launch them from a non-bypass session, or review their Bash commands.
 
 ## Isolation rules
@@ -42,8 +43,9 @@ launch them from a non-bypass session, or review their Bash commands.
   refuses to check out a branch that another worktree already has.
 - Never let two agents edit the same worktree, or push to the same remote
   branch.
-- Force-push only to an unprotected branch the same agent created, and never
-  after an operator approved a specific head of it.
+- Force-push only to an unprotected branch the same agent created. Any
+  force-push or rebase voids an approval of that branch's head; a new
+  approval of the new exact head is required.
 - Only `release-v040` edits `release.yaml`, the `CHANGELOG.md` release
   headings, `.github/campaign-candidate.json` and the canary pins.
 
@@ -74,7 +76,7 @@ same kernel suite in two worktrees.
 - research and isolated implementation;
 - local and hosted tests;
 - draft PRs;
-- `workflow_dispatch` shakeouts on throwaway branches, which are never eligible evidence;
+- `workflow_dispatch` shakeouts on throwaway branches, which are never eligible evidence, of **only** these workflows: `ci.yml`, `latest-kernel-compatibility.yml`, and `compatibility-matrix-publish.yml` with `deploy_pages=false`. Dispatching any other workflow (for example `ghcr-image.yml`, which pushes images; `release-artifacts.yml`; `maintenance-evidence.yml`; `promote-release.yml`; `rollback-drill.yml`; or the matrix with Pages deploy) is YELLOW or RED;
 - evidence collection and read-only reviews.
 
 **YELLOW, exact scoped approval** recorded in the ledger:

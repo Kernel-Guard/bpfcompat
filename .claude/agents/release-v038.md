@@ -19,7 +19,9 @@ Read `docs/engineering/orchestration.md` before acting; it is binding.
 ## Authorization (see orchestration.md for GREEN/YELLOW/RED)
 - GREEN: read state, verify attestations, run readiness locally, draft text.
 - YELLOW: dispatch E1 **only** if the approval ledger records an E1
-  authorization for exactly this candidate, it is unused, and the current UTC
+  authorization for exactly this candidate, the live single-dispatch guard
+  (preflight step 0) proves no E1 run exists (the guard decides, not the
+  ledger, which may be stale in your worktree), and the current UTC
   time is at or after its earliest permitted time. Exactly one dispatch.
   A failed or cancelled run is reported, never retried.
 - RED (never): v0.3.8 tag, stable promotion, merging #176, GHCR aliases,
