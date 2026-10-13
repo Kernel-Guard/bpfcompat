@@ -98,6 +98,10 @@ type CellSide struct {
 	RequestedKernelFamily string `json:"requested_kernel_family,omitempty"`
 	ObservedKernel        string `json:"observed_kernel,omitempty"`
 	KernelFamilyMatch     *bool  `json:"kernel_family_match,omitempty"`
+	RequestedDistro       string `json:"requested_distro,omitempty"`
+	ObservedOSID          string `json:"observed_os_id,omitempty"`
+	ObservedOSVersionID   string `json:"observed_os_version_id,omitempty"`
+	DistroMatch           *bool  `json:"distro_match,omitempty"`
 	// EnvironmentEstablished is false unless this side positively recorded that
 	// it ran on the environment the obligation names.
 	EnvironmentEstablished bool `json:"environment_established"`
@@ -254,6 +258,16 @@ func validateTarget(t *schema.Target, i int, id, side string) error {
 	}
 	// distro_match is arithmetic in the same way, recomputed with
 	// schema.DistroMatch from the recorded requested and observed identity.
+	// The runner always records it when it is derivable, so a report that
+	// carries both identities but no answer was not written by bpfcompat, and
+	// trusting the absence would let a known mismatch read as established.
+	if env := t.Environment; env != nil && env.DistroMatch == nil {
+		if _, derivable := schema.DistroMatch(env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID); derivable {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) records requested distribution %q and observed os-release ID %q but no distro_match, which bpfcompat always derives from them",
+				i, id, env.RequestedDistro, env.ObservedOSID)}
+		}
+	}
 	if env := t.Environment; env != nil && env.DistroMatch != nil {
 		match, derivable := schema.DistroMatch(env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID)
 		if !derivable {
@@ -586,6 +600,10 @@ func sideOf(t *schema.Target) CellSide {
 		s.RequestedKernelFamily = t.Environment.RequestedKernelFamily
 		s.ObservedKernel = t.Environment.ObservedKernel
 		s.KernelFamilyMatch = t.Environment.KernelFamilyMatch
+		s.RequestedDistro = t.Environment.RequestedDistro
+		s.ObservedOSID = t.Environment.ObservedOSID
+		s.ObservedOSVersionID = t.Environment.ObservedOSVersionID
+		s.DistroMatch = t.Environment.DistroMatch
 	}
 	if t.Profile != nil {
 		s.ProfileArch = t.Profile.Arch
@@ -839,6 +857,13 @@ func describeSide(side string, s CellSide) string {
 	switch {
 	case !s.Present:
 		return side + " has no evidence for this environment"
+	case s.EnvironmentEvidence == EnvironmentMismatchEvidence && s.DistroMatch != nil && !*s.DistroMatch &&
+		(s.KernelFamilyMatch == nil || *s.KernelFamilyMatch):
+		return fmt.Sprintf("%s requested distribution %s but the guest reported %s %s, so it never tested the environment this obligation names",
+			side, s.RequestedDistro, s.ObservedOSID, s.ObservedOSVersionID)
+	case s.EnvironmentEvidence == EnvironmentMismatchEvidence && s.DistroMatch != nil && !*s.DistroMatch:
+		return fmt.Sprintf("%s requested kernel family %s on %s but ran %s on %s %s, so it never tested the environment this obligation names",
+			side, s.RequestedKernelFamily, s.RequestedDistro, s.ObservedKernel, s.ObservedOSID, s.ObservedOSVersionID)
 	case s.EnvironmentEvidence == EnvironmentMismatchEvidence:
 		return fmt.Sprintf("%s requested kernel family %s but ran %s, so it never tested the environment this obligation names",
 			side, s.RequestedKernelFamily, s.ObservedKernel)

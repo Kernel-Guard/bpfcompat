@@ -12,7 +12,7 @@ import (
 var profileDistroOSIDs = map[string][]string{
 	"almalinux":     {"almalinux"},
 	"amazon-linux":  {"amzn"},
-	"azurelinux":    {"azurelinux"},
+	"azurelinux":    {"azurelinux", "mariner"}, // Azure Linux 2.0 is CBL-Mariner: ID=mariner
 	"centos-stream": {"centos"},
 	"debian":        {"debian"},
 	"fedora-coreos": {"fedora"},
@@ -29,7 +29,10 @@ var profileDistroOSIDs = map[string][]string{
 // DistroMatch reports whether the guest's os-release identity is the
 // distribution (and, where both sides carry a numeric major version, the
 // major release) the profile names, and whether the question could be
-// answered at all.
+// answered at all. Only the major release is compared: point releases
+// (Ubuntu 20.04 vs 20.10, RHCOS 4.14 vs 4.18, SLES 15 SP5 vs SP6) are not
+// distinguished, so this catches another distribution or major release, not
+// a different point release.
 //
 // It is the distribution counterpart of KernelFamilyMatch, and the same rule
 // applies: derivable is false when either side carries no identity, and

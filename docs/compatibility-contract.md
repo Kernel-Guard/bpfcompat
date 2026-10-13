@@ -97,6 +97,10 @@ is not hypothetical: reports in this repository show a target labelled
 result is genuine; the 4.18 claim is not. A run containing such a target is
 marked `summary.complete: false`.
 
+Only the major release is compared, so `distro_match` catches another
+distribution or major release, not a different point release (Ubuntu 20.04
+against 20.10, RHCOS 4.14 against 4.18).
+
 `distro_match: false` has the same meaning for the distribution: the kernel
 series can be right while the userspace is not (an AlmaLinux or Oracle Linux
 image dropped into the bring-your-own `rhel-8-4.18` slot). An unset

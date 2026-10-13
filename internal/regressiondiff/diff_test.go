@@ -594,3 +594,34 @@ func TestRecordedDistroMatchIsRecomputed(t *testing.T) {
 		t.Fatal("reports without distribution identity must compare as before")
 	}
 }
+
+// A report that records both distribution identities but no distro_match was
+// not written by bpfcompat (the runner always derives it); trusting the
+// absence would let a known mismatch read as established.
+func TestDerivableDistroIdentityWithoutAMatchIsRefused(t *testing.T) {
+	C := schema.VerdictCompatible
+	silent := otherDistro(target("k", C, true))
+	silent.Environment.DistroMatch = nil
+	if _, err := buildErr(report(target("k", C, true)), report(silent)); err == nil ||
+		!strings.Contains(err.Error(), "distro_match") {
+		t.Fatalf("an unstated but derivable distro_match must be refused, got %v", err)
+	}
+}
+
+// The reason names the failure that happened: a distribution mismatch on the
+// right kernel series is not a kernel mismatch, and the cell carries the
+// identities a reader needs.
+func TestDistributionMismatchIsExplainedAsOne(t *testing.T) {
+	C := schema.VerdictCompatible
+	d := build(t, report(target("k", C, true)), report(otherDistro(target("k", C, true))))
+	cell := cellFor(t, d, "k")
+	if !strings.Contains(cell.Reason, "distribution") || !strings.Contains(cell.Reason, "almalinux") {
+		t.Fatalf("reason must explain the distribution mismatch, got %q", cell.Reason)
+	}
+	if strings.Contains(cell.Reason, "kernel family") {
+		t.Fatalf("the kernel matched; the reason must not blame it: %q", cell.Reason)
+	}
+	if cell.Candidate.ObservedOSID != "almalinux" || cell.Candidate.DistroMatch == nil || *cell.Candidate.DistroMatch {
+		t.Fatalf("the cell must carry the observed distribution: %+v", cell.Candidate)
+	}
+}

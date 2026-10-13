@@ -22,6 +22,8 @@ func TestDistroMatch(t *testing.T) {
 		{"ubuntu other release", "ubuntu", "22.04", "ubuntu", "24.04", false, true},
 		{"opensuse leap", "opensuse", "15.6", "opensuse-leap", "15.6", true, true},
 		{"debian", "debian", "12", "debian", "12", true, true},
+		{"azure linux 2.0 reports mariner", "azurelinux", "2.0", "mariner", "2.0", true, true},
+		{"azure linux 3.0", "azurelinux", "3.0", "azurelinux", "3.0", true, true},
 		{"case and quotes are the parser's job, not tolerated here", "rhel", "8", "RHEL", "8", false, true},
 		// Unknown is not a mismatch: no guest identity, or a distro this
 		// table does not describe, leaves the answer underivable.
