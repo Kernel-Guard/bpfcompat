@@ -39,9 +39,13 @@ profiles:
     required: false
   - id: amazon-linux-2-5.10
     required: true
-  # Oracle UEK rebases onto a newer kernel than the EL base implies (uname shows
-  # a 6.12 uek build on an EL9 userspace) — a version-string trap.
-  - id: oracle-linux-9-uek7-5.15
+  # Oracle UEK rebases onto a newer kernel than the EL base implies: a 6.12
+  # UEK8 kernel on an EL9 userspace -- a version-string trap. This names the
+  # exact-kernel profile that requests kernel family 6.12. The base
+  # `oracle-linux-9-uek7-5.15` profile requests 5.15 but its OL9U7 template
+  # boots 6.12, so it can never establish the series it names: as a required
+  # target it made every run INFRA_ERROR (run 38404268435).
+  - id: oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek
     required: true
   # SUSE backport tier.
   - id: opensuse-leap-15.6-6.4
