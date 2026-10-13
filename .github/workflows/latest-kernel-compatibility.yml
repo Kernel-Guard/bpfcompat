@@ -5,6 +5,17 @@ name: latest-kernel-compatibility
 # available self-hosted fleet. True
 # upstream kernel.org validation is handled separately by
 # upstream-kernel-compatibility.yml through the virtme-ng backend.
+#
+# Two identities, kept apart. A scheduled run always executes this workflow
+# from the default branch, so GITHUB_SHA is the *workflow source*. The
+# *tested candidate* is the release candidate designated in
+# .github/campaign-candidate.json (changed only by reviewed PR): the campaign
+# verifies that immutable tag, its signed release assets and attestations
+# (scripts/campaign-candidate-bind.sh), then runs the candidate's own action
+# from its source tree with the candidate's released CLI and validator. The
+# campaign evidence records both identities and is attested by this workflow.
+# Without a designation the sweep still runs, but its evidence is explicitly
+# unbound and can never qualify a release.
 
 on:
   schedule:
@@ -38,6 +49,10 @@ jobs:
     # (ubuntu-latest moves to Ubuntu 26 from 2026-10-19).
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write      # attest the campaign evidence
+      attestations: write
     env:
       MATRIX: ${{ github.event.inputs.matrix || 'matrices/latest-kernel-sweep.yaml' }}
       TIMEOUT: ${{ github.event.inputs.timeout || '12m' }}
@@ -45,6 +60,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the designated campaign candidate
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin=.github/campaign-candidate.json
+          if [[ -f "$pin" ]]; then
+            commit="$(jq -r '.commit_sha' "$pin")"
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$pin has no valid commit_sha"; exit 1; }
+            { echo "bound=true"; echo "commit=$commit"; echo "root=candidate"; } >>"$GITHUB_OUTPUT"
+          else
+            { echo "bound=false"; echo "root=."; } >>"$GITHUB_OUTPUT"
+          fi
+      - name: Check out the candidate source
+        if: steps.pin.outputs.bound == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.pin.outputs.commit }}
+          path: candidate
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.9"
@@ -61,8 +98,8 @@ jobs:
           fi
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: vm/cache
-          key: latest-kernel-images-${{ runner.os }}-${{ hashFiles('matrices/latest-kernel-sweep.yaml', 'vm/profiles/*.yaml') }}
+          path: ${{ steps.pin.outputs.root }}/vm/cache
+          key: latest-kernel-images-${{ runner.os }}-${{ steps.pin.outputs.commit || 'unbound' }}-${{ hashFiles(format('{0}/matrices/latest-kernel-sweep.yaml', steps.pin.outputs.root), format('{0}/vm/profiles/*.yaml', steps.pin.outputs.root)) }}
 
       - name: Verify KVM availability
         shell: bash
@@ -71,29 +108,74 @@ jobs:
           test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
           command -v qemu-system-x86_64 >/dev/null || (echo "::error::missing qemu-system-x86_64" && exit 1)
 
-      - name: Build validator and fixture artifacts
+      - name: Bind the campaign to the designated candidate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          make build
-          make validator-static
+          bash scripts/campaign-candidate-bind.sh .github/campaign-candidate.json candidate reports/candidate
+          if [[ -f reports/candidate/candidate.env ]]; then
+            cat reports/candidate/candidate.env >>"$GITHUB_ENV"
+          fi
+
+      - name: Build validator and fixture artifacts
+        shell: bash
+        env:
+          ROOT: ${{ steps.pin.outputs.root }}
+          BOUND: ${{ steps.pin.outputs.bound }}
+        run: |
+          set -euo pipefail
+          cd "$ROOT"
+          if [[ "$BOUND" != true ]]; then
+            # Unbound sweep: the CLI and validator come from this checkout.
+            make build
+            make validator-static
+          fi
+          # Fixtures are test inputs from the tested source tree; the bound
+          # campaign's CLI and validator are the candidate's released binaries.
           make examples
 
       - name: Prefetch latest-kernel images
         shell: bash
+        env:
+          ROOT: ${{ steps.pin.outputs.root }}
+          # Bound: the candidate's released CLI resolves the profiles. Unbound:
+          # empty, so the script uses this checkout's ./bin/bpfcompat.
+          BPFCOMPAT_BIN: ${{ env.BPFCOMPAT_CAMPAIGN_CLI }}
         run: |
           set -euo pipefail
+          cd "$ROOT"
           BPFCOMPAT_MATRIX="$MATRIX" bash scripts/fetch-matrix-images.sh
 
       - name: Generate runnable latest-kernel matrix
         shell: bash
+        env:
+          ROOT: ${{ steps.pin.outputs.root }}
         run: |
           set -euo pipefail
+          cd "$ROOT"
           BPFCOMPAT_MATRIX="$MATRIX" \
           BPFCOMPAT_OUT_MATRIX=matrices/latest-kernel-runnable.yaml \
           bash scripts/generate-runnable-matrix.sh
 
-      - name: Run functional latest-kernel compatibility gate
+      - name: Run functional latest-kernel compatibility gate (candidate)
+        if: steps.pin.outputs.bound == 'true'
+        uses: ./candidate
+        with:
+          artifact: candidate/examples/functional-execve/functional_execve.bpf.o
+          manifest: candidate/examples/functional-execve/manifest-latest-kernel.yaml
+          matrix: candidate/matrices/latest-kernel-runnable.yaml
+          out: reports/functional-execve-latest-kernel.json
+          markdown: reports/functional-execve-latest-kernel.md
+          timeout: ${{ env.TIMEOUT }}
+          concurrency: ${{ env.VM_CONCURRENCY }}
+          binary: ${{ env.BPFCOMPAT_CAMPAIGN_CLI }}
+          build: "false"
+          prebuilt: never
+
+      - name: Run functional latest-kernel compatibility gate (unbound)
+        if: steps.pin.outputs.bound != 'true'
         uses: ./
         with:
           artifact: examples/functional-execve/functional_execve.bpf.o
@@ -106,39 +188,67 @@ jobs:
           build: "false"
 
       - name: Record scheduled campaign identity
+        id: campaign
         shell: bash
         run: |
           set -euo pipefail
           report="reports/functional-execve-latest-kernel.json"
+          binding="reports/candidate/candidate-binding.json"
           test -s "$report"
+          test -s "$binding"
           jq -e '
             .summary.status == "pass" and
             ([.targets[] | select(.required and .status != "pass")] | length == 0) and
             ([.targets[] | select(.status == "infra_error")] | length == 0)
           ' "$report" >/dev/null
+          candidate=null
+          executed=null
+          if jq -e '.bound == true' "$binding" >/dev/null; then
+            # The report records the validator that actually ran in the guests;
+            # it must be the candidate's released validator.
+            jq -e --slurpfile b "$binding" '.validator.sha256 == $b[0].validator_sha256' "$report" >/dev/null || {
+              echo "::error::the report's validator is not the candidate's released validator"
+              exit 1
+            }
+            candidate="$(jq -c '{tag, commit_sha, checksums_sha256, candidate_evidence_sha256}' "$binding")"
+            executed="$(jq -nc --arg cli "$(sha256sum "$BPFCOMPAT_CAMPAIGN_CLI" | awk '{print $1}')" \
+              --arg validator "$(jq -r '.validator.sha256' "$report")" \
+              '{cli_sha256: $cli, validator_sha256: $validator}')"
+          fi
           jq -n \
-            --arg schema_version "v0.1" \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg workflow "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_SHA" \
             --arg event "$GITHUB_EVENT_NAME" \
             --argjson run_id "$GITHUB_RUN_ID" \
             --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
-            --arg commit_sha "$GITHUB_SHA" \
+            --argjson candidate "$candidate" \
+            --argjson executed "$executed" \
             --arg report "functional-execve-latest-kernel.json" \
             --arg report_sha256 "$(sha256sum "$report" | awk '{print $1}')" \
+            --arg report_run_id "$(jq -r '.run.id' "$report")" \
             --arg started_at "$(jq -r '.run.started_at' "$report")" \
             '{
-              schema_version: $schema_version,
+              schema_version: "v0.2",
+              marker: "[bpfcompat-campaign:v2]",
               repository: $repository,
               workflow: $workflow,
+              workflow_sha: $workflow_sha,
               event: $event,
               workflow_run_id: $run_id,
               workflow_run_attempt: $run_attempt,
-              commit_sha: $commit_sha,
+              candidate: $candidate,
+              executed: $executed,
               report: $report,
               report_sha256: $report_sha256,
+              report_run_id: $report_run_id,
               started_at: $started_at
             }' >reports/production-campaign.json
+
+      - name: Attest campaign evidence
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: reports/production-campaign.json
 
       - name: Generate compatibility site snapshot
         if: always()
@@ -158,7 +268,9 @@ jobs:
             reports/functional-execve-latest-kernel.json
             reports/functional-execve-latest-kernel.md
             reports/production-campaign.json
+            reports/candidate/candidate-binding.json
             matrices/latest-kernel-runnable.yaml
+            candidate/matrices/latest-kernel-runnable.yaml
             public/compatibility/**
             .bpfcompat/runs/**/targets/**/serial.log
             .bpfcompat/runs/**/targets/**/libbpf.log

@@ -59,6 +59,7 @@ jq -e '
   (.campaigns | type == "array" and length == 4) and
   (.falco | type == "object") and
   (.candidate | type == "object") and
+  (.candidate.checksums | type == "string" and length > 0) and
   (.canaries | type == "array" and length == 3) and
   ([.canaries[].milestone] == ["manual", "t-plus-24h", "t-plus-72h"]) and
   (.rollback.completed == true) and
@@ -68,6 +69,52 @@ jq -e '
 ' "$input" >/dev/null || fail "manifest schema or required gates are invalid"
 
 release_version="$(jq -r '.release_version' "$input")"
+
+candidate="$(evidence_path "$(jq -r '.candidate.evidence' "$input")")"
+verify_hash "$candidate" "$(jq -r '.candidate.evidence_sha256' "$input")"
+jq -e --arg release_version "$release_version" '
+  .schema_version == "v0.1" and
+  .repository == "Kernel-Guard/bpfcompat" and
+  .channel == "prerelease" and
+  (.tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc\\.[1-9][0-9]*$")) and
+  (.tag | startswith("v" + $release_version + "-rc.")) and
+  (.commit_sha | test("^[0-9a-f]{40}$")) and
+  (.image | test("@sha256:[0-9a-f]{64}$")) and
+  (.checksums_sha256 | test("^[0-9a-f]{64}$")) and
+  (.positive_report_sha256 | test("^[0-9a-f]{64}$")) and
+  (.negative_report_sha256 | test("^[0-9a-f]{64}$")) and
+  (.generated_at | fromdateiso8601 > 0)
+' "$candidate" >/dev/null || fail "release-candidate evidence is invalid"
+
+if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
+  command -v gh >/dev/null || fail "gh is required to verify candidate evidence"
+  gh attestation --help >/dev/null 2>&1 ||
+    fail "installed GitHub CLI lacks attestation support"
+  gh attestation verify "$candidate" \
+    --repo Kernel-Guard/bpfcompat \
+    --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+    --source-digest "$(jq -r '.commit_sha' "$candidate")" \
+    --source-ref "refs/tags/$(jq -r '.tag' "$candidate")" \
+    >/dev/null || fail "release-candidate evidence attestation verification failed"
+fi
+
+# The candidate's signed SHA256SUMS names the executables every campaign must
+# have run. It is bound to the attested evidence by digest.
+candidate_checksums="$(evidence_path "$(jq -r '.candidate.checksums' "$input")")"
+verify_hash "$candidate_checksums" "$(jq -r '.checksums_sha256' "$candidate")"
+checksum_entry() {
+  awk -v f="$1" '$2 == f && $1 ~ /^[0-9a-f]{64}$/ {n++; h = $1} END {if (n == 1) print h; else exit 1}' \
+    "$candidate_checksums" || fail "candidate SHA256SUMS must list $1 exactly once"
+}
+candidate_cli_sha="$(checksum_entry bpfcompat-linux-amd64)"
+candidate_validator_sha="$(checksum_entry bpfcompat-validator-static-linux-amd64)"
+candidate_evidence_sha="$(jq -r '.candidate.evidence_sha256' "$input")"
+candidate_generated_epoch="$(date -u -d "$(jq -r '.generated_at' "$candidate")" +%s)" ||
+  fail "release-candidate evidence has an invalid generated_at"
+candidate_tag="$(jq -r '.tag' "$candidate")"
+candidate_commit="$(jq -r '.commit_sha' "$candidate")"
+candidate_image="$(jq -r '.image' "$candidate")"
+candidate_digest="${candidate_image##*@}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 : >"$tmp/durations"
@@ -87,23 +134,80 @@ while IFS= read -r campaign; do
   metadata="$(evidence_path "$metadata_rel")"
   report="$(evidence_path "$report_rel")"
 
+  # A scheduled run executes the workflow from the default branch, so
+  # workflow_sha identifies the workflow source only. What was tested is the
+  # candidate block, written by that workflow after it verified the immutable
+  # tag, the signed release assets and their attestations
+  # (scripts/campaign-candidate-bind.sh). v0.1 campaign evidence recorded no
+  # tested candidate at all and is never accepted.
   jq -e '
-    .schema_version == "v0.1" and
+    .schema_version == "v0.2" and
+    .marker == "[bpfcompat-campaign:v2]" and
     .repository == "Kernel-Guard/bpfcompat" and
-    (.workflow | contains(".github/workflows/latest-kernel-compatibility.yml@")) and
+    .workflow == "Kernel-Guard/bpfcompat/.github/workflows/latest-kernel-compatibility.yml@refs/heads/main" and
     .event == "schedule" and
     (.workflow_run_id | type == "number" and . > 0) and
     (.workflow_run_attempt | type == "number" and . > 0) and
-    (.commit_sha | test("^[0-9a-f]{40}$")) and
+    (.workflow_sha | test("^[0-9a-f]{40}$")) and
     (.report_sha256 | test("^[0-9a-f]{64}$")) and
+    (.report_run_id | type == "string" and length > 0) and
     (.started_at | fromdateiso8601 > 0)
   ' "$metadata" >/dev/null ||
-    fail "campaign ${campaign_index} metadata is invalid or is not scheduled evidence"
+    fail "campaign ${campaign_index} metadata is invalid or is not scheduled v0.2 evidence"
+  jq -e \
+    --arg tag "$candidate_tag" \
+    --arg commit "$candidate_commit" \
+    --arg checksums "$(jq -r '.checksums_sha256' "$candidate")" \
+    --arg evidence "$candidate_evidence_sha" \
+    --arg cli "$candidate_cli_sha" \
+    --arg validator "$candidate_validator_sha" '
+      (.candidate | type == "object") and
+      .candidate.tag == $tag and
+      .candidate.commit_sha == $commit and
+      .candidate.checksums_sha256 == $checksums and
+      .candidate.candidate_evidence_sha256 == $evidence and
+      (.executed | type == "object") and
+      .executed.cli_sha256 == $cli and
+      .executed.validator_sha256 == $validator
+    ' "$metadata" >/dev/null ||
+    fail "campaign ${campaign_index} did not test release candidate ${candidate_tag} (${candidate_commit}) with its released executables"
 
   expected_report="$(jq -r '.report' "$metadata")"
   [[ "$(basename "$report")" == "$expected_report" ]] ||
     fail "campaign ${campaign_index} report name does not match its metadata"
   verify_hash "$report" "$(jq -r '.report_sha256' "$metadata")"
+  # The report itself must be this campaign's run, and its own record of the
+  # validator that ran in the guests must be the candidate's validator.
+  jq -e \
+    --arg run_id "$(jq -r '.report_run_id' "$metadata")" \
+    --arg started_at "$(jq -r '.started_at' "$metadata")" \
+    --arg validator "$candidate_validator_sha" '
+      .run.id == $run_id and .run.started_at == $started_at and
+      .validator.sha256 == $validator
+    ' "$report" >/dev/null ||
+    fail "campaign ${campaign_index} report is not this campaign's run of the candidate validator"
+
+  if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
+    campaign_run="$(jq -r '.workflow_run_id' "$metadata")"
+    campaign_attempt="$(jq -r '.workflow_run_attempt' "$metadata")"
+    attested="$(gh attestation verify "$metadata" \
+      --repo Kernel-Guard/bpfcompat \
+      --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/latest-kernel-compatibility.yml \
+      --source-digest "$(jq -r '.workflow_sha' "$metadata")" \
+      --source-ref refs/heads/main \
+      --format json)" ||
+      fail "campaign ${campaign_index} evidence attestation verification failed"
+    jq -e --arg inv "https://github.com/Kernel-Guard/bpfcompat/actions/runs/${campaign_run}/attempts/${campaign_attempt}" \
+      'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $inv)' \
+      <<<"$attested" >/dev/null ||
+      fail "campaign ${campaign_index} attestation was not produced by run ${campaign_run} attempt ${campaign_attempt}"
+    # The event comes from the signed provenance, not from the evidence file.
+    jq -e --arg inv "https://github.com/Kernel-Guard/bpfcompat/actions/runs/${campaign_run}/attempts/${campaign_attempt}" \
+      'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $inv and
+                .verificationResult.statement.predicate.buildDefinition.internalParameters.github.event_name == "schedule")' \
+      <<<"$attested" >/dev/null ||
+      fail "campaign ${campaign_index} attestation does not show a scheduled run"
+  fi
 
   jq -e '
     .schema_version == "v0.1" and
@@ -115,14 +219,20 @@ while IFS= read -r campaign; do
     fail "campaign ${campaign_index} has a required failure or infrastructure error"
 
   run_id="$(jq -r '.workflow_run_id' "$metadata")"
-  commit_sha="$(jq -r '.commit_sha' "$metadata")"
+  commit_sha="$(jq -r '.workflow_sha' "$metadata")"
   started_at="$(jq -r '.started_at' "$metadata")"
   started_epoch="$(date -u -d "$started_at" +%s)" ||
     fail "campaign ${campaign_index} has an invalid timestamp"
+  [[ "$started_epoch" -gt "$candidate_generated_epoch" ]] ||
+    fail "campaign ${campaign_index} started before release candidate ${candidate_tag} was built"
   target_count="$(jq '.targets | length' "$report")"
   total_targets=$((total_targets + target_count))
   printf '%s\n' "$run_id" >>"$tmp/run_ids"
   printf '%s\n' "$started_epoch" >>"$tmp/started_epochs"
+  campaign_candidate_tag="$(jq -r '.candidate.tag' "$metadata")"
+  campaign_candidate_commit="$(jq -r '.candidate.commit_sha' "$metadata")"
+  campaign_cli_sha="$(jq -r '.executed.cli_sha256' "$metadata")"
+  campaign_validator_sha="$(jq -r '.executed.validator_sha256' "$metadata")"
   jq -r '.targets[].duration_ms | select(. > 0)' "$report" >>"$tmp/durations"
   printf "| %s | \`%s\` | \`%s\` | %s | %s |\n" \
     "$campaign_index" "$run_id" "${commit_sha:0:12}" "$started_at" "$target_count" \
@@ -133,9 +243,16 @@ while IFS= read -r campaign; do
     --arg started_at "$started_at" \
     --arg report_sha256 "$(jq -r '.report_sha256' "$metadata")" \
     --argjson target_count "$target_count" \
+    --arg candidate_tag "$campaign_candidate_tag" \
+    --arg candidate_commit "$campaign_candidate_commit" \
+    --arg cli_sha256 "$campaign_cli_sha" \
+    --arg validator_sha256 "$campaign_validator_sha" \
     '{
       workflow_run_id: $workflow_run_id,
-      commit_sha: $commit_sha,
+      candidate_tag: $candidate_tag,
+      candidate_commit: $candidate_commit,
+      executed: {cli_sha256: $cli_sha256, validator_sha256: $validator_sha256},
+      workflow_sha: $commit_sha,
       started_at: $started_at,
       report_sha256: $report_sha256,
       target_count: $target_count
@@ -187,39 +304,9 @@ for profile in \
   ' "$falco_report" >/dev/null || fail "Falco report is missing passing profile ${profile}"
 done
 
-candidate="$(evidence_path "$(jq -r '.candidate.evidence' "$input")")"
-verify_hash "$candidate" "$(jq -r '.candidate.evidence_sha256' "$input")"
-jq -e --arg release_version "$release_version" '
-  .schema_version == "v0.1" and
-  .repository == "Kernel-Guard/bpfcompat" and
-  .channel == "prerelease" and
-  (.tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc\\.[1-9][0-9]*$")) and
-  (.tag | startswith("v" + $release_version + "-rc.")) and
-  (.commit_sha | test("^[0-9a-f]{40}$")) and
-  (.image | test("@sha256:[0-9a-f]{64}$")) and
-  (.checksums_sha256 | test("^[0-9a-f]{64}$")) and
-  (.positive_report_sha256 | test("^[0-9a-f]{64}$")) and
-  (.negative_report_sha256 | test("^[0-9a-f]{64}$"))
-' "$candidate" >/dev/null || fail "release-candidate evidence is invalid"
-
-if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
-  command -v gh >/dev/null || fail "gh is required to verify candidate evidence"
-  gh attestation --help >/dev/null 2>&1 ||
-    fail "installed GitHub CLI lacks attestation support"
-  gh attestation verify "$candidate" \
-    --repo Kernel-Guard/bpfcompat \
-    --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
-    >/dev/null || fail "release-candidate evidence attestation verification failed"
-fi
-
 : >"$tmp/canary_rows"
 : >"$tmp/canaries.ndjson"
 : >"$tmp/canary_run_ids"
-candidate_tag="$(jq -r '.tag' "$candidate")"
-candidate_commit="$(jq -r '.commit_sha' "$candidate")"
-candidate_image="$(jq -r '.image' "$candidate")"
-candidate_digest="${candidate_image##*@}"
-
 while IFS= read -r canary; do
   milestone="$(jq -r '.milestone' <<<"$canary")"
   evidence_rel="$(jq -r '.evidence' <<<"$canary")"
@@ -328,7 +415,9 @@ mkdir -p "$(dirname "$output_json")"
   echo
   echo "## Scheduled Campaigns"
   echo
-  echo "| # | Workflow run | Commit | Started (UTC) | Targets |"
+  echo "Every campaign tested release candidate \`${candidate_tag}\` (\`${candidate_commit}\`) with its released CLI and validator."
+  echo
+  echo "| # | Workflow run | Workflow source | Started (UTC) | Targets |"
   echo "|---:|---|---|---|---:|"
   cat "$tmp/campaign_rows"
   echo
@@ -361,8 +450,13 @@ rollback_sha="$(jq -r '.rollback.evidence_sha256' "$input")"
 incident_sha="$(jq -r '.incident.evidence_sha256' "$input")"
 operator_sha="$(jq -r '.operator.evidence_sha256' "$input")"
 
+attestations_verified=true
+if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" == "1" ]]; then
+  attestations_verified=false
+fi
 jq -n \
-  --arg schema_version "v0.1" \
+  --arg schema_version "v0.2" \
+  --argjson attestations_verified "$attestations_verified" \
   --arg gate_status "ready" \
   --arg release_version "$release_version" \
   --arg supported_boundary "CLI + GitHub Action + disposable QEMU/KVM validation" \
@@ -386,6 +480,8 @@ jq -n \
   --arg operator_sha "$operator_sha" \
   '{
     schema_version: $schema_version,
+    campaign_binding: "candidate-bound-v2",
+    attestations_verified: $attestations_verified,
     gate_status: $gate_status,
     release_version: $release_version,
     supported_boundary: $supported_boundary,
