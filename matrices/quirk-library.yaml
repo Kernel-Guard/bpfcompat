@@ -47,7 +47,6 @@ profiles:
   # target it made every run INFRA_ERROR (run 38404268435).
   - id: oracle-linux-9-uek7-5.15-k6.12.0-204.92.4.4.el9uek
     required: true
-    timeout: 20m
   # SUSE backport tier.
   - id: opensuse-leap-15.6-6.4
     required: true

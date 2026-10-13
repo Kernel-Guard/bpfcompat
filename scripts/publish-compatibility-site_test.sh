@@ -150,6 +150,14 @@ if [[ "$uek_row" == *'kernel family mismatch'* && "$uek_row" == *'requested 5.15
 else
   bad "the per-target row hides the kernel family mismatch: $uek_row"
 fi
+# A genuine failure on a mismatched kernel is still a failure: it must keep the
+# fail style, not the amber warn style reserved for an unestablished pass.
+fail_row="$(grep '<code>real-fail</code>' "$html3" || true)"
+if [[ "$fail_row" == *'class="fail">fail on a kernel family mismatch (requested 4.14)<'* ]]; then
+  ok "a failure on a mismatched kernel keeps the fail style"
+else
+  bad "a failure on a mismatched kernel lost its fail style: $fail_row"
+fi
 matched_row="$(grep '<code>matched</code>' "$html3" || true)"
 if [[ "$matched_row" == *'class="pass">pass<'* ]]; then
   ok "a matched target still renders as a plain pass"

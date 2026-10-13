@@ -115,7 +115,10 @@ latest_target_rows() {
        else (.status // "-") end),
       (.host.kernel // .profile.kernel // "-"),
       (.functional.status // "-"),
-      (.classification_code // "-")
+      (.classification_code // "-"),
+      # Row style: amber only for a pass that did not establish the requested
+      # kernel; a failure keeps its fail style even on a mismatched kernel.
+      (if .environment.kernel_family_match == false and .status == "pass" then "warn" else (.status // "-") end)
     ] | @tsv
   ' "$report"
 }
@@ -230,9 +233,7 @@ markdown_link() {
       "$(printf '%s' "$latest_artifact" | html_escape)" \
       "$(printf '%s' "$latest_run" | html_escape)"
     echo '<table><thead><tr><th>Profile</th><th>Required</th><th>Status</th><th>Kernel</th><th>Functional</th><th>Class</th></tr></thead><tbody>'
-    while IFS=$'\t' read -r profile required status kernel functional class; do
-      status_class="$status"
-      [[ "$status" == *'kernel family mismatch'* ]] && status_class="warn"
+    while IFS=$'\t' read -r profile required status kernel functional class status_class; do
       printf '<tr><td><code>%s</code></td><td>%s</td><td class="%s">%s</td><td><code>%s</code></td><td><code>%s</code></td><td><code>%s</code></td></tr>\n' \
         "$(printf '%s' "$profile" | html_escape)" \
         "$(printf '%s' "$required" | html_escape)" \
