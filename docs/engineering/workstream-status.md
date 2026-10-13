@@ -12,7 +12,7 @@ Last updated: 2026-10-13T19:40Z (`main` = `f29c093`).
 |---|---|---|---|---|---|---|---|---|---|
 | V038-E1 | release-v038 | `release/v0.3.8-stable` | time ≥ 2026-10-14T09:20Z | BLOCKED (time) | `0b45a4c` (PR #176) | n/a | E0 [38373171801](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38373171801) | YELLOW (granted once, unused) | Preflight, then the single E1 dispatch once eligible |
 | V038-NOTE | release-v038 | `release/v0.3.8-stable` | V038-E1 | BACKLOG | – | – | – | RED (operator signs) | Draft an unsigned operator note after E1 |
-| V040-GATE | lead | `fix/canary-pin-rc-bootstrap` (#189) | – | REVIEW | `0acdfcf` | 12/12 | review of `f00a7f3`: no blockers, one should-fix (fixed in `0acdfcf`); delta review pending | YELLOW (renewal for `0acdfcf`) | Operator approval of `0acdfcf` |
+| V040-GATE | lead | `fix/canary-pin-rc-bootstrap` (#189) | – | REVIEW | `0acdfcf` | 12/12 | review of `f00a7f3`: no blockers, one should-fix (fixed in `0acdfcf`); delta review of `0acdfcf`: no blockers | YELLOW (renewal for `0acdfcf`) | Operator approval of `0acdfcf` |
 | ENG-ORCH | lead | `eng/orchestration-workstreams` (#190) | – | REVIEW | see #190 | see #190 | agent frontmatter validated; docs drift OK | operator review | Review #190 |
 | V040-BUMP | release-v040 | `release/v0.4.0-rc.4-bump` | V040-GATE merged | BACKLOG | – | – | – | YELLOW (merge), then RED (tag) | Open the bump PR from the new `main` |
 | V040-DESIGNATE | release-v040 | `release/v0.4.0-rc.4-designate` | rc.4 published and verified | BACKLOG | – | – | – | YELLOW | Prepare as a draft only |
