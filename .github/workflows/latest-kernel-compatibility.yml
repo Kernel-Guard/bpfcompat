@@ -138,6 +138,9 @@ jobs:
         shell: bash
         env:
           ROOT: ${{ steps.pin.outputs.root }}
+          # Bound: the candidate's released CLI resolves the profiles. Unbound:
+          # empty, so the script uses this checkout's ./bin/bpfcompat.
+          BPFCOMPAT_BIN: ${{ env.BPFCOMPAT_CAMPAIGN_CLI }}
         run: |
           set -euo pipefail
           cd "$ROOT"
