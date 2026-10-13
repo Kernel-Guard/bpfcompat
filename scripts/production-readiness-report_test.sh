@@ -407,7 +407,10 @@ if [[ "$*" == *latest-kernel-compatibility.yml* ]]; then
   run="$(jq -r .workflow_run_id "$3")"
   attempt="$(jq -r .workflow_run_attempt "$3")"
   jq -n --arg inv "https://github.com/Kernel-Guard/bpfcompat/actions/runs/${STUB_INVOCATION_RUN:-$run}/attempts/$attempt" \
-    '[{verificationResult: {statement: {predicate: {runDetails: {metadata: {invocationId: $inv}}}}}}]'
+    --arg event "${STUB_EVENT:-schedule}" \
+    '[{verificationResult: {statement: {predicate: {
+       runDetails: {metadata: {invocationId: $inv}},
+       buildDefinition: {internalParameters: {github: {event_name: $event}}}}}}}]'
 fi
 STUB
 chmod +x "$tmp/bin/gh"
@@ -428,5 +431,40 @@ if PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" STUB_INVOCATION_RUN=999999 "$scr
   echo "[production-readiness-test] an attestation from another run was accepted" >&2; exit 1
 fi
 echo "[production-readiness-test] refused: campaign evidence attested by a different run"
+if PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" STUB_EVENT=workflow_dispatch "$script" "$tmp/input.json" "$tmp/bad.md" >/dev/null 2>&1; then
+  echo "[production-readiness-test] a dispatched run relabelled as scheduled was accepted" >&2; exit 1
+fi
+echo "[production-readiness-test] refused: evidence claiming schedule whose attestation shows workflow_dispatch"
+
+# --- Readiness output v0.2 and the real stable gate ----------------------------
+jq -e --arg c "$(printf 'c%.0s' {1..40})" '
+  .schema_version == "v0.2" and .campaign_binding == "candidate-bound-v2" and
+  .attestations_verified == true and (.campaigns | length == 4) and
+  ([.campaigns[] | .candidate_commit == $c and .candidate_tag == "v0.4.0-rc.1"] | all)
+' "$tmp/attested.json" >/dev/null || {
+  echo "[production-readiness-test] attested readiness output is not v0.2 with verified, bound campaigns" >&2; exit 1; }
+jq -e '.attestations_verified == false' "$tmp/readiness.json" >/dev/null || {
+  echo "[production-readiness-test] bypass readiness output does not say attestations were not verified" >&2; exit 1; }
+# Extract the stable gate's jq program from release-artifacts.yml and run it.
+gate="$(awk '
+  /jq -e --arg version "\$version" .$/ {f=1; next}
+  f && /^ *. --argjson c / {exit}
+  f {print}
+' "${ROOT_DIR}/.github/workflows/release-artifacts.yml")"
+[[ -n "$gate" ]] || { echo "[production-readiness-test] could not extract the stable gate" >&2; exit 1; }
+run_gate() { jq -e --arg version 0.4.0 --argjson c "$(jq -c '.candidate' "$1")" "$gate" "$1" >/dev/null; }
+run_gate "$tmp/attested.json" || { echo "[production-readiness-test] stable gate refused valid attested readiness" >&2; exit 1; }
+if run_gate "$tmp/readiness.json"; then
+  echo "[production-readiness-test] stable gate accepted readiness produced with the attestation bypass" >&2; exit 1
+fi
+jq '.campaigns[2].candidate_commit = ("e" * 40)' "$tmp/attested.json" >"$tmp/gate-foreign.json"
+if run_gate "$tmp/gate-foreign.json"; then
+  echo "[production-readiness-test] stable gate accepted a campaign bound to another candidate" >&2; exit 1
+fi
+jq '.schema_version = "v0.1"' "$tmp/attested.json" >"$tmp/gate-old.json"
+if run_gate "$tmp/gate-old.json"; then
+  echo "[production-readiness-test] stable gate accepted v0.1 readiness output" >&2; exit 1
+fi
+echo "[production-readiness-test] stable gate: accepts attested v0.2; refuses bypass, foreign-candidate and v0.1 output"
 
 echo "[production-readiness-test] PASS"

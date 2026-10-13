@@ -201,6 +201,12 @@ while IFS= read -r campaign; do
       'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $inv)' \
       <<<"$attested" >/dev/null ||
       fail "campaign ${campaign_index} attestation was not produced by run ${campaign_run} attempt ${campaign_attempt}"
+    # The event comes from the signed provenance, not from the evidence file.
+    jq -e --arg inv "https://github.com/Kernel-Guard/bpfcompat/actions/runs/${campaign_run}/attempts/${campaign_attempt}" \
+      'any(.[]; .verificationResult.statement.predicate.runDetails.metadata.invocationId == $inv and
+                .verificationResult.statement.predicate.buildDefinition.internalParameters.github.event_name == "schedule")' \
+      <<<"$attested" >/dev/null ||
+      fail "campaign ${campaign_index} attestation does not show a scheduled run"
   fi
 
   jq -e '
@@ -223,6 +229,10 @@ while IFS= read -r campaign; do
   total_targets=$((total_targets + target_count))
   printf '%s\n' "$run_id" >>"$tmp/run_ids"
   printf '%s\n' "$started_epoch" >>"$tmp/started_epochs"
+  campaign_candidate_tag="$(jq -r '.candidate.tag' "$metadata")"
+  campaign_candidate_commit="$(jq -r '.candidate.commit_sha' "$metadata")"
+  campaign_cli_sha="$(jq -r '.executed.cli_sha256' "$metadata")"
+  campaign_validator_sha="$(jq -r '.executed.validator_sha256' "$metadata")"
   jq -r '.targets[].duration_ms | select(. > 0)' "$report" >>"$tmp/durations"
   printf "| %s | \`%s\` | \`%s\` | %s | %s |\n" \
     "$campaign_index" "$run_id" "${commit_sha:0:12}" "$started_at" "$target_count" \
@@ -233,8 +243,15 @@ while IFS= read -r campaign; do
     --arg started_at "$started_at" \
     --arg report_sha256 "$(jq -r '.report_sha256' "$metadata")" \
     --argjson target_count "$target_count" \
+    --arg candidate_tag "$campaign_candidate_tag" \
+    --arg candidate_commit "$campaign_candidate_commit" \
+    --arg cli_sha256 "$campaign_cli_sha" \
+    --arg validator_sha256 "$campaign_validator_sha" \
     '{
       workflow_run_id: $workflow_run_id,
+      candidate_tag: $candidate_tag,
+      candidate_commit: $candidate_commit,
+      executed: {cli_sha256: $cli_sha256, validator_sha256: $validator_sha256},
       workflow_sha: $commit_sha,
       started_at: $started_at,
       report_sha256: $report_sha256,
@@ -433,8 +450,13 @@ rollback_sha="$(jq -r '.rollback.evidence_sha256' "$input")"
 incident_sha="$(jq -r '.incident.evidence_sha256' "$input")"
 operator_sha="$(jq -r '.operator.evidence_sha256' "$input")"
 
+attestations_verified=true
+if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" == "1" ]]; then
+  attestations_verified=false
+fi
 jq -n \
-  --arg schema_version "v0.1" \
+  --arg schema_version "v0.2" \
+  --argjson attestations_verified "$attestations_verified" \
   --arg gate_status "ready" \
   --arg release_version "$release_version" \
   --arg supported_boundary "CLI + GitHub Action + disposable QEMU/KVM validation" \
@@ -458,6 +480,8 @@ jq -n \
   --arg operator_sha "$operator_sha" \
   '{
     schema_version: $schema_version,
+    campaign_binding: "candidate-bound-v2",
+    attestations_verified: $attestations_verified,
     gate_status: $gate_status,
     release_version: $release_version,
     supported_boundary: $supported_boundary,

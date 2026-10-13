@@ -137,7 +137,12 @@ jobs:
           test -s "${source_base}.json"
           test -s "${source_base}.md"
           jq -e --arg version "$version" '
-            .schema_version == "v0.1" and
+            .schema_version == "v0.2" and
+            .campaign_binding == "candidate-bound-v2" and
+            .attestations_verified == true and
+            (.candidate.tag | startswith("v" + $version + "-rc.")) and
+            (.campaigns | length == 4) and
+            ([.campaigns[] | .candidate_commit == $c.commit_sha and .candidate_tag == $c.tag] | all) and
             .gate_status == "ready" and
             .release_version == $version and
             .slo.campaign_count == 4 and
@@ -146,7 +151,7 @@ jobs:
             .incident.completed == true and
             .operator.approval_mode == "solo-maintainer" and
             .operator.confirmed == true
-          ' "${source_base}.json" >/dev/null
+          ' --argjson c "$(jq -c '.candidate' "${source_base}.json")" "${source_base}.json" >/dev/null
           cp "${source_base}.json" dist/production-readiness.json
           cp "${source_base}.md" dist/production-readiness.md
       - name: Compute checksums

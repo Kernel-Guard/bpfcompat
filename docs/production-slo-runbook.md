@@ -99,7 +99,19 @@ campaigns:
   `refs/heads/main` and whose invocation is that exact run and attempt.
 
 Campaign evidence recorded before this contract (v0.1) names only the
-workflow commit and is never accepted.
+workflow commit and is never accepted. The attested `event_name` must be
+`schedule`; the event written into the evidence file is not trusted on its own.
+
+**Trust root.** The binding is enforced by the workflow on `main` that
+produces and attests the evidence. Anyone who can merge to `main` can change
+that workflow, so the guarantee is exactly as strong as the review of changes
+to `.github/workflows/latest-kernel-compatibility.yml`,
+`scripts/campaign-candidate-bind.sh` and `.github/campaign-candidate.json`.
+Under `approval_mode: solo-maintainer` that review is the release operator's
+own. The readiness output (v0.2) records `attestations_verified`, which is
+`false` whenever the test-only `BPFCOMPAT_SKIP_READINESS_ATTESTATION` was set.
+The stable gate in `release-artifacts.yml` refuses such output, and refuses any
+campaign not bound to the release's own candidate.
 
 Run the evidence aggregator after downloading the four campaign artifacts,
 the expanded Falco report, candidate evidence, manual/T+24h/T+72h canary
