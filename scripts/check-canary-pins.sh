@@ -105,7 +105,8 @@ tag_lookup() {
   rc=$?
   set -e
   if [[ "$rc" -eq 2 ]]; then
-    LOOKUP_STATE=absent
+    # "No such ref" is only trusted with an empty listing.
+    [[ -z "$out" ]] && LOOKUP_STATE=absent
     return 0
   fi
   [[ "$rc" -eq 0 && -n "$out" ]] || return 0

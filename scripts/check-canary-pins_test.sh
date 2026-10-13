@@ -328,6 +328,14 @@ exec "$real_git" "\$@"
 STUB
 chmod +x "$fx/badgit/git"
 ffail "malformed ls-remote answer" "cannot determine whether v0.4.0-rc.4 exists" "$fx/badgit"
+# 24b. "No such ref" (exit 2) must come with an empty listing to count as absent.
+cat >"$fx/badgit/git" <<STUB
+#!/usr/bin/env bash
+if [[ "\$1" == ls-remote ]]; then printf 'unexpected output\n'; exit 2; fi
+exec "$real_git" "\$@"
+STUB
+chmod +x "$fx/badgit/git"
+ffail "ls-remote exit 2 with output" "cannot determine whether v0.4.0-rc.4 exists" "$fx/badgit"
 # 25. Genuine tag build: v0.4.0-rc.4 exists and IS the commit under check.
 ( cd "$fx/work" && gitq commit --allow-empty -m "release: target v0.4.0-rc.4" && gitq tag -a v0.4.0-rc.4 -m rc4 && gitq push -q origin main --tags )
 printf 'v0.4.0-rc.4 false true\n' >>"$fx/releases"
@@ -348,5 +356,34 @@ fpass "stable channel: correct stable pin"
 fmeta 0.3.8 0.3.8 stable
 { pin stable "$S" v0.3.7; } | fcanary
 ffail "stable channel: stable pin never bootstraps to an older release" "stable pin is commented 'v0.3.7' but release.yaml says v0.3.8"
+
+# 28. Every workflow step that reaches the canary-pin check -- directly or via
+#     `make production-tech-check` -- must provide GH_TOKEN, or the RC
+#     bootstrap's published-prerelease query fails closed and the new RC can
+#     never be built (the tag build's quality-gate step was missed once).
+missing="$(python3 - "$ROOT_DIR/.github/workflows" <<'PY'
+import glob, os, re, sys, yaml
+# Real invocations only; the *_test.sh suites use fixtures and stubs.
+trigger = re.compile(r"make (check-release-consistency|production-tech-check)\b|scripts/(check-canary-pins|check-release-consistency|production-tech-check)\.sh")
+bad = []
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.yml"))):
+    wf = yaml.safe_load(open(path)) or {}
+    for jname, job in (wf.get("jobs") or {}).items():
+        jenv = job.get("env") or {}
+        for i, step in enumerate(job.get("steps") or []):
+            run = step.get("run") or ""
+            if trigger.search(run):
+                env = {**(wf.get("env") or {}), **jenv, **(step.get("env") or {})}
+                if "GH_TOKEN" not in env:
+                    bad.append(f"{os.path.basename(path)}:{jname}:{step.get('name', i)}")
+print("\n".join(bad))
+PY
+)"
+if [[ -n "$missing" ]]; then
+  echo "[canary-pins-test] workflow steps that reach the canary-pin check without GH_TOKEN:" >&2
+  echo "$missing" >&2
+  exit 1
+fi
+echo "[canary-pins-test] every workflow path into the canary-pin check provides GH_TOKEN"
 
 echo "[canary-pins-test] PASS"
