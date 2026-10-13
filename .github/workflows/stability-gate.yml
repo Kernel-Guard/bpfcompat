@@ -41,6 +41,10 @@ jobs:
           cache: true
 
       - name: Run stability checks and build report
+        env:
+          # Read-only: lets the canary-pin check verify, while a new RC is
+          # being prepared, that the previous RC is a published prerelease.
+          GH_TOKEN: ${{ github.token }}
         id: gate
         run: |
           set -uo pipefail

@@ -117,6 +117,10 @@ jobs:
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency
+        env:
+          # Read-only: lets the canary-pin check verify, while a new RC is
+          # being prepared, that the previous RC is a published prerelease.
+          GH_TOKEN: ${{ github.token }}
         run: make check-release-consistency
       - name: go vet
         run: go vet ./...

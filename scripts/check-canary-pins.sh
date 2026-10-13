@@ -26,11 +26,13 @@
 # Preparing the next release candidate is the one state the strict rule
 # cannot be met in: the commit that sets release_version to a new RC (and the
 # tag build of that very commit) cannot pin the canary to a tag that does not
-# exist yet, or to itself. While v<release_version> is absent, or resolves to
-# the commit under check, the candidate pin may still name an existing earlier
-# prerelease -- a full SHA that its `# vX.Y.Z-rc.N` tag really resolves to.
-# Every later commit is strict again, so the canary must be repinned to the
-# new RC before anything else lands.
+# exist yet, or to itself. While v<release_version> positively does not exist
+# (the remote answered "no such tag"), or resolves to the commit under check,
+# the candidate pin may still name an EARLIER rc of the SAME release
+# (vX.Y.Z-rc.M, M < N) that is a published, non-draft GitHub prerelease and
+# whose tag resolves to the pinned full SHA. Any lookup or API failure fails
+# closed. Every later commit is strict again, so the canary must be repinned
+# to the new RC before anything else lands. The stable pin rule is unchanged.
 #
 # `candidate` is enforced only while release_channel is `prerelease`. In the
 # stable channel there is no active prerelease to graduate, release_version
@@ -70,32 +72,55 @@ release_channel="$(field release_channel)"
 [[ -n "$stable_version" && -n "$release_version" && -n "$release_channel" ]] ||
   die "release metadata must set stable_version, release_version and release_channel"
 
-# Resolve a tag to the commit it points at. Prefer the local clone; fall back to
-# the remote for the shallow checkouts some gate workflows use. `set -euo
-# pipefail` is in force, so a failing remote (no origin, network down) must be
-# swallowed here or it aborts the script from inside a command substitution and
-# skips the caller's error path. The remote is overridable so the regression
-# suite, whose fixture tags all resolve locally, never reaches the network.
+# Resolve a tag to the commit it points at, distinguishing three outcomes:
+#   LOOKUP_STATE=found   LOOKUP_SHA=<40-hex commit>
+#   LOOKUP_STATE=absent  the remote answered and positively has no such tag
+#   LOOKUP_STATE=error   the remote could not be queried, or answered with
+#                        something that is not a well-formed ref listing
+# Callers treat `error` as a failure: an unreachable remote is never evidence
+# that a tag does not exist. The local clone is consulted first; the remote
+# covers the shallow checkouts some gate workflows use. The remote is
+# overridable so the regression suite can point it at a fixture (it already
+# was before the bootstrap rule existed).
 tag_remote="${BPFCOMPAT_TAG_REMOTE:-origin}"
-tag_commit() {
-  local tag="$1" sha=""
+LOOKUP_STATE=error
+LOOKUP_SHA=""
+tag_lookup() {
+  local tag="$1" out rc sha ref peeled="" direct=""
+  LOOKUP_STATE=error
+  LOOKUP_SHA=""
+  [[ "$tag" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || return 0
   sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
-  if [[ -z "$sha" ]]; then
-    # Ask for both refs. Only an annotated tag advertises a peeled `^{}` ref;
-    # a lightweight one advertises just `refs/tags/<tag>`, pointing straight at
-    # the commit. Every release tag is annotated today, so querying the peeled
-    # ref alone happens to work -- and would report the next lightweight tag as
-    # nonexistent, failing the release gate for a tag that is right there.
-    # Prefer the peeled value when both come back; it is the commit.
-    sha="$(git ls-remote --tags "$tag_remote" \
-      "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null |
-      awk '
-        $2 ~ /\^\{\}$/ { peeled = $1 }
-        $2 !~ /\^\{\}$/ { direct = $1 }
-        END { print peeled != "" ? peeled : direct }
-      ' || true)"
+  if [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+    LOOKUP_STATE=found
+    LOOKUP_SHA="$sha"
+    return 0
   fi
-  printf '%s' "$sha"
+  # Ask for both refs. Only an annotated tag advertises a peeled `^{}` ref; a
+  # lightweight one advertises just `refs/tags/<tag>`. --exit-code makes "no
+  # such ref" (exit 2) distinguishable from a failed query (any other code).
+  set +e
+  out="$(git ls-remote --exit-code --tags "$tag_remote" \
+    "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 2 ]]; then
+    LOOKUP_STATE=absent
+    return 0
+  fi
+  [[ "$rc" -eq 0 && -n "$out" ]] || return 0
+  while IFS=$'\t' read -r sha ref; do
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
+    case "$ref" in
+      "refs/tags/${tag}^{}") peeled="$sha" ;;
+      "refs/tags/${tag}") direct="$sha" ;;
+      *) return 0 ;;
+    esac
+  done <<<"$out"
+  # Prefer the peeled value when both come back; it is the commit.
+  LOOKUP_SHA="${peeled:-$direct}"
+  [[ -n "$LOOKUP_SHA" ]] && LOOKUP_STATE=found
+  return 0
 }
 
 declare -A pin_sha=() pin_version=() pin_line=()
@@ -156,14 +181,19 @@ check_pin() {
     return
   fi
 
-  local actual
-  actual="$(tag_commit "$expected")"
-  if [[ -z "$actual" ]]; then
-    note_fail "${workflow}:${line} ${channel} pin names ${expected}, which is not a tag in this repository"
-    return
-  fi
-  if [[ "$actual" != "$sha" ]]; then
-    note_fail "${workflow}:${line} ${channel} pin is ${sha} but ${expected} is ${actual}; the canary is exercising a stale release"
+  tag_lookup "$expected"
+  case "$LOOKUP_STATE" in
+    absent)
+      note_fail "${workflow}:${line} ${channel} pin names ${expected}, which is not a tag in this repository"
+      return
+      ;;
+    error)
+      note_fail "${workflow}:${line} could not verify tag ${expected} (remote unreachable or malformed answer); failing closed"
+      return
+      ;;
+  esac
+  if [[ "$LOOKUP_SHA" != "$sha" ]]; then
+    note_fail "${workflow}:${line} ${channel} pin is ${sha} but ${expected} is ${LOOKUP_SHA}; the canary is exercising a stale release"
     return
   fi
 
@@ -172,13 +202,20 @@ check_pin() {
 
 check_pin stable "v${stable_version}"
 
-# The commit under check (overridable for the regression suite).
-head_commit="${BPFCOMPAT_HEAD_COMMIT:-}"
-[[ -n "$head_commit" ]] || head_commit="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+# A release published as a non-draft GitHub prerelease. Any failure to ask
+# (no gh, no token, API error) is a failure, never a pass.
+canary_repo="Kernel-Guard/bpfcompat"
+published_prerelease() {
+  local state
+  state="$(gh api "repos/${canary_repo}/releases/tags/$1" --jq '"\(.draft) \(.prerelease)"' 2>/dev/null)" || return 1
+  [[ "$state" == "false true" ]]
+}
 
-# check_bootstrap_candidate: the earlier-prerelease pin allowed while the next
-# RC is being prepared or built.
+# check_bootstrap_candidate <family> <rc-number>: while v<family>-rc.<n> is
+# being prepared or built, the canary may still pin an EARLIER rc of the SAME
+# release that is a published prerelease and resolves to the pinned commit.
 check_bootstrap_candidate() {
+  local family="$1" target_rc="$2"
   local sha="${pin_sha[candidate]:-}" line="${pin_line[candidate]:-}" version="${pin_version[candidate]:-}"
   if [[ -z "$sha" ]]; then
     note_fail "${workflow} declares no '# bpfcompat-pin: candidate' pin, so the candidate consumer path has no canary"
@@ -188,24 +225,57 @@ check_bootstrap_candidate() {
     note_fail "${workflow}:${line} candidate pin '${sha}' is not a full 40-character commit SHA"
     return
   fi
-  if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ || "$version" == "v${release_version}" ]]; then
-    note_fail "${workflow}:${line} candidate pin '${version:-<no comment>}' must name an earlier prerelease while v${release_version} is being prepared"
+  local pinned_rc
+  if [[ "$version" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.([1-9][0-9]*)$ && "${BASH_REMATCH[1]}" == "$family" ]]; then
+    pinned_rc="${BASH_REMATCH[2]}"
+  else
+    note_fail "${workflow}:${line} candidate pin '${version:-<no comment>}' must be an earlier rc of ${family} while v${release_version} is being prepared"
     return
   fi
-  local actual
-  actual="$(tag_commit "$version")"
-  if [[ -z "$actual" || "$actual" != "$sha" ]]; then
-    note_fail "${workflow}:${line} candidate pin is ${sha} but ${version} is ${actual:-not a tag}"
+  if (( pinned_rc >= target_rc )); then
+    note_fail "${workflow}:${line} candidate pin ${version} is not earlier than v${release_version}"
     return
   fi
-  echo "[canary-pins] candidate bootstrap: v${release_version} is being prepared; canary still pins ${version} ${sha} (repin after the tag)"
+  tag_lookup "$version"
+  if [[ "$LOOKUP_STATE" != found ]]; then
+    note_fail "${workflow}:${line} could not resolve ${version} (${LOOKUP_STATE}); failing closed"
+    return
+  fi
+  if [[ "$LOOKUP_SHA" != "$sha" ]]; then
+    note_fail "${workflow}:${line} candidate pin is ${sha} but ${version} is ${LOOKUP_SHA}"
+    return
+  fi
+  if ! published_prerelease "$version"; then
+    note_fail "${workflow}:${line} ${version} is not a verified published prerelease (draft, missing, or the GitHub API could not be queried)"
+    return
+  fi
+  echo "[canary-pins] candidate bootstrap: v${release_version} is being prepared; canary still pins published prerelease ${version} ${sha} (repin after the tag)"
 }
 
 case "$release_channel" in
   prerelease)
-    next_commit="$(tag_commit "v${release_version}")"
-    if [[ -z "$next_commit" || "$next_commit" == "$head_commit" ]]; then
-      check_bootstrap_candidate
+    if [[ "$release_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([1-9][0-9]*)$ ]]; then
+      target_family="${BASH_REMATCH[1]}"
+      target_rc="${BASH_REMATCH[2]}"
+      tag_lookup "v${release_version}"
+      case "$LOOKUP_STATE" in
+        absent)
+          # The new RC is being prepared: its tag positively does not exist.
+          check_bootstrap_candidate "$target_family" "$target_rc"
+          ;;
+        found)
+          head_commit="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+          if [[ "$head_commit" =~ ^[0-9a-f]{40}$ && "$LOOKUP_SHA" == "$head_commit" ]]; then
+            # The tag build of the new RC itself.
+            check_bootstrap_candidate "$target_family" "$target_rc"
+          else
+            check_pin candidate "v${release_version}"
+          fi
+          ;;
+        *)
+          note_fail "cannot determine whether v${release_version} exists (remote unreachable or malformed answer); failing closed"
+          ;;
+      esac
     else
       check_pin candidate "v${release_version}"
     fi
