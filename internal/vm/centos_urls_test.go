@@ -200,3 +200,78 @@ func TestCentOS725RejectsChangedKeyBeforeImport(t *testing.T) {
 		t.Fatal("changed key reached privileged import or installation")
 	}
 }
+
+// Every CentOS Stream 9 exact-kernel profile installs the exact signed RPMs
+// from the official Koji archive (the rolling mirror retires old kernels) and
+// takes the pinned-key path; the current image's own key set cannot be
+// imported by its RPM (SHA1 and V6 keys), so the generic path cannot work.
+func TestCentOSStream9ExactProfilesUseSignedArchive(t *testing.T) {
+	for _, n := range []string{"725", "729", "731"} {
+		p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-"+n+".el9.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefix := "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/" + n + ".el9/data/signed/8483c65d/x86_64/"
+		want := []string{
+			prefix + "kernel-core-5.14.0-" + n + ".el9.x86_64.rpm",
+			prefix + "kernel-modules-core-5.14.0-" + n + ".el9.x86_64.rpm",
+			prefix + "kernel-modules-5.14.0-" + n + ".el9.x86_64.rpm",
+		}
+		if p.InstallKernel != "5.14.0-"+n+".el9.x86_64" || !reflect.DeepEqual(p.KernelPackages, want) {
+			t.Fatalf("%s: want exact signed archive packages %v, got %s %v", p.ID, want, p.InstallKernel, p.KernelPackages)
+		}
+		cmd := guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages)
+		for _, expected := range []string{
+			"RPM-GPG-KEY-CentOS-Official-SHA256",
+			"5af55449d6c9bc594e2e2fb7222374cb25a8ad2d8ea6ce3de894a3201944daa2",
+			"/boot/vmlinuz-5.14.0-" + n + ".el9.x86_64",
+		} {
+			if !strings.Contains(cmd, expected) {
+				t.Errorf("%s: installer lacks %q", p.ID, expected)
+			}
+		}
+		if strings.Contains(cmd, "RPM-GPG-KEY-*") || strings.Contains(cmd, "--nogpgcheck") {
+			t.Errorf("%s: installer imports image keys or skips signature checks", p.ID)
+		}
+	}
+}
+
+// The pinned-key path is limited to exactly the three signed Stream 9 Koji
+// packages of the requested release; anything else keeps the generic path.
+func TestCentOSStream9SignedSetIsExact(t *testing.T) {
+	signed := func(n, arch, keydir string) []string {
+		prefix := "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/" + n + ".el9/data/signed/" + keydir + "/" + arch + "/"
+		return []string{
+			prefix + "kernel-core-5.14.0-" + n + ".el9." + arch + ".rpm",
+			prefix + "kernel-modules-core-5.14.0-" + n + ".el9." + arch + ".rpm",
+			prefix + "kernel-modules-5.14.0-" + n + ".el9." + arch + ".rpm",
+		}
+	}
+	if !isCentOSStream9SignedPackageSet("5.14.0-729.el9.x86_64", signed("729", "x86_64", "8483c65d")) {
+		t.Fatal("the exact signed 729 set must be accepted")
+	}
+	mirror := []string{
+		"https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-core-5.14.0-756.el9.x86_64.rpm",
+		"https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-core-5.14.0-756.el9.x86_64.rpm",
+		"https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/kernel-modules-5.14.0-756.el9.x86_64.rpm",
+	}
+	for name, tc := range map[string]struct {
+		release string
+		urls    []string
+	}{
+		"other release":     {"5.14.0-731.el9.x86_64", signed("729", "x86_64", "8483c65d")},
+		"mirror URLs":       {"5.14.0-756.el9.x86_64", mirror},
+		"other key dir":     {"5.14.0-729.el9.x86_64", signed("729", "x86_64", "ffffffff")},
+		"aarch64":           {"5.14.0-729.el9.aarch64", signed("729", "aarch64", "8483c65d")},
+		"el10":              {"6.12.0-55.el10.x86_64", signed("55", "x86_64", "8483c65d")},
+		"extra package":     {"5.14.0-729.el9.x86_64", append(signed("729", "x86_64", "8483c65d"), "https://example.org/x.rpm")},
+		"missing package":   {"5.14.0-729.el9.x86_64", signed("729", "x86_64", "8483c65d")[:2]},
+		"reordered":         {"5.14.0-729.el9.x86_64", []string{signed("729", "x86_64", "8483c65d")[1], signed("729", "x86_64", "8483c65d")[0], signed("729", "x86_64", "8483c65d")[2]}},
+		"injection release": {"5.14.0-729.el9.x86_64;id", signed("729", "x86_64", "8483c65d")},
+		"zero-padded build": {"5.14.0-0729.el9.x86_64", signed("0729", "x86_64", "8483c65d")},
+	} {
+		if isCentOSStream9SignedPackageSet(tc.release, tc.urls) {
+			t.Errorf("%s: must not take the pinned-key path", name)
+		}
+	}
+}

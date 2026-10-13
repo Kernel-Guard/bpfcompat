@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -654,10 +655,10 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	var b strings.Builder
 	b.WriteString("set -e; ")
 	if len(packageURLs) > 0 {
-		centOS725 := isCentOS725SignedPackageSet(release, packageURLs)
+		centOSSigned := isCentOSStream9SignedPackageSet(release, packageURLs)
 		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
 		for i, pkg := range packageURLs {
-			if centOS725 {
+			if centOSSigned {
 				fmt.Fprintf(&b, "curl -fsSL --http1.1 --connect-timeout 15 --max-time 120 --retry 2 --retry-max-time 360 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
 			} else {
 				fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
@@ -669,7 +670,7 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 		// an unprimed keyring reports "SIGNATURES NOT OK" for perfectly
 		// good packages. The keys come from the vendor image itself, which
 		// is the same trust anchor dnf uses for the configured repos.
-		if centOS725 {
+		if centOSSigned {
 			// https://www.centos.org/keys/ publishes fingerprint
 			// 99DB70FAE1D7CE227FB6488205B555B38483C65D. Pin the SHA256
 			// self-signed encoding's bytes: the legacy SHA1 encoding and
@@ -689,15 +690,24 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	return b.String()
 }
 
-// Limit the maintenance exception to the exact three signed archived RPMs.
+// centOSStream9Release is an exact CentOS Stream 9 x86_64 kernel release:
+// 5.14.0-<build>.el9.x86_64 with a canonical (non-zero-padded) build number.
+var centOSStream9Release = regexp.MustCompile(`^5\.14\.0-([1-9][0-9]*)\.el9\.x86_64$`)
+
+// The pinned-key path applies only to exactly the three signed RPMs of the
+// requested CentOS Stream 9 release in the official Koji archive, signed with
+// the CentOS Official key (8483c65d). The rolling mirror retires old kernels,
+// and the current Stream 9 image's own key set cannot be imported by its RPM
+// (SHA1 and V6 keys), so the generic image-key path cannot install them.
 // Other kernels, vendors and package sources retain their existing installer.
-func isCentOS725SignedPackageSet(release string, urls []string) bool {
-	if release != "5.14.0-725.el9.x86_64" || len(urls) != 3 {
+func isCentOSStream9SignedPackageSet(release string, urls []string) bool {
+	m := centOSStream9Release.FindStringSubmatch(release)
+	if m == nil || len(urls) != 3 {
 		return false
 	}
-	const prefix = "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/725.el9/data/signed/8483c65d/x86_64/"
+	prefix := "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/" + m[1] + ".el9/data/signed/8483c65d/x86_64/"
 	for i, name := range []string{"kernel-core", "kernel-modules-core", "kernel-modules"} {
-		if urls[i] != prefix+name+"-5.14.0-725.el9.x86_64.rpm" {
+		if urls[i] != prefix+name+"-"+release+".rpm" {
 			return false
 		}
 	}
