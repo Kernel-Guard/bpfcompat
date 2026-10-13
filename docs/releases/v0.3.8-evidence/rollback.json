@@ -1,0 +1,20 @@
+{
+  "schema_version": "v0.1",
+  "marker": "[bpfcompat-rollback-drill:v1]",
+  "operator": "ErenAri",
+  "workflow_run_id": 38379940827,
+  "ref": "refs/heads/release/v0.3.8-centos-hotfix",
+  "completed_at": "2026-10-13T10:02:38Z",
+  "alias": "ghcr.io/kernel-guard/bpfcompat:rollback-drill-v0.3.8-rc.2",
+  "before_digest": "sha256:05c028e99dd7afd10a8765a361457bbd79c51a89ca1cb62561043c52c2561fc9",
+  "candidate_digest": "sha256:046effcfe3575c89663cc925042278e0da0804afe4199fff1abf9e13fea26f1d",
+  "before_version": "v0.3.7",
+  "candidate_version": "v0.3.8-rc.2",
+  "final_digest": "sha256:05c028e99dd7afd10a8765a361457bbd79c51a89ca1cb62561043c52c2561fc9",
+  "latest_digest": "sha256:05c028e99dd7afd10a8765a361457bbd79c51a89ca1cb62561043c52c2561fc9",
+  "promotion_elapsed_ms": 2222,
+  "recovery_elapsed_ms": 3327,
+  "signature_verified": true,
+  "provenance_verified": true,
+  "version_verified": true
+}
