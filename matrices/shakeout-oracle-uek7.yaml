@@ -1,0 +1,9 @@
+# Throwaway shakeout matrix (branch shakeout/oracle-uek7-hosted only; not for
+# merge): hosted proof that oracle-linux-9-uek7-5.15 boots UEK7 5.15.
+# ubuntu-24.04-6.8 is required by the functional latest-kernel manifest.
+name: shakeout-oracle-uek7
+profiles:
+  - id: ubuntu-24.04-6.8
+    required: true
+  - id: oracle-linux-9-uek7-5.15
+    required: true
