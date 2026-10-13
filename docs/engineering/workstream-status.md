@@ -4,7 +4,7 @@ A coordination aid, **not release evidence**. GitHub checks, workflow runs,
 signed provenance and readiness attestations are authoritative. Rows change
 only when real evidence exists. Times are UTC.
 
-Last updated: 2026-10-13T19:40Z (`main` = `f29c093`).
+Last updated: 2026-10-13T19:30Z (`main` = `f29c093`).
 
 ## Task board
 
