@@ -45,7 +45,8 @@ summary() {
 # statement about the candidate, and no policy setting turns it into a pass.
 invalid() {
   local msg="$1"
-  echo "::error title=bpfcompat diff::$msg"
+  # stderr: invalid is often reached inside $(...), which captures stdout.
+  echo "::error title=bpfcompat diff::$msg" >&2
   set_output result INVALID_INPUT
   summary <<EOF
 
@@ -99,6 +100,8 @@ resolve_report() { # <input name> <value>
 # An output path must stay inside the workspace or runner temp directory.
 resolve_output() { # <input name> <value>
   local name="$1" value="$2" real
+  # GITHUB_OUTPUT is line-based: a newline in a path would add lines to it.
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || invalid "$name must not contain a newline"
   real="$(realpath -m -- "$(absolute "$value")")"
   under_root "$real" || invalid "$name resolves outside the workspace and runner temp directory: $value"
   [[ ! -d "$real" ]] || invalid "$name is a directory: $value"
@@ -128,6 +131,15 @@ check_sha256 candidate-report-sha256 "$candidate" "${INPUT_CANDIDATE_REPORT_SHA2
 diff_json="$(resolve_output diff-out "${INPUT_DIFF_OUT:-reports/bpfcompat-diff.json}")"
 diff_md="$(resolve_output diff-markdown "${INPUT_DIFF_MARKDOWN:-reports/bpfcompat-diff.md}")"
 [[ "$diff_json" != "$diff_md" ]] || invalid "diff-out and diff-markdown must be different files"
+# Before anything is removed: an output that is one of the inputs (directly
+# or through a link) would destroy it, and the baseline is often the only copy.
+for o in "$diff_json" "$diff_md"; do
+  for i in "$baseline" "$candidate"; do
+    if [[ "$o" == "$i" || "$o" -ef "$i" ]]; then
+      invalid "output $o is the same file as input $i; it would be destroyed"
+    fi
+  done
+done
 
 bin="${BPFCOMPAT_BIN:-}"
 [[ -n "$bin" && -x "$bin" ]] || invalid "bpfcompat binary not found or not executable: ${bin:-<unset>}"
@@ -195,7 +207,11 @@ set_output diff-markdown "$diff_md"
   echo '`NEW_REGRESSIONS` means a required kernel the baseline supported is broken in the candidate.'
   echo '`INCONCLUSIVE` means a required comparison could not be established (infrastructure error, missing result, or a different kernel); it is not a claim about the candidate.'
   echo
-  cat -- "$diff_md"
+  if [[ -f "$diff_md" ]]; then
+    cat -- "$diff_md"
+  else
+    echo "_bpfcompat diff wrote no Markdown; see the diff JSON._"
+  fi
 } | summary
 
 if [[ "$policy_failed" == true ]]; then

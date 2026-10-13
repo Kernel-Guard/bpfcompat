@@ -126,6 +126,9 @@ outputs:
   inconclusive-required:
     description: "Diff mode: number of required comparisons that could not be established."
     value: ${{ steps.run.outputs.inconclusive-required }}
+  coverage-removed-required:
+    description: "Diff mode: number of required profiles the baseline tested and the candidate did not."
+    value: ${{ steps.run.outputs.coverage-removed-required }}
   diff-json:
     description: "Diff mode: absolute path of the diff JSON."
     value: ${{ steps.run.outputs.diff-json }}

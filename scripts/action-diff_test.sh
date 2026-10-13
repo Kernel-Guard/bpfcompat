@@ -181,6 +181,25 @@ expect one-side 1 INVALID_INPUT
 run_case out-escape INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_DIFF_OUT=../diff.json
 expect out-escape 1 INVALID_INPUT
 
+# 11b. An output that is one of the inputs -- directly or through a symlink --
+#      is refused before anything is removed: the baseline is often the only
+#      copy of what the last release supported.
+cp "$ws/$A" "$work/base.keep"; cp "$ws/reports/c-same.json" "$work/cand.keep"
+run_case out-is-baseline INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_DIFF_OUT="$A"
+expect out-is-baseline 1 INVALID_INPUT
+cmp -s "$ws/$A" "$work/base.keep" && ok "out-is-baseline: the baseline report is intact" || bad "out-is-baseline: the baseline report was destroyed"
+ln -sf c-same.json "$ws/reports/cand-link.md"
+run_case md-links-candidate INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_DIFF_MARKDOWN=reports/cand-link.md
+expect md-links-candidate 1 INVALID_INPUT
+cmp -s "$ws/reports/c-same.json" "$work/cand.keep" && ok "md-links-candidate: the candidate report is intact" || bad "md-links-candidate: the candidate report was destroyed"
+rm -f "$ws/reports/cand-link.md"
+
+# 11c. Output paths containing a newline would inject extra lines into
+#      GITHUB_OUTPUT (e.g. a second result=); they are refused.
+run_case newline-out INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_DIFF_OUT=$'reports/x\nresult=NO_NEW_REGRESSIONS'
+expect newline-out 1 INVALID_INPUT
+
+
 # 12. Pinned report checksums: a mismatch is refused, a match proceeds.
 good_sha="$(sha256sum "$ws/reports/c-same.json" | awk '{print $1}')"
 run_case sha-bad INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json \
@@ -203,6 +222,15 @@ else
 fi
 [[ "$(output diff-json)" == "$ws/reports/bpfcompat-diff.json" && -f "$(output diff-markdown)" ]] \
   && ok "summary: diff-json and diff-markdown outputs point at the written files" || bad "summary: output paths wrong"
+
+# 14b. Every refusal says why in the step log, not only in the summary.
+for c in one-side bad-bool missing-file escape out-is-baseline; do
+  if grep -q '::error title=bpfcompat diff::' "$work/$c.log"; then
+    ok "$c: the reason is in the step log"
+  else
+    bad "$c: the step log does not say why it failed"
+  fi
+done
 
 # 15. Deterministic output: two runs over the same inputs agree except for
 #     the generation timestamp.
