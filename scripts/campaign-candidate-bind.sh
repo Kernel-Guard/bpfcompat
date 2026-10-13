@@ -113,10 +113,16 @@ for asset in "$EVIDENCE_ASSET" "$CLI_ASSET" "$VALIDATOR_ASSET"; do
     fail "${asset} has no release-artifacts.yml attestation for ${tag} at ${commit}"
 done
 
-# 6. The CLI must say it is this build.
+# 6. The CLI must say it is this build. Release builds embed
+#    `git rev-parse --short=12`, so the embedded commit must be a prefix of the
+#    pinned commit of at least 12 hex characters. (The bytes themselves are
+#    bound to the full commit by the attestation above.)
 chmod 0755 -- "$assets/$CLI_ASSET" "$assets/$VALIDATOR_ASSET"
 version_json="$("$assets/$CLI_ASSET" version --json)" || fail "${CLI_ASSET} cannot report its version"
-jq -e --arg tag "$tag" --arg commit "$commit" '.version == $tag and .commit == $commit' \
+jq -e --arg tag "$tag" --arg commit "$commit" '
+  .version == $tag and (.commit | type == "string") and
+  (.commit | test("^[0-9a-f]{12,40}$")) and (.commit as $embedded | $commit | startswith($embedded))
+' \
   <<<"$version_json" >/dev/null 2>&1 ||
   fail "${CLI_ASSET} reports $(jq -c '{version, commit}' <<<"$version_json" 2>/dev/null || echo unknown), not ${tag} at ${commit}"
 

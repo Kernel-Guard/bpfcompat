@@ -152,6 +152,26 @@ reset; make_cli v0.4.0-rc.4 "$other"
 run cli-other-build
 refuse cli-other-build "not v0.4.0-rc.4 at"
 
+# Release builds embed `git rev-parse --short=12` (Makefile, release-artifacts.yml).
+# A 12-character prefix of the pinned commit is accepted; a short prefix of
+# another commit, or one too short to be meaningful, is not.
+reset; make_cli v0.4.0-rc.4 "${commit:0:12}"
+(cd "$rel" && sha256sum bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 >SHA256SUMS); write_evidence "$commit"; write_pin
+run cli-short-commit
+[[ "$rc" -eq 0 ]] && ok "cli-short-commit: a 12-character prefix of the pinned commit is accepted" || { bad "cli-short-commit: rc=$rc"; sed 's/^/    /' "$work/cli-short-commit.log" >&2; }
+reset; make_cli v0.4.0-rc.4 "${other:0:12}"
+(cd "$rel" && sha256sum bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 >SHA256SUMS); write_evidence "$commit"; write_pin
+run cli-short-other
+refuse cli-short-other "not v0.4.0-rc.4 at"
+reset; make_cli v0.4.0-rc.4 "${commit:0:7}"
+(cd "$rel" && sha256sum bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 >SHA256SUMS); write_evidence "$commit"; write_pin
+run cli-too-short
+refuse cli-too-short "not v0.4.0-rc.4 at"
+reset; make_cli v0.4.0-rc.3 "$commit"
+(cd "$rel" && sha256sum bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 >SHA256SUMS); write_evidence "$commit"; write_pin
+run cli-other-version
+refuse cli-other-version "not v0.4.0-rc.4 at"
+
 reset; git_q -C "$work/src" checkout -q "$other"; run source-wrong-commit
 refuse source-wrong-commit "candidate source is at"
 
