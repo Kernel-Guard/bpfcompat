@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.4] - 2026-10-13
+
 ### Added
 - Reports record which distribution actually booted:
   `environment.observed_os_id` and `observed_os_version_id` (the guest's
