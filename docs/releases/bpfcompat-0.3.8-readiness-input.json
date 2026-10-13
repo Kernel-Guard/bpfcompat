@@ -1,0 +1,26 @@
+{
+  "schema_version": "v0.1",
+  "channel": "maintenance",
+  "release_version": "0.3.8",
+  "candidate": {
+    "evidence": "v0.3.8-evidence/candidate.json",
+    "evidence_sha256": "f7628a0ec9549aa0380b784840f3038ae47882a1a45a1dfb922db62d27246eef"
+  },
+  "observations": [
+    {
+      "milestone": "e0",
+      "evidence": "v0.3.8-evidence/e0.json",
+      "evidence_sha256": "40069e5613364915d4ce4d30d3f9934b25523e8a929284bfc03964c5917fd274"
+    }
+  ],
+  "incident": {
+    "completed": true,
+    "evidence": "v0.3.8-evidence/incident.md",
+    "evidence_sha256": "9a5c7936036419df09fb9d73a07558f14c051b1f3c64c3cd29a6ffc2d1b17544"
+  },
+  "pending": [
+    "observations[1]: E1 maintenance-evidence run for v0.3.8-rc.2 (not before 2026-10-14T09:07:57Z)",
+    "rollback: rollback-drill v0.3.7 -> v0.3.8-rc.2 on release/v0.3.8-centos-hotfix (needs operator authorization)",
+    "operator: solo-maintainer confirmation (release operator only)"
+  ]
+}
