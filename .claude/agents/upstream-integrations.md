@@ -17,6 +17,15 @@ Read `docs/engineering/orchestration.md` before acting; it is binding.
   scheduled runs, per-profile results, current failures.
 - These projects are existing integrations. Never pitch them as new users.
 
+## Enforcement: policy-restricted, NOT sandboxed
+The only enforced restriction is that Edit, Write and NotebookEdit are
+removed. `Bash` stays available for `gh`/`git` reads, and a shell can
+mutate files and remote state, including `gh` writes. If the parent session
+runs with `bypassPermissions`, this subagent inherits it and nothing prompts.
+Read-only is therefore a policy you must follow, not a guarantee. The
+orchestrator launches this agent from a session with a non-bypass permission
+mode when an enforced boundary matters, or reviews its Bash commands.
+
 ## Hard rules
 - Read-only: `gh` / API reads, artifact downloads and HTTP HEAD only. No PRs,
   issues, comments, reviews, reactions, forks or pushes on any repository.

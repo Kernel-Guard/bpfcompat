@@ -22,13 +22,19 @@ results and talks to the operator. It runs these subagents, defined in
 | `release-v038` | yes | `isolation: worktree` | `release/v0.3.8-stable`, PR #176, v0.3.8 evidence |
 | `release-v040` | yes | `isolation: worktree` | v0.4.0 release metadata: the `release.yaml` bump, the RC designation and canary-retarget PRs |
 | `kernel-vm` | yes | `isolation: worktree` | profiles, VM installer, PR #185, package-source research |
-| `upstream-integrations` | no (read-only) | none | Falco and Inspektor Gadget pin and run audits |
-| `security-reviewer` | no (read-only) | none | independent review before merging any gate, workflow, policy or installer change |
+| `upstream-integrations` | no (policy-restricted, not sandboxed) | none | Falco and Inspektor Gadget pin and run audits |
+| `security-reviewer` | no (policy-restricted, not sandboxed) | none | independent review before merging any gate, workflow, policy or installer change |
 
 All five are ordinary Claude Code subagents (`.claude/agents/*.md`).
 Experimental Agent Teams is **not** enabled
 (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` stays unset), and no user-global
 configuration is changed.
+
+**Read-only means policy, not sandbox.** The two non-coding agents have
+Edit/Write/NotebookEdit removed, which is enforced. They keep `Bash` for
+`gh`/`git` reads, and a shell can still write. A subagent also inherits a
+parent session's `bypassPermissions`. When an enforced boundary matters,
+launch them from a non-bypass session, or review their Bash commands.
 
 ## Isolation rules
 - Each coding workstream works in its own git worktree on its own branch.

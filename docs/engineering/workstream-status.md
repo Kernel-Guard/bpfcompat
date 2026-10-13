@@ -4,7 +4,7 @@ A coordination aid, **not release evidence**. GitHub checks, workflow runs,
 signed provenance and readiness attestations are authoritative. Rows change
 only when real evidence exists. Times are UTC.
 
-Last updated: 2026-10-13T19:30Z (`main` = `f29c093`).
+Last updated: 2026-10-13T19:43Z (`main` = `adb2006`).
 
 ## Task board
 
@@ -12,9 +12,9 @@ Last updated: 2026-10-13T19:30Z (`main` = `f29c093`).
 |---|---|---|---|---|---|---|---|---|---|
 | V038-E1 | release-v038 | `release/v0.3.8-stable` | time ≥ 2026-10-14T09:20Z | BLOCKED (time) | `0b45a4c` (PR #176) | n/a | E0 [38373171801](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38373171801) | YELLOW (granted once, unused) | Preflight, then the single E1 dispatch once eligible |
 | V038-NOTE | release-v038 | `release/v0.3.8-stable` | V038-E1 | BACKLOG | – | – | – | RED (operator signs) | Draft an unsigned operator note after E1 |
-| V040-GATE | lead | `fix/canary-pin-rc-bootstrap` (#189) | – | REVIEW | `0acdfcf` | 12/12 | review of `f00a7f3`: no blockers, one should-fix (fixed in `0acdfcf`); delta review of `0acdfcf`: no blockers | YELLOW (renewal for `0acdfcf`) | Operator approval of `0acdfcf` |
-| ENG-ORCH | lead | `eng/orchestration-workstreams` (#190) | – | REVIEW | see #190 | see #190 | agent frontmatter validated; docs drift OK | operator review | Review #190 |
-| V040-BUMP | release-v040 | `release/v0.4.0-rc.4-bump` | V040-GATE merged | BACKLOG | – | – | – | YELLOW (merge), then RED (tag) | Open the bump PR from the new `main` |
+| V040-GATE | lead | `fix/canary-pin-rc-bootstrap` (#189) | – | MERGED | `0acdfcf` | 12/12 | merged as `adb2006` (tree = `0acdfcf`); two security reviews: no blockers | YELLOW (used) | – |
+| ENG-ORCH | lead | `eng/orchestration-workstreams` (#190) | – | REVIEW | see #190 | see #190 | CodeRabbit findings (read-only boundary wording, E1 single-dispatch guard) addressed | YELLOW (head changed from `b8689b4`; renewal needed) | Operator approval of the new head |
+| V040-BUMP | release-v040 | `release/v0.4.0-rc.4-bump` | V040-GATE merged | READY | – | – | – | YELLOW (merge), then RED (tag) | Open the bump PR from `adb2006` |
 | V040-DESIGNATE | release-v040 | `release/v0.4.0-rc.4-designate` | rc.4 published and verified | BACKLOG | – | – | – | YELLOW | Prepare as a draft only |
 | KVM-185 | kernel-vm | `fix/centos-sweep-signed-archive` (#185) | upstream CentOS metalink | BLOCKED (upstream) | `3dc44be` | 12/12 | LOCAL: key and RPM signatures OK; boot not proven | YELLOW (merge) | Retry the boots when the metalink is consistent; compose option needs security review |
 | UPS-AUDIT | upstream-integrations | – | v0.3.8 stable for repins | DONE (audit 2026-10-13) | – | – | IG run 38211130316; Falco run 38211321294 | RED (open upstream PRs) | Draft the IG repin after v0.3.8 stable is verified |
@@ -27,7 +27,9 @@ Last updated: 2026-10-13T19:30Z (`main` = `f29c093`).
 | 2026-10-13 | v0.3.8 E1 dispatch | exactly once, ≥ 2026-10-14T09:20Z, candidate `v0.3.8-rc.2` / `baa57a76…` / image `046effcf…` | YELLOW | **Granted, unused** |
 | 2026-10-13 | Merge #184 (campaign binding) | `d9a058e`, renewed for `b8259b4` | YELLOW | Used: merged as `f29c093` |
 | 2026-10-13 | Ubuntu 24.04 campaign runner | focused PR | YELLOW | Used: #188, merged as `46bb261` |
-| 2026-10-13 | Merge #189 | `f00a7f3` only | YELLOW | **Lapsed, unused**: the review found the tag build's quality gate lacked `GH_TOKEN`; fixed in `0acdfcf`. Renewal needed. |
+| 2026-10-13 | Merge #189 | `f00a7f3` only | YELLOW | Lapsed, unused (the review found the tag build's quality gate lacked `GH_TOKEN`) |
+| 2026-10-13 | Merge #189 | `0acdfcf` only | YELLOW | Used: merged as `adb2006` |
+| 2026-10-13 | Merge #190 | `b8689b4` only | YELLOW | Lapsed, unused (CodeRabbit findings required a head change) |
 | – | v0.3.8 operator note, merge #176, v0.3.8 tag, stable promotion | – | RED | Not granted |
 | – | v0.4.0-rc.4 tag, publication, designation | – | RED | Not granted |
 
@@ -38,6 +40,13 @@ E0 (run 38373171801) completed at 2026-10-13T09:07:57Z. The 24-hour floor is
 2026-10-14T09:07:57Z.
 
 Preflight, repeated immediately before dispatch:
+0. **Single-dispatch guard.** No repository workflow enforces this: E1 runs
+   the workflow frozen at tag `v0.3.8-rc.2`, which cannot be changed.
+   Run
+   `gh run list --repo Kernel-Guard/bpfcompat --workflow maintenance-evidence.yml --branch v0.3.8-rc.2 --limit 100 --json databaseId --jq '[.[].databaseId] | sort'`.
+   The result must be exactly `[38372362181,38373171801]`: the failed and
+   the successful E0 attempts. Any other run ID means an E1 may already exist,
+   so **stop** and report it. Also require `date -u` ≥ 2026-10-14T09:20Z.
 1. The tag `v0.3.8-rc.2` peels to `baa57a764d4d5071b7dd9ff255d9c6d81ec2b65d`.
 2. The release assets verify: checksums, per-asset release-workflow attestations bound to the commit and tag, and cosign signatures on `SHA256SUMS` and the SBOM.
 3. The candidate evidence `f7628a0e…` attestation and bindings verify.
