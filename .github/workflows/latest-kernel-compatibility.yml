@@ -45,7 +45,9 @@ concurrency:
 jobs:
   latest-kernel-sweep:
     name: Latest distro-kernel sweep
-    runs-on: ubuntu-latest
+    # Pinned: a qualification window must not span a runner-OS migration
+    # (ubuntu-latest moves to Ubuntu 26 from 2026-10-19).
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read

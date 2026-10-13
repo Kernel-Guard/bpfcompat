@@ -110,6 +110,10 @@ jobs:
         # candidate (tag, commit, signed assets, attestations), not whatever
         # main happens to be.
         run: bash scripts/campaign-candidate-bind_test.sh
+      - name: Campaign runner pin regression
+        # The four-campaign qualification window must not span a runner-OS
+        # migration of the moving ubuntu-latest label.
+        run: bash scripts/campaign-runner-pin_test.sh
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency
