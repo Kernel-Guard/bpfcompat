@@ -86,6 +86,9 @@ Each target separates what was **requested** from what was **observed**.
 | `targets[].environment.observed_kernel` | the release the guest actually booted |
 | `targets[].environment.kernel_family_match` | whether those agree on `MAJOR.MINOR` |
 | `targets[].environment.image_source_url` / `image_sha256` | which disk image was booted (the SHA-256 is verified before boot) |
+| `targets[].environment.requested_distro` / `requested_distro_version` | the profile's distribution and release |
+| `targets[].environment.observed_os_id` / `observed_os_version_id` | the guest's `/etc/os-release` `ID` and `VERSION_ID` |
+| `targets[].environment.distro_match` | whether the guest is that distribution (and, where both are numeric, that major release); unset when either side has no known identity |
 
 `kernel_family_match: false` means the target ran, produced a real result, and
 that result **does not support a claim about the requested kernel series**. This
@@ -94,8 +97,15 @@ is not hypothetical: reports in this repository show a target labelled
 result is genuine; the 4.18 claim is not. A run containing such a target is
 marked `summary.complete: false`.
 
+`distro_match: false` has the same meaning for the distribution: the kernel
+series can be right while the userspace is not (an AlmaLinux or Oracle Linux
+image dropped into the bring-your-own `rhel-8-4.18` slot). An unset
+`distro_match` is unknown, not a mismatch: reports written before this field
+existed, and distributions without a known `os-release` ID, carry none.
+
 Consumers that need strict environment fidelity should gate on
-`targets[].environment.kernel_family_match`.
+`targets[].environment.kernel_family_match` and
+`targets[].environment.distro_match`.
 
 **Answers:** *was the environment we intended to validate the one that ran?*
 
@@ -132,7 +142,8 @@ Over the required targets:
 1. Any `INCOMPATIBLE` → run is `INCOMPATIBLE`.
 2. Otherwise, any `INFRA_ERROR`, any `UNSUPPORTED`, or any target that did not
    establish the environment it was asked about
-   (`environment.kernel_family_match: false`) → run is `INFRA_ERROR`.
+   (`environment.kernel_family_match: false`), or on another distribution
+   (`environment.distro_match: false`) → run is `INFRA_ERROR`.
 3. Otherwise → `COMPATIBLE`.
 
 Rule 1 deliberately outranks rule 2. A proven incompatibility is a definitive

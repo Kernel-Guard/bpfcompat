@@ -252,6 +252,21 @@ func validateTarget(t *schema.Target, i int, id, side string) error {
 				i, id, *env.KernelFamilyMatch, env.RequestedKernelFamily, env.ObservedKernel, match)}
 		}
 	}
+	// distro_match is arithmetic in the same way, recomputed with
+	// schema.DistroMatch from the recorded requested and observed identity.
+	if env := t.Environment; env != nil && env.DistroMatch != nil {
+		match, derivable := schema.DistroMatch(env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID)
+		if !derivable {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) states distro_match, but no answer can be derived from requested distribution %q and observed os-release ID %q",
+				i, id, env.RequestedDistro, env.ObservedOSID)}
+		}
+		if match != *env.DistroMatch {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"target %d (%s) records distro_match %t, but requested %q %q against observed os-release %q %q is %t; this report does not agree with itself",
+				i, id, *env.DistroMatch, env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID, match)}
+		}
+	}
 	return nil
 }
 
@@ -541,6 +556,12 @@ const (
 // is not evidence that the wrong kernel booted, and the reason text must not
 // claim it is.
 func establishedEnvironment(t *schema.Target) string {
+	// Another distribution than the profile names is a mismatch whatever the
+	// kernel says. An unrecorded distribution stays neutral: no report before
+	// distribution identity existed carries it.
+	if t.Environment != nil && t.Environment.DistroMatch != nil && !*t.Environment.DistroMatch {
+		return EnvironmentMismatchEvidence
+	}
 	if t.Environment == nil || t.Environment.KernelFamilyMatch == nil {
 		return EnvironmentUnknownEvidence
 	}

@@ -111,6 +111,19 @@ type EnvironmentCheck struct {
 	KernelFamilyMatch *bool  `json:"kernel_family_match,omitempty"`
 	ImageSourceURL    string `json:"image_source_url,omitempty"`
 	ImageSHA256       string `json:"image_sha256,omitempty"`
+	// RequestedDistro/RequestedDistroVersion are the profile's distro and
+	// version; ObservedOSID/ObservedOSVersionID are the guest's /etc/os-release
+	// ID and VERSION_ID. DistroMatch (schema.DistroMatch) is nil when the
+	// comparison could not be made -- no guest identity, or a distro without a
+	// known os-release ID -- and false when the guest is another distribution
+	// or major release than the profile names. Like KernelFamilyMatch, a false
+	// value means the target does not support a claim about the requested
+	// environment. Older reports carry none of these fields.
+	RequestedDistro        string `json:"requested_distro,omitempty"`
+	RequestedDistroVersion string `json:"requested_distro_version,omitempty"`
+	ObservedOSID           string `json:"observed_os_id,omitempty"`
+	ObservedOSVersionID    string `json:"observed_os_version_id,omitempty"`
+	DistroMatch            *bool  `json:"distro_match,omitempty"`
 }
 
 type TargetBTF struct {

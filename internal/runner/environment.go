@@ -19,12 +19,19 @@ import (
 //
 // observedKernel is empty when the guest never reported one; the match is then
 // left nil rather than guessed.
-func environmentEvidence(profile vm.Profile, observedKernel string) *schema.EnvironmentCheck {
+func environmentEvidence(profile vm.Profile, observedKernel, osID, osVersionID string) *schema.EnvironmentCheck {
 	env := &schema.EnvironmentCheck{
-		RequestedKernelFamily: strings.TrimSpace(profile.KernelFamily),
-		ObservedKernel:        strings.TrimSpace(observedKernel),
-		ImageSourceURL:        strings.TrimSpace(profile.Image.SourceURL),
-		ImageSHA256:           strings.TrimSpace(profile.Image.SHA256),
+		RequestedKernelFamily:  strings.TrimSpace(profile.KernelFamily),
+		ObservedKernel:         strings.TrimSpace(observedKernel),
+		ImageSourceURL:         strings.TrimSpace(profile.Image.SourceURL),
+		ImageSHA256:            strings.TrimSpace(profile.Image.SHA256),
+		RequestedDistro:        strings.TrimSpace(profile.Distro),
+		RequestedDistroVersion: strings.TrimSpace(profile.Version),
+		ObservedOSID:           strings.TrimSpace(osID),
+		ObservedOSVersionID:    strings.TrimSpace(osVersionID),
+	}
+	if match, derivable := schema.DistroMatch(env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID); derivable {
+		env.DistroMatch = &match
 	}
 	// schema.KernelFamilyMatch is the same primitive the release differ uses to
 	// verify this field later. Recording and verifying must not be able to
@@ -33,19 +40,34 @@ func environmentEvidence(profile vm.Profile, observedKernel string) *schema.Envi
 		env.KernelFamilyMatch = &match
 	}
 	if env.RequestedKernelFamily == "" && env.ObservedKernel == "" &&
-		env.ImageSourceURL == "" && env.ImageSHA256 == "" {
+		env.ImageSourceURL == "" && env.ImageSHA256 == "" &&
+		env.RequestedDistro == "" && env.ObservedOSID == "" {
 		return nil
 	}
 	return env
 }
 
 // environmentMismatchNote returns the note to attach when the guest that booted
-// is not the kernel series the profile claims to validate.
+// is not the kernel series, or not the distribution, the profile claims to
+// validate.
 func environmentMismatchNote(env *schema.EnvironmentCheck) (string, bool) {
-	if env == nil || env.KernelFamilyMatch == nil || *env.KernelFamilyMatch {
+	if env == nil {
 		return "", false
 	}
-	return "environment mismatch: profile requests kernel family " +
-		env.RequestedKernelFamily + " but the guest booted " + env.ObservedKernel +
-		"; this target does not support a claim about the requested kernel series", true
+	var notes []string
+	if env.KernelFamilyMatch != nil && !*env.KernelFamilyMatch {
+		notes = append(notes, "environment mismatch: profile requests kernel family "+
+			env.RequestedKernelFamily+" but the guest booted "+env.ObservedKernel+
+			"; this target does not support a claim about the requested kernel series")
+	}
+	if env.DistroMatch != nil && !*env.DistroMatch {
+		notes = append(notes, "environment mismatch: profile requests distribution "+
+			strings.TrimSpace(env.RequestedDistro+" "+env.RequestedDistroVersion)+
+			" but the guest reports os-release "+strings.TrimSpace(env.ObservedOSID+" "+env.ObservedOSVersionID)+
+			"; this target does not support a claim about the requested distribution")
+	}
+	if len(notes) == 0 {
+		return "", false
+	}
+	return strings.Join(notes, "; "), true
 }

@@ -60,6 +60,17 @@ func mismatched(t schema.Target) schema.Target {
 	return t
 }
 
+// otherDistro marks a target as having run on another distribution than its
+// profile names (an EL rebuild in the RHEL slot), on the right kernel series.
+func otherDistro(t schema.Target) schema.Target {
+	env := *t.Environment
+	env.RequestedDistro, env.RequestedDistroVersion = "rhel", "8"
+	env.ObservedOSID, env.ObservedOSVersionID = "almalinux", "8.10"
+	env.DistroMatch = b(false)
+	t.Environment = &env
+	return t
+}
+
 // runIDs hands every fixture its own run identity. Real run IDs are a
 // timestamp plus a random suffix, and two reports sharing one are the same run
 // read twice -- which the differ refuses, so fixtures must not accidentally
@@ -147,6 +158,9 @@ func TestComparisonTable(t *testing.T) {
 		// Environment mislabels are evidence-quality failures, not regressions.
 		{"required baseline ran the wrong kernel", p(mismatched(target("k", C, true))), p(target("k", I, true)), Inconclusive, ResultInconclusive, 1},
 		{"required candidate ran the wrong kernel", p(target("k", C, true)), p(mismatched(target("k", C, true))), Inconclusive, ResultInconclusive, 1},
+		{"required candidate ran another distribution", p(target("k", C, true)), p(otherDistro(target("k", C, true))), Inconclusive, ResultInconclusive, 1},
+		{"incompatible on another distribution is not a regression", p(target("k", C, true)), p(otherDistro(target("k", I, true))), Inconclusive, ResultInconclusive, 1},
+		{"required baseline ran another distribution", p(otherDistro(target("k", C, true))), p(target("k", I, true)), Inconclusive, ResultInconclusive, 1},
 
 		// Optional cells report, they do not gate.
 		{"optional regression is visible but non-gating", p(target("k", C, false)), p(target("k", I, false)), NewRegression, ResultNoRegressions, 0},
@@ -549,5 +563,34 @@ func TestTrailingDataAfterTheReportIsRefused(t *testing.T) {
 	}
 	if _, err := LoadReport(padded); err != nil {
 		t.Fatalf("whitespace after the report must be fine: %v", err)
+	}
+}
+
+// distro_match is arithmetic like kernel_family_match: it is recomputed with
+// schema.DistroMatch, and a report whose recorded answer contradicts its own
+// inputs, or that states an answer without them, is refused as evidence.
+func TestRecordedDistroMatchIsRecomputed(t *testing.T) {
+	C := schema.VerdictCompatible
+	lie := otherDistro(target("k", C, true))
+	lie.Environment.DistroMatch = b(true) // almalinux in a rhel slot, claimed as a match
+	if _, err := buildErr(report(target("k", C, true)), report(lie)); err == nil ||
+		!strings.Contains(err.Error(), "distro_match") {
+		t.Fatalf("a distro_match contradicting its inputs must be refused, got %v", err)
+	}
+
+	bare := target("k", C, true)
+	env := *bare.Environment
+	env.DistroMatch = b(true) // no requested or observed distribution at all
+	bare.Environment = &env
+	if _, err := buildErr(report(target("k", C, true)), report(bare)); err == nil ||
+		!strings.Contains(err.Error(), "distro_match") {
+		t.Fatalf("a distro_match with nothing to derive it from must be refused, got %v", err)
+	}
+
+	// Reports without any distribution fields (every report before this
+	// change) are compared exactly as before.
+	d := build(t, report(target("k", C, true)), report(target("k", C, true)))
+	if cellFor(t, d, "k").Classification != UnchangedCompatible {
+		t.Fatal("reports without distribution identity must compare as before")
 	}
 }

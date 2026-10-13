@@ -66,7 +66,16 @@ func VerdictForStatus(status string) string {
 // series produces a genuine result about the kernel it ran -- but it cannot
 // support a claim about the one that was requested.
 func EstablishedRequestedEnvironment(t *Target) bool {
-	if t.Environment == nil || t.Environment.KernelFamilyMatch == nil {
+	if t.Environment == nil {
+		return true
+	}
+	// A guest that is another distribution (or major release) than the
+	// profile names is the same failure as another kernel series: a genuine
+	// result about the environment that ran, not about the one requested.
+	if t.Environment.DistroMatch != nil && !*t.Environment.DistroMatch {
+		return false
+	}
+	if t.Environment.KernelFamilyMatch == nil {
 		// Unknown, not mismatched: an older report, or a target that never
 		// reported a kernel. Do not invent a failure from missing data.
 		return true
