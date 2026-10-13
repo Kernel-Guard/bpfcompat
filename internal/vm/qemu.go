@@ -692,7 +692,7 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 
 // centOSStream9Release is an exact CentOS Stream 9 x86_64 kernel release:
 // 5.14.0-<build>.el9.x86_64 with a canonical (non-zero-padded) build number.
-var centOSStream9Release = regexp.MustCompile(`^5\.14\.0-([1-9][0-9]*)\.el9\.x86_64$`)
+var centOSStream9Release = regexp.MustCompile(`^5\.14\.0-([1-9]\d*)\.el9\.x86_64$`)
 
 // The pinned-key path applies only to exactly the three signed RPMs of the
 // requested CentOS Stream 9 release in the official Koji archive, signed with
