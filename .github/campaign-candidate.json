@@ -1,0 +1,7 @@
+{
+  "schema_version": "v0.1",
+  "tag": "v0.4.0-rc.3",
+  "commit_sha": "cba1e09537f2e05e4ba7278efdb5c2d044d1889b",
+  "checksums_sha256": "6a58b12e08181ed312143c7b8d3abde6ad47c195ac146ae525729c28e54aa69b",
+  "candidate_evidence_sha256": "1c4cd27caf3629b9c34557e27dc997b29f533ea1494e7ff69b27c04e971c0868"
+}
