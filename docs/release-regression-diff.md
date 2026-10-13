@@ -305,6 +305,38 @@ $ echo $?
 }
 ```
 
+## GitHub Action
+
+Setting `baseline-report` and `candidate-report` runs `bpfcompat diff` instead
+of validating. It cannot be combined with `artifact`, `command` or `suite`, so
+produce or download the two reports in earlier steps:
+
+```yaml
+- uses: Kernel-Guard/bpfcompat@main  # unreleased: pin the first release that ships diff mode
+  with:
+    baseline-report: reports/v1.2.json   # last known-good release
+    candidate-report: reports/v1.3.json  # this build
+    fail-on-regression: true             # default
+    fail-on-incomplete: true             # default
+```
+
+The diff JSON and Markdown are written to `reports/bpfcompat-diff.{json,md}`
+(`diff-out`, `diff-markdown`), and the Markdown is appended to the step summary.
+The step exposes `diff-result`, `new-required-regressions` and
+`inconclusive-required` as outputs.
+
+| Outcome | Step |
+|---|---|
+| `NEW_REGRESSIONS` | fails when `fail-on-regression` is `true` |
+| `INCONCLUSIVE`, or required coverage removed | fails when `fail-on-incomplete` is `true` |
+| `INVALID_INPUT`: a report is missing, unreadable, malformed or cannot be aligned, so no diff was produced | always fails, whatever the policy |
+
+The policy is applied to the diff's summary counts, so `fail-on-regression:
+false` never waives `fail-on-incomplete` when both occur. Report paths must
+resolve, after following symlinks, inside the workspace or `RUNNER_TEMP`. When
+the reports come from another job, `baseline-report-sha256` and
+`candidate-report-sha256` pin their exact bytes.
+
 ## Scope
 
 The diff consumes evidence; it does not produce it. It never re-runs a program,

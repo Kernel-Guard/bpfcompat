@@ -83,6 +83,58 @@ inputs:
     description: Path to bpfcompat binary. Relative paths are resolved from the caller repository root.
     required: false
     default: "./bin/bpfcompat"
+  baseline-report:
+    description: "Diff mode: path to the baseline (reference release) bpfcompat JSON report. Setting baseline-report and candidate-report runs `bpfcompat diff` instead of validating; it cannot be combined with artifact, command, or suite. Paths must resolve inside the workspace or RUNNER_TEMP."
+    required: false
+    default: ""
+  candidate-report:
+    description: "Diff mode: path to the candidate (release under evaluation) bpfcompat JSON report."
+    required: false
+    default: ""
+  baseline-report-sha256:
+    description: "Diff mode: optional expected SHA-256 of baseline-report; a mismatch fails the step before comparing."
+    required: false
+    default: ""
+  candidate-report-sha256:
+    description: "Diff mode: optional expected SHA-256 of candidate-report; a mismatch fails the step before comparing."
+    required: false
+    default: ""
+  fail-on-regression:
+    description: "Diff mode: fail when a required kernel the baseline supported is broken in the candidate (NEW_REGRESSION)."
+    required: false
+    default: "true"
+  fail-on-incomplete:
+    description: "Diff mode: fail when a required comparison could not be established (INCONCLUSIVE: infrastructure error, missing result, different kernel, or removed coverage). Invalid or unreadable reports always fail."
+    required: false
+    default: "true"
+  diff-out:
+    description: "Diff mode: path for the diff JSON."
+    required: false
+    default: "reports/bpfcompat-diff.json"
+  diff-markdown:
+    description: "Diff mode: path for the diff Markdown (also appended to the step summary)."
+    required: false
+    default: "reports/bpfcompat-diff.md"
+
+outputs:
+  diff-result:
+    description: "Diff mode: NO_NEW_REGRESSIONS, NEW_REGRESSIONS, INCONCLUSIVE, or INVALID_INPUT."
+    value: ${{ steps.run.outputs.result }}
+  new-required-regressions:
+    description: "Diff mode: number of new required regressions."
+    value: ${{ steps.run.outputs.new-required-regressions }}
+  inconclusive-required:
+    description: "Diff mode: number of required comparisons that could not be established."
+    value: ${{ steps.run.outputs.inconclusive-required }}
+  coverage-removed-required:
+    description: "Diff mode: number of required profiles the baseline tested and the candidate did not."
+    value: ${{ steps.run.outputs.coverage-removed-required }}
+  diff-json:
+    description: "Diff mode: absolute path of the diff JSON."
+    value: ${{ steps.run.outputs.diff-json }}
+  diff-markdown:
+    description: "Diff mode: absolute path of the diff Markdown."
+    value: ${{ steps.run.outputs.diff-markdown }}
 
 runs:
   using: composite
@@ -156,6 +208,9 @@ runs:
     - name: Build bpfcompat
       if: ${{ inputs.build == 'true' && steps.prebuilt.outputs.resolved != 'true' }}
       shell: bash
+      env:
+        INPUT_BASELINE_REPORT: ${{ inputs.baseline-report }}
+        INPUT_CANDIDATE_REPORT: ${{ inputs.candidate-report }}
       run: |
         set -euo pipefail
         if [[ -z "${GITHUB_ACTION_PATH:-}" ]]; then
@@ -165,10 +220,15 @@ runs:
 
         pushd "$GITHUB_ACTION_PATH" >/dev/null
         make build
-        make validator-static
+        # Diff mode only reads reports; it never boots a guest, so it does not
+        # need the static validator (or the libbpf headers that build needs).
+        if [[ -z "$INPUT_BASELINE_REPORT$INPUT_CANDIDATE_REPORT" ]]; then
+          make validator-static
+        fi
         popd >/dev/null
 
     - name: Run bpfcompat
+      id: run
       shell: bash
       env:
         # Free-text inputs go through the environment, never inline
@@ -176,6 +236,16 @@ runs:
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_COMMAND_BINARY: ${{ inputs.command-binary }}
         INPUT_COMMAND_EXPECT_EXIT: ${{ inputs.command-expect-exit }}
+        INPUT_ARTIFACT: ${{ inputs.artifact }}
+        INPUT_SUITE: ${{ inputs.suite }}
+        INPUT_BASELINE_REPORT: ${{ inputs.baseline-report }}
+        INPUT_CANDIDATE_REPORT: ${{ inputs.candidate-report }}
+        INPUT_BASELINE_REPORT_SHA256: ${{ inputs.baseline-report-sha256 }}
+        INPUT_CANDIDATE_REPORT_SHA256: ${{ inputs.candidate-report-sha256 }}
+        INPUT_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+        INPUT_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
+        INPUT_DIFF_OUT: ${{ inputs.diff-out }}
+        INPUT_DIFF_MARKDOWN: ${{ inputs.diff-markdown }}
       run: |
         set -euo pipefail
 
@@ -263,6 +333,13 @@ runs:
         if [[ -z "$binary_path" || ! -x "$binary_path" ]]; then
           echo "::error::bpfcompat binary not found or not executable. Checked: $workspace/$binary_input, $action_root/$binary_input, $action_root/bin/bpfcompat"
           exit 1
+        fi
+
+        # Diff mode (baseline-report / candidate-report): compare two existing
+        # reports with `bpfcompat diff` and apply the fail-on-* policy. Nothing
+        # below this point runs in diff mode.
+        if [[ -n "$INPUT_BASELINE_REPORT$INPUT_CANDIDATE_REPORT" ]]; then
+          BPFCOMPAT_BIN="$binary_path" exec bash "$action_root/scripts/action-diff.sh"
         fi
 
         if [[ -n "$suite_path" ]]; then

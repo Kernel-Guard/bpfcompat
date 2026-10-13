@@ -67,6 +67,10 @@ jobs:
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Action diff-mode regression
+        # baseline-report / candidate-report policy, path safety, stale-output
+        # and checksum handling, against the real `bpfcompat diff` (#141).
+        run: bash scripts/action-diff_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
       - name: Image prefetch reliability regression
@@ -120,6 +124,57 @@ jobs:
           name: coverage-${{ github.run_id }}
           path: coverage.out
           if-no-files-found: warn
+
+  action-diff:
+    name: Action diff mode (end-to-end)
+    # Runs the composite action itself (uses: ./) in diff mode, the way a
+    # consumer does, and checks its outputs and its default fail-closed policy.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Regression reported, policy allows it
+        id: allowed
+        uses: ./
+        with:
+          baseline-report: scripts/testdata/action-diff/baseline.json
+          candidate-report: scripts/testdata/action-diff/candidate-regressed.json
+          fail-on-regression: "false"
+          prebuilt: never
+      - name: Regression fails the step by default
+        id: strict
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline-report: scripts/testdata/action-diff/baseline.json
+          candidate-report: scripts/testdata/action-diff/candidate-regressed.json
+          diff-out: reports/strict.json
+          diff-markdown: reports/strict.md
+          prebuilt: never
+          build: "false"
+      - name: Check outputs and outcomes
+        shell: bash
+        env:
+          ALLOWED_OUTCOME: ${{ steps.allowed.outcome }}
+          ALLOWED_RESULT: ${{ steps.allowed.outputs.diff-result }}
+          ALLOWED_REGRESSIONS: ${{ steps.allowed.outputs.new-required-regressions }}
+          ALLOWED_JSON: ${{ steps.allowed.outputs.diff-json }}
+          STRICT_OUTCOME: ${{ steps.strict.outcome }}
+          STRICT_RESULT: ${{ steps.strict.outputs.diff-result }}
+        run: |
+          set -euo pipefail
+          [[ "$ALLOWED_OUTCOME" == success ]]
+          [[ "$ALLOWED_RESULT" == NEW_REGRESSIONS ]]
+          [[ "$ALLOWED_REGRESSIONS" == 1 ]]
+          jq -e '.schema_version == "bpfcompat.regression-diff.v0.1"
+                 and .summary.new_required_regressions == 1' "$ALLOWED_JSON"
+          [[ "$STRICT_OUTCOME" == failure ]]
+          [[ "$STRICT_RESULT" == NEW_REGRESSIONS ]]
+          echo "diff mode: outputs and default policy verified"
 
   lint:
     name: golangci-lint

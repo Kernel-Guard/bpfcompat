@@ -1,0 +1,13 @@
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261013T000000Z-action-diff-candidate"},
+  "artifact": {"sha256": "2222222222222222222222222222222222222222222222222222222222222222"},
+  "targets": [
+    {"profile_id": "ubuntu-22.04-5.15", "required": true, "status": "fail", "verdict": "INCOMPATIBLE",
+     "classification_code": "UNSUPPORTED_MAP_TYPE",
+     "environment": {"requested_kernel_family": "5.15", "observed_kernel": "5.15.0-186-generic", "kernel_family_match": true}},
+    {"profile_id": "debian-12-6.1", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "6.1", "observed_kernel": "6.1.0-53-cloud-amd64", "kernel_family_match": true}}
+  ],
+  "summary": {"status": "fail", "verdict": "INCOMPATIBLE", "complete": true}
+}
