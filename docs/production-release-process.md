@@ -109,7 +109,8 @@ Create an input manifest with paths relative to that directory:
   },
   "candidate": {
     "evidence": "candidate/release-candidate-evidence.json",
-    "evidence_sha256": "<sha256>"
+    "evidence_sha256": "<sha256>",
+    "checksums": "candidate/SHA256SUMS"
   },
   "canaries": [
     {
