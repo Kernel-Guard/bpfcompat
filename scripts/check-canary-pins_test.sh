@@ -56,6 +56,7 @@ run_guard() {
   # Every fixture tag above resolves from local git objects, so point the
   # remote fallback at a name that does not exist: a fixture must never make
   # this suite depend on reaching github.com.
+  BPFCOMPAT_HEAD_COMMIT="${HEAD_COMMIT:-}" \
   BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" \
     BPFCOMPAT_CANARY_WORKFLOW="$tmp/canary.yml" \
     BPFCOMPAT_TAG_REMOTE=bpfcompat-test-no-such-remote \
@@ -125,6 +126,45 @@ grep -Fq "has no canary" "$tmp/out.log"
 metadata 0.3.7 0.4.0-rc.3 prerelease
 printf '      - name: nothing\n        run: true\n' | workflow
 expect_fail "workflow declares no pins"
+
+# --- Preparing the next release candidate (bootstrap) ---------------------------
+# The commit that bumps release_version to the next RC -- and the tag build of
+# that commit -- cannot pin the canary to a tag that does not exist yet, or to
+# itself. While v<release_version> is absent, or resolves to the commit under
+# check, the candidate pin may still name an existing earlier prerelease that
+# resolves correctly. Once the tag exists elsewhere, the strict rule applies.
+
+# B1. Bump PR: v0.4.0-rc.9 does not exist; the pin still names rc.3 correctly.
+metadata 0.3.7 0.4.0-rc.9 prerelease
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; pin candidate "$CAND_SHA" "$CAND_TAG"; } | workflow
+expect_pass "next RC not tagged yet: previous prerelease pin accepted"
+grep -q "bootstrap" "$tmp/out.log" || { echo "[canary-pins-test] bootstrap pass must be announced" >&2; cat "$tmp/out.log" >&2; exit 1; }
+
+# B2. ...but the previous-prerelease pin must still resolve exactly.
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; pin candidate "$PREV_CAND_SHA" "$CAND_TAG"; } | workflow
+expect_fail "bootstrap pin with a SHA that is not its tag"
+
+# B3. ...and must be a prerelease, not a stable release.
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; pin candidate "$STABLE_SHA" "$STABLE_TAG"; } | workflow
+expect_fail "bootstrap pin naming a stable release"
+
+# B4. ...and must exist.
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; } | workflow
+expect_fail "bootstrap without any candidate pin"
+
+# B5. ...and must not be a mutable ref.
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; pin candidate "v0.4.0-rc.3" "$CAND_TAG"; } | workflow
+expect_fail "bootstrap pin that is a tag name, not a SHA"
+
+# B6. Tag build: v0.4.0-rc.3 exists and IS the commit under check; the pin may
+#     still name the earlier prerelease rc.2.
+metadata 0.3.7 0.4.0-rc.3 prerelease
+{ pin stable "$STABLE_SHA" "$STABLE_TAG"; pin candidate "$PREV_CAND_SHA" "$PREV_CAND_TAG"; } | workflow
+HEAD_COMMIT="$CAND_SHA" expect_pass "tag build of the RC itself: previous prerelease pin accepted"
+
+# B7. Any later commit (tag exists, HEAD is not the tag): strict again, the
+#     canary must be repinned to the RC.
+HEAD_COMMIT="$STABLE_SHA" expect_fail "after the RC is tagged, a stale candidate pin is refused"
 
 # 7. Stable channel with no active prerelease: the candidate lane still points
 #    at last cycle's rc, which is fine, but stable is still enforced.

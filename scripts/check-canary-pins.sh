@@ -23,6 +23,15 @@
 # documented consumer path has no canary at all, which is the gap this guard
 # exists to close, so it is a failure and not a skip.
 #
+# Preparing the next release candidate is the one state the strict rule
+# cannot be met in: the commit that sets release_version to a new RC (and the
+# tag build of that very commit) cannot pin the canary to a tag that does not
+# exist yet, or to itself. While v<release_version> is absent, or resolves to
+# the commit under check, the candidate pin may still name an existing earlier
+# prerelease -- a full SHA that its `# vX.Y.Z-rc.N` tag really resolves to.
+# Every later commit is strict again, so the canary must be repinned to the
+# new RC before anything else lands.
+#
 # `candidate` is enforced only while release_channel is `prerelease`. In the
 # stable channel there is no active prerelease to graduate, release_version
 # equals stable_version, and whatever prerelease the candidate lane still
@@ -163,9 +172,43 @@ check_pin() {
 
 check_pin stable "v${stable_version}"
 
+# The commit under check (overridable for the regression suite).
+head_commit="${BPFCOMPAT_HEAD_COMMIT:-}"
+[[ -n "$head_commit" ]] || head_commit="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+
+# check_bootstrap_candidate: the earlier-prerelease pin allowed while the next
+# RC is being prepared or built.
+check_bootstrap_candidate() {
+  local sha="${pin_sha[candidate]:-}" line="${pin_line[candidate]:-}" version="${pin_version[candidate]:-}"
+  if [[ -z "$sha" ]]; then
+    note_fail "${workflow} declares no '# bpfcompat-pin: candidate' pin, so the candidate consumer path has no canary"
+    return
+  fi
+  if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+    note_fail "${workflow}:${line} candidate pin '${sha}' is not a full 40-character commit SHA"
+    return
+  fi
+  if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ || "$version" == "v${release_version}" ]]; then
+    note_fail "${workflow}:${line} candidate pin '${version:-<no comment>}' must name an earlier prerelease while v${release_version} is being prepared"
+    return
+  fi
+  local actual
+  actual="$(tag_commit "$version")"
+  if [[ -z "$actual" || "$actual" != "$sha" ]]; then
+    note_fail "${workflow}:${line} candidate pin is ${sha} but ${version} is ${actual:-not a tag}"
+    return
+  fi
+  echo "[canary-pins] candidate bootstrap: v${release_version} is being prepared; canary still pins ${version} ${sha} (repin after the tag)"
+}
+
 case "$release_channel" in
   prerelease)
-    check_pin candidate "v${release_version}"
+    next_commit="$(tag_commit "v${release_version}")"
+    if [[ -z "$next_commit" || "$next_commit" == "$head_commit" ]]; then
+      check_bootstrap_candidate
+    else
+      check_pin candidate "v${release_version}"
+    fi
     ;;
   stable)
     if [[ -n "${pin_line[candidate]:-}" ]]; then
