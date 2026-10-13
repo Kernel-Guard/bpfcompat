@@ -46,6 +46,13 @@ report_field() {
 # execution evidence about the artifact, so the page must not fold INFRA_ERROR
 # into the failure count. Verdict is preferred; status is the fallback for
 # reports older than the verdict contract.
+#
+# The same rule as pkg/schema RunVerdict applies to a required target that
+# passed on a kernel outside the requested family (kernel_family_match ==
+# false): it has not established the requested contract, so it is counted as
+# infra, never as a pass. An INCOMPATIBLE result stays a failure even on a
+# mismatched kernel -- RunVerdict lets a proven incompatibility outrank an
+# infrastructure error. A missing match field is unknown, not a mismatch.
 required_counts() {
   local report="$1"
   jq -r '
@@ -54,7 +61,9 @@ required_counts() {
       elif .status == "fail" or .status == "partial" then "INCOMPATIBLE"
       elif .status == "infra_error" then "INFRA_ERROR"
       else "UNSUPPORTED" end));
-    [(.targets // [])[] | select(.required == true) | verdict_of] as $v |
+    def required_verdict: verdict_of as $v |
+      if $v == "COMPATIBLE" and .environment.kernel_family_match == false then "INFRA_ERROR" else $v end;
+    [(.targets // [])[] | select(.required == true) | required_verdict] as $v |
     ($v | map(select(. == "COMPATIBLE")) | length) as $pass |
     ($v | map(select(. == "INCOMPATIBLE")) | length) as $fail |
     ($v | map(select(. == "INFRA_ERROR" or . == "UNSUPPORTED")) | length) as $infra |
@@ -72,10 +81,12 @@ report_incomplete() {
       elif .status == "fail" or .status == "partial" then "INCOMPATIBLE"
       elif .status == "infra_error" then "INFRA_ERROR"
       else "UNSUPPORTED" end));
+    def required_verdict: verdict_of as $v |
+      if $v == "COMPATIBLE" and .environment.kernel_family_match == false then "INFRA_ERROR" else $v end;
     # Compare directly: jq `//` treats false as missing, so
     # `(.summary.complete // true)` would read an explicit false as true.
     if .summary.complete == false then "yes"
-    elif ([(.targets // [])[] | select(.required == true) | verdict_of
+    elif ([(.targets // [])[] | select(.required == true) | required_verdict
            | select(. == "INFRA_ERROR" or . == "UNSUPPORTED")] | length) > 0 then "yes"
     else "no" end
   ' "$report"
@@ -99,7 +110,9 @@ latest_target_rows() {
     [
       (.profile_id // "-"),
       (.required // false | tostring),
-      (.status // "-"),
+      (if .environment.kernel_family_match == false then
+         "\(.status // "-") on a kernel family mismatch (requested \(.environment.requested_kernel_family // "-"))"
+       else (.status // "-") end),
       (.host.kernel // .profile.kernel // "-"),
       (.functional.status // "-"),
       (.classification_code // "-")
@@ -218,10 +231,12 @@ markdown_link() {
       "$(printf '%s' "$latest_run" | html_escape)"
     echo '<table><thead><tr><th>Profile</th><th>Required</th><th>Status</th><th>Kernel</th><th>Functional</th><th>Class</th></tr></thead><tbody>'
     while IFS=$'\t' read -r profile required status kernel functional class; do
+      status_class="$status"
+      [[ "$status" == *'kernel family mismatch'* ]] && status_class="warn"
       printf '<tr><td><code>%s</code></td><td>%s</td><td class="%s">%s</td><td><code>%s</code></td><td><code>%s</code></td><td><code>%s</code></td></tr>\n' \
         "$(printf '%s' "$profile" | html_escape)" \
         "$(printf '%s' "$required" | html_escape)" \
-        "$(printf '%s' "$status" | html_escape)" \
+        "$(printf '%s' "$status_class" | html_escape)" \
         "$(printf '%s' "$status" | html_escape)" \
         "$(printf '%s' "$kernel" | html_escape)" \
         "$(printf '%s' "$functional" | html_escape)" \
