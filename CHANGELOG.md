@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+- The CentOS Stream 9 kernel 725 exact-kernel profile fetches the exact signed
+  RPMs from the official CentOS Koji archive, since the rolling mirror retired
+  them (HTTP 404), and verifies them against the pinned CentOS SHA256 signing
+  key. Forward-ported from the v0.3.8 maintenance line (d1a053c, 8f82099).
+  Kernel identity and mandatory guest signature verification are unchanged.
+
 ### Security
 - **Go toolchain 1.25.14 -> 1.26.9.** Eleven standard-library advisories
   published 2026-10-08 (GO-2026-6610 through GO-2026-6617 and related, in

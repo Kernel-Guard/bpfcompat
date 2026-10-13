@@ -99,6 +99,95 @@ else
   bad "summary.complete=false was rendered as complete"; cat "$work/public2/index.md" >&2
 fi
 
+# 5-8. A required target that passed on a kernel outside the requested family
+#      has not established the requested contract. pkg/schema RunVerdict rolls
+#      it up as INFRA_ERROR, so the page must count it under Required infra --
+#      never as a required pass. Run 38404268435 published "Required pass 8,
+#      infra 0" next to an INFRA_ERROR/incomplete summary because
+#      oracle-linux-9-uek7-5.15 (requested 5.15) booted 6.12.0 UEK.
+mkdir -p "$work/reports3"
+cat >"$work/reports3/quirk-library-mismatch.json" <<'JSON'
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261013T000000Z-mismatch"},
+  "artifact": {"basename": "fixture.bpf.o", "sha256": "0000"},
+  "summary": {"status": "error", "verdict": "INFRA_ERROR", "complete": false},
+  "targets": [
+    {"profile_id": "matched", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "5.14", "observed_kernel": "5.14.0-756.el9.x86_64", "kernel_family_match": true},
+     "host": {"kernel": "5.14.0-756.el9.x86_64"}},
+    {"profile_id": "uek-trap", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "5.15", "observed_kernel": "6.12.0-107.59.3.3.el9uek.x86_64", "kernel_family_match": false},
+     "host": {"kernel": "6.12.0-107.59.3.3.el9uek.x86_64"}},
+    {"profile_id": "real-fail", "required": true, "status": "fail", "verdict": "INCOMPATIBLE",
+     "classification_code": "UNSUPPORTED_MAP_TYPE",
+     "environment": {"requested_kernel_family": "4.14", "observed_kernel": "5.10.1", "kernel_family_match": false}},
+    {"profile_id": "optional-trap", "required": false, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "5.4", "observed_kernel": "5.15.0-1", "kernel_family_match": false}}
+  ]
+}
+JSON
+( cd "$work" && BPFCOMPAT_COMPATIBILITY_VERSION=test-run3 bash "$SCRIPT" reports3 "$work/public3" ) >/dev/null
+md3="$work/public3/index.md"; html3="$work/public3/index.html"
+# 5. matched=pass, real-fail=fail, uek-trap=infra; optional-trap not counted.
+if grep -qE '\| incomplete \| 1 \| 1 \| 1 \|' "$md3"; then
+  ok "a required pass on a mismatched kernel family is counted under Required infra"
+else
+  bad "a required pass on a mismatched kernel family was not counted as infra"; cat "$md3" >&2
+fi
+# 6. the INCOMPATIBLE result on a mismatched kernel stays a failure (RunVerdict:
+#    a proven incompatibility outranks an infrastructure error).
+if grep -qE '\| [0-9]+ \| 0 \| 2 \|' "$md3"; then
+  bad "a required INCOMPATIBLE on a mismatched kernel was hidden as infra"
+else
+  ok "a required INCOMPATIBLE on a mismatched kernel stays a failure"
+fi
+# 7. the optional target never moves the required counts (5 asserts exactly
+#    1/1/1), and 8. the per-target row shows the mismatch instead of a bare pass.
+uek_row="$(grep '<code>uek-trap</code>' "$html3" || true)"
+if [[ "$uek_row" == *'kernel family mismatch'* && "$uek_row" == *'requested 5.15'* && "$uek_row" != *'class="pass"'* ]]; then
+  ok "the per-target row shows the kernel family mismatch, not a plain pass"
+else
+  bad "the per-target row hides the kernel family mismatch: $uek_row"
+fi
+# A genuine failure on a mismatched kernel is still a failure: it must keep the
+# fail style, not the amber warn style reserved for an unestablished pass.
+fail_row="$(grep '<code>real-fail</code>' "$html3" || true)"
+if [[ "$fail_row" == *'class="fail">fail on a kernel family mismatch (requested 4.14)<'* ]]; then
+  ok "a failure on a mismatched kernel keeps the fail style"
+else
+  bad "a failure on a mismatched kernel lost its fail style: $fail_row"
+fi
+matched_row="$(grep '<code>matched</code>' "$html3" || true)"
+if [[ "$matched_row" == *'class="pass">pass<'* ]]; then
+  ok "a matched target still renders as a plain pass"
+else
+  bad "a matched target no longer renders as pass: $matched_row"
+fi
+
+# 9. A complete, all-pass report whose kernels all match is shown as complete:
+#    honest evidence must not be rendered as a failure either.
+mkdir -p "$work/reports4"
+cat >"$work/reports4/quirk-library-allpass.json" <<'JSON'
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261013T000000Z-allpass"},
+  "artifact": {"basename": "fixture.bpf.o", "sha256": "0000"},
+  "summary": {"status": "pass", "verdict": "COMPATIBLE", "complete": true},
+  "targets": [
+    {"profile_id": "a", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+     "environment": {"requested_kernel_family": "6.1", "observed_kernel": "6.1.0-53-cloud-amd64", "kernel_family_match": true}},
+    {"profile_id": "b", "required": true, "status": "pass", "verdict": "COMPATIBLE"}
+  ]
+}
+JSON
+( cd "$work" && BPFCOMPAT_COMPATIBILITY_VERSION=test-run4 bash "$SCRIPT" reports4 "$work/public4" ) >/dev/null
+if grep -qE '\| yes \| 2 \| 0 \| 0 \|' "$work/public4/index.md" && ! grep -qi 'incomplete' "$work/public4/index.md" "$work/public4/index.html"; then
+  ok "an all-pass, kernel-matched report renders complete with no incomplete banner"
+else
+  bad "an all-pass report was rendered as incomplete or miscounted"; cat "$work/public4/index.md" >&2
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "publish-compatibility-site_test: FAILED" >&2
   exit 1
