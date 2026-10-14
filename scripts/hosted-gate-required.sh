@@ -33,6 +33,12 @@ set -euo pipefail
 required=false
 while IFS= read -r path || [[ -n "$path" ]]; do
   case "$path" in
+    \"*)
+      # git C-quotes paths with unusual characters (non-ASCII, quotes,
+      # tabs, newlines). They cannot be classified reliably, so require
+      # the gate rather than silently skip it.
+      required=true
+      ;;
     scripts/research/*)
       ;;
     cmd/*|internal/*|pkg/*|validator/*|examples/*|matrices/*|suites/*|vm/*|vendor/*|scripts/*|action.yml|Makefile|go.mod|go.sum|go.work|go.work.sum|.github/workflows/bpfcompat-example-hosted.yml)

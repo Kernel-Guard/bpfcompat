@@ -47,6 +47,8 @@ check true  Makefile
 check true  go.mod
 check true  .github/workflows/bpfcompat-example-hosted.yml
 check false scripts/research/x.py
+check true  '"pkg/q/\303\244.go"'
+check true  '"docs/odd\tname.md"'
 check false scripts/research/run-study-v1.sh
 check false docs/x.md
 check false README.md
