@@ -278,6 +278,12 @@ jobs:
       # exercise the Go side so the CI gate stays portable.
       - name: go build
         run: go build ./...
+      - name: Env reference in sync with the catalog
+        # docs/env-reference.md is generated from internal/envref and says
+        # "do not edit by hand"; the Makefile comment said CI enforced this,
+        # but no workflow ran it, so a hand edit (or a missed catalog entry)
+        # could ship. Fails if regenerating the doc changes the committed file.
+        run: make env-docs-check
       - name: Prove the compiling toolchain
         # go.mod only states a minimum; this asserts the stdlib actually
         # linked into the CLI comes from the pinned toolchain.
