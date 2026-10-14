@@ -701,7 +701,13 @@ components:
         version: { type: string }
         target_profile: { type: string }
         limit: { type: integer }
-        require_verified_history: { type: boolean, default: true }
+        require_verified_history:
+          type: boolean
+          default: true
+          description: >-
+            Must be true or omitted; false is rejected with 400 (fixed
+            message). Signed history verification cannot be disabled for an
+            API agent decision.
         policy:
           type: object
           additionalProperties: true

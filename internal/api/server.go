@@ -424,7 +424,8 @@ func (p runtimeProbeOptionsRequest) toRuntimeProbeOptions() runtime.ProbeOptions
 // uses the server's configured workdir and output directory, so
 // /api/runtime/select, /api/runtime/fetch, /api/runtime/execute and
 // /api/runtime/decisions share this one rule set (GET /api/runtime/probe uses
-// it to reject sudo_non_interactive=false). Fields that an endpoint does not
+// it to reject sudo_non_interactive=false, POST /api/v1/agent/decision to
+// reject require_verified_history=false). Fields that an endpoint does not
 // decode stay zero.
 type runtimeRequestOverrides struct {
 	OutDir                 string
@@ -938,6 +939,14 @@ func (s *Server) handleAgentDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.HostProbe.SchemaVersion) == "" {
 		writeError(w, http.StatusBadRequest, "host_probe is required")
+		return
+	}
+	// The decision feeds an agent that may load the selected object, so signed
+	// history verification is mandatory here exactly as for runtime fetch and
+	// execute. Offline/unsigned workflows use the local `bpfcompat agent plan`
+	// path (no --api-url), which keeps --require-verified-history=false.
+	if msg := (runtimeRequestOverrides{RequireVerifiedHistory: req.RequireVerifiedHistory}).rejection("agent decision"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	if err := req.Policy.validate(); err != nil {

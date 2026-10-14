@@ -152,6 +152,12 @@ with a fixed message that does not echo the supplied value):
 - `manifest_path`, `validator_path`, `timeout`, `use_sudo`,
   `sudo_non_interactive` (execute).
 
+`POST /api/v1/agent/decision` applies the same rule to
+`require_verified_history=false` (`400 Bad Request`, fixed message): signed
+artifact-history verification is mandatory for API agent decisions. Use the
+local `bpfcompat agent plan` path (no `--api-url`) for offline or unsigned
+registries.
+
 `select` and `fetch` read the server's local (non-tenant) artifact registry
 under its configured workdir. They take no `tenant`/`project` and never read
 the tenant-scoped cloud registry; use `execute` or the

@@ -31,6 +31,7 @@ This is a gated runtime delivery proof, not a production runtime loading service
 - API runtime select and fetch share the same override rule set: `workdir`, `out_dir`, `require_verified_history=false` and probe sudo overrides are rejected with 400, so neither anonymous runtime delivery nor an authenticated caller can read another directory (for example another tenant's registry) or write outside the server's configured workdir.
 - API runtime decisions (`GET /api/runtime/decisions`) applies the same rule set to its `workdir` query parameter, so decision history is read only from the server's configured workdir.
 - `GET /api/runtime/probe` rejects `sudo_non_interactive=false` with the same fixed-message 400, so a request can never make the server run `sudo` without `-n` (which could prompt for a password and hang).
+- `POST /api/v1/agent/decision` rejects `require_verified_history=false` with the same rule, so even a token-authenticated agent cannot obtain a decision whose signed artifact history was not verified. The local `bpfcompat agent plan` path (no `--api-url`) keeps `--require-verified-history=false` for offline/unsigned registries.
 
 This preserves VM isolation as the normal operational path while keeping host execution behind an explicit safety gate.
 
