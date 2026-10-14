@@ -102,7 +102,10 @@ Open:
 
 - `prefer_privileged=true|false`
 - `use_sudo=true|false`
-- `sudo_non_interactive=true|false`
+- `sudo_non_interactive=true` (the default; `false` is rejected with
+  `400 Bad Request` and a fixed message, so the server always runs the
+  privileged probe as `sudo -n` and a request can never make it wait on a
+  password prompt)
 
 Runtime policy object (optional for select/fetch/execute):
 
@@ -131,8 +134,9 @@ Runtime probe object (optional for select/fetch/execute):
 
 `probe.use_sudo` and `probe.sudo_non_interactive` are rejected with
 `400 Bad Request` in select/fetch/execute request bodies; the server always
-probes with its own sudo defaults. They remain query options of
-`GET /api/runtime/probe` only.
+probes with its own sudo defaults (always non-interactive `sudo -n`). They
+remain query options of `GET /api/runtime/probe` only, where
+`sudo_non_interactive=false` is rejected as well.
 
 Request-level overrides rejected by select/fetch/execute (`400 Bad Request`
 with a fixed message that does not echo the supplied value):
@@ -147,6 +151,12 @@ with a fixed message that does not echo the supplied value):
 - `probe.use_sudo`, `probe.sudo_non_interactive` (select, fetch, execute).
 - `manifest_path`, `validator_path`, `timeout`, `use_sudo`,
   `sudo_non_interactive` (execute).
+
+`POST /api/v1/agent/decision` applies the same rule to
+`require_verified_history=false` (`400 Bad Request`, fixed message): signed
+artifact-history verification is mandatory for API agent decisions. Use the
+local `bpfcompat agent plan` path (no `--api-url`) for offline or unsigned
+registries.
 
 `select` and `fetch` read the server's local (non-tenant) artifact registry
 under its configured workdir. They take no `tenant`/`project` and never read

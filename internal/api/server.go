@@ -131,6 +131,7 @@ const (
 var apiProfileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var apiAllowedClangFlagPattern = regexp.MustCompile(`^(-D[A-Za-z_][A-Za-z0-9_]*(=.*)?|-U[A-Za-z_][A-Za-z0-9_]*)$`)
 var apiSafeUploadFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+
 var apiAbsolutePathPattern = regexp.MustCompile(`(/[A-Za-z0-9._-]+)+`)
 
 type Config struct {
@@ -423,7 +424,10 @@ func (p runtimeProbeOptionsRequest) toRuntimeProbeOptions() runtime.ProbeOptions
 // change how the sudo host probe and the execute worker run. The API always
 // uses the server's configured workdir and output directory, so
 // /api/runtime/select, /api/runtime/fetch, /api/runtime/execute and
-// /api/runtime/decisions share this one rule set. Fields that an endpoint does not decode stay zero.
+// /api/runtime/decisions share this one rule set (GET /api/runtime/probe uses
+// it to reject sudo_non_interactive=false, POST /api/v1/agent/decision to
+// reject require_verified_history=false). Fields that an endpoint does not
+// decode stay zero.
 type runtimeRequestOverrides struct {
 	OutDir                 string
 	WorkDir                string
@@ -786,6 +790,16 @@ func (s *Server) handleRuntimeProbe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// sudo without -n can prompt for a password (and hang the request) when the
+	// server has a controlling TTY, so the API never lets a caller turn it off.
+	// sudo_non_interactive=true (the default) stays accepted as a no-op.
+	if !probeOpts.SudoNonInteractive {
+		interactive := false
+		if msg := (runtimeRequestOverrides{Probe: runtimeProbeOptionsRequest{SudoNonInteractive: &interactive}}).rejection("probe"); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
 	probe, err := runtime.ProbeHostCapabilitiesWithOptions(probeOpts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -926,6 +940,14 @@ func (s *Server) handleAgentDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.HostProbe.SchemaVersion) == "" {
 		writeError(w, http.StatusBadRequest, "host_probe is required")
+		return
+	}
+	// The decision feeds an agent that may load the selected object, so signed
+	// history verification is mandatory here exactly as for runtime fetch and
+	// execute. Offline/unsigned workflows use the local `bpfcompat agent plan`
+	// path (no --api-url), which keeps --require-verified-history=false.
+	if msg := (runtimeRequestOverrides{RequireVerifiedHistory: req.RequireVerifiedHistory}).rejection("agent decision"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	if err := req.Policy.validate(); err != nil {
@@ -3732,11 +3754,5 @@ func redactErrorMessage(message string) string {
 	if message == "" {
 		return message
 	}
-	return apiAbsolutePathPattern.ReplaceAllStringFunc(message, func(match string) string {
-		base := filepath.Base(match)
-		if base == "" || base == "." || base == "/" {
-			return "[redacted]"
-		}
-		return "[redacted]/" + base
-	})
+	return redactPathRanges(message, errorMessageRedactionRanges(message))
 }
