@@ -10,6 +10,10 @@ import (
 	"github.com/kernel-guard/bpfcompat/internal/registry"
 )
 
+// invalidCompareReportMessage is the whole API answer for a report that was
+// read but cannot be compared; it deliberately carries no path or detail.
+const invalidCompareReportMessage = "base_report or head_report is not a comparable bpfcompat report"
+
 // handleCompare diffs two reports either supplied directly or resolved from
 // the local registry by artifact + version. Both paths run through
 // resolveServerLocalReportPath so a caller can't trick the server into
@@ -72,6 +76,11 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	diff, err := compare.LoadAndBuild(resolvedBase, resolvedHead)
+	if errors.Is(err, compare.ErrInvalidReport) {
+		// Fixed text: the detailed error names the server-local file.
+		writeError(w, http.StatusBadRequest, invalidCompareReportMessage)
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

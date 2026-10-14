@@ -2,6 +2,7 @@ package compare
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,31 @@ import (
 
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
+
+// ErrInvalidReport marks a report that parsed but cannot be compared. Callers
+// that must not echo file details (the API) match it with errors.Is and answer
+// with a fixed message; the CLI prints the full, specific error.
+var ErrInvalidReport = errors.New("invalid compatibility report")
+
+// validateReport rejects reports whose comparison keys are ambiguous. It
+// mirrors the comparison-key rules of `bpfcompat diff`
+// (regressiondiff.Validate) without its Gate 1 verdict checks, which compare
+// predates and does not rely on.
+func validateReport(r schema.ReportV01, side string) error {
+	// makeDiffProfiles indexes targets by profile_id; a repeated id would let
+	// the last row silently overwrite the earlier ones while summarizeDiff
+	// still counts every row, so one document would disagree with itself.
+	seen := make(map[string]int, len(r.Targets))
+	for i := range r.Targets {
+		id := r.Targets[i].ProfileID
+		if first, dup := seen[id]; dup {
+			return fmt.Errorf("%w: %s report lists profile_id %q at targets %d and %d; which result represents that profile is ambiguous",
+				ErrInvalidReport, side, id, first, i)
+		}
+		seen[id] = i
+	}
+	return nil
+}
 
 func LoadReport(path string) (schema.ReportV01, error) {
 	absPath, err := filepath.Abs(path)
@@ -32,8 +58,14 @@ func LoadAndBuild(basePath, headPath string) (ReportDiff, error) {
 	if err != nil {
 		return ReportDiff{}, err
 	}
+	if err := validateReport(base, "base"); err != nil {
+		return ReportDiff{}, err
+	}
 	head, err := LoadReport(headPath)
 	if err != nil {
+		return ReportDiff{}, err
+	}
+	if err := validateReport(head, "head"); err != nil {
 		return ReportDiff{}, err
 	}
 	return Build(base, head, absOrOriginal(basePath), absOrOriginal(headPath), time.Now()), nil
