@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -326,6 +327,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 	qemu = newQEMUInstance(cmd)
+	qemuLogRedactor := newQEMULogRedactor(vmRunDir, req.RunDir, baseImagePath)
 	result.QEMUCommand = qemuCmdString
 	result.SerialLogPath = serialLogPath
 
@@ -339,7 +341,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	target, err := waitForSSHAnyUser(sshCtx, targetBase, sshUsers, req.Timeout, qemu.done)
 	if err != nil {
 		if errors.Is(err, errQEMUExited) {
-			err = qemu.exitedBeforeSSHError(qemuLogPath)
+			err = qemu.exitedBeforeSSHError(qemuLogPath, qemuLogRedactor)
 		}
 		result.InfraError = fmt.Sprintf("wait for SSH (%s): %v", strings.Join(sshUsers, ","), err)
 		return
@@ -362,7 +364,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		target, err = waitForSSHAnyUser(rebootCtx, targetBase, []string{target.User}, req.Timeout, qemu.done)
 		if err != nil {
 			if errors.Is(err, errQEMUExited) {
-				err = qemu.exitedBeforeSSHError(qemuLogPath)
+				err = qemu.exitedBeforeSSHError(qemuLogPath, qemuLogRedactor)
 			}
 			result.InfraError = fmt.Sprintf("wait for SSH after kernel-install reboot: %v", err)
 			return
@@ -1170,17 +1172,91 @@ func (q *qemuInstance) terminate() {
 
 // exitedBeforeSSHError describes a QEMU that exited while the guest was
 // still unreachable, quoting the tail of qemu.log where QEMU reports why
-// (port clash, bad accelerator, missing firmware). Call only after done.
-func (q *qemuInstance) exitedBeforeSSHError(qemuLogPath string) error {
+// (port clash, bad accelerator, missing firmware). The tail is redacted (see
+// newQEMULogRedactor) because InfraError reaches API clients, which never see
+// host run-directory paths. Call only after done.
+func (q *qemuInstance) exitedBeforeSSHError(qemuLogPath string, redactor *strings.Replacer) error {
 	status := "exit status 0"
 	if q.err != nil {
 		status = q.err.Error()
 	}
-	tail := readFileTail(qemuLogPath, qemuLogTailBytes)
+	tail := qemuLogTail(qemuLogPath, redactor)
 	if tail == "" {
 		tail = "qemu.log is empty"
 	}
 	return fmt.Errorf("qemu exited before SSH was ready (%s): %s", status, tail)
+}
+
+// newQEMULogRedactor replaces the host paths this run handed to QEMU with
+// fixed placeholders: the base image as <base-image>, this target's VM run
+// directory (overlay, serial log, seed, firmware vars all live under it) as
+// <run-dir>, and the enclosing run root as <run-root>. Each path is matched
+// as given, absolute and symlink-resolved; more specific paths and longer
+// forms are listed first so they win. Only these known paths are rewritten,
+// so ordinary QEMU text stays intact.
+func newQEMULogRedactor(vmRunDir, runRoot, baseImagePath string) *strings.Replacer {
+	var pairs []string
+	seen := map[string]bool{}
+	add := func(path, placeholder string) {
+		var forms []string
+		for _, form := range pathForms(path) {
+			if !seen[form] {
+				seen[form] = true
+				forms = append(forms, form)
+			}
+		}
+		sort.SliceStable(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
+		for _, form := range forms {
+			pairs = append(pairs, form, placeholder)
+		}
+	}
+	add(baseImagePath, "<base-image>")
+	add(vmRunDir, "<run-dir>")
+	add(runRoot, "<run-root>")
+	return strings.NewReplacer(pairs...)
+}
+
+// pathForms returns path as given, absolute and symlink-resolved. Forms that
+// could match ordinary words are dropped: the root directory, and a relative
+// form without a separator (a bare "out" run root would otherwise rewrite
+// every "out" in QEMU's text); the absolute forms still cover such paths.
+func pathForms(path string) []string {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	var forms []string
+	if given := filepath.Clean(path); filepath.IsAbs(given) || strings.ContainsRune(given, filepath.Separator) {
+		forms = append(forms, given)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		forms = append(forms, abs)
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			forms = append(forms, resolved)
+		}
+	}
+	out := forms[:0]
+	for _, form := range forms {
+		if form != string(filepath.Separator) {
+			out = append(out, form)
+		}
+	}
+	return out
+}
+
+// qemuLogTail returns the redacted last qemuLogTailBytes of qemu.log,
+// trimmed of whitespace and cut on a valid UTF-8 boundary. Redaction runs on
+// the whole log before the cut so a path straddling the cut cannot leak in
+// part.
+func qemuLogTail(qemuLogPath string, redactor *strings.Replacer) string {
+	data, err := os.ReadFile(qemuLogPath) // #nosec G304 -- path is a run-dir file we created.
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(redactor.Replace(string(data)))
+	if len(text) > qemuLogTailBytes {
+		text = text[len(text)-qemuLogTailBytes:]
+	}
+	return strings.TrimSpace(strings.ToValidUTF8(text, ""))
 }
 
 func sshUserCandidates(profile Profile) []string {

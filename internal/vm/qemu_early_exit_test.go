@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const earlyExitQEMUMessage = "qemu-system-x86_64: could not set up host forwarding rule 'tcp:127.0.0.1:2222-:22'"
@@ -199,5 +200,60 @@ func TestWaitForSSHAnyUserStopsOnAbort(t *testing.T) {
 	_, err = waitForSSHAnyUser(ctx, base, []string{"ubuntu"}, 30*time.Second, abort)
 	if err == nil || errors.Is(err, errQEMUExited) {
 		t.Fatalf("cancelled context must report the context, got %v", err)
+	}
+}
+
+// The qemu.log tail lands in InfraError, which the public API passes through
+// (it strips vm_run_dir / qemu_command / serial_log only), so host paths must
+// be replaced by placeholders, in given and symlink-resolved forms.
+func TestExecuteProfileEarlyQEMUExitRedactsHostPaths(t *testing.T) {
+	qemu := `#!/bin/sh
+echo "qemu-system-x86_64: -drive file=$BPFCOMPAT_FAKE_OVERLAY,if=virtio: Could not open backing file '$BPFCOMPAT_FAKE_BASE': Permission denied" >&2
+echo "qemu-system-x86_64: -serial file:$BPFCOMPAT_FAKE_SERIAL_RESOLVED: Permission denied" >&2
+exit 1
+`
+	installEarlyExitFakes(t, qemu, "")
+	p := earlyExitProfile(t)
+
+	realDir := t.TempDir()
+	runDir := filepath.Join(t.TempDir(), "run-link")
+	if err := os.Symlink(realDir, runDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BPFCOMPAT_FAKE_OVERLAY", filepath.Join(runDir, "targets", p.ID, "overlay.qcow2"))
+	t.Setenv("BPFCOMPAT_FAKE_SERIAL_RESOLVED", filepath.Join(realDir, "targets", p.ID, "serial.log"))
+	t.Setenv("BPFCOMPAT_FAKE_BASE", p.Image.LocalPath)
+
+	res := ExecuteProfile(context.Background(), ExecutionRequest{Profile: p, RunDir: runDir, Timeout: 10 * time.Second})
+	t.Logf("infra=%q", res.InfraError)
+	for _, want := range []string{
+		"-drive file=<run-dir>/overlay.qcow2,if=virtio",
+		"Could not open backing file '<base-image>'",
+		"-serial file:<run-dir>/serial.log: Permission denied",
+	} {
+		if !strings.Contains(res.InfraError, want) {
+			t.Fatalf("infra error %q does not contain %q", res.InfraError, want)
+		}
+	}
+	for _, leaked := range []string{runDir, realDir, p.Image.LocalPath, filepath.Dir(p.Image.LocalPath)} {
+		if strings.Contains(res.InfraError, leaked) {
+			t.Fatalf("infra error leaks host path %q: %q", leaked, res.InfraError)
+		}
+	}
+}
+
+// The byte-bounded qemu.log tail must never split a UTF-8 sequence.
+func TestQEMULogTailCutsOnUTF8Boundary(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "qemu.log")
+	// 2*300 + 1 bytes: the last 512 bytes start inside a two-byte "é".
+	if err := os.WriteFile(logPath, []byte(strings.Repeat("é", 300)+"a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tail := qemuLogTail(logPath, newQEMULogRedactor(t.TempDir(), "", ""))
+	if !utf8.ValidString(tail) || strings.ContainsRune(tail, utf8.RuneError) {
+		t.Fatalf("tail is not clean UTF-8: %q", tail)
+	}
+	if tail != strings.Repeat("é", 255)+"a" {
+		t.Fatalf("tail = %d bytes %q, want 255 whole runes", len(tail), tail)
 	}
 }
