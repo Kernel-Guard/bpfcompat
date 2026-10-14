@@ -22,8 +22,10 @@ two levels differently:
   permissions.
 
 The SARIF output that becomes code-scanning alerts (`pkg/scorecard/sarif.go`)
-skips a check whose score meets the policy minimum. Below it, every warning
-becomes an alert carrying the check score. That is why one top-level grant in
+skips a check whose score meets the policy minimum, or is inconclusive.
+Below the minimum, with details enabled, each warning that has a file location
+becomes an alert carrying the check score (`shouldAddLocation`). That is why
+one top-level grant in
 `scholarly-release-v1.yml` (alert #178) also turned the five required
 job-level grants into "score is 0" alerts (#173–#177).
 
