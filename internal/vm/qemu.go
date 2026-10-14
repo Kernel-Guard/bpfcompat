@@ -214,6 +214,21 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		result.InfraError = err.Error()
 		return
 	}
+	// Register the overlay-removal defer immediately so we don't leak the
+	// qcow2 if any of the steps between here and startQEMU fail (overlay
+	// resize, SSH key generation, seed write, seed image build, seed server
+	// bind, port reservation, or QEMU launch itself). qemuProc is captured
+	// by the closure and is nil until startQEMU succeeds, so we only
+	// terminate a process if we actually started one.
+	var qemuProc *os.Process
+	defer func() {
+		if qemuProc != nil {
+			_ = terminateProcess(qemuProc)
+		}
+		if !req.KeepVMOnFailure {
+			_ = os.Remove(overlayPath)
+		}
+	}()
 	if req.Profile.InstallKernel != "" || req.DiskResizeGB > 0 {
 		// Cloud images ship near-full rootfs; a kernel install plus initramfs
 		// generation, or an in-guest toolchain build, overflows it. Grow the
@@ -232,22 +247,6 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		}
 		result.Notes = append(result.Notes, note)
 	}
-	// Register the overlay-removal defer immediately so we don't leak the
-	// qcow2 if any of the steps between here and startQEMU fail (SSH key
-	// generation, seed write, seed image build, seed server bind, port
-	// reservation, or QEMU launch itself). qemuProc is captured by the
-	// closure and is nil until startQEMU succeeds, so we only terminate
-	// a process if we actually started one.
-	var qemuProc *os.Process
-	defer func() {
-		if qemuProc != nil {
-			_ = terminateProcess(qemuProc)
-		}
-		if !req.KeepVMOnFailure {
-			_ = os.Remove(overlayPath)
-		}
-	}()
-
 	privateKeyPath := filepath.Join(vmRunDir, "id_ed25519")
 	publicKey, err := generateSSHKeyPair(ctx, privateKeyPath)
 	if err != nil {
