@@ -91,6 +91,28 @@ if BPFCOMPAT_RELEASE_METADATA=release.yaml \
 fi
 cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
 
+# Each broken state gate must be rejected for the gate, not by accident.
+while IFS='|' read -r gate_mutation gate_reason; do
+  sed -i "$gate_mutation" "$scholarly_workflow"
+  if BPFCOMPAT_RELEASE_METADATA=release.yaml \
+    "$script" >"$tmp/bad-scholarly-gate.log" 2>&1; then
+    echo "[release-consistency-test] accepted scholarly workflow with a broken state gate: ${gate_mutation}" >&2
+    exit 1
+  fi
+  if ! grep -Fq -- "$gate_reason" "$tmp/bad-scholarly-gate.log"; then
+    echo "[release-consistency-test] broken state gate rejected for the wrong reason: ${gate_mutation}" >&2
+    cat "$tmp/bad-scholarly-gate.log" >&2
+    exit 1
+  fi
+  cp "$tmp/scholarly-release-v1.yml" "$scholarly_workflow"
+done <<'MUTATIONS'
+/if: needs.state.outputs.publish == 'true'/d|missing required control: if: needs.state.outputs.publish == 'true'
+/^    needs: state$/d|missing required control: needs: state
+s/^      attestations: read$/      contents: write/|must be gated by the read-only state job
+s/^  state:$/  status:/|must be gated by the read-only state job
+/RESEARCH_COMMIT: 141c491/d|missing required control: RESEARCH_COMMIT
+MUTATIONS
+
 sed -i '/--latest=false/d' "$scholarly_workflow"
 if BPFCOMPAT_RELEASE_METADATA=release.yaml \
   "$script" >"$tmp/bad-scholarly-latest.log" 2>&1; then

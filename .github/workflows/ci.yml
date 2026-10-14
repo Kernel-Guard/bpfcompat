@@ -126,6 +126,15 @@ jobs:
         # Release-candidate canary observations must not span a runner-OS
         # migration of the moving ubuntu-latest label.
         run: bash scripts/canary-runner-pin_test.sh
+      - name: Workflow token-permission regression
+        # Top-level GITHUB_TOKEN permissions stay read-only and every job-level
+        # write grant is listed, with a justification, in
+        # scripts/workflow-write-permissions.allow.
+        run: bash scripts/check-workflow-permissions_test.sh
+      - name: Research v1 release-state regression
+        # scholarly-release-v1 re-runs on edits to itself; the immutable,
+        # already-published research-v1 must be verified, never re-attempted.
+        run: bash scripts/research-v1-release-state_test.sh
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency

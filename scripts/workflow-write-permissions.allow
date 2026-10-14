@@ -1,0 +1,33 @@
+# Job-level GITHUB_TOKEN write grants, enforced by
+# scripts/check-workflow-permissions.sh. Each line:
+#   <workflow-file> <job-id> <permission> <justification>
+# Adding a write grant to a workflow requires a reviewed entry here; an entry
+# that no longer matches a grant fails the check. Top-level write grants are
+# never allowed.
+codeql.yml analyze security-events upload CodeQL SARIF to code scanning
+compatibility-matrix-publish.yml publish-compatibility-matrix pages deploy the compatibility site to GitHub Pages
+compatibility-matrix-publish.yml publish-compatibility-matrix id-token OIDC token for the Pages deployment
+external-consumer-canary.yml report issues file the external-consumer canary failure issue
+ghcr-image.yml image packages push the main-branch image to GHCR
+latest-kernel-compatibility.yml latest-kernel-sweep id-token sign the campaign evidence attestation
+latest-kernel-compatibility.yml latest-kernel-sweep attestations store the campaign evidence attestation
+maintenance-evidence.yml attest id-token sign the maintenance evidence attestation
+maintenance-evidence.yml attest attestations store the maintenance evidence attestation
+promote-release.yml promote contents publish the verified draft release (production-release environment, tag-only, 15-minute wait)
+promote-release.yml promote packages write the promoted release image tag to GHCR (production-release environment)
+release-artifacts.yml build-and-sign id-token keyless cosign signing and build provenance
+release-artifacts.yml build-and-sign attestations store build provenance and SBOM attestations
+release-artifacts.yml build-candidate-image packages push the candidate image to GHCR
+release-artifacts.yml build-candidate-image id-token keyless cosign signing of the candidate image
+release-artifacts.yml build-candidate-image attestations store the candidate image provenance attestation
+release-artifacts.yml assemble-candidate-evidence id-token sign the candidate evidence attestation
+release-artifacts.yml assemble-candidate-evidence attestations store the candidate evidence attestation
+release-artifacts.yml stage-draft-release contents create the private draft release (tag builds only)
+release-candidate-canary.yml external-consumers actions dispatch external-consumer-canary at the immutable RC tag
+rollback-drill.yml rollback packages move the drill-only rollback alias (production-drill environment, main only)
+scholarly-release-v1.yml publish contents create the one-time research-v1 tag and release (refuses if either exists)
+scholarly-release-v1.yml publish id-token sign the research archive provenance attestation
+scholarly-release-v1.yml publish attestations store the research archive provenance attestation
+scorecard.yml analysis security-events upload Scorecard SARIF to code scanning
+scorecard.yml analysis id-token publish results to the Scorecard API
+kernel-freshness.yml freshness issues file, refresh and close the stale-baselines tracking issue
