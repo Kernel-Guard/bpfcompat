@@ -133,6 +133,9 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 			artifactSourceDigest = digest
 			artifactPath = extracted
 		} else if _, statErr := os.Stat(artifactPath); errors.Is(statErr, os.ErrNotExist) {
+			if hint := artifact.DockerHubHint(artifactPath); hint != "" {
+				return RunResult{}, fmt.Errorf("artifact %q: no such file (for a Docker Hub image use %s)", artifactPath, hint)
+			}
 			return RunResult{}, fmt.Errorf("artifact %q: no such file", artifactPath)
 		}
 

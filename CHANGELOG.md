@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+- A missing local `--artifact` path is no longer treated as a registry
+  reference.
+  - Before, any non-existent path that happened to parse as an image reference
+    (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was pulled from
+    Docker Hub. That leaked the local path and failed with a registry error.
+  - It now fails locally with `artifact "<path>": no such file`. This covers
+    `test`, `test-command`, `suite`, the API and `pkg/bpfcompat.Validate`.
+  - The CLI now classifies remote refs like the Action's `artifact` input:
+    the first path component must be a registry host (contains `.` or `:`, or
+    is `localhost`), or the ref must pin an `@sha256:` digest.
+
+### Changed
+- **Breaking:** implicit Docker Hub short refs such as `org/name:tag` are no
+  longer pulled. Spell them with the host, e.g. `docker.io/org/name:tag`; the
+  "no such file" error suggests that spelling.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added

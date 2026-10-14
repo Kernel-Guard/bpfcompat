@@ -39,3 +39,25 @@ func TestExecuteBootstrapMissingArtifactPathIsLocalNotFound(t *testing.T) {
 		}
 	}
 }
+
+// TestExecuteBootstrapMissingShortRefHintsDockerHub: an implicit Docker Hub
+// short ref is no longer pulled; the error tells the user how to spell it.
+func TestExecuteBootstrapMissingShortRefHintsDockerHub(t *testing.T) {
+	orig := extractOCIFn
+	t.Cleanup(func() { extractOCIFn = orig })
+	extractOCIFn = func(_ context.Context, ref, _ string) (string, string, error) {
+		t.Fatalf("OCI loader reached for implicit short ref %q", ref)
+		return "", "", nil
+	}
+	_, err := ExecuteBootstrap(context.Background(), Config{
+		ArtifactPath: "org/name:tag",
+		Runner:       RunnerVM,
+		Quick:        true,
+		WorkDir:      t.TempDir(),
+		Timeout:      time.Minute,
+	})
+	want := `artifact "org/name:tag": no such file (for a Docker Hub image use docker.io/org/name:tag)`
+	if err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+}
