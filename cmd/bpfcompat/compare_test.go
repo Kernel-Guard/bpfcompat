@@ -92,3 +92,35 @@ func TestCompareValidReportsStillCompare(t *testing.T) {
 		t.Fatalf("unexpected summary line: %s", stdout)
 	}
 }
+
+// A JSON null, an empty object, an unknown schema_version or a report with no
+// targets used to compare as a clean, empty diff with exit 0. None of them is
+// evidence of anything, so compare must refuse them as a tool error.
+func TestCompareRejectsReportsWithoutComparableSchema(t *testing.T) {
+	for name, doc := range map[string]string{
+		"null":             `null`,
+		"empty object":     `{}`,
+		"no schema":        `{"targets":[{"profile_id":"p","required":true,"status":"pass"}]}`,
+		"unknown schema":   `{"schema_version":"v0.2","targets":[{"profile_id":"p","required":true,"status":"pass"}]}`,
+		"no targets array": `{"schema_version":"v0.1"}`,
+		"null targets":     `{"schema_version":"v0.1","targets":null}`,
+		"zero targets":     `{"schema_version":"v0.1","targets":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			valid := compareTestWrite(t, dir, "valid.json", compareTestReport("r1"))
+			bad := compareTestWrite(t, dir, "bad.json", doc)
+			for _, pair := range [][2]string{{bad, bad}, {bad, valid}, {valid, bad}} {
+				out := filepath.Join(dir, "o.json")
+				code, _ := runCompareForTest(t, "--base-report", pair[0], "--head-report", pair[1], "--out", out)
+				if code != runner.ExitToolError {
+					t.Fatalf("compare accepted %s (base=%s head=%s): exit %d, want %d",
+						doc, filepath.Base(pair[0]), filepath.Base(pair[1]), code, runner.ExitToolError)
+				}
+				if _, err := os.Stat(out); err == nil {
+					t.Fatalf("compare wrote %s for an invalid report", out)
+				}
+			}
+		})
+	}
+}

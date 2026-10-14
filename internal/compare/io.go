@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kernel-guard/bpfcompat/internal/regressiondiff"
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
 
@@ -17,11 +18,20 @@ import (
 // with a fixed message; the CLI prints the full, specific error.
 var ErrInvalidReport = errors.New("invalid compatibility report")
 
-// validateReport rejects reports whose comparison keys are ambiguous. It
-// mirrors the comparison-key rules of `bpfcompat diff`
-// (regressiondiff.Validate) without its Gate 1 verdict checks, which compare
-// predates and does not rely on.
+// validateReport rejects reports that are not comparable evidence. It mirrors
+// the schema rule (regressiondiff.CheckSchemas) and the comparison-key rules
+// (regressiondiff.Validate) of `bpfcompat diff`, without diff's Gate 1 verdict
+// checks, which compare predates and does not rely on.
 func validateReport(r schema.ReportV01, side string) error {
+	// A JSON null or {} decodes to the zero report; without this check it
+	// compared as a clean, empty diff and exited 0.
+	if got := strings.TrimSpace(r.SchemaVersion); got != regressiondiff.SupportedReportSchema {
+		return fmt.Errorf("%w: %s report schema_version %q is not supported (compare understands %q)",
+			ErrInvalidReport, side, r.SchemaVersion, regressiondiff.SupportedReportSchema)
+	}
+	if len(r.Targets) == 0 {
+		return fmt.Errorf("%w: %s report has no targets, so it establishes nothing to compare", ErrInvalidReport, side)
+	}
 	// makeDiffProfiles indexes targets by profile_id; a repeated id would let
 	// the last row silently overwrite the earlier ones while summarizeDiff
 	// still counts every row, so one document would disagree with itself.

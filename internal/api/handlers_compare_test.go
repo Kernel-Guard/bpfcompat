@@ -58,3 +58,9 @@ func TestHandleCompareRejectsDuplicateProfileIDs(t *testing.T) {
 		`{"profile_id":"p","required":true,"status":"pass"}]}`
 	assertInvalidReport400(t, postCompareWithBodies(t, sampleReportJSON, dup))
 }
+
+func TestHandleCompareRejectsReportsWithoutComparableSchema(t *testing.T) {
+	for _, doc := range []string{`null`, `{}`, `{"schema_version":"v0.2","targets":[{"profile_id":"p"}]}`} {
+		assertInvalidReport400(t, postCompareWithBodies(t, doc, sampleReportJSON))
+	}
+}
