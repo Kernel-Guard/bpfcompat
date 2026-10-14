@@ -45,8 +45,12 @@ type seedServer struct {
 
 func startSeedServer(seedDir string) (seedServer, error) {
 	handler := http.FileServer(http.Dir(seedDir))
+	// Bind IPv4 loopback only: the guest reaches this server through QEMU
+	// user-mode networking (slirp), which maps the guest gateway 10.0.2.2 to
+	// the host's 127.0.0.1. Listening on all interfaces would expose the seed
+	// (SSH authorized keys, instance metadata) to the host's network.
 	server := &http.Server{
-		Addr:              "0.0.0.0:0",
+		Addr:              "127.0.0.1:0",
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
