@@ -598,6 +598,14 @@ func runCompare(args []string) int {
 		return runner.ExitToolError
 	}
 
+	// One file cannot be both outputs: the Markdown is written second and
+	// would replace the JSON the caller asked --out for. Same check as diff,
+	// made before any report is read or file written.
+	if err := distinctOutputs(*outPath, *markdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "compare failed: %v\n", err)
+		return runner.ExitToolError
+	}
+
 	basePath := strings.TrimSpace(*baseReport)
 	headPath := strings.TrimSpace(*headReport)
 	if basePath == "" || headPath == "" {

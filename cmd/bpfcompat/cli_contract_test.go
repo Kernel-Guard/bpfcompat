@@ -253,3 +253,47 @@ func TestSubcommandsHelpStillSucceeds(t *testing.T) {
 		}
 	}
 }
+
+// compare writes --out and then --markdown; one file for both would leave
+// Markdown where the caller asked for JSON. Like diff, it must refuse before
+// writing anything, however the two paths are spelled.
+func TestCompareRejectsSameOutAndMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	base := writeContractReport(t, dir, "base.json", "r1")
+	head := writeContractReport(t, dir, "head.json", "r2")
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "same.json")
+
+	for name, markdown := range map[string]string{
+		"identical":  target,
+		"respelled":  dir + "/sub/../same.json",
+		"dot-prefix": dir + "/./same.json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, stdout, stderr := cliRun(t, "compare", "--base-report", base, "--head-report", head, "--out", target, "--markdown", markdown)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+			}
+			if !strings.Contains(stderr, "--out and --markdown are the same file") {
+				t.Fatalf("stderr does not explain the refusal:\n%s", stderr)
+			}
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("compare wrote %s despite refusing (stat err=%v)", target, err)
+			}
+		})
+	}
+
+	// Distinct files are still accepted and each holds its own format.
+	out, md := filepath.Join(dir, "cmp.json"), filepath.Join(dir, "cmp.md")
+	if code, _, stderr := cliRun(t, "compare", "--base-report", base, "--head-report", head, "--out", out, "--markdown", md); code != 0 {
+		t.Fatalf("distinct outputs: exit %d\n%s", code, stderr)
+	}
+	if body, err := os.ReadFile(out); err != nil || !json.Valid(body) {
+		t.Fatalf("--out is not JSON (err=%v)", err)
+	}
+	if _, err := os.Stat(md); err != nil {
+		t.Fatalf("--markdown not written: %v", err)
+	}
+}
