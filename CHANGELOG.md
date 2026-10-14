@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.4] - 2026-10-14
+
 ### Added
 - Reports record which distribution actually booted:
   `environment.observed_os_id` and `observed_os_version_id` (the guest's
@@ -39,6 +41,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   - A catalog test now requires every `install_kernel` and every recorded
     baseline kernel to belong to the profile's declared `kernel_family`, and
     the freshness crawler mapping to track that family.
+- Compatibility campaigns (`latest-kernel-compatibility.yml`) and every job of
+  the release-candidate canaries (`release-candidate-canary`,
+  `external-consumer-canary`, `consumer-canary`) now run on the pinned
+  `ubuntu-24.04` runner image instead of the moving `ubuntu-latest` label, so
+  one candidate's observations do not straddle GitHub's Ubuntu 26.04
+  migration; tests guard both pins (#188, #193).
 
 ### Fixed
 - The CentOS Stream 9 kernel 725 exact-kernel profile fetches the exact signed
