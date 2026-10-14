@@ -1,0 +1,100 @@
+{
+  "schema_version": "v0.1",
+  "run": {"id": "20261014T120000Z-ordinary", "started_at": "2026-10-14T12:00:00Z"},
+  "artifact": {
+    "path": "examples/build/fentry_unlink.bpf.o",
+    "source": "oci://ghcr.io/example/probes:1.2.3",
+    "source_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "basename": "fentry_unlink.bpf.o",
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "size_bytes": 4096
+  },
+  "command": {
+    "invocation_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "expected_exit_code": 0,
+    "binary": {"basename": "scap-open", "sha256": "4444444444444444444444444444444444444444444444444444444444444444", "size_bytes": 1}
+  },
+  "validator": {"basename": "bpfcompat-validator", "sha256": "5555555555555555555555555555555555555555555555555555555555555555", "size_bytes": 1},
+  "matrix": {"path": "matrices/ci-five.yaml", "name": "ci-five", "profiles": ["ubuntu-18.04-4.15", "ubuntu-20.04-5.4", "ubuntu-22.04-5.15", "debian-12-6.1", "rocky-9-5.14"]},
+  "targets": [
+    {
+      "profile_id": "ubuntu-18.04-4.15", "required": true, "status": "fail", "verdict": "INCOMPATIBLE",
+      "profile": {"distro": "ubuntu", "version": "18.04", "kernel_family": "4.15", "kernel": "4.15.0-213-generic", "arch": "x86_64"},
+      "host": {"distro": "ubuntu", "version": "18.04", "kernel": "4.15.0-213-generic", "arch": "x86_64"},
+      "validation": {"load_status": "fail", "load_error_code": -22, "attach_mode": "best-effort", "attach_status": "skipped"},
+      "failed_stage": "load",
+      "btf": {"kernel_btf_available": false, "artifact_has_btf": true, "artifact_has_btf_ext": true},
+      "classification_code": "UNSUPPORTED_PROGRAM_TYPE",
+      "classification_confidence": "high",
+      "classification_reason": "Program section \"fentry/do_unlinkat\" requires fentry/fexit-style tracing support not available on kernel 4.15.",
+      "validator_result": "reports/run/ubuntu-18.04-4.15/validator-result.json",
+      "serial_log": "reports/run/ubuntu-18.04-4.15/serial.log",
+      "validator_exit": 1,
+      "notes": [
+        "execution transport: virtme-ng",
+        "capability map.ringbuf: unsupported (code=-22)",
+        "program load failure: name=handle_unlink section=fentry/do_unlinkat errno=-22",
+        "program load verifier tail (handle_unlink): 0: R1 type=ctx expected=fp processed 12 insns (limit 1000000) max_states_per_insn 0",
+        "program load verifier tail (handle_exec_core): ...ion <byte_off> [5] struct task_struct.pid (0:0 @ offset 0) processed 1 insns (limit 1000000) -- END PROG LOAD LOG -- libbpf: prog 'handle_exec_core': failed to load: -22",
+        "validator load error: code=-22 message=Invalid argument",
+        "classification: UNSUPPORTED_PROGRAM_TYPE (high)",
+        "remediation: Ship a fallback artifact using tracepoint/kprobe program sections for kernels below 5.5."
+      ]
+    },
+    {
+      "profile_id": "ubuntu-20.04-5.4", "required": true, "status": "fail", "verdict": "INCOMPATIBLE",
+      "profile": {"distro": "ubuntu", "version": "20.04", "kernel": "5.4.0-200-generic", "arch": "x86_64"},
+      "validation": {"load_status": "fail", "load_error_code": -22},
+      "failed_stage": "load",
+      "btf": {"kernel_btf_available": true, "artifact_has_btf": true, "artifact_has_btf_ext": true},
+      "classification_code": "UNSUPPORTED_MAP_TYPE",
+      "classification_confidence": "high",
+      "classification_reason": "Map \"events\" failed to create on this kernel (-22); likely an unsupported map type.",
+      "validator_exit": 1,
+      "notes": [
+        "map type hint: events uses BPF_MAP_TYPE_RINGBUF (kernel 5.8+)",
+        "classification: UNSUPPORTED_MAP_TYPE (high)",
+        "remediation: Confirm the map type used by this map is supported on this kernel/profile, or ship a fallback artifact. If the artifact's own loader sizes this map at runtime (max_entries=0 in the object), declare it under `maps:` in the manifest instead."
+      ]
+    },
+    {
+      "profile_id": "ubuntu-22.04-5.15", "required": true, "status": "pass", "verdict": "COMPATIBLE",
+      "profile": {"distro": "ubuntu", "version": "22.04", "kernel": "5.15.0-186-generic", "arch": "x86_64"},
+      "host": {"distro": "ubuntu", "version": "22.04", "kernel": "5.15.0-186-generic", "arch": "x86_64"},
+      "validation": {"load_status": "pass", "attach_mode": "best-effort", "attach_status": "pass", "attach_attempted": 2, "attach_passed": 2},
+      "btf": {"kernel_btf_available": true, "artifact_has_btf": true, "artifact_has_btf_ext": true},
+      "functional": {"status": "pass", "tests": [
+        {"name": "unlink-smoke", "required": true, "status": "pass", "timeout_seconds": 30, "expected_exit_code": 0, "exit_code": 0}
+      ]},
+      "validator_exit": 0
+    },
+    {
+      "profile_id": "debian-12-6.1", "required": false, "status": "fail",
+      "profile": {"distro": "debian", "version": "12", "kernel": "6.1.0-25-amd64", "arch": "x86_64"},
+      "functional": {"status": "fail", "tests": [
+        {"name": "unlink-smoke", "required": true, "status": "fail", "timeout_seconds": 30, "expected_exit_code": 0, "exit_code": 1, "error": "exit status 1 (expected 0)"}
+      ]},
+      "classification_code": "FUNCTIONAL_TEST_FAILURE",
+      "classification_confidence": "high",
+      "classification_reason": "Functional test unlink-smoke failed with exit status 1.",
+      "validator_exit": 0,
+      "notes": ["functional test \"unlink-smoke\" failed: exit status 1 (expected 0)"]
+    },
+    {
+      "profile_id": "rocky-9-5.14", "required": false, "status": "error", "verdict": "INFRA_ERROR",
+      "profile": {"distro": "rocky", "version": "9", "kernel_family": "5.14", "arch": "x86_64"},
+      "infra_error": "vm boot timed out after 300s",
+      "validator_exit": 0
+    }
+  ],
+  "summary": {
+    "status": "fail",
+    "verdict": "INCOMPATIBLE",
+    "complete": false,
+    "notes": [
+      "Compatibility check failed on at least one required profile.",
+      "coverage incomplete: at least one optional target produced no compatibility answer; required targets were all established. See targets[].verdict and targets[].environment."
+    ]
+  },
+  "paths": {"run_dir": "reports/run", "json": "reports/run/report.json"}
+}
