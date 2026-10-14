@@ -606,7 +606,12 @@ func runCompare(args []string) int {
 		}
 		fmt.Printf("Compare Markdown: %s\n", *markdownPath)
 	}
-	if strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == "" {
+	// With no output file selected the compare JSON is written to stdout, and
+	// stdout then has to stay one machine-readable document
+	// (`bpfcompat compare ... | jq` must work). The human summary goes to
+	// stderr in that case, matching `diff`.
+	jsonOnStdout := strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == ""
+	if jsonOnStdout {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(diff); err != nil {
@@ -615,7 +620,11 @@ func runCompare(args []string) int {
 		}
 	}
 
-	fmt.Printf("Diff summary: profiles=%d changed=%d improved=%d regressed=%d required_regressions=%d\n",
+	summaryOut := os.Stdout
+	if jsonOnStdout {
+		summaryOut = os.Stderr
+	}
+	fmt.Fprintf(summaryOut, "Diff summary: profiles=%d changed=%d improved=%d regressed=%d required_regressions=%d\n",
 		diff.Summary.TotalProfiles,
 		diff.Summary.ChangedProfiles,
 		diff.Summary.ImprovedProfiles,
