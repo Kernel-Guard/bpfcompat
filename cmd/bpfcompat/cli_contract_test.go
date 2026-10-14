@@ -133,3 +133,123 @@ func TestCompareSummaryStaysOnStdoutWithOut(t *testing.T) {
 		t.Fatalf("--out is not valid JSON (err=%v):\n%s", err, body)
 	}
 }
+
+// Go's flag package stops at the first non-flag argument, so a stray
+// positional silently disables every flag after it. Each of these commands
+// takes no positional arguments; a stray one must be a usage error that
+// names the argument, exits non-zero, and does nothing else.
+func TestSubcommandsRejectStrayPositional(t *testing.T) {
+	dir := t.TempDir()
+	base := writeContractReport(t, dir, "base.json", "r1")
+	head := writeContractReport(t, dir, "head.json", "r2")
+	workdir := filepath.Join(dir, "workdir")
+
+	cases := []struct {
+		name     string
+		args     []string
+		wantCode int
+		// noFile must not exist after the run: the side effect a flag after
+		// the stray positional would otherwise have produced.
+		noFile string
+	}{
+		{
+			name:     "diff",
+			args:     []string{"diff", "--baseline", base, "--candidate", head, "stray", "--out", filepath.Join(dir, "diff.json")},
+			wantCode: 1, // regressiondiff.ExitInconclusive: the comparison was not established
+			noFile:   filepath.Join(dir, "diff.json"),
+		},
+		{
+			name:     "compare",
+			args:     []string{"compare", "--base-report", base, "--head-report", head, "stray", "--out", filepath.Join(dir, "cmp.json")},
+			wantCode: 1,
+			noFile:   filepath.Join(dir, "cmp.json"),
+		},
+		{
+			name:     "compare-before-flags",
+			args:     []string{"compare", "stray", "--base-report", base, "--head-report", head},
+			wantCode: 1,
+		},
+		{
+			name:     "history-list",
+			args:     []string{"history", "list", "--workdir", workdir, "stray", "--json"},
+			wantCode: 1,
+			noFile:   workdir,
+		},
+		{
+			name:     "history-verify",
+			args:     []string{"history", "verify", "--workdir", workdir, "stray", "--json"},
+			wantCode: 1,
+			noFile:   workdir,
+		},
+		{
+			name:     "history-sign",
+			args:     []string{"history", "sign", "--workdir", workdir, "stray"},
+			wantCode: 1,
+			noFile:   workdir,
+		},
+		{
+			name:     "profile-list",
+			args:     []string{"profile", "list", "stray", "--matrix", filepath.Join(dir, "missing.yaml")},
+			wantCode: 1,
+		},
+		{
+			name:     "version",
+			args:     []string{"version", "stray", "--json"},
+			wantCode: 1,
+		},
+		{
+			name:     "--version",
+			args:     []string{"--version", "stray"},
+			wantCode: 1,
+		},
+		{
+			name:     "env",
+			args:     []string{"env", "stray", "--json"},
+			wantCode: 1,
+		},
+		{
+			// An invalid --timeout precedes the stray argument so the base
+			// code fails fast instead of binding a listener; the fix must
+			// report the positional before validating anything else.
+			name:     "serve",
+			args:     []string{"serve", "--addr", "127.0.0.1:0", "--timeout", "not-a-duration", "stray"},
+			wantCode: 1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := cliRun(t, tc.args...)
+			if code != tc.wantCode {
+				t.Fatalf("exit %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
+			}
+			if !strings.Contains(stderr, `unexpected positional argument "stray"`) {
+				t.Fatalf("stderr does not name the stray positional:\n%s", stderr)
+			}
+			if stdout != "" {
+				t.Fatalf("a rejected command wrote to stdout:\n%s", stdout)
+			}
+			if tc.noFile != "" {
+				if _, err := os.Stat(tc.noFile); !os.IsNotExist(err) {
+					t.Fatalf("side effect: %s exists after a rejected command (stat err=%v)", tc.noFile, err)
+				}
+			}
+		})
+	}
+}
+
+// --help is still a successful request for help, not a positional error.
+func TestSubcommandsHelpStillSucceeds(t *testing.T) {
+	for _, args := range [][]string{
+		{"diff", "--help"},
+		{"compare", "--help"},
+		{"history", "list", "--help"},
+		{"profile", "list", "--help"},
+		{"version", "--help"},
+		{"env", "--help"},
+		{"serve", "--help"},
+	} {
+		if code, _, stderr := cliRun(t, args...); code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
+		}
+	}
+}
