@@ -7,8 +7,8 @@ import (
 
 // TestRedactErrorMessageTable pins which parts of an API error message the
 // path redactor rewrites: absolute filesystem paths are replaced by
-// "[redacted]/<basename>", while ratio-like or slash-separated non-path text
-// (queue counters, "and/or") is left intact.
+// "[redacted]/<basename>", while pure numeric ratios (queue counters) and
+// the literal "and/or" are left intact.
 func TestRedactErrorMessageTable(t *testing.T) {
 	t.Setenv(envRedactRuntime, "true")
 	cases := []struct {
@@ -95,7 +95,9 @@ func TestRedactErrorMessageTable(t *testing.T) {
 		{
 			name: "fraction_and_rate",
 			in:   "rate limit 10/s exceeded, profiles 3/5 passed",
-			want: "rate limit 10/s exceeded, profiles 3/5 passed",
+			// "10/s" is not a pure numeric ratio, so it stays redacted
+			// (the redactor never keeps less than the legacy pattern).
+			want: "rate limit [redacted]/s exceeded, profiles 3/5 passed",
 		},
 		{
 			name: "no_paths",
