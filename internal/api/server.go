@@ -417,6 +417,51 @@ func (p runtimeProbeOptionsRequest) toRuntimeProbeOptions() runtime.ProbeOptions
 	}
 }
 
+// runtimeRequestOverrides collects the request fields that would let an API
+// caller steer server-side filesystem paths (registry workdir, output
+// directory, manifest, validator), disable the verified-history gate, or
+// change how the sudo host probe and the execute worker run. The API always
+// uses the server's configured workdir and output directory, so
+// /api/runtime/select, /api/runtime/fetch and /api/runtime/execute share this
+// one rule set. Fields that an endpoint does not decode stay zero.
+type runtimeRequestOverrides struct {
+	OutDir                 string
+	WorkDir                string
+	ManifestPath           string
+	ValidatorPath          string
+	Timeout                string
+	RequireVerifiedHistory *bool
+	UseSudo                *bool
+	SudoNonInteractive     *bool
+	Probe                  runtimeProbeOptionsRequest
+}
+
+// rejection returns a fixed client error message for the first override
+// present, or "" when the request carries none. The message never echoes the
+// caller-supplied value, so it cannot be used to probe server paths.
+func (o runtimeRequestOverrides) rejection(operation string) string {
+	suffix := " for API runtime " + operation
+	switch {
+	case strings.TrimSpace(o.OutDir) != "":
+		return "out_dir override is not allowed" + suffix
+	case strings.TrimSpace(o.WorkDir) != "":
+		return "workdir override is not allowed" + suffix
+	case strings.TrimSpace(o.ManifestPath) != "":
+		return "manifest_path override is not allowed" + suffix
+	case strings.TrimSpace(o.ValidatorPath) != "":
+		return "validator_path override is not allowed" + suffix
+	case strings.TrimSpace(o.Timeout) != "":
+		return "timeout override is not allowed" + suffix
+	case o.UseSudo != nil || o.SudoNonInteractive != nil:
+		return "sudo overrides are not allowed" + suffix
+	case o.RequireVerifiedHistory != nil && !*o.RequireVerifiedHistory:
+		return "require_verified_history must be true" + suffix
+	case o.Probe.UseSudo != nil || o.Probe.SudoNonInteractive != nil:
+		return "probe sudo overrides are not allowed" + suffix
+	}
+	return ""
+}
+
 func runtimePolicyTrace(policy runtime.SelectionPolicy) *runtime.SelectionPolicy {
 	if !runtime.PolicyHasConstraints(policy) {
 		return nil
@@ -801,10 +846,11 @@ func (s *Server) handleRuntimeSelect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "artifact_name is required")
 		return
 	}
-	workDir := strings.TrimSpace(req.WorkDir)
-	if workDir == "" {
-		workDir = s.cfg.WorkDir
+	if msg := (runtimeRequestOverrides{WorkDir: req.WorkDir, Probe: req.Probe}).rejection("select"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
+	workDir := s.cfg.WorkDir
 	if err := req.Policy.validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1051,23 +1097,23 @@ func (s *Server) handleRuntimeFetch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "artifact_name is required")
 		return
 	}
-	workDir := strings.TrimSpace(req.WorkDir)
-	if workDir == "" {
-		workDir = s.cfg.WorkDir
+	if msg := (runtimeRequestOverrides{
+		OutDir:                 req.OutDir,
+		WorkDir:                req.WorkDir,
+		RequireVerifiedHistory: req.RequireVerifiedHistory,
+		Probe:                  req.Probe,
+	}).rejection("fetch"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
-	outDir := strings.TrimSpace(req.OutDir)
-	if outDir == "" {
-		outDir = filepath.Join(workDir, defaultRuntimeFetchDir)
-	}
+	workDir := s.cfg.WorkDir
+	outDir := filepath.Join(workDir, defaultRuntimeFetchDir)
 	if err := req.Policy.validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	policy := req.Policy.toRuntimePolicy()
 	requireVerifiedHistory := true
-	if req.RequireVerifiedHistory != nil {
-		requireVerifiedHistory = *req.RequireVerifiedHistory
-	}
 
 	records, err := registry.ListArtifactVersions(workDir, artifactName, 0)
 	if err != nil {
@@ -1222,36 +1268,18 @@ func (s *Server) handleRuntimeExecute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant and project are required")
 		return
 	}
-	if strings.TrimSpace(req.OutDir) != "" {
-		writeError(w, http.StatusBadRequest, "out_dir override is not allowed for API runtime execute")
-		return
-	}
-	if strings.TrimSpace(req.WorkDir) != "" {
-		writeError(w, http.StatusBadRequest, "workdir override is not allowed for API runtime execute")
-		return
-	}
-	if strings.TrimSpace(req.ManifestPath) != "" {
-		writeError(w, http.StatusBadRequest, "manifest_path override is not allowed for API runtime execute")
-		return
-	}
-	if strings.TrimSpace(req.ValidatorPath) != "" {
-		writeError(w, http.StatusBadRequest, "validator_path override is not allowed for API runtime execute")
-		return
-	}
-	if strings.TrimSpace(req.Timeout) != "" {
-		writeError(w, http.StatusBadRequest, "timeout override is not allowed for API runtime execute")
-		return
-	}
-	if req.UseSudo != nil || req.SudoNonInteractive != nil {
-		writeError(w, http.StatusBadRequest, "sudo overrides are not allowed for API runtime execute")
-		return
-	}
-	if req.RequireVerifiedHistory != nil && !*req.RequireVerifiedHistory {
-		writeError(w, http.StatusBadRequest, "require_verified_history must be true for API runtime execute")
-		return
-	}
-	if req.Probe.UseSudo != nil || req.Probe.SudoNonInteractive != nil {
-		writeError(w, http.StatusBadRequest, "probe sudo overrides are not allowed for API runtime execute")
+	if msg := (runtimeRequestOverrides{
+		OutDir:                 req.OutDir,
+		WorkDir:                req.WorkDir,
+		ManifestPath:           req.ManifestPath,
+		ValidatorPath:          req.ValidatorPath,
+		Timeout:                req.Timeout,
+		RequireVerifiedHistory: req.RequireVerifiedHistory,
+		UseSudo:                req.UseSudo,
+		SudoNonInteractive:     req.SudoNonInteractive,
+		Probe:                  req.Probe,
+	}).rejection("execute"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 

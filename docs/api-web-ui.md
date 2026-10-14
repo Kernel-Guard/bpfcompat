@@ -124,12 +124,33 @@ Runtime probe object (optional for select/fetch/execute):
 ```json
 {
   "probe": {
-    "prefer_privileged": true,
-    "use_sudo": true,
-    "sudo_non_interactive": true
+    "prefer_privileged": true
   }
 }
 ```
+
+`probe.use_sudo` and `probe.sudo_non_interactive` are rejected with
+`400 Bad Request` in select/fetch/execute request bodies; the server always
+probes with its own sudo defaults. They remain query options of
+`GET /api/runtime/probe` only.
+
+Request-level overrides rejected by select/fetch/execute (`400 Bad Request`
+with a fixed message that does not echo the supplied value):
+
+- `workdir` (select, fetch, execute): the server always reads its own
+  configured workdir; a caller cannot point it at another tenant's registry
+  or any other directory.
+- `out_dir` (fetch, execute): fetched artifacts are always written under the
+  server's configured workdir.
+- `require_verified_history=false` (fetch, execute).
+- `probe.use_sudo`, `probe.sudo_non_interactive` (select, fetch, execute).
+- `manifest_path`, `validator_path`, `timeout`, `use_sudo`,
+  `sudo_non_interactive` (execute).
+
+`select` and `fetch` read the server's local (non-tenant) artifact registry
+under its configured workdir. They take no `tenant`/`project` and never read
+the tenant-scoped cloud registry; use `execute` or the
+`/api/registry/artifacts/*` endpoints for tenant-scoped artifacts.
 
 Runtime `select`/`fetch`/`execute` responses include:
 
@@ -156,7 +177,8 @@ UI behavior for unsupported transports:
 Runtime `fetch` and `execute` request fields:
 
 - `require_verified_history` (optional, default `true`):
-  - when `true`, operation fails closed if signed history verification is not clean
+  - must be `true` or omitted; `false` is rejected with `400 Bad Request`
+  - operation fails closed if signed history verification is not clean
   - when verification fails, API returns `412 Precondition Failed`
 
 Runtime `execute` additional required fields:
