@@ -1,0 +1,41 @@
+{
+  "acceptance": {
+    "required_infra_errors": 0,
+    "status": "pass"
+  },
+  "canary": {
+    "candidate-action": "pass",
+    "clean-install": "pass",
+    "container": "pass"
+  },
+  "candidate_evidence_sha256": "f7628a0ec9549aa0380b784840f3038ae47882a1a45a1dfb922db62d27246eef",
+  "checksums_sha256": "9c9bcd6e95363f1f3ed8759875d9d2e78245b34f0a906bbd6e8256f9bff9f90b",
+  "cli_sha256": "3a37250034b945b9b77e96bb487ac40e76af042a6ff822b469d9ab846c45f19e",
+  "commit_sha": "baa57a764d4d5071b7dd9ff255d9c6d81ec2b65d",
+  "completed_at": "2026-10-14T14:01:58Z",
+  "image_digest": "sha256:046effcfe3575c89663cc925042278e0da0804afe4199fff1abf9e13fea26f1d",
+  "marker": "[bpfcompat-maintenance-evidence:v1]",
+  "milestone": "e1",
+  "repository": "Kernel-Guard/bpfcompat",
+  "schema_version": "v0.1",
+  "scope": {
+    "baseline": "179ff612ed2b5d1afb16dd9c282752028d47c415",
+    "eligible": true
+  },
+  "started_at": "2026-10-14T13:54:48Z",
+  "tag": "v0.3.8-rc.2",
+  "validator_sha256": "b2cc4b760db34eb7d64d5833074ff440fe97a28e8e46fb1180757adb9c9656b8",
+  "vm": {
+    "exact_kernel": "5.14.0-725.el9.x86_64",
+    "negative": "expected-incompatible",
+    "positive": "pass",
+    "profiles": [
+      "centos-stream-10-6.12",
+      "centos-stream-9-5.14",
+      "centos-stream-9-5.14-k5.14.0-725.el9"
+    ]
+  },
+  "workflow_ref": "Kernel-Guard/bpfcompat/.github/workflows/maintenance-evidence.yml@refs/tags/v0.3.8-rc.2",
+  "workflow_run_attempt": 1,
+  "workflow_run_id": 38575836529
+}
