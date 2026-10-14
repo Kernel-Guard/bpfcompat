@@ -14,7 +14,12 @@
 # Anything else means the stable validator was never qualified: cut a new RC.
 #
 # usage: check-validator-equivalence.sh <stable-SHA256SUMS>
-#          <qualified-validator-sha256> <qualified-rc-ref> <stable-ref>
+#          <stable-release-candidate-evidence.json> <qualified-validator-sha256>
+#          <qualified-rc-ref> <stable-tag>
+#
+# The inputs are bound to the stable release first: the evidence must name
+# <stable-tag> and its checksums_sha256 must be the sha256 of the SHA256SUMS
+# given, so the RC's own SHA256SUMS/evidence cannot stand in for the stable's.
 #
 # Refs are resolved in BPFCOMPAT_REPO_DIR (default: this checkout), which must
 # contain both commits (fetch tags first; a shallow CI checkout will not).
@@ -29,7 +34,7 @@ asset="bpfcompat-validator-static-linux-amd64"
 tree_path="validator/c-libbpf"
 
 usage() {
-  echo "usage: $0 <stable-SHA256SUMS> <qualified-validator-sha256> <qualified-rc-ref> <stable-ref>" >&2
+  echo "usage: $0 <stable-SHA256SUMS> <stable-release-candidate-evidence.json> <qualified-validator-sha256> <qualified-rc-ref> <stable-tag>" >&2
   exit 2
 }
 die() {
@@ -37,14 +42,26 @@ die() {
   exit 1
 }
 
-[[ "$#" -eq 4 ]] || usage
+[[ "$#" -eq 5 ]] || usage
 sums="$1"
-qualified="$2"
-rc_ref="$3"
-stable_ref="$4"
+evidence="$2"
+qualified="$3"
+rc_ref="$4"
+stable_ref="$5"
 
 [[ "$qualified" =~ ^[0-9a-f]{64}$ ]] || die "qualified validator sha256 must be 64 lowercase hex characters"
 [[ -f "$sums" && ! -L "$sums" && -s "$sums" ]] || die "missing, empty or symlinked SHA256SUMS: ${sums}"
+[[ -f "$evidence" && ! -L "$evidence" && -s "$evidence" ]] || die "missing, empty or symlinked evidence: ${evidence}"
+
+# Bind the inputs to the stable release before judging them.
+evidence_tag="$(jq -r 'if type == "object" and (.tag | type) == "string" then .tag else "" end' "$evidence" 2>/dev/null)" ||
+  die "evidence is not JSON: ${evidence}"
+evidence_sums="$(jq -r 'if type == "object" and (.checksums_sha256 | type) == "string" then .checksums_sha256 else "" end' "$evidence")"
+[[ "$evidence_tag" == "$stable_ref" ]] ||
+  die "evidence ${evidence} is for tag '${evidence_tag}', not the stable tag ${stable_ref}; inputs are not the stable release's"
+sums_sha="$(sha256sum "$sums" | awk '{print $1}')"
+[[ "$evidence_sums" == "$sums_sha" ]] ||
+  die "sha256(${sums}) ${sums_sha} is not the evidence checksums_sha256 '${evidence_sums}'; SHA256SUMS is not the one ${stable_ref} attested"
 
 entries="$(awk -v a="$asset" '$2 == a || $2 == "*" a {print $1}' "$sums")"
 count="$(printf '%s' "$entries" | grep -c . || true)"

@@ -204,16 +204,21 @@ scripts/check-release-gate-reports.sh \
   reports/release-positive.json reports/release-negative.json \
   e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a \
   757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812 \
-  release-candidate-evidence.json
+  release-candidate-evidence.json v0.4.0 "$(git rev-parse 'v0.4.0^{commit}')"
 # The stable validator must be byte-identical to the qualified RC's and built
 # from the same validator/c-libbpf tree.
 scripts/check-validator-equivalence.sh \
-  SHA256SUMS e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a \
+  SHA256SUMS release-candidate-evidence.json \
+  e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a \
   v0.4.0-rc.4 v0.4.0
 ```
 
 The first sha256 is the qualified RC's `bpfcompat-validator-static-linux-amd64`
 entry in its `SHA256SUMS`; the second is the pinned Ubuntu 22.04 gate image.
+Both commands require the stable build's own evidence: it must name the
+stable tag and the full commit that tag points to, and attest that `SHA256SUMS`, so
+the RC's files cannot stand in for the stable's. For comparison, the rc.4
+evidence names `v0.4.0-rc.4` and `222c3f38a5361fca7c43c33df841290f8bef0021`.
 Do not promote if either command fails. A validator mismatch is not
 qualified-equivalent: cut the next release candidate (here `rc.5`) and qualify
 it instead.

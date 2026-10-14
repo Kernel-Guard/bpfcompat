@@ -26,9 +26,22 @@ fail_test() {
   echo "[validator-equivalence-test] $*" >&2
   exit 1
 }
-run() { # checker args; output in $tmp/out.log, exit status in $rc
+# run <sums> <qualified> <rc-ref> <stable-tag>: synthesises stable evidence
+# correctly bound to <sums> and <stable-tag> so the sha/tree logic is tested in
+# isolation. With raw=1 the arguments go to the checker unchanged (evidence
+# included). Output in $tmp/out.log, exit status in $rc.
+raw=0
+run() {
   rc=0
-  BPFCOMPAT_REPO_DIR="$repo" bash "$checker" "$@" >"$tmp/out.log" 2>&1 || rc=$?
+  if [[ "$raw" -eq 1 || "$#" -ne 4 ]]; then
+    BPFCOMPAT_REPO_DIR="$repo" bash "$checker" "$@" >"$tmp/out.log" 2>&1 || rc=$?
+    return 0
+  fi
+  local sums_sha=""
+  [[ -f "$1" ]] && sums_sha="$(sha256sum "$1" | awk '{print $1}')"
+  jq -n --arg t "$4" --arg s "$sums_sha" '{tag: $t, checksums_sha256: $s}' >"$tmp/bound-evidence.json"
+  BPFCOMPAT_REPO_DIR="$repo" bash "$checker" "$1" "$tmp/bound-evidence.json" "$2" "$3" "$4" \
+    >"$tmp/out.log" 2>&1 || rc=$?
 }
 expect_pass() { # $1 = label, rest = checker args
   local label="$1"
@@ -120,12 +133,43 @@ expect_fail "unknown RC ref" "cannot resolve v9.9.9-rc.1" "$RC4_SUMS" "$Q" v9.9.
 expect_fail "unknown stable ref" "cannot resolve v9.9.9" "$RC4_SUMS" "$Q" v0.4.0-rc.4 v9.9.9
 run "$RC4_SUMS" "$Q" v0.4.0-rc.4
 [[ "$rc" -eq 2 ]] || fail_test "usage error should exit 2, got ${rc}"
+raw=1
+run "$RC4_SUMS" "$Q" v0.4.0-rc.4 v0.4.0
+[[ "$rc" -eq 2 ]] || fail_test "pre-evidence 4-argument form should be a usage error, got ${rc}"
+raw=0
+
+# --- Binding the inputs to the stable release (real rc.4 evidence) ----------
+# The operator error this guards: handing the checker the qualified RC's own
+# SHA256SUMS and evidence where the stable release's belong would compare rc.4
+# with itself and PASS.
+RC4_EV="${data}/v0.4.0-rc.4/release-candidate-evidence.json"
+raw=1
+expect_pass "rc.4 SHA256SUMS + rc.4 evidence in the rc.4 role" \
+  "$RC4_SUMS" "$RC4_EV" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+expect_fail "rc.4 SHA256SUMS + rc.4 evidence claimed as stable v0.4.0" \
+  "is for tag 'v0.4.0-rc.4', not the stable tag v0.4.0" "$RC4_SUMS" "$RC4_EV" "$Q" v0.4.0-rc.4 v0.4.0
+expect_fail "rc.3 SHA256SUMS against rc.4 evidence" "is not the evidence checksums_sha256" \
+  "$RC3_SUMS" "$RC4_EV" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+jq '.tag = "v0.4.0"' "$RC4_EV" >"$tmp/relabelled.json"
+expect_fail "evidence for v0.4.0 that does not attest this SHA256SUMS" "is not the evidence checksums_sha256" \
+  "$RC3_SUMS" "$tmp/relabelled.json" "$Q" v0.4.0-rc.4 v0.4.0
+jq 'del(.checksums_sha256)' "$RC4_EV" >"$tmp/no-checksums.json"
+expect_fail "evidence without checksums_sha256" "is not the evidence checksums_sha256 ''" \
+  "$RC4_SUMS" "$tmp/no-checksums.json" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+printf 'not json' >"$tmp/not-json.json"
+expect_fail "evidence is not JSON" "evidence is not JSON" "$RC4_SUMS" "$tmp/not-json.json" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+expect_fail "missing evidence" "missing, empty or symlinked evidence" \
+  "$RC4_SUMS" "$tmp/none.json" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+raw=0
 
 # --- Real repository history, when this checkout has it ---------------------
 if git -C "$ROOT_DIR" rev-parse --verify --quiet 'v0.4.0-rc.3^{commit}' >/dev/null 2>&1 &&
   git -C "$ROOT_DIR" rev-parse --verify --quiet 'v0.4.0-rc.4^{commit}' >/dev/null 2>&1; then
   repo="$ROOT_DIR"
-  expect_pass "real rc.4 tag against itself" "$RC4_SUMS" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+  raw=1
+  expect_pass "real rc.4 tag against itself, real evidence" \
+    "$RC4_SUMS" "${data}/v0.4.0-rc.4/release-candidate-evidence.json" "$Q" v0.4.0-rc.4 v0.4.0-rc.4
+  raw=0
   expect_fail "real rc.3 build vs qualified rc.4" "rc.5 required" "$RC3_SUMS" "$Q" v0.4.0-rc.4 v0.4.0-rc.3
 else
   echo "[validator-equivalence-test] note: v0.4.0-rc.3/rc.4 tags not in this checkout; real-history cases skipped"

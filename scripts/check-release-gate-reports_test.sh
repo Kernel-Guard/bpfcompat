@@ -75,8 +75,11 @@ assert_old_pattern_masks() { # $1 = label, rest = old_multi_file args
 # --- Real rc.4 evidence -----------------------------------------------------
 real_reports
 expect_pass "real rc.4 reports" "$pos" "$neg" "$V" "$D"
-expect_pass "real rc.4 reports bound to the attested evidence" \
-  "$pos" "$neg" "$V" "$D" "${data}/v0.4.0-rc.4/release-candidate-evidence.json"
+EV="${data}/v0.4.0-rc.4/release-candidate-evidence.json"
+RC4_TAG=v0.4.0-rc.4
+RC4_COMMIT=222c3f38a5361fca7c43c33df841290f8bef0021
+expect_pass "real rc.4 reports bound to the attested evidence (rc.4 role)" \
+  "$pos" "$neg" "$V" "$D" "$EV" "$RC4_TAG" "$RC4_COMMIT"
 expect_fail "real rc.4 reports against rc.3's validator sha256" \
   "validator sha256 is the candidate's" "$pos" "$neg" "$V_RC3" "$D"
 expect_fail "real rc.4 reports against another base image" \
@@ -157,10 +160,30 @@ printf '\n' >>"$pos"
 expect_pass "re-serialised report is still structurally fine" "$pos" "$neg" "$V" "$D"
 expect_fail "report bytes differ from the attested evidence" \
   "reports are the bytes the candidate evidence names" \
-  "$pos" "$neg" "$V" "$D" "${data}/v0.4.0-rc.4/release-candidate-evidence.json"
+  "$pos" "$neg" "$V" "$D" "$EV" "$RC4_TAG" "$RC4_COMMIT"
 real_reports
 expect_fail "missing evidence file" "missing, empty or symlinked evidence file" \
-  "$pos" "$neg" "$V" "$D" "$tmp/no-such-evidence.json"
+  "$pos" "$neg" "$V" "$D" "$tmp/no-such-evidence.json" "$RC4_TAG" "$RC4_COMMIT"
+
+# --- Binding the evidence to the release being promoted ---------------------
+# The operator error this guards: the qualified RC's own reports and evidence
+# handed over where the stable build's belong pass every byte check, so the
+# evidence must also name the expected tag and commit.
+real_reports
+expect_fail "rc.4 inputs claimed as stable v0.4.0" "FAIL candidate evidence is for tag v0.4.0:" \
+  "$pos" "$neg" "$V" "$D" "$EV" v0.4.0 "$RC4_COMMIT"
+expect_fail "rc.4 inputs claimed as another commit" \
+  "FAIL candidate evidence is for commit 849ed26c352eb4d83921609cb4425a374403d8d3:" \
+  "$pos" "$neg" "$V" "$D" "$EV" "$RC4_TAG" 849ed26c352eb4d83921609cb4425a374403d8d3
+rc=0
+bash "$checker" "$pos" "$neg" "$V" "$D" "$EV" >/dev/null 2>&1 || rc=$?
+[[ "$rc" -eq 2 ]] || fail_test "evidence without expected tag/commit should be a usage error, got ${rc}"
+expect_fail "malformed expected tag" "expected tag must look like" \
+  "$pos" "$neg" "$V" "$D" "$EV" latest "$RC4_COMMIT"
+expect_fail "abbreviated expected commit" "full 40-character" \
+  "$pos" "$neg" "$V" "$D" "$EV" "$RC4_TAG" 222c3f3
+expect_fail "empty evidence path with tag/commit" "evidence file path must not be empty" \
+  "$pos" "$neg" "$V" "$D" "" "$RC4_TAG" "$RC4_COMMIT"
 
 # --- Malformed inputs -------------------------------------------------------
 real_reports

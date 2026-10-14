@@ -12,11 +12,14 @@
 #
 # usage: check-release-gate-reports.sh <release-positive.json>
 #          <release-negative.json> <validator-sha256> <base-image-sha256>
-#          [release-candidate-evidence.json]
+#          [<release-candidate-evidence.json> <expected-tag> <expected-commit>]
 #
 # <validator-sha256> is the bpfcompat-validator-static-linux-amd64 entry of the
 # build's SHA256SUMS. With the optional evidence file the two reports must also
-# be the exact bytes the attested release-candidate evidence names.
+# be the exact bytes the attested release-candidate evidence names, and the
+# evidence must name <expected-tag> and <expected-commit> (the release being
+# promoted), so another release's evidence cannot stand in for it. The tag and
+# commit are mandatory whenever evidence is given.
 #
 # Exit status: 0 every condition holds, 1 a condition failed (all failures are
 # listed), 2 usage error.
@@ -24,16 +27,18 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <release-positive.json> <release-negative.json> <validator-sha256> <base-image-sha256> [release-candidate-evidence.json]" >&2
+  echo "usage: $0 <release-positive.json> <release-negative.json> <validator-sha256> <base-image-sha256> [<release-candidate-evidence.json> <expected-tag> <expected-commit>]" >&2
   exit 2
 }
 
-[[ "$#" -eq 4 || "$#" -eq 5 ]] || usage
+[[ "$#" -eq 4 || "$#" -eq 7 ]] || usage
 positive="$1"
 negative="$2"
 validator_sha="$3"
 image_sha="$4"
 evidence="${5:-}"
+expected_tag="${6:-}"
+expected_commit="${7:-}"
 
 die() {
   echo "[release-gate] FAIL: $*" >&2
@@ -42,6 +47,11 @@ die() {
 
 [[ "$validator_sha" =~ ^[0-9a-f]{64}$ ]] || die "validator sha256 must be 64 lowercase hex characters"
 [[ "$image_sha" =~ ^[0-9a-f]{64}$ ]] || die "base image sha256 must be 64 lowercase hex characters"
+if [[ "$#" -eq 7 ]]; then
+  [[ -n "$evidence" ]] || die "evidence file path must not be empty"
+  [[ "$expected_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || die "expected tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+  [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "expected commit must be a full 40-character lowercase commit sha"
+fi
 for report in "$positive" "$negative"; do
   [[ -f "$report" && ! -L "$report" && -s "$report" ]] || die "missing, empty or symlinked report: ${report}"
   jq -e 'type == "object"' "$report" >/dev/null 2>&1 || die "not a JSON object: ${report}"
@@ -88,6 +98,10 @@ if [[ -n "$evidence" ]]; then
     check "reports are the bytes the candidate evidence names" "$evidence" \
       '.positive_report_sha256 == $p and .negative_report_sha256 == $n' \
       --arg p "$pos_sha" --arg n "$neg_sha"
+    check "candidate evidence is for tag ${expected_tag}" "$evidence" \
+      '.tag == $t' --arg t "$expected_tag"
+    check "candidate evidence is for commit ${expected_commit}" "$evidence" \
+      '.commit_sha == $c' --arg c "$expected_commit"
   else
     echo "[release-gate] FAIL missing, empty or symlinked evidence file: ${evidence}" >&2
     failures=$((failures + 1))
