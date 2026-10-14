@@ -25,10 +25,27 @@ SCRIPT="$ROOT/vm/scripts/fetch-cloud-image.sh"
 command -v python3 >/dev/null || { echo "SKIP: python3 required" >&2; exit 0; }
 command -v curl >/dev/null || { echo "SKIP: curl required" >&2; exit 0; }
 
+# Readiness timeout for the local test server (see the readiness gate
+# below). Validated before anything is started.
+ready_secs="${BPFCOMPAT_TEST_SERVER_READY_SECS:-15}"
+# A non-numeric or zero value would break the wait loop before the
+# server is up; refuse it explicitly instead.
+if [[ ! "$ready_secs" =~ ^[1-9][0-9]*$ ]]; then
+  echo "FAIL: BPFCOMPAT_TEST_SERVER_READY_SECS must be a positive integer, got '$ready_secs'" >&2
+  exit 1
+fi
+
 work="$(mktemp -d)"
 cleanup() {
   if [[ -n "${server_pid:-}" ]]; then
     kill "$server_pid" 2>/dev/null || true
+    # Bounded: a SIGTERM delivered before the child exec'd python can be
+    # lost, so escalate to SIGKILL instead of waiting forever.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$server_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -9 "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
   rm -rf "$work"
@@ -75,7 +92,6 @@ server_pid=$!
 # Wait up to BPFCOMPAT_TEST_SERVER_READY_SECS (default 15), stop early if the
 # server process dies (e.g. port taken between pick and bind), and fail loudly
 # as a test-harness error rather than a fetch-cloud-image regression.
-ready_secs="${BPFCOMPAT_TEST_SERVER_READY_SECS:-15}"
 ready_deadline=$(( SECONDS + ready_secs ))
 server_state="timeout"
 while (( SECONDS < ready_deadline )); do
