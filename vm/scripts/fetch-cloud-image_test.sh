@@ -25,8 +25,33 @@ SCRIPT="$ROOT/vm/scripts/fetch-cloud-image.sh"
 command -v python3 >/dev/null || { echo "SKIP: python3 required" >&2; exit 0; }
 command -v curl >/dev/null || { echo "SKIP: curl required" >&2; exit 0; }
 
+# Readiness timeout for the local test server (see the readiness gate
+# below). Validated before anything is started.
+ready_secs="${BPFCOMPAT_TEST_SERVER_READY_SECS:-15}"
+# A non-numeric or zero value would break the wait loop before the
+# server is up; refuse it explicitly instead.
+if [[ ! "$ready_secs" =~ ^[1-9][0-9]*$ ]]; then
+  echo "FAIL: BPFCOMPAT_TEST_SERVER_READY_SECS must be a positive integer, got '$ready_secs'" >&2
+  exit 1
+fi
+
 work="$(mktemp -d)"
-trap 'kill "${server_pid:-}" 2>/dev/null || true; rm -rf "$work"' EXIT
+cleanup() {
+  if [[ -n "${server_pid:-}" ]]; then
+    kill "$server_pid" 2>/dev/null || true
+    # Bounded: a SIGTERM delivered before the child exec'd python can be
+    # lost, so escalate to SIGKILL instead of waiting forever.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$server_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill -9 "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 cat >"$work/server.py" <<'PY'
 import http.server, os, sys
@@ -56,12 +81,41 @@ http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_foreve
 PY
 
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
-python3 "$work/server.py" "$port" "$work" &
+python3 "$work/server.py" "$port" "$work" >"$work/server.log" 2>&1 &
 server_pid=$!
-for _ in $(seq 1 50); do
-  curl -fsS -o /dev/null "http://127.0.0.1:$port/ok" 2>/dev/null && break
+
+# Readiness gate. The test's assertions are only meaningful against a live
+# server: run 38446833676 (attempt 1) failed with "transient 503 was not
+# retried to success ... curl: (7) Failed to connect" because the old 5s poll
+# fell through silently while the server was still starting, so the retry
+# check burned its attempts on connection-refused and blamed the script.
+# Wait up to BPFCOMPAT_TEST_SERVER_READY_SECS (default 15), stop early if the
+# server process dies (e.g. port taken between pick and bind), and fail loudly
+# as a test-harness error rather than a fetch-cloud-image regression.
+ready_deadline=$(( SECONDS + ready_secs ))
+server_state="timeout"
+while (( SECONDS < ready_deadline )); do
+  if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$port/ok" 2>/dev/null; then
+    server_state="ready"
+    break
+  fi
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    server_state="exited"
+    break
+  fi
   sleep 0.1
 done
+if [[ "$server_state" != "ready" ]]; then
+  if [[ "$server_state" == "exited" ]]; then
+    echo "FAIL: test server did not become ready: process exited before serving on 127.0.0.1:$port; no fetch-cloud-image checks were run" >&2
+  else
+    echo "FAIL: test server did not become ready on 127.0.0.1:$port within ${ready_secs}s; no fetch-cloud-image checks were run" >&2
+  fi
+  echo "--- test server log ---" >&2
+  cat "$work/server.log" >&2 || true
+  echo "fetch-cloud-image_test: FAILED (test harness, not the script under test)" >&2
+  exit 1
+fi
 
 fail=0
 ok() { printf 'ok:   %s\n' "$1"; }
