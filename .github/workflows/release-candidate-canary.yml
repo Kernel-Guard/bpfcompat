@@ -23,10 +23,14 @@ env:
   CANDIDATE_PUBLISHED_AT: "2026-07-30T15:05:34Z"
   IMAGE: ghcr.io/kernel-guard/bpfcompat
 
+# Every job pins ubuntu-24.04, not the moving ubuntu-latest label (which
+# GitHub migrates to Ubuntu 26.04 from 2026-10-19), so release-candidate
+# evidence is not split across a runner-OS change. Enforced by
+# scripts/canary-runner-pin_test.sh.
 jobs:
   plan:
     name: Select RC observation window
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       milestone: ${{ steps.window.outputs.milestone }}
@@ -68,7 +72,7 @@ jobs:
     name: Clean installer against RC assets
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +130,7 @@ jobs:
     name: Clean source build at RC commit
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -186,7 +190,7 @@ jobs:
     name: Published Action at immutable RC commit
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -251,7 +255,7 @@ jobs:
     name: Signed multiarch RC container
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -311,7 +315,7 @@ jobs:
     name: External consumers at exact RC tag
     needs: plan
     if: needs.plan.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 100
     permissions:
       actions: write
@@ -388,7 +392,7 @@ jobs:
       - published-action
       - container
       - external-consumers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
