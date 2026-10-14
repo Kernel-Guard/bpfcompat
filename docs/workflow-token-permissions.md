@@ -59,7 +59,7 @@ belongs after graduation.
 `scholarly-release-v1.yml` runs on every push that changes its own file.
 `research-v1` was published once, from `141c491`, and is immutable.
 
-A read-only `state` job (`scripts/research/research-v1-release-state.sh`)
+A read-only `state` job (`scripts/research-v1-release-state.sh`)
 decides whether the write-scoped `publish` job may run:
 - **publish** only for the original first publication from the pinned commit;
 - **skip, green** only when the published tag, release, assets, lock,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression suite for scripts/research/research-v1-release-state.sh.
+# Regression suite for scripts/research-v1-release-state.sh.
 #
 # Real git (a local remote with a real annotated research-v1 tag); `gh` is a
 # stub serving a fixture release and logging attestation calls. Each case
@@ -7,8 +7,8 @@
 # must print no publish= decision.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="$ROOT/scripts/research/research-v1-release-state.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT="$ROOT/scripts/research-v1-release-state.sh"
 command -v jq >/dev/null || { echo "FAIL: jq required" >&2; exit 1; }
 
 work="$(mktemp -d)"
@@ -182,7 +182,7 @@ for asset in archive-lock.json archive-manifest.json bpfcompat-research-v1-paylo
 done
 
 if (( fail )); then
-  echo "test-release-state-v1: FAILED" >&2
+  echo "research-v1-release-state_test: FAILED" >&2
   exit 1
 fi
-echo "test-release-state-v1: all checks passed"
+echo "research-v1-release-state_test: all checks passed"

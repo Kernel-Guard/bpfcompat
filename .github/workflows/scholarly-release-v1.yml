@@ -26,7 +26,7 @@ jobs:
   # job first establishes the publication state; the write-scoped publish job
   # runs only for the original first publication. An intact, verified
   # research-v1 ends the run green without a write token; a missing, partial
-  # or mismatched one fails here (scripts/research/research-v1-release-state.sh).
+  # or mismatched one fails here (scripts/research-v1-release-state.sh).
   state:
     name: Verify research v1 publication state
     runs-on: ubuntu-24.04
@@ -47,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          bash scripts/research/research-v1-release-state.sh \
+          bash scripts/research-v1-release-state.sh \
             "${GITHUB_REPOSITORY}" "${RESEARCH_TAG}" "${RESEARCH_COMMIT}" \
             research/archive/v1/archive-lock.json "${RUNNER_TEMP}/research-v1-state" \
             >>"$GITHUB_OUTPUT"

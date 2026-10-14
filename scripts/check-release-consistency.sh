@@ -127,7 +127,7 @@ for required_control in \
   '--verify-tag' \
   '--latest=false' \
   'RESEARCH_COMMIT: 141c491bd1508600338e7bc27abbc5a117eb7508' \
-  'bash scripts/research/research-v1-release-state.sh' \
+  'bash scripts/research-v1-release-state.sh' \
   'needs: state' \
   "if: needs.state.outputs.publish == 'true'"; do
   grep -Fq -- "$required_control" "$scholarly_workflow" ||

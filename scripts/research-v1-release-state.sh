@@ -3,6 +3,9 @@
 #
 #   research-v1-release-state.sh <repository> <tag> <pinned-commit> <archive-lock.json> <work-dir>
 #
+# Lives outside scripts/research/ on purpose: that directory is part of the
+# frozen research-v1 archive payload (research/archive/v1/archive-plan.json).
+#
 # research-v1 is a one-time, immutable research release, created from
 # <pinned-commit>. The workflow re-runs whenever its own file changes on main,
 # so it must never re-attempt that publication from a later commit. Prints
