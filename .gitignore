@@ -64,3 +64,6 @@ known_hosts
 *.tmp
 *.swp
 .DS_Store
+
+# Claude Code session worktrees (local only; never committed)
+.claude/worktrees/
