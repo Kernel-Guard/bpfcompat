@@ -136,6 +136,9 @@ func runAdminAuditVerify(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	if strings.TrimSpace(*inputPath) == "" || strings.TrimSpace(*sigPath) == "" {
 		fmt.Fprintln(os.Stderr, "--input and --sig are required")
 		return runner.ExitToolError

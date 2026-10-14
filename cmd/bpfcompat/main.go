@@ -953,6 +953,9 @@ func runRuntimeSelect(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	if strings.TrimSpace(*artifactName) == "" {
 		fmt.Fprintln(os.Stderr, "--artifact-name is required")
 		return runner.ExitToolError
@@ -1063,6 +1066,9 @@ func runRuntimeFetch(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*artifactName) == "" {
@@ -1223,6 +1229,9 @@ func runRuntimeExecute(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*artifactName) == "" {
