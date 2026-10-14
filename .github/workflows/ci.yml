@@ -89,11 +89,19 @@ jobs:
       - name: Release-state fail-closed regression
         run: bash scripts/check-release-state_test.sh
       - name: Release metadata/channel regression
+        env:
+          # Read-only: this suite also runs the real canary-pin check, which
+          # queries the GitHub API while a new RC is being prepared.
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/check-release-consistency_test.sh
       - name: Consumer-canary pin drift regression
         # The published-action canary only protects the releases it pins. A
         # stable_version bump that leaves the canary on the old commit stops
         # testing the documented consumer path; this keeps that fail-closed.
+        env:
+          # Read-only: this suite also runs the real canary-pin check, which
+          # queries the GitHub API while a new RC is being prepared.
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/check-canary-pins_test.sh
       - name: Release-channel promotion regression
         run: bash scripts/promote-release_test.sh
@@ -114,6 +122,10 @@ jobs:
         # The four-campaign qualification window must not span a runner-OS
         # migration of the moving ubuntu-latest label.
         run: bash scripts/campaign-runner-pin_test.sh
+      - name: Canary runner pin regression
+        # Release-candidate canary observations must not span a runner-OS
+        # migration of the moving ubuntu-latest label.
+        run: bash scripts/canary-runner-pin_test.sh
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency
