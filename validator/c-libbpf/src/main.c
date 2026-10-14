@@ -650,11 +650,69 @@ static int libbpf_log_callback(enum libbpf_print_level level, const char *fmt, v
     return n;
 }
 
+/* Length of the well-formed UTF-8 sequence starting at p (RFC 3629: no
+ * overlong forms, no UTF-16 surrogates, nothing above U+10FFFF), or 0 if
+ * the bytes at p do not start one. Never reads past a NUL terminator
+ * because NUL is not a continuation byte and the checks stop at the first
+ * failing byte. */
+static size_t utf8_sequence_len(const unsigned char *p) {
+    unsigned char c = p[0];
+    if (c < 0x80) {
+        return 1;
+    }
+    size_t len;
+    unsigned char lo = 0x80, hi = 0xbf; /* valid range of the 2nd byte */
+    if (c >= 0xc2 && c <= 0xdf) {
+        len = 2;
+    } else if (c >= 0xe0 && c <= 0xef) {
+        len = 3;
+        if (c == 0xe0) {
+            lo = 0xa0; /* overlong */
+        } else if (c == 0xed) {
+            hi = 0x9f; /* UTF-16 surrogates */
+        }
+    } else if (c >= 0xf0 && c <= 0xf4) {
+        len = 4;
+        if (c == 0xf0) {
+            lo = 0x90; /* overlong */
+        } else if (c == 0xf4) {
+            hi = 0x8f; /* above U+10FFFF */
+        }
+    } else {
+        return 0; /* continuation byte, 0xc0/0xc1, 0xf5..0xff */
+    }
+    if (p[1] < lo || p[1] > hi) {
+        return 0;
+    }
+    for (size_t i = 2; i < len; i++) {
+        if (p[i] < 0x80 || p[i] > 0xbf) {
+            return 0;
+        }
+    }
+    return len;
+}
+
+/* Emit value as JSON string content. Values come from the artifact (ELF
+ * program/section/map names) and from libbpf/kernel/command output tails,
+ * none of which is guaranteed to be UTF-8, while RFC 8259 requires UTF-8:
+ * each byte that does not start a well-formed sequence becomes U+FFFD (one
+ * per byte, matching Go's decoder) and valid multi-byte UTF-8 is copied
+ * unchanged. */
 static void escape_json_string(FILE *f, const char *value) {
     if (!value) {
         return;
     }
     for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p >= 0x80) {
+            size_t len = utf8_sequence_len(p);
+            if (len == 0) {
+                fputs("\\ufffd", f);
+            } else {
+                fwrite(p, 1, len, f);
+                p += len - 1;
+            }
+            continue;
+        }
         switch (*p) {
         case '"':
             fputs("\\\"", f);
