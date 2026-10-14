@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -2440,6 +2441,9 @@ func (s *Server) buildValidateRunnerConfig(ctx context.Context, r *http.Request,
 
 	artifactPath, err := extractArtifact(ctx, r, requestDir, s.log())
 	if err != nil {
+		if errors.Is(err, errSourceCompileSandboxUnavailable) {
+			return runner.Config{}, http.StatusServiceUnavailable, err
+		}
 		return runner.Config{}, http.StatusBadRequest, err
 	}
 	manifestPath, err := extractManifest(r, requestDir)
@@ -3065,10 +3069,34 @@ func writeUploadedFile(path string, src multipart.File) error {
 }
 
 func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlags string, logger *slog.Logger) (string, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	outPath := filepath.Join(requestDir, "compiled.bpf.o")
 	allowedExtraFlags, err := sanitizeExtraClangFlags(extraFlags)
 	if err != nil {
 		return "", err
+	}
+
+	// SECURITY: clang runs in a sandbox that sees only the toolchain and
+	// the request directory (mounted at /work), so .incbin/#include cannot
+	// pull host files into the object. Without a working sandbox, refuse
+	// unless the operator explicitly accepted bare-host compilation.
+	sandboxed := true
+	bwrap, clang, sandboxErr := resolveSourceCompileSandbox(parent, logger)
+	if sandboxErr != nil {
+		if !unsandboxedSourceCompileAllowed() {
+			return "", errSourceCompileSandboxUnavailable
+		}
+		sandboxed = false
+	}
+	compileSource, compileOut := sourcePath, outPath
+	if sandboxed {
+		if filepath.Dir(filepath.Clean(sourcePath)) != filepath.Clean(requestDir) {
+			return "", fmt.Errorf("source file must live in the request directory")
+		}
+		compileSource = path.Join(sourceCompileSandboxWorkDir, filepath.Base(sourcePath))
+		compileOut = path.Join(sourceCompileSandboxWorkDir, filepath.Base(outPath))
 	}
 
 	args := []string{
@@ -3077,8 +3105,8 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 		"-target", "bpf",
 		"-D__TARGET_ARCH_x86",
 		"-I/usr/include/x86_64-linux-gnu",
-		"-c", sourcePath,
-		"-o", outPath,
+		"-c", compileSource,
+		"-o", compileOut,
 	}
 	if len(allowedExtraFlags) > 0 {
 		args = append(allowedExtraFlags, args...)
@@ -3086,29 +3114,34 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 
 	// Derive from the request context so a client disconnect or server
 	// shutdown also stops clang; the compile timeout still applies on top.
-	ctx, cancel := context.WithTimeout(parent, sourceCompileTimeout())
+	timeout := sourceCompileTimeout()
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "clang", args...)
-	cmd.Env = sourceCompileEnv()
-	output, err := cmd.CombinedOutput()
+	var output []byte
+	if sandboxed {
+		output, err = runSourceCompileSandboxed(ctx, bwrap, requestDir, timeout, append([]string{clang}, args...))
+	} else {
+		logger.Warn("compiling uploaded source WITHOUT a sandbox (" + envUnsandboxedSourceCompile + "=true)")
+		cmd := exec.CommandContext(ctx, "clang", args...)
+		cmd.Env = sourceCompileEnv()
+		output, err = cmd.CombinedOutput()
+	}
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("clang compile timed out after %s", sourceCompileTimeout())
+			return "", fmt.Errorf("clang compile timed out after %s", timeout)
 		}
 		trimmed := strings.TrimSpace(string(output))
 		// SECURITY: clang diagnostics quote the contents of every file they
 		// touch, including host files pulled in via #include "/abs/path",
 		// macro-computed includes, or __has_include probes. Never return
 		// them to API clients; keep the full text in the server log only.
-		if logger == nil {
-			logger = slog.Default()
-		}
 		logger.Warn("source upload compile failed",
 			slog.String("source", sourcePath),
+			slog.Bool("sandboxed", sandboxed),
 			slog.String("error", err.Error()),
 			slog.String("clang_output", truncateForLog(trimmed, maxCompileDiagnosticLogBytes)),
 		)
-		return "", errors.New(sourceCompileFailureMessage(sourcePath, trimmed))
+		return "", errors.New(sourceCompileFailureMessage(compileSource, trimmed))
 	}
 	return outPath, nil
 }

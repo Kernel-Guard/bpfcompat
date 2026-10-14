@@ -113,6 +113,9 @@ func TestSourceCompileDiagnosticsDoNotDiscloseHostFiles(t *testing.T) {
 	// Exercise the worst case: the existing path-redaction pass is off, so
 	// nothing but the fix itself stands between clang output and the client.
 	t.Setenv(envRedactRuntime, "false")
+	// Worst case for diagnostics: bare-host clang (operator opt-out), so a
+	// host file really is read and only the error filtering protects it.
+	forceUnsandboxedSourceCompile(t)
 
 	secretPath := writeHostSecretFile(t)
 
@@ -170,6 +173,7 @@ func TestSourceCompileFailureReportsUploadedSourceLocations(t *testing.T) {
 	t.Setenv(envAllowAnonymousValidate, "")
 	t.Setenv(envAllowAnonymousWrite, "")
 	t.Setenv(envWriteAPIKey, testDisclosureWriteKey)
+	forceUnsandboxedSourceCompile(t)
 
 	rec := postValidateSource(t, sourceUploadAsText, "int ok;\n\nthis_is_not_c secret_identifier_xyz;\n", true)
 	if rec.Code != http.StatusBadRequest {

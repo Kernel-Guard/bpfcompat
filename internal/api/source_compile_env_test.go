@@ -32,6 +32,9 @@ func TestSourceCompileDoesNotLeakServerEnvironmentToClang(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// The stub lives outside the sandbox's view; pin the bare-host path,
+	// where the environment allowlist is the only protection.
+	forceUnsandboxedSourceCompile(t)
 
 	t.Setenv(envAllowAnonymousValidate, "")
 	t.Setenv(envAllowAnonymousWrite, "")

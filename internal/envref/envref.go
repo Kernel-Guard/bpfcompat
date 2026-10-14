@@ -382,6 +382,11 @@ var catalog = []Var{
 		Description: "Allow per-request extra -D/-U flags to clang. Off by default.",
 	},
 	{
+		Name: "BPFCOMPAT_API_UNSANDBOXED_SOURCE_COMPILE", Default: "false",
+		Category:    "HTTP Server",
+		Description: "Let source uploads compile with clang directly on the API host when no bubblewrap (bwrap) sandbox works. Off by default: without a working sandbox, source uploads return 503 and callers must send a prebuilt .bpf.o. Enabling it lets any caller who may compile source embed readable host files into the object.",
+	},
+	{
 		Name: "BPFCOMPAT_API_AUTO_SYNC_REGISTRY", Default: "false",
 		Category:    "HTTP Server",
 		Description: "Auto-publish completed validate runs into the cloud registry. Requires AUTO_SYNC_TENANT/PROJECT.",
