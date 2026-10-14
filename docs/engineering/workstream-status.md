@@ -4,22 +4,22 @@ A coordination aid, **not release evidence**. GitHub checks, workflow runs,
 signed provenance and readiness attestations are authoritative. Rows change
 only when real evidence exists. Times are UTC.
 
-Last updated: 2026-10-14T14:23Z (`main` = `ba585fe`).
+Last updated: 2026-10-14T14:44Z (`main` = `5e18f44`).
 
 ## Task board
 
 | ID | Owner | Branch | Depends on | Status | Latest tested commit | Hosted CI | Evidence | Approval | Next action |
 |---|---|---|---|---|---|---|---|---|---|
-| V038-E1 | release-v038 | `release/v0.3.8-stable` | – | DONE | `7c185d5` (PR #176) | n/a | E1 [38575836529](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38575836529)/1: 6/6 jobs, started 13:54:48Z (28h47m after E0), exact kernel 725, canaries pass, producer attestation verified; `e1.json` sha256 `0d9bb96f…` | YELLOW (used once) | – |
-| V038-NOTE | release-v038 | `release/v0.3.8-stable` | V038-E1 | WAITING (operator) | `7c185d5` | 5/5 | readiness fails closed only on the absent operator block; all other gates pass in an operator-check-stripped simulation (not evidence); unsigned draft note prepared off-repo | RED (operator signs) | Operator writes `operator.md` and the readiness `operator` block |
-| V038-STABLE | release-v038 | `release/v0.3.8-stable` (#176, draft) | V038-NOTE | BLOCKED (approval) | `7c185d5` | – | – | RED | Final GO: merge #176, tag `v0.3.8`, promote |
+| V038-E1 | release-v038 | `release/v0.3.8-stable` | – | DONE | `7c185d5` (PR #176) | n/a | E1 [38575836529](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38575836529)/1: 6/6 jobs, started 13:54:48Z (103,611 s after E0), exact kernel 725, canaries pass, producer attestation verified; `e1.json` sha256 `0d9bb96f…` | YELLOW (used once; never repeat) | – |
+| V038-NOTE | release-v038 | `release/v0.3.8-stable` | V038-E1 | WAITING (operator) | `7c185d5` | 5/5 | readiness input hashes all match; real gate fails closed only on the absent operator block (a check-stripped simulation is not evidence); unsigned approval package prepared off-repo | RED (operator signs) | Operator writes `operator.md` and the readiness `operator` block |
+| V038-STABLE | release-v038 | `release/v0.3.8-stable` (#176, draft) | V038-NOTE | BLOCKED (approval) | `7c185d5` | – | – | RED | Final GOs: merge #176, tag `v0.3.8`, promote |
 | ENG-ORCH | lead | `eng/orchestration-workstreams` (#190) | – | MERGED | `2426c53` | 12/12 | merged as `ba585fe` (tree = `2426c53`) | YELLOW (used) | – |
-| V040-CITOKEN | lead | `fix/ci-gh-token-release-tests` (#192, draft) | – | REVIEW | `83e3ab9` (update-branch merge of `ba585fe` into approved `f21b6ff`) | 12/12 | effective diff identical to `f21b6ff`; overnight review: ready | YELLOW (renewal needed for `83e3ab9`) | Operator re-approval of the exact head |
-| V040-RUNNERS | release-v040 | `ci/canary-runners-ubuntu-24.04` (#193, draft) | – | REVIEW | `c26fc43` | 15/15 | 14 canary jobs pinned to `ubuntu-24.04`; security review: mergeable as-is; shakeout consumer-canary 38576606648 showed `ubuntu-24.04` and `/dev/kvm` (not qualification) | YELLOW (merge) | Operator approval; must merge before the rc.4 tag |
-| V040-BUMP | release-v040 | `release/v0.4.0-rc.4-bump` (#191, draft) | V040-CITOKEN, V040-RUNNERS | BLOCKED (approvals) | `c649110` | integration [38577921814](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38577921814) green | `shakeout/rc4-integration-n3` @ `c6a09fe` = main + #192 + #193 + #191, tree `3aa2cde1…`; tag simulation passes at HEAD, strict after | YELLOW (merge), then RED (tag) | Rebase on `main` after #192 and #193 merge; exact-head approval |
+| V040-CITOKEN | lead | `fix/ci-gh-token-release-tests` (#192) | – | MERGED | `83e3ab9` | 12/12 | merged as `5e18f44` (tree = `83e3ab9`); effective diff = reviewed `f21b6ff`; token-scope review: mergeable as-is | YELLOW (used, renewed head) | – |
+| V040-RUNNERS | release-v040 | `ci/canary-runners-ubuntu-24.04` (#193, draft) | – | REVIEW | `e99d2e2` (update-branch of reviewed `c26fc43`) | 15/15 | effective diff = `c26fc43`; KVM shakeout consumer-canary [38582079253](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38582079253): 3/3 jobs `ubuntu-24.04` with `/dev/kvm`, no TCG fallback (not qualification); delta review: mergeable as-is | YELLOW (renewal needed for `e99d2e2`) | Operator approval; must merge before the rc.4 tag |
+| V040-BUMP | release-v040 | `release/v0.4.0-rc.4-bump` (#191, draft) | V040-RUNNERS | BLOCKED (#193) | `c649110` | integration [38577921814](https://github.com/Kernel-Guard/bpfcompat/actions/runs/38577921814) green | integration `c6a09fe`, tree `3aa2cde1…`; open: the CHANGELOG date (rc headings use the publication date) and whether the #188/#193 runner pins need an entry | YELLOW (merge), then RED (tag) | Rebase after #193 merges; exact-head approval |
 | V040-DESIGNATE | release-v040 | `release/v0.4.0-rc.4-designate` | rc.4 published and verified | BACKLOG | – | – | template patch v2 (no `runs-on` hunks) prepared off-repo | YELLOW | Prepare as a draft only |
-| KVM-185 | kernel-vm | `fix/centos-sweep-signed-archive` (#185, draft) | – | REVIEW | `cb83d4c` | 12/12 | rebased (range-diff `=`); pinned path now enforces `rpm --checksig --define '_pkgverify_level signature'`; LOCAL boots of exact 729 (`3dc44be`, `5e4bc10`, `cb83d4c`) and 731 (`3dc44be`, `5e4bc10`), all COMPATIBLE; security delta review: mergeable as-is | YELLOW (merge) | Operator approval of the exact head |
-| UPS-AUDIT | upstream-integrations | – | v0.3.8 stable for repins | WAITING (v0.3.8 stable) | – | – | 2026-10-14: IG still pins v0.3.7 `179ff612`; repin draft prepared, unsent | RED (open upstream PRs) | Open the IG repin after v0.3.8 stable is verified, with approval |
+| KVM-185 | kernel-vm | `fix/centos-sweep-signed-archive` (#185, draft) | – | REVIEW | `cb83d4c` | 12/12 | enforcing `rpm --checksig --define '_pkgverify_level signature'`; LOCAL at `cb83d4c`: exact 729 and 731 COMPATIBLE, `centos`/`9`, `distro_match=true`, signed RPMs rc=0, unsigned rejected rc=1 on EL9 rpm 4.16; delta security review: mergeable as-is | YELLOW (merge) | Operator approval of the exact head (not on the rc.4 path) |
+| UPS-AUDIT | upstream-integrations | – | v0.3.8 stable for repins | WAITING (v0.3.8 stable) | – | – | 2026-10-14: IG still pins v0.3.7 `179ff612`; repin draft prepared, unsent; Falco needs no change | RED (open upstream PRs) | Open the IG repin after v0.3.8 stable is verified, with approval |
 
 ## Operator approval ledger
 
@@ -33,8 +33,9 @@ Last updated: 2026-10-14T14:23Z (`main` = `ba585fe`).
 | 2026-10-13 | Merge #189 | `0acdfcf` only | YELLOW | Used: merged as `adb2006` |
 | 2026-10-13 | Merge #190 | `b8689b4` only | YELLOW | Lapsed, unused (CodeRabbit findings required a head change) |
 | 2026-10-14 | Merge #190 | `2426c53` only | YELLOW | Used: merged as `ba585fe` |
-| 2026-10-14 | Merge #192 | `f21b6ff` only | YELLOW | Lapsed, unused (strict protection required an update after #190; new head `83e3ab9`) |
-| 2026-10-14 | Runner-pin PR | prepare and request review; no merge | – | Used: #193 opened as a draft |
+| 2026-10-14 | Merge #192 | `f21b6ff` only | YELLOW | Lapsed, unused (strict protection required an update after #190) |
+| 2026-10-14 | Merge #192 | `83e3ab9` only | YELLOW | Used: merged as `5e18f44` |
+| 2026-10-14 | Runner-pin PR | prepare, refresh after #192, request review; no merge | – | Used: #193 at `e99d2e2` |
 | – | v0.3.8 operator note, merge #176, v0.3.8 tag, stable promotion | – | RED | Not granted |
 | – | v0.4.0-rc.4 tag, publication, designation | – | RED | Not granted |
 
