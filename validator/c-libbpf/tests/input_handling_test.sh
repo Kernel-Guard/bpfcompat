@@ -2,7 +2,9 @@
 # Regression tests for the validator's handling of untrusted input:
 #  - ELF-derived strings (program/section/map names) must reach result.json
 #    as valid UTF-8 JSON, with invalid bytes replaced by U+FFFD and valid
-#    multi-byte UTF-8 kept as-is.
+#    multi-byte UTF-8 kept as-is;
+#  - --set-map-max-entries values with leading zeros must apply exactly the
+#    number the caller asked for.
 #
 # Runs WITHOUT loading anything into the host kernel: the validator is
 # rebuilt with -Wl,--wrap so bpf_object__load / bpf_map_create /
@@ -85,6 +87,24 @@ else
   echo "FAIL - result.json is strict UTF-8 JSON; invalid bytes -> U+FFFD, valid UTF-8 and status kept"
   fail=1
 fi
+
+# --- --set-map-max-entries must apply the parsed number exactly -----------
+# The Go manifest side (strconv.ParseUint) accepts leading zeros, so these
+# reach the validator verbatim; the value must not be cut to the 16-byte
+# text field it used to be stored in.
+for spec in "100000:100000" "0000000000100000:100000" "0000000000000001:1" "000000000004294967295:4294967295"; do
+  in="${spec%%:*}" want="${spec##*:}"
+  j="$work/maxent-$in.json"
+  run 0 "$j" --set-map-max-entries "runtime_sized=$in"
+  check "max_entries=$in applied as $want" \
+    ".map_fixups[0] | .status == \"applied\" and .applied_entries == $want and .max_entries == \"$want\"" "$j"
+  check "max_entries=$in: runtime_sized not auto-sized" \
+    '[.auto_sized_maps[] | select(.name == "runtime_sized")] | length == 0' "$j"
+done
+j="$work/maxent-cpus.json"
+run 0 "$j" --set-map-max-entries "runtime_sized=cpus"
+check "max_entries=cpus still resolves to the CPU count" \
+  '.map_fixups[0] | .status == "applied" and .max_entries == "cpus" and .applied_entries > 0' "$j"
 
 if [[ $fail -ne 0 ]]; then
   echo "input_handling_test: FAIL"

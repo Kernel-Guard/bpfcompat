@@ -329,15 +329,21 @@ static int add_map_fixup(struct options *opts, const char *spec, bool inner_ring
         return 0;
     }
 
-    if (strcmp(value, "cpus") != 0) {
-        char *end = NULL;
-        unsigned long entries = strtoul(value, &end, 10);
-        if (!end || *end != '\0' || entries == 0 || entries > 0xffffffffUL) {
-            fprintf(stderr, "invalid map max entries (want positive integer or \"cpus\"): %s\n", spec);
-            return -1;
-        }
+    if (strcmp(value, "cpus") == 0) {
+        snprintf(fx->max_entries, sizeof(fx->max_entries), "cpus");
+        return 0;
     }
-    snprintf(fx->max_entries, sizeof(fx->max_entries), "%s", value);
+    char *end = NULL;
+    unsigned long entries = strtoul(value, &end, 10);
+    if (!end || *end != '\0' || entries == 0 || entries > 0xffffffffUL) {
+        fprintf(stderr, "invalid map max entries (want positive integer or \"cpus\"): %s\n", spec);
+        return -1;
+    }
+    /* Store the parsed number, not the caller's text: the field holds at
+     * most 15 characters, so a value with leading zeros (accepted above and
+     * by the Go manifest validator) would otherwise be silently truncated
+     * to a different number. */
+    snprintf(fx->max_entries, sizeof(fx->max_entries), "%lu", entries);
     return 0;
 }
 
