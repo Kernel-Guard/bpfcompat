@@ -24,7 +24,6 @@ on:
 
 permissions:
   contents: read
-  issues: write   # file/refresh/close the stale-baselines tracking issue
 
 concurrency:
   group: ${{ github.workflow }}
@@ -35,6 +34,9 @@ jobs:
     name: Baselines vs kernel-crawler
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write   # file/refresh/close the stale-baselines tracking issue
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

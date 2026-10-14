@@ -6,11 +6,10 @@ on:
     paths:
       - ".github/workflows/scholarly-release-v1.yml"
 
+# Read-only by default; the one publish job holds the write grants
+# (scripts/check-workflow-permissions.sh).
 permissions:
-  contents: write
-  actions: read
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: scholarly-release-v1
@@ -24,6 +23,11 @@ jobs:
     name: Publish immutable research v1 release
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write      # create the research-v1 tag and release
+      actions: read        # download the pinned canonical source artifacts
+      id-token: write      # sign the archive provenance attestation
+      attestations: write  # store the archive provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
