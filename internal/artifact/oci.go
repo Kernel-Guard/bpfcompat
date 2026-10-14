@@ -41,10 +41,14 @@ var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 //   - an OCI layout directory (contains an `oci-layout` marker),
 //   - an OCI image archive (a `.tar`/`.tar.gz` whose first bytes are a tar or
 //     gzip stream, not an ELF), and
-//   - a remote registry reference (anything that is not an existing local path
-//     but parses as an image reference, e.g. ghcr.io/org/gadget:tag).
+//   - a remote registry reference: not an existing local path, parses as an
+//     image reference, and names its registry explicitly (see
+//     looksLikeRegistryRef), e.g. ghcr.io/org/gadget:tag.
 //
-// A plain ELF object on disk returns false so the existing path is unaffected.
+// A plain ELF object on disk returns false so the existing path is unaffected,
+// and so does a missing local path: "/home/u/prog.bpf.o" or "build/prog.bpf.o"
+// also parse as Docker Hub references, and treating them as such would turn a
+// typo into a registry pull that leaks the local path.
 func IsOCISource(ref string) bool {
 	if strings.TrimSpace(ref) == "" {
 		return false
@@ -60,9 +64,50 @@ func IsOCISource(ref string) bool {
 	if !errors.Is(err, os.ErrNotExist) {
 		return false
 	}
-	// Not a local path: treat it as a registry reference if it parses as one.
+	// Not a local path: treat it as a registry reference only if it is
+	// unambiguously one.
+	if !looksLikeRegistryRef(ref) {
+		return false
+	}
 	_, parseErr := name.ParseReference(ref)
 	return parseErr == nil
+}
+
+// looksLikeRegistryRef reports whether a non-existent ref is unambiguously a
+// remote registry reference rather than a (missing) local path. It mirrors the
+// rule action.yml applies: the component before the first "/" must be a
+// registry host (contains "." or ":", or is "localhost"), or the ref must pin a
+// digest ("@sha256:"). Path-like refs (absolute, "./", "../", "~") and refs
+// ending in an object-file suffix (.o, .bpf.o, .elf) are never registry refs.
+// Implicit Docker Hub short names ("org/name:tag", "name:tag") must be spelled
+// with their host, e.g. docker.io/org/name:tag.
+func looksLikeRegistryRef(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || filepath.IsAbs(ref) || strings.ContainsRune(ref, '\\') {
+		return false
+	}
+	for _, prefix := range []string{"/", "./", "../", "~"} {
+		if strings.HasPrefix(ref, prefix) {
+			return false
+		}
+	}
+	if ref == "." || ref == ".." {
+		return false
+	}
+	lower := strings.ToLower(ref)
+	for _, suffix := range []string{".o", ".elf"} {
+		if strings.HasSuffix(lower, suffix) {
+			return false
+		}
+	}
+	if strings.Contains(ref, "@sha256:") {
+		return true
+	}
+	first, _, hasSlash := strings.Cut(ref, "/")
+	if !hasSlash {
+		return false
+	}
+	return first == "localhost" || strings.ContainsAny(first, ".:")
 }
 
 // fileLooksLikeOCIArchive peeks at a regular file's leading bytes: an ELF
