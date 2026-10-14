@@ -40,7 +40,7 @@ var kernelVersionPrefixRe = regexp.MustCompile(`^\s*([0-9]+)\.([0-9]+)`)
 
 // verifierProcessedInsnsRe matches the verifier's closing statistics line,
 // which the kernel only writes once a program has gone through bpf_check().
-var verifierProcessedInsnsRe = regexp.MustCompile(`processed [0-9]+ insns`)
+var verifierProcessedInsnsRe = regexp.MustCompile(`\bprocessed \d+ insns`)
 
 func Classify(in Input) Result {
 	lowerBlob := strings.ToLower(in.LibbpfLog + "\n" + in.LoadError)
