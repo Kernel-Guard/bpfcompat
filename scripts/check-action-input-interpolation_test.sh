@@ -141,6 +141,36 @@ runs:
         echo "${{ github.event_name }}"
 EOF
 
+# run_fixture <expect> <desc> <reason> <run-line>: composite action, one step.
+fx() {
+  local expect="$1" desc="$2" reason="$3" line="$4"
+  printf 'runs:\n  using: composite\n  steps:\n    - shell: bash\n      run: |\n        %s\n' "$line" \
+    | check "$expect" "$desc" "$reason"
+}
+
+# Whole-context references: no property needed to leak caller data.
+fx fail "toJSON(inputs) in run" 'toJSON(inputs)' 'echo "${{ toJSON(inputs) }}"'
+fx fail "toJSON(github) in run" 'toJSON(github)' 'echo "${{ toJSON(github) }}"'
+fx fail "bare inputs in run" '${{ inputs }}' 'echo "${{ inputs }}"'
+fx fail "bare github in run" '${{ github }}' 'echo "${{ github }}"'
+fx fail "github['event'] index in run" "github['event']" "echo \"\${{ github['event'].pull_request.title }}\""
+fx fail "computed github index in run" 'github[format(' "echo \"\${{ github[format('{0}', 'event')] }}\""
+
+# Indirect: env values are often set from inputs; read \$X in the shell instead.
+fx fail "env.X in run" '${{ env.INPUT_ARTIFACT }}' 'a="${{ env.INPUT_ARTIFACT }}"'
+fx fail "env[...] in run" "env['INPUT_ARTIFACT']" "a=\"\${{ env['INPUT_ARTIFACT'] }}\""
+
+# A '}}' inside a string literal must not end the expression early.
+fx fail "}} inside a string literal" "inputs.x" "t=\"\${{ format('}}', inputs.x) }}\""
+fx fail "}} after an escaped quote" "inputs.x" "t=\"\${{ format('it''s }}', inputs.x) }}\""
+fx fail "unterminated expression" 'inputs.x' 'echo "${{ inputs.x"'
+
+# Must stay allowed: safe github properties, properties merely named like a
+# tainted context, and tainted words in plain shell outside expressions.
+fx pass "safe github properties" '' "echo \"\${{ github.action_path }} \${{ github['action_path'] }} \${{ github.event_name }}\""
+fx pass "outputs named env/inputs" '' 'echo "${{ steps.run.outputs.env }} ${{ steps.run.outputs.inputs }}"'
+fx pass "shell env var, no expression" '' 'echo "$INPUT_ARTIFACT" "${env:-x}" "${inputs:-y}"'
+
 check fail "unparseable file" 'cannot parse' <<'EOF'
 runs: [unterminated
 EOF
