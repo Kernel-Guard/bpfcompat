@@ -70,6 +70,15 @@ dated schedules run just after T+24 hours and T+72 hours and emit
 the planning job. Remove or retarget these temporary schedules after
 graduation.
 
+Every job in `release-candidate-canary`, `external-consumer-canary`, and
+`consumer-canary` runs on the pinned `ubuntu-24.04` image, not the moving
+`ubuntu-latest` label (GitHub migrates it to Ubuntu 26.04 between 2026-10-19
+and 2026-11-19), so the manual, T+24h, and T+72h observations of one candidate
+run on the same Ubuntu release (`scripts/canary-runner-pin_test.sh`). The
+external-consumer workflow is dispatched at the RC tag, so its runner labels
+come from the tagged commit: the pin must be on `main` before the candidate is
+tagged. Change the pin only between candidates.
+
 Before assembling the graduation directory, run the protected
 `rollback-drill` workflow from `main`. Supply a dedicated
 `rollback-drill-vX.Y.Z-rc.N` alias, the immutable known-good and candidate
