@@ -3087,6 +3087,7 @@ func compileSourceFile(sourcePath, requestDir, extraFlags string, logger *slog.L
 	ctx, cancel := context.WithTimeout(context.Background(), sourceCompileTimeout())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "clang", args...)
+	cmd.Env = sourceCompileEnv()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -3108,6 +3109,26 @@ func compileSourceFile(sourcePath, requestDir, extraFlags string, logger *slog.L
 		return "", errors.New(sourceCompileFailureMessage(sourcePath, trimmed))
 	}
 	return outPath, nil
+}
+
+// sourceCompileEnvPassthrough lists the only server environment variables
+// forwarded to clang: PATH (tool lookup), TMPDIR (temp files), and the
+// standard include-path variables so header search stays identical to an
+// inherited environment.
+var sourceCompileEnvPassthrough = []string{"PATH", "TMPDIR", "CPATH", "C_INCLUDE_PATH"}
+
+// sourceCompileEnv builds the minimal clang environment. SECURITY: the
+// server environment carries BPFCOMPAT_API_* keys and other secrets; clang
+// (and anything it reads, e.g. .incbin "/proc/self/environ") must never see
+// them, because a compiled object can surface bytes via report notes.
+func sourceCompileEnv() []string {
+	env := make([]string, 0, len(sourceCompileEnvPassthrough)+2)
+	for _, name := range sourceCompileEnvPassthrough {
+		if value, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+value)
+		}
+	}
+	return append(env, "LANG=C", "LC_ALL=C")
 }
 
 const (

@@ -191,7 +191,7 @@ Runtime `execute` auth requirements:
 - if explicit OIDC issuer URL is not set and `BPFCOMPAT_API_WRITE_JWT_ISSUER` is an `https` URL, discovery falls back to that issuer. JWKS/OIDC URL verification requires HTTPS in production.
 - JWT write auth checks `scope`/`scp` claims and `roles`/`role` claims when required-scope/role env gates are configured.
 - action-specific claim gates support actions `COMPARE`, `RUNTIME_SELECT`, `RUNTIME_FETCH`, `RUNTIME_EXECUTE`, `VALIDATE`, `REGISTRY_PROJECT_READ`, `REGISTRY_PROJECT_LIST`, `REGISTRY_PROJECT_UPSERT`, `REGISTRY_ARTIFACT_UPLOAD`, `REGISTRY_ARTIFACT_LIST`, `REGISTRY_ARTIFACT_DOWNLOAD`, `REGISTRY_HISTORY_VERIFY`, and `REGISTRY_AUDIT_LIST`.
-- optional anonymous validate mode: `BPFCOMPAT_API_ALLOW_ANONYMOUS_VALIDATE=true` allows `POST /api/validate` without write auth and allows matching validate-status reads (other POST endpoints still require write auth). Anonymous callers may only upload prebuilt `artifact_file` objects: `source_file`/`source_code` run clang on the API host, so they return `403` unless `BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE=true` (off by default; do not enable on a public demo).
+- optional anonymous validate mode: `BPFCOMPAT_API_ALLOW_ANONYMOUS_VALIDATE=true` allows `POST /api/validate` without write auth and allows matching validate-status reads (other POST endpoints still require write auth). Anonymous callers may only upload prebuilt `artifact_file` objects: `source_file`/`source_code` run clang on the API host, so they return `403` unless `BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE=true` (off by default; do not enable on a public demo). Note the auth precedence: while `BPFCOMPAT_API_ALLOW_ANONYMOUS_VALIDATE=true` (or `BPFCOMPAT_API_ALLOW_ANONYMOUS_WRITE=true`) is set, validate requests are classified as anonymous *before* any `X-API-Key`/JWT credential is checked, so a caller presenting a valid key is still anonymous and also receives `403` for source uploads unless `BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE=true`. To compile source on such a server, send a prebuilt `.bpf.o` instead or use a server without the anonymous validate/write switches.
 - optional anonymous read mode: `BPFCOMPAT_API_ALLOW_ANONYMOUS_READ=true` opens history/status/runtime read endpoints for public demos.
 - host load execution is delegated from API to worker process `bpfcompat runtime worker-execute`
 - optional worker identity controls:
@@ -298,7 +298,12 @@ Source input mode compiles on the API host. A compile failure returns `400` with
 `source compilation failed` message plus, at most, `line:column` positions inside the uploaded
 source and a fixed hint; raw clang diagnostics (which quote the text of every file they touch)
 are written to the server log only. Anonymous source uploads return `403` unless
-`BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE=true`.
+`BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE=true`. While
+`BPFCOMPAT_API_ALLOW_ANONYMOUS_VALIDATE=true` or `BPFCOMPAT_API_ALLOW_ANONYMOUS_WRITE=true` is set,
+every validate request is treated as anonymous before credentials are checked, so this `403`
+applies even to callers that present a valid API key or JWT. The clang child process runs
+with a minimal environment (`PATH`, `TMPDIR`, `CPATH`, `C_INCLUDE_PATH` if set, plus
+`LANG=C`/`LC_ALL=C`); server secrets such as `BPFCOMPAT_API_*` are not passed to it.
 
 ## `POST /api/registry/projects` JSON body
 
