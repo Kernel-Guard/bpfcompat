@@ -1,0 +1,15 @@
+{
+  "schema_version": "v0.1",
+  "repository": "Kernel-Guard/bpfcompat",
+  "workflow": "Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v0.4.0-rc.4",
+  "workflow_run_id": 38592617383,
+  "workflow_run_attempt": 1,
+  "commit_sha": "222c3f38a5361fca7c43c33df841290f8bef0021",
+  "tag": "v0.4.0-rc.4",
+  "channel": "prerelease",
+  "image": "ghcr.io/kernel-guard/bpfcompat@sha256:65f780f381e42b712459745350d248080304f2531695b606d5560eb7a78fb624",
+  "checksums_sha256": "fbbcddbf0d621bbf5c79ee25cb5492022b9bb46de1b5645bba2df348d3f0a87c",
+  "positive_report_sha256": "b65f73e267754c8654ec82e1dfc89183bed1bf1ec07780d60d81fe8c450dd538",
+  "negative_report_sha256": "0c85c7490d2aa1db4473403104a97ece1efc294d9b5412e333aba51f0166241d",
+  "generated_at": "2026-10-14T15:55:37Z"
+}

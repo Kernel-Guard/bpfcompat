@@ -1,0 +1,109 @@
+{
+  "schema_version": "v0.1",
+  "run": {
+    "id": "20261014T155301Z-a574ab",
+    "started_at": "2026-10-14T15:53:33Z"
+  },
+  "artifact": {
+    "path": "/home/runner/work/bpfcompat/bpfcompat/examples/unknown-load-fail/invalid_object.bin",
+    "basename": "invalid_object.bin",
+    "sha256": "b95a70b2e9d83a42e15b23c60f2c522f8064e9d725599b6c965d197ffde781fa",
+    "size_bytes": 45
+  },
+  "validator": {
+    "basename": "bpfcompat-validator-static-linux-amd64",
+    "sha256": "e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a",
+    "size_bytes": 2218760
+  },
+  "matrix": {
+    "path": "/home/runner/work/bpfcompat/bpfcompat/matrices/dev-one.yaml",
+    "name": "dev-one",
+    "profiles": [
+      "ubuntu-22.04-5.15"
+    ]
+  },
+  "targets": [
+    {
+      "profile_id": "ubuntu-22.04-5.15",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-186-generic",
+        "kernel_family_match": true,
+        "image_source_url": "https://cloud-images.ubuntu.com/releases/jammy/release-20260722/ubuntu-22.04-server-cloudimg-amd64.img",
+        "image_sha256": "757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812",
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04",
+        "observed_os_id": "ubuntu",
+        "observed_os_version_id": "22.04",
+        "distro_match": true
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-186-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -4001,
+        "load_error": "BPF object format invalid",
+        "attach_mode": "best-effort",
+        "attach_status": "skipped"
+      },
+      "functional": {
+        "status": "skipped"
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": true,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNKNOWN",
+      "classification_confidence": "low",
+      "classification_reason": "Load failed but no known classification pattern matched.",
+      "started_at": "2026-10-14T15:53:01Z",
+      "finished_at": "2026-10-14T15:53:33Z",
+      "duration_ms": 32106,
+      "vm_run_dir": ".bpfcompat/runs/20261014T155301Z-a574ab/targets/ubuntu-22.04-5.15",
+      "qemu_command": "qemu-system-x86_64 -enable-kvm -cpu host -m 1024 -smp 1 -nic none -display none -serial file:.bpfcompat/runs/20261014T155301Z-a574ab/targets/ubuntu-22.04-5.15/serial.log -drive file=.bpfcompat/runs/20261014T155301Z-a574ab/targets/ubuntu-22.04-5.15/overlay.qcow2,if=virtio,format=qcow2 -netdev user,id=n1,hostfwd=tcp:127.0.0.1:44319-:22 -device virtio-net-pci,netdev=n1 -smbios type=1,serial=ds=nocloud-net;s=http://10.0.2.2:33257/ -no-reboot",
+      "serial_log": ".bpfcompat/runs/20261014T155301Z-a574ab/targets/ubuntu-22.04-5.15/serial.log",
+      "validator_result": ".bpfcompat/runs/20261014T155301Z-a574ab/targets/ubuntu-22.04-5.15/validator-result.json",
+      "validator_exit": 2,
+      "notes": [
+        "base image sha256: 757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812",
+        "seed delivery: NoCloud over SMBIOS network URL",
+        "SSH user selected: ubuntu",
+        "Validator executed inside VM and result was copied back.",
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: code=-4001 message=BPF object format invalid",
+        "attach status: skipped (mode=best-effort attempted=0 passed=0 failed=0)",
+        "classification: UNKNOWN (low)",
+        "remediation: Inspect libbpf and verifier logs to derive a profile-specific remediation."
+      ]
+    }
+  ],
+  "summary": {
+    "status": "fail",
+    "verdict": "INCOMPATIBLE",
+    "complete": true,
+    "notes": [
+      "Compatibility check failed on at least one required profile."
+    ]
+  },
+  "paths": {
+    "run_dir": ".bpfcompat/runs/20261014T155301Z-a574ab",
+    "json": "/home/runner/work/bpfcompat/bpfcompat/reports/release-negative.json",
+    "markdown": "/home/runner/work/bpfcompat/bpfcompat/reports/release-negative.md"
+  }
+}

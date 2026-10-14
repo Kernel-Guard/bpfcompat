@@ -1,0 +1,116 @@
+{
+  "schema_version": "v0.1",
+  "run": {
+    "id": "20261014T155210Z-cf678a",
+    "started_at": "2026-10-14T15:53:01Z"
+  },
+  "artifact": {
+    "path": "/home/runner/work/bpfcompat/bpfcompat/examples/simple-pass/simple_pass.bpf.o",
+    "basename": "simple_pass.bpf.o",
+    "sha256": "b2bedd5496ec5e1c205872c3eaeedd66527d27b3bd7657eb8538dea3fb641ae0",
+    "size_bytes": 3672
+  },
+  "validator": {
+    "basename": "bpfcompat-validator-static-linux-amd64",
+    "sha256": "e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a",
+    "size_bytes": 2218760
+  },
+  "matrix": {
+    "path": "/home/runner/work/bpfcompat/bpfcompat/matrices/dev-one.yaml",
+    "name": "dev-one",
+    "profiles": [
+      "ubuntu-22.04-5.15"
+    ]
+  },
+  "targets": [
+    {
+      "profile_id": "ubuntu-22.04-5.15",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-186-generic",
+        "kernel_family_match": true,
+        "image_source_url": "https://cloud-images.ubuntu.com/releases/jammy/release-20260722/ubuntu-22.04-server-cloudimg-amd64.img",
+        "image_sha256": "757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812",
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04",
+        "observed_os_id": "ubuntu",
+        "observed_os_version_id": "22.04",
+        "distro_match": true
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-186-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1
+      },
+      "functional": {
+        "status": "pass",
+        "tests": [
+          {
+            "name": "execve-stimulus-smoke",
+            "required": true,
+            "status": "pass",
+            "command": "sh -c 'printf bpfcompat-functional-smoke'",
+            "timeout_seconds": 5,
+            "expected_exit_code": 0,
+            "exit_code": 0,
+            "stdout_tail": "bpfcompat-functional-smoke"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": true,
+        "artifact_has_btf": true,
+        "artifact_has_btf_ext": true
+      },
+      "started_at": "2026-10-14T15:52:10Z",
+      "finished_at": "2026-10-14T15:53:01Z",
+      "duration_ms": 50712,
+      "vm_run_dir": "/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a/targets/ubuntu-22.04-5.15",
+      "qemu_command": "qemu-system-x86_64 -enable-kvm -cpu host -m 1024 -smp 1 -nic none -display none -serial file:/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a/targets/ubuntu-22.04-5.15/serial.log -drive file=/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a/targets/ubuntu-22.04-5.15/overlay.qcow2,if=virtio,format=qcow2 -netdev user,id=n1,hostfwd=tcp:127.0.0.1:33309-:22 -device virtio-net-pci,netdev=n1 -smbios type=1,serial=ds=nocloud-net;s=http://10.0.2.2:35841/ -no-reboot",
+      "serial_log": "/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a/targets/ubuntu-22.04-5.15/serial.log",
+      "validator_result": "/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a/targets/ubuntu-22.04-5.15/validator-result.json",
+      "validator_exit": 0,
+      "notes": [
+        "base image sha256: 757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812",
+        "seed delivery: NoCloud over SMBIOS network URL",
+        "SSH user selected: ubuntu",
+        "Validator executed inside VM and result was copied back.",
+        "bpftool unavailable; used custom capability probes",
+        "functional status: pass",
+        "functional test \"execve-stimulus-smoke\" passed",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)"
+      ]
+    }
+  ],
+  "summary": {
+    "status": "pass",
+    "verdict": "COMPATIBLE",
+    "complete": true,
+    "notes": [
+      "All required profiles passed validator load checks."
+    ]
+  },
+  "paths": {
+    "run_dir": "/home/runner/work/bpfcompat/bpfcompat/.bpfcompat/runs/20261014T155210Z-cf678a",
+    "json": "/home/runner/work/bpfcompat/bpfcompat/reports/release-positive.json",
+    "markdown": "/home/runner/work/bpfcompat/bpfcompat/reports/release-positive.md"
+  }
+}

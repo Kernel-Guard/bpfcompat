@@ -86,6 +86,15 @@ jobs:
           bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
+      - name: Release-gate report checker regression
+        # release-artifacts.yml decides several gate conditions with one
+        # multi-file `jq -e`, which only reports the LAST file; this pre-promotion
+        # checker evaluates each report on its own (real v0.4.0-rc.4 evidence).
+        run: bash scripts/check-release-gate-reports_test.sh
+      - name: Validator equivalence checker regression
+        # A stable build only ships a qualified validator if its bytes equal the
+        # qualified RC's and validator/c-libbpf is unchanged.
+        run: bash scripts/check-validator-equivalence_test.sh
       - name: Release-state fail-closed regression
         run: bash scripts/check-release-state_test.sh
       - name: Release metadata/channel regression
