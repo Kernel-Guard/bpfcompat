@@ -234,6 +234,12 @@ const (
 type validateJobStore struct {
 	mu   sync.RWMutex
 	jobs map[string]*validateJob
+	// syncRunning / syncQueued count synchronous POST /api/validate
+	// requests that hold or wait for a run slot. They are folded into
+	// validateJobCountsLocked so sync and async validations share one
+	// max-active / max-queued budget.
+	syncRunning int
+	syncQueued  int
 }
 
 type validateJob struct {
@@ -2342,6 +2348,14 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireWriteAuthorizationForAction(w, r, "validate"); !ok {
 		return
 	}
+	// Sync validations share the async max-active / max-queued budget.
+	// Check capacity before reading the body (as validate/start does) so a
+	// full queue never costs an upload; the slot itself is taken after the
+	// upload so a slow client cannot hold a run slot while uploading.
+	if err := s.ensureValidateJobCapacity(); err != nil {
+		writeError(w, http.StatusTooManyRequests, err.Error())
+		return
+	}
 	cfg, uploadDir, status, err := s.prepareValidateUpload(w, r) //nolint:contextcheck // pre-existing: compileSourceFile bounds clang with its own timeout context (flagged on base at the buildValidateRunnerConfig call)
 	if err != nil {
 		writeError(w, status, err.Error())
@@ -2351,6 +2365,13 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	// Runs after the response is written: failed runs drop their upload,
 	// successful ones are retained (bounded) for registry-history readers.
 	defer func() { s.releaseUploadDir(uploadDir, succeeded) }()
+
+	releaseSlot, status, err := s.acquireSyncValidateRunSlot(r.Context())
+	if err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	defer releaseSlot()
 
 	result, err := s.validateRunner()(r.Context(), cfg)
 	if err != nil {
@@ -2652,14 +2673,23 @@ func (s *Server) ensureValidateJobCapacity() error {
 	s.validateJobs.mu.RLock()
 	defer s.validateJobs.mu.RUnlock()
 
+	_, err := s.validateCapacityLocked()
+	return err
+}
+
+// validateCapacityLocked reports whether a new validation (sync or async)
+// may start running now (true) or must queue (false), or returns the
+// "queue is full" error when it must be rejected. Caller holds
+// validateJobs.mu (read or write).
+func (s *Server) validateCapacityLocked() (bool, error) {
 	active, queued := s.validateJobCountsLocked()
 	maxActive := maxActiveValidateJobs()
 	maxQueued := maxQueuedValidateJobs()
 	if active < maxActive {
-		return nil
+		return true, nil
 	}
 	if queued >= maxQueued {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"validate queue is full (active=%d/%d queued=%d/%d); try again later",
 			active,
 			maxActive,
@@ -2667,7 +2697,75 @@ func (s *Server) ensureValidateJobCapacity() error {
 			maxQueued,
 		)
 	}
-	return nil
+	return false, nil
+}
+
+// acquireSyncValidateRunSlot gives a synchronous POST /api/validate the
+// same admission semantics as an async job: run now if an active slot is
+// free, otherwise wait as a queued entry (if the queue has room) until a
+// slot frees up or ctx is cancelled (client disconnect), otherwise fail
+// with the "queue is full" error (status 429). On success the caller must
+// call the returned release func exactly once (it is idempotent).
+func (s *Server) acquireSyncValidateRunSlot(ctx context.Context) (func(), int, error) {
+	s.validateJobs.mu.Lock()
+	runNow, err := s.validateCapacityLocked()
+	if err != nil {
+		s.validateJobs.mu.Unlock()
+		return nil, http.StatusTooManyRequests, err
+	}
+	if runNow {
+		s.validateJobs.syncRunning++
+	} else {
+		s.validateJobs.syncQueued++
+	}
+	s.validateJobs.mu.Unlock()
+	s.refreshValidateJobsGauge()
+
+	if !runNow {
+		if err := s.waitForSyncValidateRunSlot(ctx); err != nil {
+			return nil, http.StatusServiceUnavailable, err
+		}
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.validateJobs.mu.Lock()
+			s.validateJobs.syncRunning--
+			s.validateJobs.mu.Unlock()
+			s.refreshValidateJobsGauge()
+		})
+	}, 0, nil
+}
+
+// waitForSyncValidateRunSlot converts one syncQueued entry into a
+// syncRunning one when an active slot frees up, polling like
+// waitForValidateRunSlot. On ctx cancellation the queued entry is dropped.
+func (s *Server) waitForSyncValidateRunSlot(ctx context.Context) error {
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		s.validateJobs.mu.Lock()
+		active, _ := s.validateJobCountsLocked()
+		if active < maxActiveValidateJobs() {
+			s.validateJobs.syncQueued--
+			s.validateJobs.syncRunning++
+			s.validateJobs.mu.Unlock()
+			s.refreshValidateJobsGauge()
+			return nil
+		}
+		s.validateJobs.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			s.validateJobs.mu.Lock()
+			s.validateJobs.syncQueued--
+			s.validateJobs.mu.Unlock()
+			s.refreshValidateJobsGauge()
+			return fmt.Errorf("request cancelled while waiting for a validate run slot: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Server) waitForValidateRunSlot(jobID string) bool {
@@ -2712,6 +2810,7 @@ func (s *Server) waitForValidateRunSlot(jobID string) bool {
 }
 
 func (s *Server) validateJobCountsLocked() (active int, queued int) {
+	active, queued = s.validateJobs.syncRunning, s.validateJobs.syncQueued
 	for _, job := range s.validateJobs.jobs {
 		switch job.State {
 		case "running":
