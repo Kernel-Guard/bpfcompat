@@ -75,7 +75,11 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("unsupported runner %q", cfg.Runner)
 	}
 
-	runPaths, err := PrepareRun(cfg.WorkDir, time.Now())
+	// Capture the run start once, before any target executes, so
+	// run.started_at (and the run ID derived from it) records when the run
+	// began rather than when the report was assembled.
+	runStartedAt := time.Now().UTC()
+	runPaths, err := PrepareRun(cfg.WorkDir, runStartedAt)
 	if err != nil {
 		return RunResult{}, fmt.Errorf("prepare run directory: %w", err)
 	}
@@ -298,7 +302,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 		SchemaVersion: "v0.1",
 		Run: schema.RunInfo{
 			ID:        runPaths.RunID,
-			StartedAt: time.Now().UTC().Format(time.RFC3339),
+			StartedAt: runStartedAt.Format(time.RFC3339),
 		},
 		Artifact: schema.Artifact{
 			Path:         meta.AbsolutePath,
