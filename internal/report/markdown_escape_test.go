@@ -31,7 +31,10 @@ const hostileProgramName = "x\n\n## Targets\n\n| Profile | Status |\n|---|---|\n
 func assertNoMarkdownInjection(t *testing.T, out string) {
 	t.Helper()
 	prose := stripCodeSpans(out)
-	for _, live := range []string{"](http", "<img", "**All kernels PASS"} {
+	if regexp.MustCompile(`(?m)^\s*- \[[ xX]\]( |$)`).MatchString(out) {
+		t.Errorf("rendered Markdown contains a live task-list checkbox:\n%s", out)
+	}
+	for _, live := range []string{"](http", "<img", "**All kernels PASS", "~"} {
 		if unescapedIndex(prose, live) >= 0 {
 			t.Errorf("rendered Markdown contains live %q:\n%s", live, out)
 		}
@@ -140,6 +143,8 @@ func hostileReport() schema.ReportV01 {
 				"note " + hostileSection,
 				// One unclosed backtick: it must not pair with anything.
 				"odd` [**All kernels PASS**](https://evil.example/n) <img src=x>",
+				// GFM task-list checkbox and strikethrough.
+				"[x] ~~FAIL~~ verified on all kernels",
 			},
 		},
 		Targets: []schema.Target{{

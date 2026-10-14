@@ -25,6 +25,7 @@ func TestMarkdownTableCodeKeepsCellsIntact(t *testing.T) {
 		{`a\|b`, `a\\\|b`},
 		// Escaped prose in a cell never keeps a code span.
 		{"x`y\\|z`", "x\\`y\\\\\\|z\\`"},
+		{`~~a\b~~`, `\~\~a\\b\~\~`},
 	} {
 		if got := markdownTableCode(tc.in); got != tc.want {
 			t.Errorf("markdownTableCode(%q) = %q, want %q", tc.in, got, tc.want)
@@ -67,6 +68,14 @@ func TestMarkdownInlineEscapesOnlyWhatCanForm(t *testing.T) {
 		{"> quote", `\> quote`},
 		{"1. item", `1\. item`},
 		{"12) item", `12\) item`},
+		// GFM strikethrough and task-list checkboxes.
+		{"~~FAIL~~ PASS", `\~\~FAIL\~\~ PASS`},
+		{"~FAIL~", `\~FAIL\~`},
+		{"[ ] done", `\[ ] done`},
+		{"[x] verified", `\[x] verified`},
+		{"[X]", `\[X]`},
+		{"[x]y", "[x]y"},
+		{"[a] b", "[a] b"},
 		{"a\nb\r\x1bc", "a b  c"},
 		{"a\u2028b\u0085c", "a b c"},
 	} {

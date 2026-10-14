@@ -47,7 +47,8 @@ func isMarkdownBreaking(r rune) bool {
 
 // markdownInline renders value as literal inline Markdown text.
 //
-//   - '\\' and '*' are always escaped: they would start an escape or emphasis.
+//   - '\\', '*' and '~' are always escaped: they would start an escape,
+//     emphasis or (GFM) strikethrough.
 //   - '<' is escaped when followed by a letter, '/', '!' or '?', where it
 //     could start raw HTML or an autolink.
 //   - ']' is escaped when followed by '(', '[' or ':'. That is the only way a
@@ -57,9 +58,10 @@ func isMarkdownBreaking(r rune) bool {
 //   - '_' is escaped only when it can open emphasis, that is when the
 //     character before its run is not a letter or digit. Intraword
 //     underscores ("do_unlinkat", "ptr_") cannot, and are left alone.
-//   - A leading '#', '>', '-', '+' or ordered-list marker ("1." / "1)") is
-//     escaped, because a value is often the whole content of a list item and
-//     would otherwise become a heading, quote or nested list.
+//   - A leading '#', '>', '-', '+', ordered-list marker ("1." / "1)") or
+//     task-list box ("[ ] ", "[x] ", "[X] ") is escaped, because a value is
+//     often the whole content of a list item and would otherwise become a
+//     heading, quote, nested list or checkbox.
 //   - A backtick run that the value itself closes, around content that needs
 //     no escaping, is kept as a code span, so a classifier remediation that
 //     quotes `maps:` keeps rendering as code. Any other backtick is escaped,
@@ -96,7 +98,7 @@ func escapeInline(value string, keepCodeSpans bool) string {
 		switch {
 		case i == lead:
 			b.WriteByte('\\')
-		case r == '\\' || r == '*':
+		case r == '\\' || r == '*' || r == '~':
 			b.WriteByte('\\')
 		case r == '<' && opensTagOrAutolink(runes, i):
 			b.WriteByte('\\')
@@ -228,6 +230,12 @@ func leadingBlockMarker(runes []rune) int {
 			k++
 		}
 		if k-i <= 6 && spaceOrEnd(k) {
+			return i
+		}
+	case '[':
+		// "[ ] x" / "[x] x" as list item content is a GFM task-list checkbox.
+		if i+2 < len(runes) && runes[i+2] == ']' && spaceOrEnd(i+3) &&
+			(runes[i+1] == ' ' || runes[i+1] == 'x' || runes[i+1] == 'X') {
 			return i
 		}
 	}
