@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -235,13 +236,13 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 	// Register the overlay-removal defer immediately so we don't leak the
 	// qcow2 if any of the steps between here and startQEMU fail (SSH key
 	// generation, seed write, seed image build, seed server bind, port
-	// reservation, or QEMU launch itself). qemuProc is captured by the
+	// reservation, or QEMU launch itself). qemu is captured by the
 	// closure and is nil until startQEMU succeeds, so we only terminate
 	// a process if we actually started one.
-	var qemuProc *os.Process
+	var qemu *qemuInstance
 	defer func() {
-		if qemuProc != nil {
-			_ = terminateProcess(qemuProc)
+		if qemu != nil {
+			qemu.terminate()
 		}
 		if !req.KeepVMOnFailure {
 			_ = os.Remove(overlayPath)
@@ -324,7 +325,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		result.InfraError = err.Error()
 		return
 	}
-	qemuProc = cmd.Process
+	qemu = newQEMUInstance(cmd)
 	result.QEMUCommand = qemuCmdString
 	result.SerialLogPath = serialLogPath
 
@@ -335,28 +336,34 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		Port:       sshPort,
 	}
 	sshUsers := sshUserCandidates(req.Profile)
-	target, err := waitForSSHAnyUser(sshCtx, targetBase, sshUsers, req.Timeout)
+	target, err := waitForSSHAnyUser(sshCtx, targetBase, sshUsers, req.Timeout, qemu.done)
 	if err != nil {
+		if errors.Is(err, errQEMUExited) {
+			err = qemu.exitedBeforeSSHError(qemuLogPath)
+		}
 		result.InfraError = fmt.Sprintf("wait for SSH (%s): %v", strings.Join(sshUsers, ","), err)
 		return
 	}
 	result.Notes = append(result.Notes, fmt.Sprintf("SSH user selected: %s", target.User))
 
 	if req.Profile.InstallKernel != "" {
-		newCmd, err := installGuestKernelAndReboot(ctx, &result, req, target, cmd,
+		rebooted, err := installGuestKernelAndReboot(ctx, &result, req, target, qemu,
 			overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDirAbs, seedImagePath)
 		if err != nil {
 			result.InfraError = err.Error()
 			return
 		}
-		// newCmd is the post-reboot QEMU process; only qemuProc is read
-		// afterward (for cleanup), so we don't reassign cmd here.
-		qemuProc = newCmd.Process
+		// rebooted is the post-reboot QEMU process; the first one has
+		// already exited, so cleanup now targets the relaunched one.
+		qemu = rebooted
 
 		rebootCtx, cancelReboot := context.WithTimeout(ctx, req.Timeout)
 		defer cancelReboot()
-		target, err = waitForSSHAnyUser(rebootCtx, targetBase, []string{target.User}, req.Timeout)
+		target, err = waitForSSHAnyUser(rebootCtx, targetBase, []string{target.User}, req.Timeout, qemu.done)
 		if err != nil {
+			if errors.Is(err, errQEMUExited) {
+				err = qemu.exitedBeforeSSHError(qemuLogPath)
+			}
 			result.InfraError = fmt.Sprintf("wait for SSH after kernel-install reboot: %v", err)
 			return
 		}
@@ -580,8 +587,8 @@ func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget
 // Debian- and RHEL-family only by validation: the release string is
 // package-exact and the boot-default selection is distro specific (grub menu
 // titles on Ubuntu, grubby on RHEL).
-func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, req ExecutionRequest, target sshTarget, qemuCmd *exec.Cmd,
-	overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*exec.Cmd, error) {
+func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, req ExecutionRequest, target sshTarget, qemu *qemuInstance,
+	overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*qemuInstance, error) {
 	release := req.Profile.InstallKernel
 
 	installCmd := guestKernelInstallCmd(req.Profile.Distro, release, req.Profile.KernelPackages)
@@ -593,7 +600,7 @@ func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, r
 	// The connection drops as the guest goes down; only the reboot itself
 	// matters, so the ssh error is irrelevant.
 	_ = sshRun(ctx, target, "sudo systemctl reboot")
-	if err := waitProcessExit(qemuCmd, 3*time.Minute); err != nil {
+	if err := waitProcessExit(qemu, 3*time.Minute); err != nil {
 		return nil, err
 	}
 
@@ -602,7 +609,7 @@ func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, r
 		return nil, fmt.Errorf("relaunch qemu after kernel install: %w", err)
 	}
 	result.Notes = append(result.Notes, "guest rebooted into installed kernel (qemu relaunched on same overlay)")
-	return newCmd, nil
+	return newQEMUInstance(newCmd), nil
 }
 
 // guestKernelInstallCmd builds the in-guest install script. With explicit
@@ -706,11 +713,9 @@ func isCentOS725SignedPackageSet(release string, urls []string) bool {
 
 // waitProcessExit waits for the guest-initiated QEMU exit (-no-reboot turns
 // the reboot into a clean process exit). The exit status is irrelevant.
-func waitProcessExit(cmd *exec.Cmd, timeout time.Duration) error {
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+func waitProcessExit(qemu *qemuInstance, timeout time.Duration) error {
 	select {
-	case <-done:
+	case <-qemu.done:
 		return nil
 	case <-time.After(timeout):
 		return fmt.Errorf("qemu did not exit within %s after guest reboot request", timeout)
@@ -1112,24 +1117,70 @@ func boundedVMResources(boot BootConfig) (memoryMB int, cpus int) {
 	return memoryMB, cpus
 }
 
-func terminateProcess(proc *os.Process) error {
-	if proc == nil {
-		return nil
-	}
-	_ = proc.Signal(syscall.SIGTERM)
-	done := make(chan error, 1)
-	go func() {
-		_, err := proc.Wait()
-		done <- err
-	}()
+// qemuLogTailBytes bounds how much of qemu.log an early-exit error quotes.
+const qemuLogTailBytes = 512
 
-	select {
-	case <-time.After(5 * time.Second):
-		_ = proc.Kill()
-		return nil
-	case <-done:
-		return nil
+// qemuTerminateGrace is how long terminate waits after SIGTERM (and again
+// after SIGKILL) for the QEMU process to exit.
+const qemuTerminateGrace = 5 * time.Second
+
+// qemuInstance owns a started QEMU process. Exactly one goroutine calls
+// cmd.Wait; it stores the exit error in err and then closes done, so err may
+// only be read after done is closed. Everything else that needs to know
+// whether QEMU is still running (the SSH waits, the reboot wait, cleanup)
+// waits on done instead of calling Wait again.
+type qemuInstance struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+	err  error
+}
+
+func newQEMUInstance(cmd *exec.Cmd) *qemuInstance {
+	q := &qemuInstance{cmd: cmd, done: make(chan struct{})}
+	go func() {
+		q.err = cmd.Wait()
+		close(q.done)
+	}()
+	return q
+}
+
+// terminate stops QEMU: SIGTERM, then SIGKILL after qemuTerminateGrace. It
+// returns at once if QEMU already exited.
+func (q *qemuInstance) terminate() {
+	if q == nil {
+		return
 	}
+	select {
+	case <-q.done:
+		return
+	default:
+	}
+	_ = q.cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-q.done:
+		return
+	case <-time.After(qemuTerminateGrace):
+	}
+	_ = q.cmd.Process.Kill()
+	select {
+	case <-q.done:
+	case <-time.After(qemuTerminateGrace):
+	}
+}
+
+// exitedBeforeSSHError describes a QEMU that exited while the guest was
+// still unreachable, quoting the tail of qemu.log where QEMU reports why
+// (port clash, bad accelerator, missing firmware). Call only after done.
+func (q *qemuInstance) exitedBeforeSSHError(qemuLogPath string) error {
+	status := "exit status 0"
+	if q.err != nil {
+		status = q.err.Error()
+	}
+	tail := readFileTail(qemuLogPath, qemuLogTailBytes)
+	if tail == "" {
+		tail = "qemu.log is empty"
+	}
+	return fmt.Errorf("qemu exited before SSH was ready (%s): %s", status, tail)
 }
 
 func sshUserCandidates(profile Profile) []string {

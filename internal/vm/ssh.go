@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -52,7 +53,16 @@ func (t sshTarget) scpBaseArgs() []string {
 	}
 }
 
-func waitForSSHAnyUser(ctx context.Context, base sshTarget, users []string, timeout time.Duration) (sshTarget, error) {
+// errQEMUExited is returned by waitForSSHAnyUser when abort closes (the QEMU
+// process exited) before any user could log in.
+var errQEMUExited = errors.New("qemu exited before SSH was ready")
+
+// waitForSSHAnyUser polls until one of users can log in. abort is closed when
+// the QEMU process exits; the wait then stops at once with errQEMUExited
+// instead of burning the rest of the timeout. A nil abort never fires. When
+// ctx has also ended, the context error wins, because a cancelled context
+// kills QEMU itself.
+func waitForSSHAnyUser(ctx context.Context, base sshTarget, users []string, timeout time.Duration, abort <-chan struct{}) (sshTarget, error) {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -62,6 +72,18 @@ func waitForSSHAnyUser(ctx context.Context, base sshTarget, users []string, time
 	}
 
 	var lastErr error
+	ctxErr := func() error {
+		if lastErr != nil {
+			return fmt.Errorf("ssh not ready: %w (context: %w)", lastErr, ctx.Err())
+		}
+		return fmt.Errorf("ssh not ready: %w", ctx.Err())
+	}
+	aborted := func() error {
+		if ctx.Err() != nil {
+			return ctxErr()
+		}
+		return errQEMUExited
+	}
 	for {
 		for _, user := range users {
 			user = strings.TrimSpace(user)
@@ -77,15 +99,19 @@ func waitForSSHAnyUser(ctx context.Context, base sshTarget, users []string, time
 			}
 		}
 
+		select {
+		case <-abort:
+			return sshTarget{}, aborted()
+		default:
+		}
 		if time.Now().After(deadline) {
 			break
 		}
 		select {
 		case <-ctx.Done():
-			if lastErr != nil {
-				return sshTarget{}, fmt.Errorf("ssh not ready: %w (context: %v)", lastErr, ctx.Err())
-			}
-			return sshTarget{}, fmt.Errorf("ssh not ready: %w", ctx.Err())
+			return sshTarget{}, ctxErr()
+		case <-abort:
+			return sshTarget{}, aborted()
 		case <-time.After(1500 * time.Millisecond):
 		}
 	}
