@@ -363,8 +363,10 @@ ffail "stable channel: stable pin never bootstraps to an older release" "stable 
 #     never be built (the tag build's quality-gate step was missed once).
 missing="$(python3 - "$ROOT_DIR/.github/workflows" <<'PY'
 import glob, os, re, sys, yaml
-# Real invocations only; the *_test.sh suites use fixtures and stubs.
-trigger = re.compile(r"make (check-release-consistency|production-tech-check)\b|scripts/(check-canary-pins|check-release-consistency|production-tech-check)\.sh")
+# Real invocations. Two *_test.sh suites also run the real check against the
+# real release.yaml (their first case), so they need the token too; the rest
+# use fixtures and stubs.
+trigger = re.compile(r"make (check-release-consistency|production-tech-check)\b|scripts/(check-canary-pins|check-release-consistency|production-tech-check)\.sh|scripts/(check-canary-pins|check-release-consistency)_test\.sh")
 bad = []
 for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.yml"))):
     wf = yaml.safe_load(open(path)) or {}
