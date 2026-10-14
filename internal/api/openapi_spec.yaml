@@ -325,9 +325,17 @@ paths:
         - in: query
           name: sudo_non_interactive
           schema: { type: boolean, default: true }
+          description: >-
+            Must be true or omitted; false is rejected with 400. The server
+            always runs the privileged probe as `sudo -n` so a request can
+            never make it wait on a password prompt.
       responses:
         "200":
           description: Host capability report
+        "400":
+          description: >-
+            Invalid query value, or `sudo_non_interactive=false` (fixed error
+            message).
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/runtime/decisions:

@@ -423,7 +423,9 @@ func (p runtimeProbeOptionsRequest) toRuntimeProbeOptions() runtime.ProbeOptions
 // change how the sudo host probe and the execute worker run. The API always
 // uses the server's configured workdir and output directory, so
 // /api/runtime/select, /api/runtime/fetch, /api/runtime/execute and
-// /api/runtime/decisions share this one rule set. Fields that an endpoint does not decode stay zero.
+// /api/runtime/decisions share this one rule set (GET /api/runtime/probe uses
+// it to reject sudo_non_interactive=false). Fields that an endpoint does not
+// decode stay zero.
 type runtimeRequestOverrides struct {
 	OutDir                 string
 	WorkDir                string
@@ -785,6 +787,16 @@ func (s *Server) handleRuntimeProbe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// sudo without -n can prompt for a password (and hang the request) when the
+	// server has a controlling TTY, so the API never lets a caller turn it off.
+	// sudo_non_interactive=true (the default) stays accepted as a no-op.
+	if !probeOpts.SudoNonInteractive {
+		interactive := false
+		if msg := (runtimeRequestOverrides{Probe: runtimeProbeOptionsRequest{SudoNonInteractive: &interactive}}).rejection("probe"); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 	probe, err := runtime.ProbeHostCapabilitiesWithOptions(probeOpts)
 	if err != nil {
