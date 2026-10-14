@@ -74,31 +74,30 @@ func IsOCISource(ref string) bool {
 }
 
 // looksLikeRegistryRef reports whether a non-existent ref is unambiguously a
-// remote registry reference rather than a (missing) local path. It mirrors the
-// rule action.yml applies: the component before the first "/" must be a
-// registry host (contains "." or ":", or is "localhost"), or the ref must pin a
-// digest ("@sha256:"). Path-like refs (absolute, "./", "../", "~") and refs
-// ending in an object-file suffix (.o, .bpf.o, .elf) are never registry refs.
+// remote registry reference rather than a (missing) local path. It follows
+// is_remote_artifact in action.yml: the component before the first "/" must be
+// a registry host (contains "." or ":", or is "localhost"), or the ref must pin
+// a digest ("@sha256:"). A ref with an explicit registry host stays remote even
+// when its repository or tag ends in .o or .elf (ghcr.io/org/prog.o).
+//
+// It is deliberately stricter than the Action, in the safe direction only (the
+// CLI then reports "no such file" instead of pulling):
+//   - path-like refs (absolute, "./", "../", "~", backslashes) are local even
+//     with "@sha256:";
+//   - refs ending in .bpf.o are local even under a dotted directory
+//     (out.d/prog.bpf.o);
+//   - bare "localhost" / "localhost:5000" (no repository) and "scheme://"
+//     refs are not registry refs.
+//
 // Implicit Docker Hub short names ("org/name:tag", "name:tag") must be spelled
-// with their host, e.g. docker.io/org/name:tag.
+// with their host, e.g. docker.io/org/name:tag; see DockerHubHint.
 func looksLikeRegistryRef(ref string) bool {
 	ref = strings.TrimSpace(ref)
-	if ref == "" || filepath.IsAbs(ref) || strings.ContainsRune(ref, '\\') {
+	if ref == "" || isPathLike(ref) || strings.Contains(ref, "://") {
 		return false
 	}
-	for _, prefix := range []string{"/", "./", "../", "~"} {
-		if strings.HasPrefix(ref, prefix) {
-			return false
-		}
-	}
-	if ref == "." || ref == ".." {
+	if strings.HasSuffix(strings.ToLower(ref), ".bpf.o") {
 		return false
-	}
-	lower := strings.ToLower(ref)
-	for _, suffix := range []string{".o", ".elf"} {
-		if strings.HasSuffix(lower, suffix) {
-			return false
-		}
 	}
 	if strings.Contains(ref, "@sha256:") {
 		return true
@@ -108,6 +107,41 @@ func looksLikeRegistryRef(ref string) bool {
 		return false
 	}
 	return first == "localhost" || strings.ContainsAny(first, ".:")
+}
+
+// isPathLike reports refs that can only be filesystem paths.
+func isPathLike(ref string) bool {
+	if ref == "." || ref == ".." || filepath.IsAbs(ref) || strings.ContainsRune(ref, '\\') {
+		return true
+	}
+	for _, prefix := range []string{"/", "./", "../", "~"} {
+		if strings.HasPrefix(ref, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// DockerHubHint returns the explicit docker.io spelling of ref when ref looks
+// like an implicit Docker Hub short reference ("org/name:tag", "name:tag")
+// that IsOCISource declines, and "" otherwise. Callers append it to a "no such
+// file" error; it only echoes the caller's own input.
+func DockerHubHint(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || isPathLike(ref) || looksLikeRegistryRef(ref) {
+		return ""
+	}
+	if !strings.ContainsAny(ref, ":@") {
+		return "" // no tag or digest: more likely a mistyped path
+	}
+	lower := strings.ToLower(ref)
+	if strings.HasSuffix(lower, ".o") || strings.HasSuffix(lower, ".elf") {
+		return ""
+	}
+	if _, err := name.ParseReference(ref); err != nil {
+		return ""
+	}
+	return "docker.io/" + ref
 }
 
 // fileLooksLikeOCIArchive peeks at a regular file's leading bytes: an ELF
