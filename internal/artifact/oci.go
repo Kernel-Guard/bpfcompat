@@ -32,6 +32,51 @@ const (
 	ociOperationTimeout        = 10 * time.Minute
 )
 
+// OCILimits bounds the bytes extracting an eBPF object from an OCI source may
+// write to local disk. A zero (or negative) field selects the CLI default, so
+// callers that never set it -- the CLI -- keep the historical ceilings, which
+// are sized for real OCI images supplied by the user's own pipeline. Callers
+// handling untrusted uploads (the HTTP API) pass much tighter limits.
+type OCILimits struct {
+	// MaxArchiveExpandedBytes caps the total regular-file bytes written when
+	// an OCI-layout archive is unpacked to a temporary directory. Default
+	// 8 GiB.
+	MaxArchiveExpandedBytes int64
+	// MaxArtifactBytes caps the extracted (uncompressed) eBPF layer.
+	// Default 512 MiB.
+	MaxArtifactBytes int64
+}
+
+// DefaultOCILimits returns the CLI ceilings used by ExtractEBPFFromOCI.
+func DefaultOCILimits() OCILimits {
+	return OCILimits{
+		MaxArchiveExpandedBytes: maxOCIArchiveExpandedBytes,
+		MaxArtifactBytes:        maxEBPFArtifactBytes,
+	}
+}
+
+func (l OCILimits) normalized() OCILimits {
+	d := DefaultOCILimits()
+	if l.MaxArchiveExpandedBytes <= 0 {
+		l.MaxArchiveExpandedBytes = d.MaxArchiveExpandedBytes
+	}
+	if l.MaxArtifactBytes <= 0 {
+		l.MaxArtifactBytes = d.MaxArtifactBytes
+	}
+	return l
+}
+
+// ErrOCILimitExceeded matches (via errors.Is) any error returned because an
+// OCI source would expand past its OCILimits.
+var ErrOCILimitExceeded = errors.New("OCI source exceeds size limit")
+
+// ociLimitError keeps the historical message text while matching
+// ErrOCILimitExceeded.
+type ociLimitError struct{ msg string }
+
+func (e *ociLimitError) Error() string        { return e.msg }
+func (e *ociLimitError) Is(target error) bool { return target == ErrOCILimitExceeded }
+
 // elfMagic is the leading byte sequence of every ELF object (`\x7fELF`).
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
@@ -102,10 +147,19 @@ func fileLooksLikeOCIArchive(path string) bool {
 // image whose digest cannot be computed still yields a usable artifact, which
 // is identified by its own SHA-256 either way.
 func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest string, err error) {
+	return ExtractEBPFFromOCIWithLimits(ctx, ref, dstDir, DefaultOCILimits())
+}
+
+// ExtractEBPFFromOCIWithLimits is ExtractEBPFFromOCI with explicit bounds on
+// the bytes written to local disk; zero fields select DefaultOCILimits.
+// Exceeding a bound aborts early, removes partial output, and returns an
+// error matching ErrOCILimitExceeded.
+func ExtractEBPFFromOCIWithLimits(ctx context.Context, ref, dstDir string, limits OCILimits) (path, digest string, err error) {
+	limits = limits.normalized()
 	ctx, cancel := context.WithTimeout(ctx, ociOperationTimeout)
 	defer cancel()
 
-	img, err := loadOCIImage(ctx, ref)
+	img, err := loadOCIImage(ctx, ref, limits)
 	if err != nil {
 		return "", "", err
 	}
@@ -130,7 +184,7 @@ func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest s
 		return "", "", fmt.Errorf("create destination directory: %w", err)
 	}
 	outPath := filepath.Join(dstDir, ociArtifactName(ref)+".bpf.o")
-	if err := extractLayerToFile(elf, outPath, maxEBPFArtifactBytes); err != nil {
+	if err := extractLayerToFile(elf, outPath, limits.MaxArtifactBytes); err != nil {
 		return "", "", err
 	}
 	return outPath, digest, nil
@@ -138,13 +192,13 @@ func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest s
 
 // loadOCIImage resolves ref to a single image, handling registry references,
 // OCI layout directories, and image archives.
-func loadOCIImage(ctx context.Context, ref string) (v1.Image, error) {
+func loadOCIImage(ctx context.Context, ref string, limits OCILimits) (v1.Image, error) {
 	info, statErr := os.Stat(ref)
 	switch {
 	case statErr == nil && info.IsDir():
 		return imageFromLayout(ref)
 	case statErr == nil:
-		return imageFromArchive(ref)
+		return imageFromArchive(ref, limits.MaxArchiveExpandedBytes)
 	default:
 		img, err := crane.Pull(ref, crane.WithContext(ctx))
 		if err != nil {
@@ -178,7 +232,7 @@ func extractLayerToFile(layer v1.Layer, outPath string, maxBytes int64) error {
 		return fmt.Errorf("write extracted artifact: %w", err)
 	}
 	if written > maxBytes {
-		return fmt.Errorf("eBPF layer exceeds limit %d bytes", maxBytes)
+		return &ociLimitError{msg: fmt.Sprintf("eBPF layer exceeds limit %d bytes", maxBytes)}
 	}
 	if err := out.Sync(); err != nil {
 		return fmt.Errorf("sync extracted artifact: %w", err)
@@ -204,8 +258,9 @@ func imageFromLayout(dir string) (v1.Image, error) {
 }
 
 // imageFromArchive returns the image in an archive, trying the docker `save`
-// format first and falling back to an OCI-layout tar.
-func imageFromArchive(path string) (v1.Image, error) {
+// format first and falling back to an OCI-layout tar, which is unpacked to a
+// temporary directory bounded by maxExpandedBytes (removed on return).
+func imageFromArchive(path string, maxExpandedBytes int64) (v1.Image, error) {
 	if img, err := tarball.ImageFromPath(path, nil); err == nil {
 		return img, nil
 	}
@@ -214,7 +269,7 @@ func imageFromArchive(path string) (v1.Image, error) {
 		return nil, fmt.Errorf("create temp dir for OCI archive: %w", err)
 	}
 	defer os.RemoveAll(dir)
-	if err := extractTar(path, dir); err != nil {
+	if err := extractTarWithLimits(path, dir, maxExpandedBytes, maxOCIArchiveEntries); err != nil {
 		return nil, fmt.Errorf("extract OCI archive %q: %w", path, err)
 	}
 	return imageFromLayout(dir)
@@ -291,10 +346,6 @@ func ociArtifactName(ref string) string {
 	return base
 }
 
-func extractTar(path, dstDir string) error {
-	return extractTarWithLimits(path, dstDir, maxOCIArchiveExpandedBytes, maxOCIArchiveEntries)
-}
-
 func extractTarWithLimits(path, dstDir string, maxBytes int64, maxEntries int) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -344,7 +395,7 @@ func extractTarWithLimits(path, dstDir string, maxBytes int64, maxEntries int) e
 			}
 		case tar.TypeReg:
 			if hdr.Size < 0 || hdr.Size > maxBytes-totalBytes {
-				return fmt.Errorf("OCI archive exceeds expanded-size limit of %d bytes", maxBytes)
+				return &ociLimitError{msg: fmt.Sprintf("OCI archive exceeds expanded-size limit of %d bytes", maxBytes)}
 			}
 			totalBytes += hdr.Size
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {

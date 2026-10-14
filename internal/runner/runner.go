@@ -122,7 +122,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
 			}
 			defer os.RemoveAll(ociDir)
-			extracted, digest, err := artifact.ExtractEBPFFromOCI(ctx, artifactPath, ociDir)
+			extracted, digest, err := artifact.ExtractEBPFFromOCIWithLimits(ctx, artifactPath, ociDir, cfg.OCILimits)
 			if err != nil {
 				return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
 			}

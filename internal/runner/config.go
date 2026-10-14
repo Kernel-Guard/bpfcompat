@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kernel-guard/bpfcompat/internal/artifact"
 )
 
 type ProgressStage string
@@ -69,6 +71,10 @@ type Config struct {
 	KeepVMOnFailure       bool
 	UnsafeAllowHostRunner bool
 	Progress              ProgressReporter
+	// OCILimits bounds local disk writes when ArtifactPath is an OCI source.
+	// The zero value keeps the CLI ceilings (artifact.DefaultOCILimits); the
+	// HTTP API sets tighter, upload-relative limits for untrusted uploads.
+	OCILimits artifact.OCILimits
 }
 
 const (
