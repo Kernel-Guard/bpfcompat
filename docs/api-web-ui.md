@@ -297,7 +297,8 @@ Optional fields:
 Upload bounds and lifecycle (applies to `POST /api/validate` and `POST /api/validate/start`):
 
 - The whole multipart request body is capped at `BPFCOMPAT_API_MAX_UPLOAD_BYTES` (default `134217728`, 128 MiB); a larger body is rejected with `413` before anything is written under `workdir/uploads`. The same cap applies to `POST /api/registry/artifacts/upload`.
-- `POST /api/validate/start` checks queue capacity before reading the body, so a `429` never costs an upload.
+- `POST /api/validate/start` and `POST /api/validate` check queue capacity before reading the body, so a `429` never costs an upload.
+- Synchronous `POST /api/validate` shares the async job budget (`BPFCOMPAT_API_MAX_ACTIVE_VALIDATE_JOBS` / `BPFCOMPAT_API_MAX_QUEUED_VALIDATE_JOBS`) with the same semantics as `POST /api/validate/start`: it runs immediately when an active slot is free, otherwise waits as a queued entry (holding the HTTP request open) until a slot frees up, and is rejected with `429` (same `validate queue is full (...)` error body, no `Retry-After` header) when the queue is also full. A sync request whose client disconnects while queued is dropped from the queue and answered with `503`; the slot is always released when the request ends (success, error, panic or disconnect).
 - Each request copies its inputs into `workdir/uploads/<id>/`. That directory is removed when the request is rejected (`400`/`413`/`429`/`500`) or the validation run fails.
 - After a successful run the directory is retained, because the local artifact version history written by the run records `artifact_path` / `manifest_path` inside it (read later by runtime fetch/execute). Only the newest 32 retained upload directories are kept; older ones are pruned, after which runtime fetch for those history records falls back to `artifact_uri` (or fails).
 
