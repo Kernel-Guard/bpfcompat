@@ -678,10 +678,13 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 			b.WriteString("curl -fsSL --http1.1 --connect-timeout 15 --max-time 30 --retry 2 --retry-max-time 90 -o centos-key.asc https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256; ")
 			b.WriteString("printf '%s  centos-key.asc\\n' 5af55449d6c9bc594e2e2fb7222374cb25a8ad2d8ea6ce3de894a3201944daa2 | sha256sum --check --strict; ")
 			b.WriteString("sudo rpm --import centos-key.asc; ")
+			// Plain --checksig exits 0 for an unsigned package ("digests
+			// OK"); require a valid signature from the imported key.
+			b.WriteString("sudo rpm --checksig --define '_pkgverify_level signature' ./pkg*.rpm; ")
 		} else {
 			b.WriteString("sudo sh -c 'for k in /etc/pki/rpm-gpg/RPM-GPG-KEY-*; do [ -f \"$k\" ] && rpm --import \"$k\"; done'; ")
+			b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
 		}
-		b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
 		b.WriteString("sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
 	} else {
 		fmt.Fprintf(&b, "sudo dnf -y install %s; ", shellQuote("kernel-core-"+release))

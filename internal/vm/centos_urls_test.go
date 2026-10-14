@@ -123,7 +123,7 @@ func TestCentOS725SignedPackageURLs(t *testing.T) {
 		t.Fatalf("725 packages must use exact signed CentOS build artifacts: got %v; want %v", p.KernelPackages, want)
 	}
 	cmd := guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages)
-	verify := strings.Index(cmd, "sudo rpm --checksig ./pkg*.rpm")
+	verify := strings.Index(cmd, "sudo rpm --checksig --define '_pkgverify_level signature' ./pkg*.rpm")
 	install := strings.Index(cmd, "sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm")
 	if verify < 0 || install <= verify || strings.Contains(cmd, "--nogpgcheck") {
 		t.Fatalf("signature verification must precede GPG-checked installation: %s", cmd)
@@ -272,6 +272,86 @@ func TestCentOSStream9SignedSetIsExact(t *testing.T) {
 	} {
 		if isCentOSStream9SignedPackageSet(tc.release, tc.urls) {
 			t.Errorf("%s: must not take the pinned-key path", name)
+		}
+	}
+}
+
+// Plain `rpm --checksig` exits 0 for an unsigned package ("digests OK"), so
+// on the pinned-key path it must demand a signature, and the pinned key must
+// be the only key imported.
+func TestCentOSStream9PinnedPathRequiresSignatures(t *testing.T) {
+	const enforced = "sudo rpm --checksig --define '_pkgverify_level signature' ./pkg*.rpm; "
+	for _, n := range []string{"725", "729", "731"} {
+		p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-"+n+".el9.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages)
+		if !strings.HasPrefix(cmd, "set -e; ") {
+			t.Fatalf("%s: installer must abort on the first failing step", p.ID)
+		}
+		if got := strings.Count(cmd, "rpm --import"); got != 1 {
+			t.Errorf("%s: want exactly one rpm --import (the pinned key), got %d", p.ID, got)
+		}
+		if got := strings.Count(cmd, "--checksig"); got != 1 {
+			t.Errorf("%s: want exactly one signature check, got %d", p.ID, got)
+		}
+		check := strings.Index(cmd, "| sha256sum --check --strict; ")
+		importKey := strings.Index(cmd, "sudo rpm --import centos-key.asc; ")
+		verify := strings.Index(cmd, enforced)
+		install := strings.Index(cmd, "sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
+		if check < 0 || importKey <= check || verify <= importKey || install <= verify {
+			t.Errorf("%s: want key digest, then pinned import, then enforced signature check, then GPG-checked install", p.ID)
+		}
+	}
+}
+
+// Run the pinned-key installer with the real pinned key bytes and a fake rpm
+// that, like rpm 4.18, passes an unsigned package unless a signature is
+// required. The installer must stop before dnf; a signed control must reach it.
+func TestCentOSStream9PinnedPathRejectsUnsignedPackage(t *testing.T) {
+	p, err := LoadProfile(filepath.Join("..", "..", "vm", "profiles", "centos-stream-9-5.14-k5.14.0-729.el9.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := filepath.Abs(filepath.Join("testdata", "RPM-GPG-KEY-CentOS-Official-SHA256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signed := range []bool{false, true} {
+		dir := t.TempDir()
+		bin := filepath.Join(dir, "bin")
+		if err := os.Mkdir(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// No network, real RPM operations, or host /tmp installer directory.
+		for name, script := range map[string]string{
+			"curl":   "#!/bin/sh\nwhile [ \"$#\" -gt 0 ]; do if [ \"$1\" = -o ]; then shift; case \"$1\" in centos-key.asc) cp \"$TEST_KEY\" \"$1\";; *) printf rpm >\"$1\";; esac; exit 0; fi; shift; done; exit 1\n",
+			"sudo":   "#!/bin/sh\nexec \"$@\"\n",
+			"rpm":    "#!/bin/sh\necho \"rpm $*\" >>\"$TEST_LOG\"\ncase \" $* \" in *\" --checksig \"*) [ \"$TEST_SIGNED\" = 1 ] && exit 0; case \" $* \" in *\" _pkgverify_level signature \"*) echo 'pkg00.rpm: digests SIGNATURES NOT OK'; exit 1;; esac; echo 'pkg00.rpm: digests OK';; esac\nexit 0\n",
+			"dnf":    "#!/bin/sh\necho \"dnf $*\" >>\"$TEST_LOG\"\n",
+			"grubby": "#!/bin/sh\necho \"grubby $*\" >>\"$TEST_LOG\"\n",
+		} {
+			if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := strings.ReplaceAll(guestKernelInstallCmdRHEL(p.InstallKernel, p.KernelPackages), "/tmp/bpfcompat-kernel", filepath.Join(dir, "kernel"))
+		process := exec.Command("bash", "-c", command)
+		logPath := filepath.Join(dir, "calls.log")
+		flag := "0"
+		if signed {
+			flag = "1"
+		}
+		process.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TEST_KEY="+key, "TEST_LOG="+logPath, "TEST_SIGNED="+flag)
+		output, runErr := process.CombinedOutput()
+		calls, _ := os.ReadFile(logPath)
+		reachedDNF := strings.Contains(string(calls), "dnf ")
+		if !signed && (runErr == nil || reachedDNF) {
+			t.Fatalf("unsigned package must stop the installer before dnf: err=%v output=%s calls=%s", runErr, output, calls)
+		}
+		if signed && (runErr != nil || !reachedDNF) {
+			t.Fatalf("signed control must reach the GPG-checked install: err=%v output=%s calls=%s", runErr, output, calls)
 		}
 	}
 }
