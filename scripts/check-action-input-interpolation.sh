@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # No caller-controlled expression may be interpolated into a `run:` script.
 #
-#   check-action-input-interpolation.sh [action.yml]
+#   check-action-input-interpolation.sh [--strict] [action.yml]
 #
 # The Actions runner substitutes `${{ ... }}` into a `run:` script as plain
 # text BEFORE the shell parses it. An action input (or event data such as a
@@ -24,22 +24,35 @@
 # string literal ('' escapes a quote), so format('}}', inputs.x) cannot hide
 # the tainted part; an unterminated `${{` is flagged as well.
 #
+# --strict (used for workflows by check-workflow-expression-interpolation.sh)
+# is default-deny: EVERY expression in a run: script is flagged unless its
+# whole body is exactly one of the run-identity values in SAFE below. A
+# workflow's matrix, step and job outputs can carry event data (a matrix built
+# by fromJSON(needs.x.outputs.y), a step that echoes a PR title), so they are
+# not provably safe and must use env: as well.
+#
 # Defaults to the repository's action.yml. Exits 0 on PASS, 1 on a finding,
 # 2 on an unreadable/invalid file.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+strict=0
+if [[ "${1:-}" == "--strict" ]]; then
+  strict=1
+  shift
+fi
 action="${1:-$ROOT/action.yml}"
 
 [[ -f "$action" ]] || { echo "[action-input-interpolation] missing file: $action" >&2; exit 2; }
 
-python3 - "$action" <<'PY'
+python3 - "$action" "$strict" <<'PY'
 import re
 import sys
 
 import yaml
 
 path = sys.argv[1]
+strict = sys.argv[2] == "1"
 try:
     with open(path, encoding="utf-8") as fh:
         doc = yaml.safe_load(fh)
@@ -62,6 +75,21 @@ TAINTED = re.compile(
     + "|" + WORD + r"github\s*\[(?!\s*'(?!(event|head_ref)')[\w-]+'\s*\])",
     re.I,
 )
+
+# --strict allowlist: values fixed by the runner for this run, never derived
+# from event payloads, inputs or refs. Matched against the WHOLE expression
+# body, so wrapping (format(...), a || b) is not allowed.
+SAFE = re.compile(
+    r"\s*(github\.(sha|run_id|run_number|run_attempt)|runner\.(os|arch))\s*"
+)
+
+
+def flagged(expr):
+    body = expr[3:]
+    if not strict:
+        return bool(TAINTED.search(body))
+    # An unterminated expression is never provably safe.
+    return not (body.endswith("}}") and SAFE.fullmatch(body[:-2]))
 
 
 def expressions(script):
@@ -117,7 +145,7 @@ for label, step in steps_of(doc):
         continue
     name = step.get("name") or step.get("id") or ""
     for start, expr in expressions(script):
-        if TAINTED.search(expr[3:]):
+        if flagged(expr):
             lineno = script.count("\n", 0, start) + 1
             findings.append(f"{label} ({name}) run line {lineno}: {expr.strip()}")
 

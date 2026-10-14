@@ -80,6 +80,12 @@ jobs:
         run: |
           bash scripts/check-action-input-interpolation_test.sh
           bash scripts/action-input-injection_test.sh
+      - name: Workflow expression-injection guard
+        # Same injection class in this repo's own workflows: no ${{ }} in a
+        # run: script (default-deny; only run-identity values allowlisted).
+        # The seven frozen release-qualification workflows are skipped by
+        # name until v0.4.0 graduates; see the script's FROZEN list.
+        run: bash scripts/check-workflow-expression-interpolation_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
       - name: Image prefetch reliability regression
