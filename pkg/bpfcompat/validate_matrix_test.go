@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/runner"
 )
@@ -159,5 +160,62 @@ func TestValidateCallerWorkDirIsNeverRemoved(t *testing.T) {
 	}
 	if _, err := os.Stat(rep.RunDir); err != nil {
 		t.Fatalf("Validate removed the caller's WorkDir on error: %v", err)
+	}
+}
+
+// L1: Validate must apply the same config checks as the CLI (runner.Config.
+// Validate) BEFORE creating any temp state or reaching the engine.
+func TestValidateRejectsInvalidConfigBeforeTouchingDisk(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{"negative timeout", Config{Artifact: "x.bpf.o", Quick: true, Timeout: -time.Second}, "--timeout must be > 0"},
+		{"negative concurrency", Config{Artifact: "x.bpf.o", Quick: true, Concurrency: -1}, "--concurrency must be > 0"},
+		{"unknown runner", Config{Artifact: "x.bpf.o", Quick: true, Runner: "bogus"}, "--runner must be one of"},
+		{"host runner", Config{Artifact: "x.bpf.o", Quick: true, Runner: runner.RunnerHost}, "--runner host is disabled"},
+		{"empty artifact", Config{Quick: true}, "--artifact is required"},
+		{"no matrix and not quick", Config{Artifact: "x.bpf.o"}, "--matrix is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := isolateTempDir(t)
+			calls, _ := stubBootstrap(t, fakeRun)
+			_, err := Validate(context.Background(), tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate err = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if !strings.HasPrefix(err.Error(), "bpfcompat: invalid config: ") {
+				t.Fatalf("Validate err = %q, want a config error prefix", err)
+			}
+			if *calls != 0 {
+				t.Fatalf("engine was invoked %d time(s) for an invalid config", *calls)
+			}
+			if left := tempEntries(t, tmp); len(left) != 0 {
+				t.Fatalf("invalid config still created %d TMPDIR entries: %v", len(left), left)
+			}
+		})
+	}
+}
+
+// Zero Concurrency and zero Timeout are the "use the default" values for
+// library callers and must keep working once config validation is applied.
+func TestValidateZeroConcurrencyAndTimeoutDefault(t *testing.T) {
+	isolateTempDir(t)
+	calls, got := stubBootstrap(t, fakeRun)
+	rep, err := Validate(context.Background(), Config{Artifact: "x.bpf.o", Quick: true})
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	t.Cleanup(func() { _ = rep.Cleanup() })
+	if *calls != 1 {
+		t.Fatalf("engine calls = %d, want 1", *calls)
+	}
+	if got.Concurrency != 1 {
+		t.Fatalf("engine Concurrency = %d, want default 1", got.Concurrency)
+	}
+	if got.Timeout != 10*time.Minute {
+		t.Fatalf("engine Timeout = %s, want default 10m", got.Timeout)
 	}
 }

@@ -3,7 +3,9 @@ package bpfcompat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/runner"
@@ -34,6 +36,9 @@ type Config struct {
 	// ValidateBeforeLoad (hostload build) for host-local validation.
 	Runner string
 
+	// Concurrency is the number of profiles run in parallel; 0 means 1.
+	// Timeout bounds each profile run; 0 means 10 minutes. Negative values
+	// are rejected.
 	Concurrency int
 	Timeout     time.Duration
 
@@ -93,7 +98,9 @@ var executeBootstrapFn = runner.ExecuteBootstrap
 
 // Validate runs the full matrix engine and returns the aggregated Report. A
 // non-zero number of failed targets is reported in Report.Summary, not as a Go
-// error — err is non-nil only when the run could not be executed.
+// error — err is non-nil only when the run could not be executed. cfg is
+// checked with the same rules as the CLI before anything is written to disk;
+// a rejected config returns an error prefixed "bpfcompat: invalid config: ".
 func Validate(ctx context.Context, cfg Config) (Report, error) {
 	rcfg := runner.Config{
 		ArtifactPath:   cfg.Artifact,
@@ -108,6 +115,20 @@ func Validate(ctx context.Context, cfg Config) (Report, error) {
 	}
 	if rcfg.Timeout == 0 {
 		rcfg.Timeout = 10 * time.Minute
+	}
+	if rcfg.Concurrency == 0 {
+		rcfg.Concurrency = 1
+	}
+	// Apply the same checks the CLI applies, before any temp state is created.
+	// WorkDir and OutPath are filled in by Validate below when empty, so check
+	// with stand-ins for those two only.
+	vcfg := rcfg
+	if vcfg.WorkDir == "" {
+		vcfg.WorkDir = os.TempDir()
+	}
+	vcfg.OutPath = filepath.Join(os.TempDir(), "bpfcompat-report.json")
+	if err := vcfg.Validate(); err != nil {
+		return Report{}, fmt.Errorf("bpfcompat: invalid config: %w", err)
 	}
 	// tempWorkDir is the private workspace this call creates, if any. Nothing
 	// outside Validate knows its path until it is returned in the Report, so
