@@ -1,0 +1,34 @@
+{
+  "schema_version": "v0.1",
+  "channel": "maintenance",
+  "release_version": "0.3.8",
+  "candidate": {
+    "evidence": "v0.3.8-evidence/candidate.json",
+    "evidence_sha256": "f7628a0ec9549aa0380b784840f3038ae47882a1a45a1dfb922db62d27246eef"
+  },
+  "observations": [
+    {
+      "milestone": "e0",
+      "evidence": "v0.3.8-evidence/e0.json",
+      "evidence_sha256": "40069e5613364915d4ce4d30d3f9934b25523e8a929284bfc03964c5917fd274"
+    },
+    {
+      "milestone": "e1",
+      "evidence": "v0.3.8-evidence/e1.json",
+      "evidence_sha256": "0d9bb96f8d1df40ffc29e421a6d0433a35a815f86137e5bc773e5dea9b35ab2b"
+    }
+  ],
+  "rollback": {
+    "completed": true,
+    "evidence": "v0.3.8-evidence/rollback.md",
+    "evidence_sha256": "d2805a3abf0e41c16d179f605f6220c04d318503ad5c8fb5be57b59fa6a31b47"
+  },
+  "incident": {
+    "completed": true,
+    "evidence": "v0.3.8-evidence/incident.md",
+    "evidence_sha256": "9a5c7936036419df09fb9d73a07558f14c051b1f3c64c3cd29a6ffc2d1b17544"
+  },
+  "pending": [
+    "operator: solo-maintainer confirmation (release operator only)"
+  ]
+}
