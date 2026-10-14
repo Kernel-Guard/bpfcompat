@@ -131,6 +131,10 @@ jobs:
         # write grant is listed, with a justification, in
         # scripts/workflow-write-permissions.allow.
         run: bash scripts/check-workflow-permissions_test.sh
+      - name: Research v1 release-state regression
+        # scholarly-release-v1 re-runs on edits to itself; the immutable,
+        # already-published research-v1 must be verified, never re-attempted.
+        run: bash scripts/research/test-release-state-v1.sh
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency

@@ -17,10 +17,45 @@ concurrency:
 
 env:
   RESEARCH_TAG: research-v1
+  # research-v1 was published from this commit on 2026-09-19 (run 35456618576).
+  # It is immutable: the release is never re-created from any other commit.
+  RESEARCH_COMMIT: 141c491bd1508600338e7bc27abbc5a117eb7508
 
 jobs:
+  # This workflow re-runs whenever its own file changes on main. A read-only
+  # job first establishes the publication state; the write-scoped publish job
+  # runs only for the original first publication. An intact, verified
+  # research-v1 ends the run green without a write token; a missing, partial
+  # or mismatched one fails here (scripts/research/research-v1-release-state.sh).
+  state:
+    name: Verify research v1 publication state
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      publish: ${{ steps.state.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Establish research v1 state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/research/research-v1-release-state.sh \
+            "${GITHUB_REPOSITORY}" "${RESEARCH_TAG}" "${RESEARCH_COMMIT}" \
+            research/archive/v1/archive-lock.json "${RUNNER_TEMP}/research-v1-state" \
+            >>"$GITHUB_OUTPUT"
+
   publish:
     name: Publish immutable research v1 release
+    needs: state
+    if: needs.state.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

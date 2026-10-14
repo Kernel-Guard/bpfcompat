@@ -125,10 +125,33 @@ for required_control in \
   'Create annotated research tag' \
   'Publish GitHub research release' \
   '--verify-tag' \
-  '--latest=false'; do
+  '--latest=false' \
+  'RESEARCH_COMMIT: 141c491bd1508600338e7bc27abbc5a117eb7508' \
+  'bash scripts/research/research-v1-release-state.sh' \
+  'needs: state' \
+  "if: needs.state.outputs.publish == 'true'"; do
   grep -Fq -- "$required_control" "$scholarly_workflow" ||
     fail "$scholarly_workflow is missing required control: $required_control"
 done
+# research-v1 is published and immutable: a re-run must not reach the
+# write-scoped publish job unless the read-only state job says so.
+python3 - "$scholarly_workflow" <<'PY' ||
+import sys
+import yaml
+
+wf = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+jobs = wf.get("jobs") or {}
+publish = jobs.get("publish") or {}
+state = jobs.get("state") or {}
+ok = (
+    set(jobs) == {"state", "publish"}
+    and publish.get("needs") == "state"
+    and publish.get("if") == "needs.state.outputs.publish == 'true'"
+    and all(str(v) in ("read", "none") for v in (state.get("permissions") or {"x": "write"}).values())
+)
+sys.exit(0 if ok else 1)
+PY
+  fail "$scholarly_workflow publish job must be gated by the read-only state job (needs: state, if: needs.state.outputs.publish == 'true')"
 if grep -Eq 'workflow_dispatch:|refs/tags/v|tags:[[:space:]]*\[.*v\*|scripts/promote-release\.sh|softprops/action-gh-release@|value=latest' "$scholarly_workflow"; then
   fail "$scholarly_workflow must remain isolated from product release/promotion paths"
 fi
