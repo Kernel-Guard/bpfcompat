@@ -36,7 +36,6 @@ Last updated: 2026-10-14T14:59Z (`main` = `b777394`).
 | 2026-10-14 | Merge #190 | `2426c53` only | YELLOW | Used: merged as `ba585fe` |
 | 2026-10-14 | Merge #192 | `f21b6ff` only | YELLOW | Lapsed, unused (strict protection required an update after #190) |
 | 2026-10-14 | Merge #192 | `83e3ab9` only | YELLOW | Used: merged as `5e18f44` |
-| 2026-10-14 | Merge #193 | `c26fc43` only | YELLOW | Lapsed, unused (strict protection required an update after #192) |
 | 2026-10-14 | Merge #193 | `e99d2e2` only | YELLOW | Used: merged as `b777394` |
 | 2026-10-14 | Rebase #191 and add the changelog entry | `release.yaml` and `CHANGELOG.md` only; no merge | – | Used: head `c262bd9` |
 | – | Merge #191, #176, #185, #194 | – | YELLOW / RED | Not granted |
