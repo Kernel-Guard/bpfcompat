@@ -114,7 +114,11 @@ publishes weekly ([per-arch `list.json`](https://falcosecurity.github.io/kernel-
 - After a matrix run, refresh the baselines from the report:
   `bpfcompat kernel-freshness --update-from-report reports/<run>.json`.
   Profiles the file doesn't know yet are appended without a mapping and
-  show up as `uncovered` until one is added.
+  show up as `uncovered` until one is added. Targets that did not establish
+  the environment their profile requested (`kernel_family_match` or
+  `distro_match` false, or an `INFRA_ERROR`/`UNSUPPORTED` outcome) are not
+  recorded; each is listed as
+  `skipped <profile>: did not establish requested environment ... (observed <kernel>)`.
 - `.github/workflows/kernel-freshness.yml` runs the comparison weekly
   (after kernel-crawler's own Monday refresh) as a non-blocking signal
   lane. Stale profiles keep the run green and file (or refresh) a single
