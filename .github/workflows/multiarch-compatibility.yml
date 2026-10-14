@@ -46,24 +46,33 @@ jobs:
 
       - name: Verify runner virtualization
         shell: bash
+        # Matrix values reach run: through env, never inline: the expression
+        # guard (scripts/check-workflow-expression-interpolation.sh) rejects
+        # any ${{ }} pasted into shell source.
+        env:
+          QEMU_BIN: ${{ matrix.qemu_bin }}
         run: |
           set -euo pipefail
           test -e /dev/kvm || (echo "::error::/dev/kvm not found" && exit 1)
-          command -v "${{ matrix.qemu_bin }}" >/dev/null || (echo "::error::missing ${{ matrix.qemu_bin }}" && exit 1)
+          command -v "$QEMU_BIN" >/dev/null || (echo "::error::missing $QEMU_BIN" && exit 1)
 
       - name: Build validator and architecture-specific BPF fixtures
         shell: bash
+        env:
+          EXAMPLES_TARGET: ${{ matrix.examples_target }}
         run: |
           set -euo pipefail
           make build
           make validator-static
-          make "${{ matrix.examples_target }}"
+          make "$EXAMPLES_TARGET"
 
       - name: Fetch architecture VM image
         shell: bash
+        env:
+          IMAGE_TARGET: ${{ matrix.image_target }}
         run: |
           set -euo pipefail
-          make "${{ matrix.image_target }}"
+          make "$IMAGE_TARGET"
 
       - name: Run functional compatibility gate
         uses: ./
