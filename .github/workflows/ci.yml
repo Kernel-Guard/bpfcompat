@@ -122,6 +122,10 @@ jobs:
         # The four-campaign qualification window must not span a runner-OS
         # migration of the moving ubuntu-latest label.
         run: bash scripts/campaign-runner-pin_test.sh
+      - name: Canary runner pin regression
+        # Release-candidate canary observations must not span a runner-OS
+        # migration of the moving ubuntu-latest label.
+        run: bash scripts/canary-runner-pin_test.sh
       - name: Coverage-floor regression
         run: bash scripts/check-coverage_test.sh
       - name: Release metadata consistency
