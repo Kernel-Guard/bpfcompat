@@ -2330,7 +2330,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cfg, status, err := s.buildValidateRunnerConfig(r, identity)
+	cfg, status, err := s.buildValidateRunnerConfig(r.Context(), r, identity)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
@@ -2368,7 +2368,7 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, status, err := s.buildValidateRunnerConfig(r, identity)
+	cfg, status, err := s.buildValidateRunnerConfig(r.Context(), r, identity)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
@@ -2422,7 +2422,7 @@ func (s *Server) handleValidateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-func (s *Server) buildValidateRunnerConfig(r *http.Request, identity writeAuthIdentity) (runner.Config, int, error) {
+func (s *Server) buildValidateRunnerConfig(ctx context.Context, r *http.Request, identity writeAuthIdentity) (runner.Config, int, error) {
 	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
 		return runner.Config{}, http.StatusBadRequest, fmt.Errorf("parse multipart form: %w", err)
 	}
@@ -2438,7 +2438,7 @@ func (s *Server) buildValidateRunnerConfig(r *http.Request, identity writeAuthId
 		return runner.Config{}, http.StatusInternalServerError, err
 	}
 
-	artifactPath, err := extractArtifact(r, requestDir, s.log())
+	artifactPath, err := extractArtifact(ctx, r, requestDir, s.log())
 	if err != nil {
 		return runner.Config{}, http.StatusBadRequest, err
 	}
@@ -3000,7 +3000,7 @@ func allowAnonymousSourceCompileEnabled() bool {
 	return parseBoolEnv(envAllowAnonymousSourceCompile, false)
 }
 
-func extractArtifact(r *http.Request, requestDir string, logger *slog.Logger) (string, error) {
+func extractArtifact(ctx context.Context, r *http.Request, requestDir string, logger *slog.Logger) (string, error) {
 	if file, header, err := r.FormFile("artifact_file"); err == nil {
 		defer file.Close()
 		path := filepath.Join(requestDir, sanitizeFileName(header.Filename, "uploaded-artifact.bpf.o"))
@@ -3017,7 +3017,7 @@ func extractArtifact(r *http.Request, requestDir string, logger *slog.Logger) (s
 		if err := writeUploadedFile(sourcePath, sourceFile); err != nil {
 			return "", err
 		}
-		return compileSourceFile(sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
+		return compileSourceFile(ctx, sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
 	}
 
 	if strings.TrimSpace(sourceText) != "" {
@@ -3025,7 +3025,7 @@ func extractArtifact(r *http.Request, requestDir string, logger *slog.Logger) (s
 		if err := os.WriteFile(sourcePath, []byte(sourceText), 0o644); err != nil {
 			return "", fmt.Errorf("write source text: %w", err)
 		}
-		return compileSourceFile(sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
+		return compileSourceFile(ctx, sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
 	}
 
 	return "", fmt.Errorf("provide artifact_file, source_file, or source_code")
@@ -3064,7 +3064,7 @@ func writeUploadedFile(path string, src multipart.File) error {
 	return nil
 }
 
-func compileSourceFile(sourcePath, requestDir, extraFlags string, logger *slog.Logger) (string, error) {
+func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlags string, logger *slog.Logger) (string, error) {
 	outPath := filepath.Join(requestDir, "compiled.bpf.o")
 	allowedExtraFlags, err := sanitizeExtraClangFlags(extraFlags)
 	if err != nil {
@@ -3084,7 +3084,9 @@ func compileSourceFile(sourcePath, requestDir, extraFlags string, logger *slog.L
 		args = append(allowedExtraFlags, args...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), sourceCompileTimeout())
+	// Derive from the request context so a client disconnect or server
+	// shutdown also stops clang; the compile timeout still applies on top.
+	ctx, cancel := context.WithTimeout(parent, sourceCompileTimeout())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "clang", args...)
 	cmd.Env = sourceCompileEnv()
