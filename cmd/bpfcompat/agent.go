@@ -275,6 +275,9 @@ func runAgentPreflight(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 
 	result := buildAgentPreflight(agentPreflightOptions{
 		WorkDir:            *workDir,
@@ -640,6 +643,9 @@ func runAgentPlan(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 
 	envelope, _, _, err := executeAgentPlan(flags)
 	if err != nil {
@@ -685,6 +691,9 @@ func runAgentApply(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 
@@ -909,6 +918,9 @@ func runAgentStatus(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	summary, err := summarizeAgentStatus(resolveAgentStatusPath(*statusPath))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent status failed: %v\n", err)
@@ -943,6 +955,9 @@ func runAgentLedger(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	entries, err := agent.ListLoadLedgerEntries(*workDir, *artifactName, *limit)
@@ -1007,6 +1022,9 @@ func runAgentRollback(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	artifact := strings.TrimSpace(*artifactName)
@@ -1100,6 +1118,9 @@ func runAgentUnload(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	resolvedPin, err := resolveAgentUnloadPinPath(*pinPath, *allowNonBPFFS)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent unload failed: %v\n", err)
@@ -1169,6 +1190,9 @@ func runAgentRevocationDrill(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	id := resolveAgentID(*agentID)

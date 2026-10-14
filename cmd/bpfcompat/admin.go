@@ -111,6 +111,9 @@ func runAdminListTokens(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 
 	store := cloudregistry.NewStore(*workDir)
 	cfg, err := store.LoadAuthConfig()
@@ -168,6 +171,9 @@ func runAdminRevokeToken(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	subj := strings.TrimSpace(*subject)
@@ -273,6 +279,9 @@ func runAdminVerifyChain(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	verification, err := registry.VerifyArtifactVersionHistory(*workDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verify history: %v\n", err)
@@ -327,6 +336,9 @@ func runAdminAuditExport(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	// Signing requires writing to a real file: streaming to stdout means we
