@@ -646,7 +646,7 @@ func executeTarget(
 	target.ValidatorResult = execResult.ValidatorResultPath
 	target.ValidatorExit = execResult.ValidatorExitCode
 	target.InfraError = execResult.InfraError
-	target.Notes = execResult.Notes
+	target.Notes = append(target.Notes, execResult.Notes...)
 
 	if execResult.Status == "infra_error" {
 		target.FailedStage = "infra"
