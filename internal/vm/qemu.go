@@ -321,7 +321,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 
 	serialLogPath := filepath.Join(vmRunDir, "serial.log")
 	qemuLogPath := filepath.Join(vmRunDir, "qemu.log")
-	cmd, qemuCmdString, err := startQEMU(ctx, req.Profile, overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDirAbs, seedImagePath)
+	cmd, qemuCmdString, err := startQEMU(ctx, req.Profile, overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDirAbs, seedImagePath, false)
 	if err != nil {
 		result.InfraError = err.Error()
 		return
@@ -606,7 +606,9 @@ func installGuestKernelAndReboot(ctx context.Context, result *ExecutionResult, r
 		return nil, err
 	}
 
-	newCmd, _, err := startQEMU(ctx, req.Profile, overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath)
+	// Append to serial.log and qemu.log so the first boot and the installer
+	// output stay in the evidence next to the second boot.
+	newCmd, _, err := startQEMU(ctx, req.Profile, overlayPath, serialLogPath, qemuLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath, true)
 	if err != nil {
 		return nil, fmt.Errorf("relaunch qemu after kernel install: %w", err)
 	}
@@ -829,13 +831,32 @@ func generateSSHKeyPair(ctx context.Context, privateKeyPath string) (string, err
 	return strings.TrimSpace(string(pubRaw)), nil
 }
 
-func startQEMU(ctx context.Context, profile Profile, overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) (*exec.Cmd, string, error) {
-	qemuLog, err := os.Create(qemuLogPath)
+// qemuRelaunchSeparator marks, in qemu.log, where the QEMU relaunched after
+// the in-guest kernel install starts writing.
+const qemuRelaunchSeparator = "=== relaunch after kernel install ==="
+
+// startQEMU launches QEMU. appendLogs is set for the relaunch after the
+// in-guest kernel install: qemu.log and serial.log are then appended to
+// rather than truncated, so the first boot stays in the evidence.
+func startQEMU(ctx context.Context, profile Profile, overlayPath, serialLogPath, qemuLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string, appendLogs bool) (*exec.Cmd, string, error) {
+	var qemuLog *os.File
+	var err error
+	if appendLogs {
+		qemuLog, err = os.OpenFile(qemuLogPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644) // #nosec G302 G304 -- same mode as os.Create; path is a run-dir file we created.
+		if err == nil {
+			_, err = fmt.Fprintf(qemuLog, "\n%s\n", qemuRelaunchSeparator)
+			if err != nil {
+				_ = qemuLog.Close()
+			}
+		}
+	} else {
+		qemuLog, err = os.Create(qemuLogPath)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("create qemu log: %w", err)
 	}
 
-	args := buildQEMUArgs(profile, overlayPath, serialLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath)
+	args := buildQEMUArgsForLaunch(profile, overlayPath, serialLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath, appendLogs)
 
 	// aarch64 "virt" has no built-in firmware (unlike x86 SeaBIOS), so a UEFI
 	// build must be supplied as pflash or the guest never boots. Resolve and
@@ -932,19 +953,39 @@ func copyRegularFile(src, dst string) error {
 	return out.Close()
 }
 
+// buildQEMUArgs is the first-launch argv.
 func buildQEMUArgs(profile Profile, overlayPath, serialLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string) []string {
+	return buildQEMUArgsForLaunch(profile, overlayPath, serialLogPath, sshPort, seedMode, seedURL, seedDir, seedImagePath, false)
+}
+
+// buildQEMUArgsForLaunch builds the QEMU argv. With appendLogs the serial
+// console goes through a file chardev with append=on ("-serial file:"
+// truncates); the first launch keeps "-serial file:" so its recorded command
+// line is unchanged.
+func buildQEMUArgsForLaunch(profile Profile, overlayPath, serialLogPath string, sshPort int, seedMode seedDeliveryMode, seedURL, seedDir, seedImagePath string, appendLogs bool) []string {
 	memoryMB, cpus := boundedVMResources(profile.Boot)
+
+	serialArgs := []string{"-serial", "file:" + serialLogPath}
+	if appendLogs {
+		// QEMU option values split on ","; a literal "," is written ",,".
+		serialArgs = []string{
+			"-chardev", "file,id=bpfserial0,path=" + strings.ReplaceAll(serialLogPath, ",", ",,") + ",append=on",
+			"-serial", "chardev:bpfserial0",
+		}
+	}
 
 	args := []string{
 		"-m", fmt.Sprintf("%d", memoryMB),
 		"-smp", fmt.Sprintf("%d", cpus),
 		"-nic", "none",
 		"-display", "none",
-		"-serial", "file:" + serialLogPath,
+	}
+	args = append(args, serialArgs...)
+	args = append(args,
 		"-drive", fmt.Sprintf("file=%s,if=virtio,format=qcow2", overlayPath),
 		"-netdev", fmt.Sprintf("user,id=n1,hostfwd=tcp:127.0.0.1:%d-:22", sshPort),
 		"-device", "virtio-net-pci,netdev=n1",
-	}
+	)
 	args = append(qemuMachineArgs(profile), args...)
 	switch seedMode {
 	case seedDeliveryIgnition:
@@ -1243,8 +1284,9 @@ func pathForms(path string) []string {
 	return out
 }
 
-// qemuLogTail returns the redacted last qemuLogTailBytes of qemu.log,
-// trimmed of whitespace and cut on a valid UTF-8 boundary. Redaction runs on
+// qemuLogTail returns the redacted last qemuLogTailBytes of qemu.log (of
+// the part after the last relaunch separator, if any), trimmed of
+// whitespace and cut on a valid UTF-8 boundary. Redaction runs on
 // the whole log before the cut so a path straddling the cut cannot leak in
 // part.
 func qemuLogTail(qemuLogPath string, redactor *strings.Replacer) string {
@@ -1252,7 +1294,13 @@ func qemuLogTail(qemuLogPath string, redactor *strings.Replacer) string {
 	if err != nil {
 		return ""
 	}
-	text := strings.TrimSpace(redactor.Replace(string(data)))
+	text := redactor.Replace(string(data))
+	// After a kernel-install relaunch, quote only the relaunched QEMU: the
+	// earlier launch's output precedes the separator in the same file.
+	if i := strings.LastIndex(text, qemuRelaunchSeparator); i >= 0 {
+		text = text[i+len(qemuRelaunchSeparator):]
+	}
+	text = strings.TrimSpace(text)
 	if len(text) > qemuLogTailBytes {
 		text = text[len(text)-qemuLogTailBytes:]
 	}
