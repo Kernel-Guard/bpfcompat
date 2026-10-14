@@ -3143,7 +3143,31 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 		)
 		return "", errors.New(sourceCompileFailureMessage(compileSource, trimmed))
 	}
+	// The sandboxed compile can write to the request directory, so the
+	// object it leaves behind is untrusted. The sandbox's process tree has
+	// exited by now; require a regular file so a planted symlink (e.g. to a
+	// host file) is never followed when the server reads the artifact.
+	if err := ensureRegularCompiledObject(outPath); err != nil {
+		logger.Warn("source upload compile produced an unusable object",
+			slog.String("source", sourcePath),
+			slog.String("error", err.Error()),
+		)
+		return "", errors.New("source compilation failed: the compiler did not produce a regular object file")
+	}
 	return outPath, nil
+}
+
+// ensureRegularCompiledObject rejects anything at path that is not a regular
+// file, without following symlinks.
+func ensureRegularCompiledObject(objectPath string) error {
+	info, err := os.Lstat(objectPath)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("compiled object %s is not a regular file (mode %s)", filepath.Base(objectPath), info.Mode().Type())
+	}
+	return nil
 }
 
 // sourceCompileEnvPassthrough lists the only server environment variables

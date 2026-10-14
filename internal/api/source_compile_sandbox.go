@@ -109,6 +109,12 @@ func probeSourceCompileSandbox(parent context.Context) (string, string, error) {
 	if clang, err = filepath.Abs(clang); err != nil {
 		return "", "", err
 	}
+	// /usr/bin/clang is often an update-alternatives link through
+	// /etc/alternatives, which is not mounted in the sandbox. Run the real
+	// binary instead so such hosts do not fail closed for no reason.
+	if resolved, rerr := filepath.EvalSymlinks(clang); rerr == nil {
+		clang = resolved
+	}
 	workDir, err := os.MkdirTemp("", "bpfcompat-sandbox-probe-")
 	if err != nil {
 		return "", "", fmt.Errorf("create probe dir: %w", err)
