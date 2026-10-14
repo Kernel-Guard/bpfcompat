@@ -69,6 +69,13 @@ type Config struct {
 	KeepVMOnFailure       bool
 	UnsafeAllowHostRunner bool
 	Progress              ProgressReporter
+	// MatrixProfileTimeouts lets a matrix profile's `timeout:` replace
+	// Timeout for that target. The CLI sets it only when --timeout was not
+	// given explicitly, so Timeout is then just the 180s default fallback.
+	// The zero value keeps Timeout authoritative for every target, which is
+	// what the API server (bounded by its max timeout), suites and
+	// pkg/bpfcompat rely on.
+	MatrixProfileTimeouts bool
 }
 
 const (
