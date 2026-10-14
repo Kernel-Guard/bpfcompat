@@ -1,26 +1,28 @@
 name: release-candidate-canary
 
-# Exact-artifact canaries for v0.4.0-rc.3. The two dated schedules land just
+# Exact-artifact canaries for v0.4.0-rc.4. The two dated schedules land just
 # after T+24h and T+72h; the planning job also rejects any out-of-window
 # invocation. Remove or retarget this workflow after v0.4.0 graduates.
 on:
   schedule:
-    - cron: "21 15 31 7 *"
-    - cron: "21 15 2 8 *"
+    # 2026-10-14T17:29:49Z + 24h (+~15 min), and + 72h (+~15 min), in UTC;
+    # the plan job accepts 20-30h and 68-78h after CANDIDATE_PUBLISHED_AT.
+    - cron: "44 17 15 10 *"
+    - cron: "44 17 17 10 *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-candidate-canary-v0.4.0-rc.3
+  group: release-candidate-canary-v0.4.0-rc.4
   cancel-in-progress: false
 
 env:
-  CANDIDATE_TAG: v0.4.0-rc.3
-  CANDIDATE_COMMIT: cba1e09537f2e05e4ba7278efdb5c2d044d1889b
-  CANDIDATE_DIGEST: sha256:842ebbc5746dcfcf98823407a762bdf379e24beb8ea20941ff77f9a74a1a2ac6
-  CANDIDATE_PUBLISHED_AT: "2026-07-30T15:05:34Z"
+  CANDIDATE_TAG: v0.4.0-rc.4
+  CANDIDATE_COMMIT: 222c3f38a5361fca7c43c33df841290f8bef0021
+  CANDIDATE_DIGEST: sha256:65f780f381e42b712459745350d248080304f2531695b606d5560eb7a78fb624
+  CANDIDATE_PUBLISHED_AT: "2026-10-14T17:29:49Z"
   IMAGE: ghcr.io/kernel-guard/bpfcompat
 
 # Every job pins ubuntu-24.04, not the moving ubuntu-latest label (which
@@ -122,7 +124,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rc3-canary-component-clean-install-${{ github.run_id }}
+          name: rc4-canary-component-clean-install-${{ github.run_id }}
           path: evidence/clean-install.json
           if-no-files-found: error
 
@@ -182,7 +184,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rc3-canary-component-source-build-${{ github.run_id }}
+          name: rc4-canary-component-source-build-${{ github.run_id }}
           path: evidence/source-build.json
           if-no-files-found: error
 
@@ -208,12 +210,12 @@ jobs:
           fi
 
       - name: Exercise the published RC Action and prebuilt path
-        uses: Kernel-Guard/bpfcompat@cba1e09537f2e05e4ba7278efdb5c2d044d1889b # v0.4.0-rc.3
+        uses: Kernel-Guard/bpfcompat@222c3f38a5361fca7c43c33df841290f8bef0021 # v0.4.0-rc.4
         with:
           command: uname -r && test -d /sys/fs/bpf
           matrix: matrices/canary.yaml
-          out: reports/rc3-action.json
-          markdown: reports/rc3-action.md
+          out: reports/rc4-action.json
+          markdown: reports/rc4-action.md
           timeout: 10m
           concurrency: "2"
 
@@ -225,13 +227,13 @@ jobs:
             .summary.status == "pass" and
             ([.targets[] | select(.required and .status != "pass")] | length == 0) and
             ([.targets[] | select(.status == "infra_error")] | length == 0)
-          ' reports/rc3-action.json >/dev/null
+          ' reports/rc4-action.json >/dev/null
           mkdir -p evidence
           jq -n \
             --arg check published-action \
             --arg version "$CANDIDATE_TAG" \
             --arg commit "$CANDIDATE_COMMIT" \
-            --arg report_sha256 "$(sha256sum reports/rc3-action.json | awk '{print $1}')" \
+            --arg report_sha256 "$(sha256sum reports/rc4-action.json | awk '{print $1}')" \
             '{
               check: $check,
               status: "pass",
@@ -244,12 +246,12 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rc3-canary-component-published-action-${{ github.run_id }}
+          name: rc4-canary-component-published-action-${{ github.run_id }}
           if-no-files-found: error
           path: |
             evidence/published-action.json
-            reports/rc3-action.json
-            reports/rc3-action.md
+            reports/rc4-action.json
+            reports/rc4-action.md
 
   container:
     name: Signed multiarch RC container
@@ -307,7 +309,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rc3-canary-component-container-${{ github.run_id }}
+          name: rc4-canary-component-container-${{ github.run_id }}
           path: evidence/container.json
           if-no-files-found: error
 
@@ -379,7 +381,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rc3-canary-component-external-consumers-${{ github.run_id }}
+          name: rc4-canary-component-external-consumers-${{ github.run_id }}
           path: evidence/external-consumers.json
           if-no-files-found: error
 
@@ -397,7 +399,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: rc3-canary-component-*-${{ github.run_id }}
+          pattern: rc4-canary-component-*-${{ github.run_id }}
           path: evidence/components
 
       - name: Create exact-run evidence manifest
