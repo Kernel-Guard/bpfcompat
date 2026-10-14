@@ -305,3 +305,55 @@ func TestSyncValidateReleasesSlot(t *testing.T) {
 		t.Fatalf("validate after all releases: got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// During graceful shutdown sync validate refuses new work with 503 like
+// validate/start, and a queued sync waiter never takes a freed slot.
+func TestSyncValidateRefusesDuringShutdown(t *testing.T) {
+	s := newSyncCapacityTestServer(t, 1, 1)
+	profileID := firstProfileIDForAsyncValidateTest(t)
+	fake := newBlockingValidateRunner()
+	s.runValidate = fake.run
+	defer fake.unblock()
+
+	runDone := make(chan int, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		s.handleValidate(rec, newValidateMultipartRequest(t, "/api/validate", profileID))
+		runDone <- rec.Code
+	}()
+	waitForCondition(t, "first run to start", func() bool { return fake.running.Load() == 1 })
+
+	queueDone := make(chan int, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		s.handleValidate(rec, newValidateMultipartRequest(t, "/api/validate", profileID))
+		queueDone <- rec.Code
+	}()
+	waitForCondition(t, "second request to queue", func() bool {
+		_, q := validateCounts(s)
+		return q == 1
+	})
+
+	s.shutting.Set(true)
+	// New submissions are refused before admission.
+	rec := httptest.NewRecorder()
+	s.handleValidate(rec, newValidateMultipartRequest(t, "/api/validate", profileID))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("new sync validate during shutdown: got %d, want 503 body=%s", rec.Code, rec.Body.String())
+	}
+
+	// The in-flight run drains; the queued waiter must not start a new run.
+	fake.unblock()
+	if code := <-runDone; code != http.StatusOK {
+		t.Fatalf("in-flight sync validate: got %d, want 200", code)
+	}
+	if code := <-queueDone; code != http.StatusServiceUnavailable {
+		t.Fatalf("queued sync validate during shutdown: got %d, want 503", code)
+	}
+	if got := fake.calls.Load(); got != 1 {
+		t.Fatalf("runner called %d times during shutdown, want 1 (only the in-flight run)", got)
+	}
+	if a, q := validateCounts(s); a != 0 || q != 0 {
+		t.Fatalf("capacity leaked after shutdown drain: active=%d queued=%d", a, q)
+	}
+}

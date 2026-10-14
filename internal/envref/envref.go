@@ -344,12 +344,12 @@ var catalog = []Var{
 	{
 		Name: "BPFCOMPAT_API_MAX_ACTIVE_VALIDATE_JOBS", Default: "2",
 		Category:    "HTTP Server",
-		Description: "Maximum concurrent VM-backed validate jobs. Hard cap is 64.",
+		Description: "Maximum concurrent VM-backed validate runs (async jobs and synchronous /api/v1/validate requests combined). Hard cap is 64.",
 	},
 	{
 		Name: "BPFCOMPAT_API_MAX_QUEUED_VALIDATE_JOBS", Default: "20",
 		Category:    "HTTP Server",
-		Description: "Maximum queued validate jobs. Beyond this, /api/v1/validate/start returns 429.",
+		Description: "Maximum queued validate jobs (shared by async /api/v1/validate/start and synchronous /api/v1/validate, which waits for a run slot while queued). Beyond this, both return 429.",
 	},
 	{
 		Name: "BPFCOMPAT_API_MAX_VALIDATE_CONCURRENCY", Default: "8",

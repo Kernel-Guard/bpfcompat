@@ -2348,6 +2348,12 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireWriteAuthorizationForAction(w, r, "validate"); !ok {
 		return
 	}
+	// Same drain behaviour as validate/start: refuse new VM runs once
+	// shutdown started (re-checked when a queued request gets a slot).
+	if s.shutting.Get() {
+		writeError(w, http.StatusServiceUnavailable, errValidateShuttingDown.Error())
+		return
+	}
 	// Sync validations share the async max-active / max-queued budget.
 	// Check capacity before reading the body (as validate/start does) so a
 	// full queue never costs an upload; the slot itself is taken after the
@@ -2677,6 +2683,10 @@ func (s *Server) ensureValidateJobCapacity() error {
 	return err
 }
 
+// errValidateShuttingDown carries the same message validate/start returns
+// with 503 during graceful shutdown.
+var errValidateShuttingDown = errors.New("server is shutting down; retry shortly")
+
 // validateCapacityLocked reports whether a new validation (sync or async)
 // may start running now (true) or must queue (false), or returns the
 // "queue is full" error when it must be rejected. Caller holds
@@ -2704,10 +2714,16 @@ func (s *Server) validateCapacityLocked() (bool, error) {
 // same admission semantics as an async job: run now if an active slot is
 // free, otherwise wait as a queued entry (if the queue has room) until a
 // slot frees up or ctx is cancelled (client disconnect), otherwise fail
-// with the "queue is full" error (status 429). On success the caller must
-// call the returned release func exactly once (it is idempotent).
+// with the "queue is full" error (status 429). Once shutdown has started
+// no slot is handed out (status 503), including to a queued waiter. On
+// success the caller must call the returned release func exactly once (it
+// is idempotent).
 func (s *Server) acquireSyncValidateRunSlot(ctx context.Context) (func(), int, error) {
 	s.validateJobs.mu.Lock()
+	if s.shutting.Get() {
+		s.validateJobs.mu.Unlock()
+		return nil, http.StatusServiceUnavailable, errValidateShuttingDown
+	}
 	runNow, err := s.validateCapacityLocked()
 	if err != nil {
 		s.validateJobs.mu.Unlock()
@@ -2740,12 +2756,19 @@ func (s *Server) acquireSyncValidateRunSlot(ctx context.Context) (func(), int, e
 
 // waitForSyncValidateRunSlot converts one syncQueued entry into a
 // syncRunning one when an active slot frees up, polling like
-// waitForValidateRunSlot. On ctx cancellation the queued entry is dropped.
+// waitForValidateRunSlot. On ctx cancellation or shutdown the queued entry
+// is dropped instead.
 func (s *Server) waitForSyncValidateRunSlot(ctx context.Context) error {
 	ticker := time.NewTicker(150 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		s.validateJobs.mu.Lock()
+		if s.shutting.Get() {
+			s.validateJobs.syncQueued--
+			s.validateJobs.mu.Unlock()
+			s.refreshValidateJobsGauge()
+			return errValidateShuttingDown
+		}
 		active, _ := s.validateJobCountsLocked()
 		if active < maxActiveValidateJobs() {
 			s.validateJobs.syncQueued--
