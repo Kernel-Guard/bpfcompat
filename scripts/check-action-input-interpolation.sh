@@ -15,8 +15,14 @@
 # evaluated by the runner, never by a shell, so they are allowed.
 #
 # Flagged inside any step's `run:` (case-insensitive, any expression that
-# merely mentions them, e.g. format(..., inputs.x)):
-#   inputs.*  inputs[...]  github.event.*  github.head_ref
+# merely mentions them as a whole word, e.g. format(..., inputs.x)):
+#   inputs (inputs.x, inputs[...], toJSON(inputs), bare inputs)
+#   env    (env.X, env[...]): indirect -- read $X from the environment instead
+#   github.event.*, github.head_ref, and bare github (toJSON(github), which
+#          embeds the whole event payload); other github.<prop> are allowed
+# Expressions are scanned from `${{` to the first `}}` outside a single-quoted
+# string literal ('' escapes a quote), so format('}}', inputs.x) cannot hide
+# the tainted part; an unterminated `${{` is flagged as well.
 #
 # Defaults to the repository's action.yml. Exits 0 on PASS, 1 on a finding,
 # 2 on an unreadable/invalid file.
@@ -45,12 +51,47 @@ if not isinstance(doc, dict):
     print(f"[action-input-interpolation] {path}: not a mapping", file=sys.stderr)
     sys.exit(2)
 
-EXPR = re.compile(r"\$\{\{(.*?)\}\}", re.S)
+WORD = r"(?<![\w.-])"   # not a property of something else (steps.x.inputs)
+END = r"(?![\w-])"
 TAINTED = re.compile(
-    r"(?<![\w.-])(inputs\s*(\.|\[)|github\s*(\.\s*event\b|\[\s*['\"]event['\"])"
-    r"|github\s*(\.\s*head_ref\b|\[\s*['\"]head_ref['\"]))",
+    WORD + r"(inputs|env)" + END
+    + "|" + WORD + r"github" + END + r"(?!\s*[.\[])"            # bare github
+    + "|" + WORD + r"github\s*\.\s*(event|head_ref)" + END
+    # github[...] passes only as a quoted literal naming a safe property, so a
+    # computed index (github[format(...)]) cannot reach event data.
+    + "|" + WORD + r"github\s*\[(?!\s*'(?!(event|head_ref)')[\w-]+'\s*\])",
     re.I,
 )
+
+
+def expressions(script):
+    """Yield (offset, text) for each ${{ ... }} in script.
+
+    The closing }} is the first one outside a single-quoted string literal
+    ('' is an escaped quote inside one). An unterminated expression runs to
+    the end of the script, so it is still scanned rather than skipped.
+    """
+    i = 0
+    while True:
+        start = script.find("${{", i)
+        if start < 0:
+            return
+        j, in_str = start + 3, False
+        while j < len(script):
+            c = script[j]
+            if in_str:
+                if c == "'":
+                    if script.startswith("''", j):
+                        j += 2
+                        continue
+                    in_str = False
+            elif c == "'":
+                in_str = True
+            elif script.startswith("}}", j):
+                break
+            j += 1
+        yield start, script[start:j + 2]
+        i = j + 2
 
 
 def steps_of(doc):
@@ -75,10 +116,10 @@ for label, step in steps_of(doc):
     if not isinstance(script, str):
         continue
     name = step.get("name") or step.get("id") or ""
-    for m in EXPR.finditer(script):
-        if TAINTED.search(m.group(1)):
-            lineno = script.count("\n", 0, m.start()) + 1
-            findings.append(f"{label} ({name}) run line {lineno}: {m.group(0).strip()}")
+    for start, expr in expressions(script):
+        if TAINTED.search(expr[3:]):
+            lineno = script.count("\n", 0, start) + 1
+            findings.append(f"{label} ({name}) run line {lineno}: {expr.strip()}")
 
 if findings:
     for f in findings:
