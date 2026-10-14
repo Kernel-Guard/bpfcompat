@@ -65,6 +65,12 @@ Action — one or more kernel profiles, each booted in a disposable VM. It does
 **not** load on the host (use `ValidateBeforeLoad` for that). Returns a `Report`
 with one `Result` per profile plus the raw on-disk report.
 
+If `Config.WorkDir` is empty, `Validate` runs in a private temp directory. It is
+removed if `Validate` returns an error; on success it is returned as
+`Report.TempWorkDir` (run artifacts under `Report.RunDir` live inside it) and
+the caller should `defer rep.Cleanup()` once done with them. A caller-supplied
+`WorkDir` is never removed.
+
 ## Options
 
 - `WithMode(LoadOnly | LoadAttach)` — `LoadOnly` (default) runs the verifier
