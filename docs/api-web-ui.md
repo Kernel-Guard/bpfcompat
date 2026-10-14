@@ -86,7 +86,7 @@ Open:
 - `GET /api/history/run-report?run_id=<run-id>`
 - `POST /api/compare`
 - `GET /api/runtime/probe`
-- `GET /api/runtime/decisions?limit=<n>&workdir=<path>`
+- `GET /api/runtime/decisions?limit=<n>` (a `workdir` query parameter is rejected with `400 Bad Request`; the server reads only its own workdir)
 - `POST /api/runtime/select`
 - `POST /api/runtime/fetch`
 - `POST /api/runtime/execute` (JSON body, explicit `allow_host_load=true` required)
@@ -137,7 +137,8 @@ probes with its own sudo defaults. They remain query options of
 Request-level overrides rejected by select/fetch/execute (`400 Bad Request`
 with a fixed message that does not echo the supplied value):
 
-- `workdir` (select, fetch, execute): the server always reads its own
+- `workdir` (select, fetch, execute, and the `GET /api/runtime/decisions`
+  query string): the server always reads its own
   configured workdir; a caller cannot point it at another tenant's registry
   or any other directory.
 - `out_dir` (fetch, execute): fetched artifacts are always written under the

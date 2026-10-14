@@ -422,8 +422,8 @@ func (p runtimeProbeOptionsRequest) toRuntimeProbeOptions() runtime.ProbeOptions
 // directory, manifest, validator), disable the verified-history gate, or
 // change how the sudo host probe and the execute worker run. The API always
 // uses the server's configured workdir and output directory, so
-// /api/runtime/select, /api/runtime/fetch and /api/runtime/execute share this
-// one rule set. Fields that an endpoint does not decode stay zero.
+// /api/runtime/select, /api/runtime/fetch, /api/runtime/execute and
+// /api/runtime/decisions share this one rule set. Fields that an endpoint does not decode stay zero.
 type runtimeRequestOverrides struct {
 	OutDir                 string
 	WorkDir                string
@@ -805,11 +805,12 @@ func (s *Server) handleRuntimeDecisions(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireReadAuthorizationForAction(w, r, "runtime_decisions"); !ok {
 		return
 	}
-	limit := parseIntOrDefault(r.URL.Query().Get("limit"), 200)
-	workDir := strings.TrimSpace(r.URL.Query().Get("workdir"))
-	if workDir == "" {
-		workDir = s.cfg.WorkDir
+	if msg := (runtimeRequestOverrides{WorkDir: r.URL.Query().Get("workdir")}).rejection("decisions"); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
+	limit := parseIntOrDefault(r.URL.Query().Get("limit"), 200)
+	workDir := s.cfg.WorkDir
 	events, err := runtime.ListDecisionEvents(workDir, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("read runtime decision history: %v", err))
