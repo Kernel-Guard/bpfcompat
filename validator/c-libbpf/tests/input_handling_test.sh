@@ -4,7 +4,9 @@
 #    as valid UTF-8 JSON, with invalid bytes replaced by U+FFFD and valid
 #    multi-byte UTF-8 kept as-is;
 #  - --set-map-max-entries values with leading zeros must apply exactly the
-#    number the caller asked for.
+#    number the caller asked for;
+#  - an overlong functional-plan line must fail the plan instead of being
+#    split and re-parsed as a new key=value.
 #
 # Runs WITHOUT loading anything into the host kernel: the validator is
 # rebuilt with -Wl,--wrap so bpf_object__load / bpf_map_create /
@@ -105,6 +107,47 @@ j="$work/maxent-cpus.json"
 run 0 "$j" --set-map-max-entries "runtime_sized=cpus"
 check "max_entries=cpus still resolves to the CPU count" \
   '.map_fixups[0] | .status == "applied" and .max_entries == "cpus" and .applied_entries > 0' "$j"
+
+# --- functional plan: overlong lines fail the plan, nothing runs ----------
+# The C parser reads lines into a 2048-byte buffer. A longer
+# expect_stdout_contains value used to be split there and its tail parsed
+# as a fresh key=value, letting the manifest author smuggle in
+# expect_exit_code=7 (and run the command under it).
+python3 -I - "$work" <<'EOF'
+import sys
+work = sys.argv[1]
+prefix = "expect_stdout_contains="
+# fgets(line, 2048) returns at most 2047 bytes; make the remainder of the
+# split line start with "expect_exit_code=7".
+value = "A" * (2047 - len(prefix)) + "expect_exit_code=7"
+with open(f"{work}/overlong.plan", "w") as f:
+    f.write("functional_plan.v0.1\nBEGIN\nname=t1\nrequired=true\n"
+            "timeout_seconds=10\nexpect_exit_code=0\n"
+            f"{prefix}{value}\nexpect_stderr_contains=\n"
+            f"command=touch {work}/overlong-ran; exit 7\nEND\n")
+# Control: a well-formed plan whose last line has no trailing newline.
+with open(f"{work}/ok.plan", "w") as f:
+    f.write("functional_plan.v0.1\nBEGIN\nname=ok\nrequired=true\n"
+            "timeout_seconds=10\nexpect_exit_code=0\nexpect_stdout_contains=hi\n"
+            "expect_stderr_contains=\ncommand=echo hi\nEND")
+EOF
+j="$work/plan-overlong.json"
+run 2 "$j" --attach-mode best-effort --functional-plan "$work/overlong.plan"
+check "overlong plan line fails the functional plan" '.status == "fail" and .functional.status == "fail"' "$j"
+check "overlong plan line: single functional-plan error naming the line" \
+  '.functional.tests | length == 1 and .[0].name == "functional-plan" and .[0].status == "fail" and (.[0].error | test("line 7 .*too long"))' "$j"
+check "overlong plan line: no smuggled expect_exit_code" \
+  '[.functional.tests[] | select(.expected_exit_code == 7)] | length == 0' "$j"
+if [[ -e "$work/overlong-ran" ]]; then
+  echo "FAIL - overlong plan line: command from a rejected plan was executed"
+  fail=1
+else
+  echo "ok   - overlong plan line: no command executed"
+fi
+j="$work/plan-ok.json"
+run 0 "$j" --attach-mode best-effort --functional-plan "$work/ok.plan"
+check "well-formed plan without final newline still passes" \
+  '.functional.status == "pass" and (.functional.tests | length == 1) and .functional.tests[0].name == "ok"' "$j"
 
 if [[ $fail -ne 0 ]]; then
   echo "input_handling_test: FAIL"

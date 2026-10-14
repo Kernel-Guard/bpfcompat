@@ -186,6 +186,7 @@ struct validator_result {
     int functional_test_count;
     struct functional_test functional_tests[MAX_ITEMS];
     char functional_status[16];
+    bool functional_plan_invalid; /* plan rejected; run nothing from it */
     bool load_ok;
     int load_errno;
     char load_error[256];
@@ -1154,49 +1155,82 @@ static void set_functional_field(struct functional_test *test, const char *key, 
     }
 }
 
+/* Reject the whole plan: drop any tests parsed so far, report a single
+ * failing "functional-plan" entry carrying the reason, and make
+ * run_functional_tests leave that verdict alone (nothing from a rejected
+ * plan is executed). */
+static void fail_functional_plan(struct validator_result *res, const char *error) {
+    fprintf(stderr, "functional plan rejected: %s\n", error);
+    res->functional_plan_invalid = true;
+    res->functional_test_count = 0;
+    snprintf(res->functional_status, sizeof(res->functional_status), "fail");
+    struct functional_test *test = &res->functional_tests[res->functional_test_count++];
+    init_functional_test(test);
+    snprintf(test->name, sizeof(test->name), "functional-plan");
+    snprintf(test->status, sizeof(test->status), "fail");
+    snprintf(test->error, sizeof(test->error), "%s", error);
+}
+
+/* fgets wrapper for the plan parser: returns 1 for a complete line, 0 at
+ * EOF, -1 when the line does not fit in buf. Without this check fgets
+ * would hand back the rest of an overlong line as the next "line", which
+ * the parser would then read as a fresh key=value. A final line without
+ * a trailing newline is complete. */
+static int read_plan_line(char *buf, int size, FILE *f) {
+    if (!fgets(buf, size, f)) {
+        return 0;
+    }
+    if (!strchr(buf, '\n')) {
+        int c = fgetc(f);
+        if (c != EOF) {
+            return -1;
+        }
+    }
+    return 1;
+}
+
 static void load_functional_plan(struct validator_result *res) {
     snprintf(res->functional_status, sizeof(res->functional_status), "skipped");
     if (!res->opts.functional_plan || !res->opts.functional_plan[0]) {
         return;
     }
 
+    char error[256];
     FILE *f = fopen(res->opts.functional_plan, "r");
     if (!f) {
-        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
-        if (res->functional_test_count < MAX_ITEMS) {
-            struct functional_test *test = &res->functional_tests[res->functional_test_count++];
-            init_functional_test(test);
-            snprintf(test->name, sizeof(test->name), "functional-plan");
-            snprintf(test->status, sizeof(test->status), "fail");
-            snprintf(test->error, sizeof(test->error), "open functional plan failed: %s", strerror(errno));
-        }
+        snprintf(error, sizeof(error), "open functional plan failed: %s", strerror(errno));
+        fail_functional_plan(res, error);
         return;
     }
 
     char line[2048];
+    int line_no = 1;
     bool in_test = false;
     struct functional_test current;
     init_functional_test(&current);
 
-    if (!fgets(line, sizeof(line), f)) {
+    int rc = read_plan_line(line, (int)sizeof(line), f);
+    if (rc == 0) {
         fclose(f);
         return;
     }
     trim_line_end(line);
-    if (strcmp(line, "functional_plan.v0.1") != 0) {
+    if (rc < 0 || strcmp(line, "functional_plan.v0.1") != 0) {
         fclose(f);
-        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
-        if (res->functional_test_count < MAX_ITEMS) {
-            struct functional_test *test = &res->functional_tests[res->functional_test_count++];
-            init_functional_test(test);
-            snprintf(test->name, sizeof(test->name), "functional-plan");
-            snprintf(test->status, sizeof(test->status), "fail");
-            snprintf(test->error, sizeof(test->error), "unsupported functional plan version");
-        }
+        fail_functional_plan(res, "unsupported functional plan version");
         return;
     }
 
-    while (fgets(line, sizeof(line), f)) {
+    while ((rc = read_plan_line(line, (int)sizeof(line), f)) != 0) {
+        line_no++;
+        if (rc < 0) {
+            fclose(f);
+            snprintf(error, sizeof(error),
+                     "functional plan line %d is too long (max %zu bytes); plan not run",
+                     line_no, sizeof(line) - 2);
+            fail_functional_plan(res, error);
+            return;
+        }
         trim_line_end(line);
         if (strcmp(line, "BEGIN") == 0) {
             init_functional_test(&current);
@@ -1444,6 +1478,10 @@ static void run_functional_command(struct functional_test *test) {
 }
 
 static void run_functional_tests(struct validator_result *res) {
+    if (res->functional_plan_invalid) {
+        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
+        return;
+    }
     if (res->functional_test_count == 0) {
         snprintf(res->functional_status, sizeof(res->functional_status), "skipped");
         return;
