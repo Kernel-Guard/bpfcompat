@@ -131,7 +131,15 @@ const (
 var apiProfileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var apiAllowedClangFlagPattern = regexp.MustCompile(`^(-D[A-Za-z_][A-Za-z0-9_]*(=.*)?|-U[A-Za-z_][A-Za-z0-9_]*)$`)
 var apiSafeUploadFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-var apiAbsolutePathPattern = regexp.MustCompile(`(/[A-Za-z0-9._-]+)+`)
+
+// apiAbsolutePathPattern matches an absolute filesystem path inside an error
+// message. Group 1 is the boundary before the path: the start of the message
+// or a character that cannot end a word or number, so slash-separated text
+// such as "active=1/1" or "and/or" is not treated as a path. Group 2 is the
+// path itself: one or more "/"-separated segments of any characters except
+// whitespace, quotes and common delimiters (non-ASCII segments included), plus
+// repeated or trailing slashes.
+var apiAbsolutePathPattern = regexp.MustCompile("(^|[^A-Za-z0-9._-])((?:/+[^\\s/\"'`()<>\\[\\]{},;|]+)+/*)")
 
 type Config struct {
 	Addr               string
@@ -3753,11 +3761,23 @@ func redactErrorMessage(message string) string {
 	if message == "" {
 		return message
 	}
-	return apiAbsolutePathPattern.ReplaceAllStringFunc(message, func(match string) string {
-		base := filepath.Base(match)
+	matches := apiAbsolutePathPattern.FindAllStringSubmatchIndex(message, -1)
+	if len(matches) == 0 {
+		return message
+	}
+	var out strings.Builder
+	last := 0
+	for _, m := range matches {
+		// m[4]:m[5] is the path (group 2); the boundary in group 1 is kept.
+		out.WriteString(message[last:m[4]])
+		base := filepath.Base(message[m[4]:m[5]])
 		if base == "" || base == "." || base == "/" {
-			return "[redacted]"
+			out.WriteString("[redacted]")
+		} else {
+			out.WriteString("[redacted]/" + base)
 		}
-		return "[redacted]/" + base
-	})
+		last = m[5]
+	}
+	out.WriteString(message[last:])
+	return out.String()
 }
