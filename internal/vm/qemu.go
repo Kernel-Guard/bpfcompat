@@ -528,10 +528,19 @@ func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget
 		}
 	}
 
-	// Record the kernel the command ran against (best-effort; not fatal).
-	if release, err := sshOutput(ctx, target, "uname -r"); err == nil {
-		result.HostRelease = release
+	// Record the kernel the command is about to run against. The release is
+	// the identity of a command-mode result: without it the verdict cannot be
+	// tied to a kernel, so failing to record it is an infrastructure error and
+	// the user command is not started. The machine string stays best-effort.
+	release, err := sshOutput(ctx, target, "uname -r")
+	if err == nil && strings.TrimSpace(release) == "" {
+		err = fmt.Errorf("uname -r returned empty output")
 	}
+	if err != nil {
+		result.InfraError = fmt.Sprintf("record guest kernel release: %v", err)
+		return
+	}
+	result.HostRelease = release
 	if machine, err := sshOutput(ctx, target, "uname -m"); err == nil {
 		result.HostMachine = machine
 	}
