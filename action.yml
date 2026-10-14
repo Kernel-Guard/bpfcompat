@@ -231,8 +231,10 @@ runs:
       id: run
       shell: bash
       env:
-        # Free-text inputs go through the environment, never inline
-        # interpolation, so they cannot inject host-side shell syntax.
+        # Every input reaches the script through the environment, never
+        # inline expression interpolation: the runner pastes an interpolated
+        # value into the script text, so a caller-controlled value would be
+        # shell source (CI: scripts/check-action-input-interpolation.sh).
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_COMMAND_BINARY: ${{ inputs.command-binary }}
         INPUT_COMMAND_EXPECT_EXIT: ${{ inputs.command-expect-exit }}
@@ -246,6 +248,19 @@ runs:
         INPUT_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
         INPUT_DIFF_OUT: ${{ inputs.diff-out }}
         INPUT_DIFF_MARKDOWN: ${{ inputs.diff-markdown }}
+        INPUT_MATRIX: ${{ inputs.matrix }}
+        INPUT_OUT: ${{ inputs.out }}
+        INPUT_MANIFEST: ${{ inputs.manifest }}
+        INPUT_MARKDOWN: ${{ inputs.markdown }}
+        INPUT_WORKDIR: ${{ inputs.workdir }}
+        INPUT_SUITE_OUT: ${{ inputs.suite-out }}
+        INPUT_SUITE_MARKDOWN: ${{ inputs.suite-markdown }}
+        INPUT_BINARY: ${{ inputs.binary }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        INPUT_DISK_RESIZE: ${{ inputs.disk-resize }}
+        INPUT_VALIDATION_MODE: ${{ inputs.validation-mode }}
+        INPUT_KEEP_VM_ON_FAILURE: ${{ inputs.keep-vm-on-failure }}
       run: |
         set -euo pipefail
 
@@ -288,7 +303,7 @@ runs:
           return 1
         }
 
-        artifact_input="${{ inputs.artifact }}"
+        artifact_input="$INPUT_ARTIFACT"
         artifact_is_remote=false
         if [[ -n "$artifact_input" ]] && is_remote_artifact "$artifact_input"; then
           artifact_path="$artifact_input"
@@ -296,29 +311,29 @@ runs:
         else
           artifact_path="$(resolve_path "$artifact_input")"
         fi
-        matrix_path="$(resolve_path "${{ inputs.matrix }}")"
+        matrix_path="$(resolve_path "$INPUT_MATRIX")"
         command_binary_path="$(resolve_path "$INPUT_COMMAND_BINARY")"
 
         # Built-in matrix convenience: a bare name (e.g. quirk-library) that
         # does not exist in the caller repo resolves to the matrices/ directory
         # shipped with the action.
         if [[ -n "$matrix_path" && ! -f "$matrix_path" ]]; then
-          matrix_input="${{ inputs.matrix }}"
+          matrix_input="$INPUT_MATRIX"
           if [[ "$matrix_input" != /* && -f "$action_root/matrices/${matrix_input}.yaml" ]]; then
             matrix_path="$action_root/matrices/${matrix_input}.yaml"
           elif [[ "$matrix_input" != /* && -f "$action_root/$matrix_input" ]]; then
             matrix_path="$action_root/$matrix_input"
           fi
         fi
-        out_path="$(resolve_path "${{ inputs.out }}")"
-        manifest_path="$(resolve_path "${{ inputs.manifest }}")"
-        markdown_path="$(resolve_path "${{ inputs.markdown }}")"
-        workdir_path="$(resolve_path "${{ inputs.workdir }}")"
-        suite_path="$(resolve_path "${{ inputs.suite }}")"
-        suite_out_path="$(resolve_path "${{ inputs.suite-out }}")"
-        suite_markdown_path="$(resolve_path "${{ inputs.suite-markdown }}")"
+        out_path="$(resolve_path "$INPUT_OUT")"
+        manifest_path="$(resolve_path "$INPUT_MANIFEST")"
+        markdown_path="$(resolve_path "$INPUT_MARKDOWN")"
+        workdir_path="$(resolve_path "$INPUT_WORKDIR")"
+        suite_path="$(resolve_path "$INPUT_SUITE")"
+        suite_out_path="$(resolve_path "$INPUT_SUITE_OUT")"
+        suite_markdown_path="$(resolve_path "$INPUT_SUITE_MARKDOWN")"
 
-        binary_input="${{ inputs.binary }}"
+        binary_input="$INPUT_BINARY"
         binary_path=""
         if [[ "$binary_input" = /* ]]; then
           binary_path="$binary_input"
@@ -358,9 +373,9 @@ runs:
             suite
             --suite "$suite_path"
             --out "$suite_out_path"
-            --timeout "${{ inputs.timeout }}"
+            --timeout "$INPUT_TIMEOUT"
             --workdir "$workdir_path"
-            --concurrency "${{ inputs.concurrency }}"
+            --concurrency "$INPUT_CONCURRENCY"
           )
           if [[ -n "$suite_markdown_path" ]]; then
             cmd+=(--markdown "$suite_markdown_path")
@@ -430,9 +445,9 @@ runs:
           test
           --matrix "$matrix_path"
           --out "$out_path"
-          --timeout "${{ inputs.timeout }}"
+          --timeout "$INPUT_TIMEOUT"
           --workdir "$workdir_path"
-          --concurrency "${{ inputs.concurrency }}"
+          --concurrency "$INPUT_CONCURRENCY"
         )
 
         if [[ -n "$artifact_path" ]]; then
@@ -450,16 +465,16 @@ runs:
         if [[ -n "$manifest_path" ]]; then
           cmd+=(--manifest "$manifest_path")
         fi
-        if [[ -n "${{ inputs.disk-resize }}" && "${{ inputs.disk-resize }}" != "0" ]]; then
-          cmd+=(--disk-resize "${{ inputs.disk-resize }}")
+        if [[ -n "$INPUT_DISK_RESIZE" && "$INPUT_DISK_RESIZE" != "0" ]]; then
+          cmd+=(--disk-resize "$INPUT_DISK_RESIZE")
         fi
-        if [[ -n "${{ inputs.validation-mode }}" ]]; then
-          cmd+=(--validation-mode "${{ inputs.validation-mode }}")
+        if [[ -n "$INPUT_VALIDATION_MODE" ]]; then
+          cmd+=(--validation-mode "$INPUT_VALIDATION_MODE")
         fi
         if [[ -n "$markdown_path" ]]; then
           cmd+=(--markdown "$markdown_path")
         fi
-        if [[ "${{ inputs.keep-vm-on-failure }}" == "true" ]]; then
+        if [[ "$INPUT_KEEP_VM_ON_FAILURE" == "true" ]]; then
           cmd+=(--keep-vm-on-failure=true)
         fi
 
