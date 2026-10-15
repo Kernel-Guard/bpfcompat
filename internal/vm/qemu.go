@@ -843,6 +843,7 @@ func startQEMU(ctx context.Context, profile Profile, overlayPath, serialLogPath,
 
 	qemuBinary := qemuSystemBinary(profile)
 	cmd := exec.CommandContext(ctx, qemuBinary, args...)
+	killWithParent(cmd)
 	cmd.Stdout = qemuLog
 	cmd.Stderr = qemuLog
 	if err := cmd.Start(); err != nil {

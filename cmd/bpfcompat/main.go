@@ -660,7 +660,14 @@ func runServe(args []string) int {
 		return runner.ExitToolError
 	}
 
-	if err := api.Serve(context.Background(), api.Config{
+	// SIGINT/SIGTERM start the graceful drain (Serve returns once in-flight
+	// validations finish or are cancelled at the drain timeout). After the
+	// first signal default handling is restored, so a second one forces exit.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	context.AfterFunc(ctx, stop)
+
+	if err := api.Serve(ctx, api.Config{
 		Addr:               *addr,
 		WorkDir:            *workDir,
 		DefaultMatrixPath:  *matrixPath,
