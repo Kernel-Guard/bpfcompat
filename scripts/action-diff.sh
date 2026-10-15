@@ -16,7 +16,7 @@
 # Inputs (environment): INPUT_BASELINE_REPORT, INPUT_CANDIDATE_REPORT,
 # INPUT_BASELINE_REPORT_SHA256, INPUT_CANDIDATE_REPORT_SHA256,
 # INPUT_FAIL_ON_REGRESSION, INPUT_FAIL_ON_INCOMPLETE, INPUT_DIFF_OUT,
-# INPUT_DIFF_MARKDOWN, INPUT_ARTIFACT, INPUT_COMMAND, INPUT_SUITE,
+# INPUT_DIFF_MARKDOWN, INPUT_REQUIRE_GATE, INPUT_ARTIFACT, INPUT_COMMAND, INPUT_SUITE,
 # BPFCOMPAT_BIN, GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_OUTPUT,
 # GITHUB_STEP_SUMMARY.
 #
@@ -122,6 +122,7 @@ fi
 
 fail_on_regression="$(bool_input fail-on-regression "${INPUT_FAIL_ON_REGRESSION:-}" true)"
 fail_on_incomplete="$(bool_input fail-on-incomplete "${INPUT_FAIL_ON_INCOMPLETE:-}" true)"
+require_gate="$(bool_input require-gate "${INPUT_REQUIRE_GATE:-}" false)"
 
 baseline="$(resolve_report baseline-report "${INPUT_BASELINE_REPORT:-}")"
 candidate="$(resolve_report candidate-report "${INPUT_CANDIDATE_REPORT:-}")"
@@ -176,6 +177,9 @@ regressions="$(jq -r .summary.new_required_regressions "$diff_json")"
 inconclusive="$(jq -r .summary.inconclusive_required "$diff_json")"
 coverage_removed="$(jq -r .summary.coverage_removed_required "$diff_json")"
 incomplete=$((inconclusive + coverage_removed))
+# summary.gate is "enforced" only when the diff compared at least one required
+# cell. An absent field (an older binary) is no gate evidence, never a gate.
+gate="$(jq -r '.summary.gate // ""' "$diff_json")"
 
 policy_failed=false
 reasons=()
@@ -187,6 +191,10 @@ if [[ "$fail_on_incomplete" == true && "$incomplete" -gt 0 ]]; then
   policy_failed=true
   reasons+=("$incomplete required comparison(s) could not be established and fail-on-incomplete is true")
 fi
+if [[ "$require_gate" == true && "$gate" != enforced ]]; then
+  policy_failed=true
+  reasons+=("no required comparison (gate '${gate:-absent}'): diagnostic diff, not a gate, and require-gate is true")
+fi
 
 set_output result "$result"
 set_output new-required-regressions "$regressions"
@@ -194,6 +202,7 @@ set_output inconclusive-required "$inconclusive"
 set_output coverage-removed-required "$coverage_removed"
 set_output diff-json "$diff_json"
 set_output diff-markdown "$diff_md"
+set_output gate "$gate"
 
 {
   echo
@@ -207,6 +216,10 @@ set_output diff-markdown "$diff_md"
   echo '`NEW_REGRESSIONS` means a required kernel the baseline supported is broken in the candidate.'
   echo '`INCONCLUSIVE` means a required comparison could not be established (infrastructure error, missing result, or a different kernel); it is not a claim about the candidate.'
   echo
+  if [[ "$require_gate" == true ]]; then
+    echo "require-gate: \`true\` — gate \`${gate:-absent}\` (a diff with no required cell is diagnostic, not a gate, and fails this policy)."
+    echo
+  fi
   if [[ -f "$diff_md" ]]; then
     cat -- "$diff_md"
   else

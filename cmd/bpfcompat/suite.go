@@ -32,6 +32,7 @@ func runSuite(args []string) int {
 	concurrency := fs.Int("concurrency", 0, "Override maximum concurrent VM jobs per case")
 	stopOnFailure := fs.Bool("stop-on-failure", false, "Stop after the first case that does not pass")
 	asJSON := fs.Bool("json", false, "Print suite summary JSON to stdout")
+	requireGate := fs.Bool("require-gate", false, "Exit 1 for every case whose matrix has no required target (no compatibility gate evaluated). Default: such cases pass as diagnostic runs")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat suite --suite <file> --out <file> [flags]\n\n")
 		fs.PrintDefaults()
@@ -73,6 +74,7 @@ func runSuite(args []string) int {
 		Concurrency:           *concurrency,
 		StopOnFailure:         *stopOnFailure,
 		UnsafeAllowHostRunner: unsafeAllowHostRunner,
+		RequireGate:           *requireGate,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bpfcompat suite failed: %v\n", err)
@@ -96,8 +98,14 @@ func printSuiteSummary(summary suite.Summary) {
 	fmt.Printf("Suite: %s\n", summary.Name)
 	fmt.Printf("Status: %s\n", summary.Status)
 	fmt.Printf("Exit Code: %d\n", summary.ExitCode)
+	if summary.Gate != "" {
+		fmt.Printf("Gate: %s\n", summary.Gate)
+	}
 	for _, c := range summary.Cases {
 		line := fmt.Sprintf("  - %s: %s", c.Name, c.Status)
+		if c.Gate != "" {
+			line += fmt.Sprintf(" gate=%s", c.Gate)
+		}
 		if c.RunID != "" {
 			line += fmt.Sprintf(" run=%s", c.RunID)
 		}

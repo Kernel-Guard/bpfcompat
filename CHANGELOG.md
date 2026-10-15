@@ -28,6 +28,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   - The Action job summary of a run with no required target is titled
     "Compatibility Run (diagnostic, no gate)", with the Gate line ahead of
     Status.
+  - The `--markdown` test report prints the gate.
+  - `bpfcompat suite` records `cases[].gate` and an aggregate
+    `summary.gate` (`enforced` | `none` | `partial` | `unknown`) and shows
+    them in its Markdown. Opt-in `suite --require-gate` fails (exit 1) every
+    case that evaluated no gate. Default suite exit codes are unchanged.
+  - New opt-in `require-gate` Action input (default `false`, strict
+    boolean, passed only through the environment). It reaches `test`,
+    `test-command` and `suite` as `--require-gate`. In diff mode it fails
+    the policy unless the diff's `summary.gate` is `enforced`; a missing
+    gate field is not a gate. Adds a `diff-gate` output.
   - See `docs/gate-contract.md`.
 
 ## [0.4.0-rc.4] - 2026-10-14

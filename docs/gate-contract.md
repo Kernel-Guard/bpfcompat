@@ -46,7 +46,7 @@ page defines how the two are told apart.
     compatibility gate.` line comes **before** Status and Verdict.
   - It is derived from the targets, so older reports get it too. Gated runs
     keep the established title and layout.
-- **`--require-gate`** is opt-in, on `bpfcompat test` and `test-command`.
+- **`--require-gate`** is opt-in, on `bpfcompat test` and `test-command` (and on `suite` and `diff`, below).
   - A finished run with `summary.gate: "none"` exits **1** instead of 0, and
     says why on stderr.
   - Exit 1 is the "requested contract not established" class, the same as
@@ -78,6 +78,60 @@ page defines how the two are told apart.
     same handling as `summary.verdict` and `summary.complete`.
 - **An empty matrix** (no targets at all) is rejected before any run:
   "matrix must contain at least one profile", exit 1.
+- **The `--markdown` test report** prints `- Gate: enforced` or `- Gate:
+  none — no required targets: diagnostic run, not a compatibility gate` next
+  to Status and Verdict.
+
+### Suites (`bpfcompat suite`)
+
+- **Per case:** `cases[].gate` is the case report's gate, derived from its
+  targets: `enforced` or `none`. A case that produced no report (setup or
+  run error, cancellation) is `unknown`. A case whose report has no targets
+  is `none`.
+- **In aggregate:** `summary.gate` is
+  - `enforced` only when **every** case is enforced,
+  - `none` when **no** case is,
+  - `partial` when some are, and `unknown` for an empty case list.
+
+  `unknown` never counts as enforced, so missing evidence cannot make a suite
+  look gated.
+- **Markdown:** the suite Markdown prints the suite gate next to Status and
+  adds a Gate column per case. `bpfcompat suite` (text output) prints
+  `Gate:` and `gate=` per case.
+- **Default exit codes are unchanged.** A diagnostic case passes as before,
+  and the suite keeps its existing precedence: any exit-1 case makes the
+  suite exit 1, otherwise any exit-2 case makes it exit 2.
+- **`bpfcompat suite --require-gate`** applies **per case**: every case must
+  evaluate a gate.
+  - A case whose gate is not `enforced` and that would otherwise pass becomes
+    `status: error`, `exit_code: 1`, with an `error` saying why. The suite
+    then exits 1.
+  - A case that already failed keeps its exit code. A gated case is
+    untouched, including a required failure at exit 2. With the suite's
+    existing precedence, a suite that has both a diagnostic case and a
+    required failure exits 1.
+
+### GitHub Action (`require-gate` input)
+
+- **Opt-in:** `require-gate: "true"`. The default `"false"` runs the same
+  command as before. All 14 in-repo invocations of the action (`uses: ./`
+  and `@main`), across 10 workflows including the release, external-canary,
+  consumer-canary source and latest-kernel ones, were replayed through the
+  action's run step from main and from this change. They produced identical
+  argv, exit codes and outputs. The only difference is the additive
+  `diff-gate` output in diff mode.
+- **Validation:** the value must be exactly `true` or `false`. It reaches the
+  shell only through the step environment (`INPUT_REQUIRE_GATE`), never by
+  inline interpolation, and anything else fails the step before the CLI runs.
+- **test and command mode:** `true` adds `--require-gate` to `bpfcompat
+  test`, and the step's exit is the CLI's.
+- **suite mode:** `true` adds `--require-gate` to `bpfcompat suite`
+  (per-case semantics above).
+- **diff mode** (`scripts/action-diff.sh`):
+  - `true` fails the policy unless the diff JSON's `summary.gate` is
+    `enforced`. An absent field, as from an older binary, is no gate
+    evidence and fails.
+  - The new `diff-gate` output carries the gate.
 
 A CI consumer that wants a gate should do one of the following:
 
@@ -128,12 +182,20 @@ optional:
 | After | NO_NEW_REGRESSIONS | 1 | none / none / none (+ note, + Markdown lines) | 0 |
 | After, `--require-gate` | NO_NEW_REGRESSIONS | 1 | none / none / none | **1** |
 
+**Suite, real VMs.** Two artifact-mode cases (`simple_pass.bpf.o`) on
+`ubuntu-22.04-5.15`. `diagnostic` uses an optional-only matrix; `gated`
+requires the profile.
+
+| Binary / flag | suite status / exit / gate | `diagnostic` case | `gated` case |
+|---|---|---|---|
+| Before (1fe4b3e) | pass / 0 / — | pass / 0 / — | pass / 0 / — |
+| After, default | pass / 0 / `partial` | pass / 0 / `none` | pass / 0 / `enforced` |
+| After, `--require-gate` | **error / 1** / `partial` | **error / 1** / `none` (error names `--require-gate`) | pass / 0 / `enforced` |
+
 ## Limits
 
-- `bpfcompat suite` and the GitHub Action expose no `--require-gate` input
-  yet. Action users get the job-summary wording, and can check
-  `summary.gate` in the JSON report.
-- The Markdown report (`--markdown`) does not yet print the gate line.
-- The GitHub Action's diff mode (`baseline-report` / `candidate-report`)
-  does not pass `--require-gate` yet. Its outputs and exit handling are
-  unchanged.
+- `--require-gate` is checked after the run, so diagnostic targets still boot
+  and their reports are kept.
+- With suite `--require-gate`, the suite's existing precedence reports exit 1
+  rather than 2 when a diagnostic case and a required failure coexist. The
+  required failure is still visible in its case (`exit_code: 2`).

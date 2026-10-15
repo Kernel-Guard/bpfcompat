@@ -270,6 +270,135 @@ inline="$(grep -nE '\$\{\{ *inputs\.(baseline-report|candidate-report|fail-on-|d
 run_case mixed INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_ARTIFACT=x.bpf.o
 expect mixed 1 INVALID_INPUT
 
+# 17. require-gate through the real action.yml "Run bpfcompat" step.
+#     The step is rendered the way the runner does it -- every
+#     ${{ inputs.<name> }} replaced by the caller's value or the input's
+#     default -- and executed with bash. Test, command and suite modes use a
+#     recording stand-in binary (no VMs); diff mode runs the real binary
+#     through scripts/action-diff.sh.
+render_run_step() { # <out-script> <out-env> [name=value ...]
+  python3 - "$ACTION" "$@" <<'PY'
+import re, shlex, sys, yaml
+action, script_out, env_out, *pairs = sys.argv[1:]
+spec = yaml.safe_load(open(action))
+given = dict(p.split("=", 1) for p in pairs)
+inputs = {k: str(v.get("default", "")) for k, v in spec["inputs"].items()}
+for k in given:
+    if k not in inputs:
+        sys.exit(f"unknown action input {k}")
+inputs.update(given)
+step = next(s for s in spec["runs"]["steps"] if s.get("id") == "run")
+expr = re.compile(r"\$\{\{\s*inputs\.([a-z0-9-]+)\s*\}\}")
+render = lambda text: expr.sub(lambda m: inputs[m.group(1)], text)
+open(script_out, "w").write(render(step["run"]))
+with open(env_out, "w") as f:
+    for k, v in step.get("env", {}).items():
+        f.write(f"{k}={shlex.quote(render(str(v)))}\n")
+PY
+}
+
+fake="$work/fake-bpfcompat"
+cat >"$fake" <<'SH'
+#!/usr/bin/env bash
+# Records its argv (one argument per line) and exits with $FAKE_EXIT.
+[[ "${1:-}" == report-summary ]] && { echo "fake summary"; exit 0; }
+printf '%s\n' "$@" >"$FAKE_LOG"
+exit "${FAKE_EXIT:-0}"
+SH
+chmod +x "$fake"
+mkdir -p "$ws/gate"
+: >"$ws/gate/probe.bpf.o"
+printf 'name: m\nprofiles:\n  - id: p\n    required: false\n' >"$ws/gate/m.yaml"
+printf 'name: s\ncases:\n  - name: c\n    artifact: probe.bpf.o\n    matrix: m.yaml\n' >"$ws/gate/suite.yaml"
+
+# run_step <name> <fake-exit> [input=value ...]: sets $rc, $argv_file.
+run_step() {
+  local name="$1" fexit="$2"; shift 2
+  local script="$work/$name.step.sh" envf="$work/$name.step.env"
+  argv_file="$work/$name.argv"; out_file="$work/$name.output"; sum_file="$work/$name.summary"
+  : >"$argv_file"; : >"$out_file"; : >"$sum_file"
+  if ! render_run_step "$script" "$envf" "$@"; then
+    bad "$name: could not render the action's run step"
+    rc=99
+    return 0
+  fi
+  set +e
+  (
+    set -a; source "$envf"; set +a
+    env PATH="$PATH" HOME="$HOME" GITHUB_WORKSPACE="$ws" GITHUB_ACTION_PATH="$ROOT" \
+      GITHUB_OUTPUT="$out_file" GITHUB_STEP_SUMMARY="$sum_file" \
+      FAKE_LOG="$argv_file" FAKE_EXIT="$fexit" bash -e "$script"
+  ) >"$work/$name.log" 2>&1
+  rc=$?
+  set -e
+}
+has_flag() { grep -qx -- '--require-gate' "$argv_file"; }
+
+test_inputs=(binary="$fake" artifact=gate/probe.bpf.o matrix=gate/m.yaml out=gate/out.json)
+cmd_inputs=(binary="$fake" command='$BPFCOMPAT_BIN' matrix=gate/m.yaml out=gate/out.json)
+suite_inputs=(binary="$fake" suite=gate/suite.yaml)
+
+for mode in test cmd suite; do
+  declare -n in_ref="${mode}_inputs"
+  # Default (input omitted) and explicit false run the identical command.
+  run_step "$mode-default" 0 "${in_ref[@]}"; cp "$argv_file" "$work/$mode-default.keep"
+  if [[ "$rc" -eq 0 ]] && ! has_flag && [[ -s "$argv_file" ]]; then ok "$mode: default leaves require-gate off"; else bad "$mode: default run rc=$rc"; sed 's/^/    /' "$work/$mode-default.log" >&2; fi
+  run_step "$mode-false" 0 "${in_ref[@]}" require-gate=false
+  cmp -s "$argv_file" "$work/$mode-default.keep" && ok "$mode: require-gate=false is byte-identical to the default invocation" || bad "$mode: require-gate=false changed the invocation"
+  # true reaches the CLI as --require-gate, and the CLI's exit is the step's.
+  run_step "$mode-true" 1 "${in_ref[@]}" require-gate=true
+  if [[ "$rc" -eq 1 ]] && has_flag; then ok "$mode: require-gate=true passes --require-gate and propagates its exit 1"; else bad "$mode: require-gate=true rc=$rc flag=$(has_flag && echo yes || echo no)"; fi
+  run_step "$mode-true-2" 2 "${in_ref[@]}" require-gate=true
+  [[ "$rc" -eq 2 ]] && ok "$mode: a required failure still exits 2 under require-gate" || bad "$mode: required failure rc=$rc"
+  # Strict boolean, refused before the CLI runs.
+  run_step "$mode-bad" 0 "${in_ref[@]}" require-gate=yes
+  if [[ "$rc" -eq 1 && ! -s "$argv_file" ]] && grep -q 'require-gate must be true or false' "$work/$mode-bad.log"; then
+    ok "$mode: require-gate=yes is refused before running"
+  else
+    bad "$mode: require-gate=yes rc=$rc"
+  fi
+  unset -n in_ref
+done
+
+# Diff mode through the real step and the real binary: two optional-only
+# reports, optional target COMPATIBLE -> INCOMPATIBLE.
+report "$ws/reports/g-base.json" aaa "$(target al2 COMPATIBLE false)"
+report "$ws/reports/g-cand.json" bbb "$(target al2 INCOMPATIBLE false)"
+diff_inputs=(binary="$bin" baseline-report=reports/g-base.json candidate-report=reports/g-cand.json)
+run_step diff-default 0 "${diff_inputs[@]}"
+expect diff-default 0 NO_NEW_REGRESSIONS
+[[ "$(output gate)" == none ]] && ok "diff-default: diff-gate output is none" || bad "diff-default: gate output '$(output gate)'"
+run_step diff-require 0 "${diff_inputs[@]}" require-gate=true
+expect diff-require 1 NO_NEW_REGRESSIONS
+grep -q 'diagnostic diff, not a gate, and require-gate is true' "$work/diff-require.log" && ok "diff-require: the step log says why" || bad "diff-require: no reason in the log"
+run_step diff-require-gated 0 binary="$bin" baseline-report="$A" candidate-report=reports/c-same.json require-gate=true
+expect diff-require-gated 0 NO_NEW_REGRESSIONS
+run_step diff-bad-bool 0 "${diff_inputs[@]}" require-gate=1
+expect diff-bad-bool 1 INVALID_INPUT
+
+# Missing gate evidence never passes require-gate: a diff JSON without
+# summary.gate (an older binary) is treated as no gate.
+nogate="$work/nogate-bpfcompat"
+cat >"$nogate" <<SH
+#!/usr/bin/env bash
+"$bin" "\$@"; st=\$?
+for a in "\$@"; do [[ "\$prev" == --out ]] && out="\$a"; prev="\$a"; done
+[[ -n "\${out:-}" && -f "\$out" ]] && jq 'del(.summary.gate)' "\$out" >"\$out.tmp" && mv "\$out.tmp" "\$out"
+exit \$st
+SH
+chmod +x "$nogate"
+run_case diff-nogate INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_REQUIRE_GATE=true BPFCOMPAT_BIN="$nogate"
+expect diff-nogate 1 NO_NEW_REGRESSIONS
+
+# The new input is opt-in and reaches the shell only through env.
+inline_gate="$(grep -nE '\$\{\{ *inputs\.require-gate' "$ACTION" | grep -vE '^[0-9]+: +INPUT_REQUIRE_GATE: \$\{\{ inputs\.require-gate \}\}$' || true)"
+[[ -z "$inline_gate" ]] && ok "action.yml: require-gate reaches the shell only through env" || bad "action.yml interpolates require-gate inline: $inline_gate"
+python3 - "$ACTION" <<'PY' && ok "action.yml: require-gate is optional and defaults to false" || bad "action.yml: require-gate default is not false"
+import sys, yaml
+i = yaml.safe_load(open(sys.argv[1]))["inputs"]["require-gate"]
+sys.exit(0 if str(i.get("default")) == "false" and not i.get("required") else 1)
+PY
+
 if [[ "$fail" -ne 0 ]]; then
   echo "action-diff_test: FAILED" >&2
   exit 1

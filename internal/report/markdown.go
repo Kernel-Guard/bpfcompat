@@ -30,6 +30,13 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 	if report.Summary.Verdict != "" {
 		b.WriteString(fmt.Sprintf("- Verdict: `%s`\n", report.Summary.Verdict))
 	}
+	// Derived from the targets, never from summary.gate, so a missing or
+	// forged field cannot manufacture an enforced gate.
+	if schema.RunGate(report.Targets) == schema.GateNone {
+		b.WriteString("- Gate: `none` — no required targets: diagnostic run, not a compatibility gate\n")
+	} else {
+		b.WriteString("- Gate: `enforced`\n")
+	}
 	// Incomplete coverage has to be visible in the rendered report too: a
 	// COMPATIBLE verdict over a matrix where some target never answered is a
 	// weaker claim than it looks, and the Markdown is what people read first.

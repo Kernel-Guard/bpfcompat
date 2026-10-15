@@ -19,6 +19,12 @@ make examples
   --markdown reports/suites/dev-functional/suite.md
 ```
 
+A case whose matrix has no required target is a diagnostic case: it passes,
+but no compatibility gate was evaluated. The suite summary marks each case
+`gate: enforced | none | unknown` and the suite `enforced | none | partial`.
+`--require-gate` (Action input `require-gate: "true"`) fails every such case
+with exit 1. See [gate-contract.md](gate-contract.md).
+
 ## Suite File
 
 Paths in a suite file are resolved relative to the suite file location. This
