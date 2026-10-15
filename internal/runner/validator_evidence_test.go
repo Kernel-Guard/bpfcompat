@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,47 +13,85 @@ import (
 // unexercised, empty scope, proven failure, accounting unavailable (an old
 // validator) and inconsistent accounting, in required and best-effort mode,
 // plus a load failure.
-func attachEvidenceFixtures() []struct {
+type attachFixture struct {
 	name     string
 	mode     string
 	required []string
 	doc      fakeAttach
-} {
+	patch    func(map[string]any) // top-level edits fakeAttach cannot express
+}
+
+func attachEvidenceFixtures() []attachFixture {
 	mixed := append(tracingProgs("attached"), fakeProgram{name: "xdp_pass", section: "xdp", outcome: "not_attachable_by_validator", autoload: true})
 	failed := append(tracingProgs("attached"), fakeProgram{name: "kp_x", section: "kprobe/does_not_exist", outcome: "failed", autoload: true, errno: -2, detail: "No such file or directory"})
-	return []struct {
-		name     string
-		mode     string
-		required []string
-		doc      fakeAttach
-	}{
+	return []attachFixture{
 		{"required all attached", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "attached")}},
+			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "attached")}, nil},
 		{"required mixed object", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 1, notAttachable: 1, attempted: 1, passed: 1, status: "pass", programs: mixed}},
+			selected: 2, attachable: 1, notAttachable: 1, attempted: 1, passed: 1, status: "pass", programs: mixed}, nil},
 		{"best-effort mixed object", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 1, notAttachable: 1, attempted: 1, passed: 1, status: "pass", programs: mixed}},
+			selected: 2, attachable: 1, notAttachable: 1, attempted: 1, passed: 1, status: "pass", programs: mixed}, nil},
 		{"required unsupported only", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 1, records: 1,
 			selected: 1, notAttachable: 1, status: "skipped",
-			programs: []fakeProgram{{name: "xdp_pass", section: "xdp", outcome: "not_attachable_by_validator", autoload: true}}}},
+			programs: []fakeProgram{{name: "xdp_pass", section: "xdp", outcome: "not_attachable_by_validator", autoload: true}}}, nil},
 		{"required empty scope", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 1, records: 1,
 			notSelected: 1, status: "skipped",
-			programs: []fakeProgram{{name: "tp_off", section: "tracepoint/x/y", outcome: "not_selected"}}}},
+			programs: []fakeProgram{{name: "tp_off", section: "tracepoint/x/y", outcome: "not_selected"}}}, nil},
 		{"required proven failure", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 2, attempted: 2, passed: 1, failed: 1, status: "fail", programs: failed}},
+			selected: 2, attachable: 2, attempted: 2, passed: 1, failed: 1, status: "fail", programs: failed}, nil},
 		{"best-effort proven failure", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 2, attempted: 2, passed: 1, failed: 1, status: "warn", programs: failed}},
+			selected: 2, attachable: 2, attempted: 2, passed: 1, failed: 1, status: "warn", programs: failed}, nil},
 		{"required accounting unavailable (old validator)", "required", nil, fakeAttach{mode: "required", attempted: 1, passed: 1,
-			status: "pass", legacyOnly: true, programs: tracingProgs("attached")}},
+			status: "pass", legacyOnly: true, programs: tracingProgs("attached")}, nil},
 		{"required contradictory accounting", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "failed")}},
+			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "failed")}, nil},
 		{"required missing manifest program", "required", []string{"tp_a", "tp_zz"}, fakeAttach{mode: "required", accounting: true, programCount: 2, records: 2,
-			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "attached")}},
+			selected: 2, attachable: 2, attempted: 2, passed: 2, status: "pass", programs: tracingProgs("attached", "attached")}, nil},
 		{"load failure", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 1, records: 1,
-			selected: 1, attachable: 1, status: "skipped", loadFail: true, programs: tracingProgs("not_attempted")}},
+			selected: 1, attachable: 1, status: "skipped", loadFail: true, programs: tracingProgs("not_attempted")}, nil},
 		{"load only", "disabled", nil, fakeAttach{mode: "disabled", accounting: true, programCount: 1, records: 1,
-			selected: 1, attachable: 1, status: "skipped", programs: tracingProgs("not_attempted")}},
+			selected: 1, attachable: 1, status: "skipped", programs: tracingProgs("not_attempted")}, nil},
+		// Branches the attach fixtures above do not reach.
+		{"functional test failure", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,
+			selected: 1, attachable: 1, attempted: 1, passed: 1, status: "pass", programs: tracingProgs("attached")},
+			func(m map[string]any) {
+				m["status"] = "fail"
+				m["functional"] = map[string]any{"status": "fail", "tests": []map[string]any{
+					{"name": "smoke", "required": true, "status": "fail", "exit_code": 3, "error": "expected event not seen"}}}
+			}},
+		{"load failure with feature probe (fentry, tracing unsupported)", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true,
+			programCount: 1, records: 1, selected: 1, attachable: 1, status: "skipped", loadFail: true,
+			programs: []fakeProgram{{name: "fe", section: "fentry/do_unlinkat", outcome: "not_attempted", autoload: true}}},
+			func(m map[string]any) {
+				m["capabilities"] = map[string]any{"program_types": map[string]any{"tracing": map[string]any{"status": "unsupported", "error_code": -22}}}
+				m["logs"] = map[string]any{"libbpf": "libbpf: prog 'fe': BPF program load failed: Invalid argument"}
+			}},
+		{"unrecognized validator status", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,
+			selected: 1, attachable: 1, attempted: 1, passed: 1, status: "pass", programs: tracingProgs("attached")},
+			func(m map[string]any) {
+				m["status"] = "exploded"
+				m["load"] = map[string]any{"status": "maybe"}
+			}},
 	}
+}
+
+// fixtureDoc renders a fixture, applying its patch to the top-level document.
+func fixtureDoc(t *testing.T, fx attachFixture) []byte {
+	t.Helper()
+	b := fx.doc.json(t)
+	if fx.patch == nil {
+		return b
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	fx.patch(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func attachEvidenceNotes(notes []string) []string {
@@ -74,7 +113,7 @@ func attachEvidenceNotes(notes []string) []string {
 func TestEvaluateValidatorResultMatchesExecuteTarget(t *testing.T) {
 	for _, fx := range attachEvidenceFixtures() {
 		t.Run(fx.name, func(t *testing.T) {
-			doc := fx.doc.json(t)
+			doc := fixtureDoc(t, fx)
 			want := runAttachTarget(t, fx.mode, validatorTuning{requiredAttachPrograms: fx.required}, doc)
 			got, err := EvaluateValidatorResult(doc, fx.mode, fx.required)
 			if err != nil {
@@ -105,7 +144,7 @@ func TestEvaluateValidatorResultMatchesExecuteTarget(t *testing.T) {
 func TestAttachEvidenceFixturesCoverTheContract(t *testing.T) {
 	seen := map[string]bool{}
 	for _, fx := range attachEvidenceFixtures() {
-		ev, err := EvaluateValidatorResult(fx.doc.json(t), fx.mode, fx.required)
+		ev, err := EvaluateValidatorResult(fixtureDoc(t, fx), fx.mode, fx.required)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +155,7 @@ func TestAttachEvidenceFixturesCoverTheContract(t *testing.T) {
 	for _, want := range []string{
 		"pass/", "unsupported/ATTACH_NOT_EXERCISED", "unsupported/ATTACH_SCOPE_EMPTY",
 		"infra_error/ATTACH_ACCOUNTING_UNAVAILABLE", "infra_error/ATTACH_ACCOUNTING_INCONSISTENT",
-		"fail/ATTACH_FAILED",
+		"fail/ATTACH_FAILED", "fail/FUNCTIONAL_TEST_FAILURE", "fail/UNSUPPORTED_PROGRAM_TYPE", "infra_error/",
 		"accounting=" + schema.AttachAccountingV1, "accounting=" + schema.AttachAccountingUnavailable,
 		"accounting=" + schema.AttachAccountingInconsistent,
 		"coverage=" + schema.AttachCoverageComplete, "coverage=" + schema.AttachCoveragePartial,

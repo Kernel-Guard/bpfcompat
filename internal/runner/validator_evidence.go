@@ -138,7 +138,10 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 			ev.FailedStage = "functional"
 			ev.ClassificationCode, ev.ClassificationConfidence = "FUNCTIONAL_TEST_FAILURE", "high"
 			ev.ClassificationReason = functionalFailureReason(vr)
-			ev.Notes = append(ev.Notes, fmt.Sprintf("classification: %s (%s)", ev.ClassificationCode, ev.ClassificationConfidence))
+			ev.Notes = append(ev.Notes,
+				fmt.Sprintf("classification: %s (%s)", ev.ClassificationCode, ev.ClassificationConfidence),
+				"remediation: inspect the functional test command output and ship or fix the project-specific integration test assets.",
+			)
 			break
 		}
 		if vr.Attach.Status == "fail" {
