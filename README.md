@@ -475,9 +475,16 @@ Verify provenance with
      release).
 
   A profile found nowhere fails the target as an infra error that names every
-  location searched. `bpfcompat doctor` shows which source each profile
-  resolves to.
-- **Images** for profiles read from disk keep resolving `image.local_path`
+  location searched. Only a truly absent `<id>.yaml` moves lookup on: a
+  dangling symlink, a directory, or an unreadable entry is an error, never a
+  silent fallback to the built-in copy. Each target's `notes` record the
+  source used, the profile path, and its sha256. `bpfcompat doctor` shows the
+  same information before a run.
+- **Images** download to a temporary file next to their final cache path and
+  are renamed into place only after the pinned digest (if any) matches. That
+  works when the run directory and the image cache are on different
+  filesystems, and never leaves a partial image at the final path.
+  Profiles read from disk keep resolving `image.local_path`
   against the working directory (`./vm/cache/...` in a checkout). Built-in
   profiles cache images under `$BPFCOMPAT_CACHE_DIR` (default
   `~/.cache/bpfcompat`, or `$XDG_CACHE_HOME/bpfcompat`), so each image (a few

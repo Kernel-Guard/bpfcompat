@@ -13,6 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   - Lookup order is `$BPFCOMPAT_PROFILE_DIR`, then `./vm/profiles`, then the
     built-in catalog. An explicit directory has no fallback.
   - A missing profile fails the target and names every location searched.
+    A dangling symlink, a directory, or another non-regular entry at
+    `./vm/profiles/<id>.yaml` is an error, not a fallback.
+  - Each target's notes record which source the profile came from, its path,
+    and its sha256.
   - Built-in profiles cache their images under `$BPFCOMPAT_CACHE_DIR`
     (default `~/.cache/bpfcompat`). The exact profile used is saved under the
     run directory.
@@ -33,6 +37,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   user, not merely present.
 
 ### Fixed
+- VM image downloads are now staged next to the cached image instead of in
+  the run directory.
+  - Before, a run directory and image cache on different filesystems (for
+    example a tmpfs `--workdir`) failed with `invalid cross-device link`
+    after the full download, and the temp file was left behind.
 - The README and Inspektor Gadget case-study quickstart commands now include
   the required `--out`. Without it they exited with
   `--out is required`.
