@@ -76,6 +76,18 @@ func TestDeclaredBoundAboveTheRunnerBoundIsInconsistent(t *testing.T) {
 	}
 }
 
+func TestDeclaredBoundBelowTheRecordCountIsInconsistent(t *testing.T) {
+	// 206 complete records cannot come from a validator whose bound is 64.
+	r := fakeAttach{mode: "best-effort", accounting: true, programCount: 206, records: 206,
+		selected: 206, attachable: 206, attempted: 206, passed: 206, status: "pass",
+		programs:    attachedRecords(206),
+		overrideTop: map[string]any{"records_bound": 64}}
+	got := runAttachTarget(t, "best-effort", validatorTuning{}, r.json(t))
+	if got.Validation.AttachAccounting != "inconsistent" {
+		t.Fatalf("accounting=%q", got.Validation.AttachAccounting)
+	}
+}
+
 func TestLegacy64RecordValidatorIsStillReadAsTruncated(t *testing.T) {
 	// Validators before the bound (rc.4) write 64 records and no records_bound.
 	r := fakeAttach{mode: "best-effort", accounting: true, programCount: 206, records: 64,

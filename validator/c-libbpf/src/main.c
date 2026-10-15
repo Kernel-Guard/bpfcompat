@@ -232,6 +232,7 @@ struct validator_result {
 static struct validator_result *g_result;
 static void set_memlock_rlimit(void);
 static void raise_nofile_rlimit(void);
+static void restore_nofile_rlimit(void);
 
 static void usage(const char *prog) {
     fprintf(stderr,
@@ -1308,6 +1309,7 @@ static void run_functional_command(struct functional_test *test) {
         dup2(stderr_pipe[1], STDERR_FILENO);
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
+        restore_nofile_rlimit();
         execl("/bin/sh", "sh", "-c", test->command, (char *)NULL);
         _exit(127);
     }
@@ -1464,12 +1466,26 @@ static void run_functional_tests(struct validator_result *res) {
  * shell's soft RLIMIT_NOFILE is often 1024, which made an object with ~1000
  * programs fail to load with EMFILE -- a limit of the validator's process,
  * not of the kernel under test. Loaders that ship such objects raise the
- * limit; raise the soft limit to the hard limit (never above it). */
+ * limit; raise the soft limit to the hard limit (never above it). Functional
+ * test commands get the original soft limit back (restore_nofile_rlimit in
+ * the forked child), so the raise does not leak into what they measure. */
+static struct rlimit g_nofile_orig;
+static bool g_nofile_raised;
+
 static void raise_nofile_rlimit(void) {
     struct rlimit rlim;
     if (getrlimit(RLIMIT_NOFILE, &rlim) == 0 && rlim.rlim_cur < rlim.rlim_max) {
+        g_nofile_orig = rlim;
         rlim.rlim_cur = rlim.rlim_max;
-        (void)setrlimit(RLIMIT_NOFILE, &rlim);
+        if (setrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+            g_nofile_raised = true;
+        }
+    }
+}
+
+static void restore_nofile_rlimit(void) {
+    if (g_nofile_raised) {
+        (void)setrlimit(RLIMIT_NOFILE, &g_nofile_orig);
     }
 }
 
@@ -2426,9 +2442,13 @@ int main(int argc, char **argv) {
     load_functional_plan(&res);
     run_libbpf_load(&res);
     write_libbpf_log_file(&res);
-    if (write_result_json(&res) != 0) {
-        return 1;
-    }
+    int rc = write_result_json(&res) != 0 ? 1 : (str_eq(overall_status(&res), "pass") ? 0 : 2);
 
-    return str_eq(overall_status(&res), "pass") ? 0 : 2;
+    /* run_libbpf_load already destroyed the links; release the tables on
+     * every path so a leak checker sees a clean exit. */
+    destroy_links(&res);
+    free(res.programs);
+    res.programs = NULL;
+    res.program_records = 0;
+    return rc;
 }

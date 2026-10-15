@@ -128,6 +128,8 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 		switch {
 		case *b <= 0 || *b > maxAttachRecords:
 			return reject("attach.records_bound=%d is outside 1..%d", *b, maxAttachRecords)
+		case acc.records > *b:
+			return reject("records=%d exceeds the declared record bound %d", acc.records, *b)
 		case acc.records < acc.programCount && acc.records != *b:
 			return reject("records=%d of program_count=%d although the declared record bound is %d", acc.records, acc.programCount, *b)
 		}

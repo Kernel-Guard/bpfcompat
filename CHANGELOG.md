@@ -65,7 +65,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   per program in `bpfcompat diff`. The validator also raises its soft
   open-file limit to the hard limit: objects with about 1000 programs used to
   fail to load with `EMFILE` (`Too many open files`), a limit of the
-  validator process, not of the kernel under test.
+  validator process, not of the kernel under test. Functional-test commands
+  run with the original limit. If a load still fails with `EMFILE`/`ENFILE`
+  (a guest hard limit below what the object needs), the target is
+  `INFRA_ERROR`, not `INCOMPATIBLE`; the load evidence is kept.
 
 ## [0.4.0-rc.4] - 2026-10-14
 
