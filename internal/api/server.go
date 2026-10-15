@@ -3103,8 +3103,10 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 		if logger == nil {
 			logger = slog.Default()
 		}
+		// sourcePath embeds the client-chosen upload filename; strip line
+		// breaks before it reaches the log sink (CWE-117).
 		logger.Warn("source upload compile failed",
-			slog.String("source", sourcePath),
+			slog.String("source", sanitizeLogValue(sourcePath)),
 			slog.String("error", err.Error()),
 			slog.String("clang_output", truncateForLog(trimmed, maxCompileDiagnosticLogBytes)),
 		)
