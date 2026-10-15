@@ -1007,6 +1007,32 @@ static void detect_artifact_btf_sections(struct validator_result *res) {
     close(fd);
 }
 
+/* PATH lookup the way execvp() resolves `name` (no shell involved). */
+static bool executable_in_path(const char *name) {
+    const char *path = getenv("PATH");
+    if (!path || !path[0]) {
+        path = "/bin:/usr/bin";
+    }
+    char candidate[LOG_PATH_MAX];
+    const char *cursor = path;
+    for (;;) {
+        const char *colon = strchr(cursor, ':');
+        size_t len = colon ? (size_t)(colon - cursor) : strlen(cursor);
+        /* An empty PATH entry means the current directory. */
+        int n = len == 0 ? snprintf(candidate, sizeof(candidate), "%s", name)
+                         : snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)len, cursor, name);
+        struct stat st;
+        if (n > 0 && (size_t)n < sizeof(candidate) && stat(candidate, &st) == 0 &&
+            S_ISREG(st.st_mode) && access(candidate, X_OK) == 0) {
+            return true;
+        }
+        if (!colon) {
+            return false;
+        }
+        cursor = colon + 1;
+    }
+}
+
 static void run_bpftool_feature_probe(struct validator_result *res) {
     if (!res->opts.probe_features) {
         return;
@@ -1015,8 +1041,7 @@ static void run_bpftool_feature_probe(struct validator_result *res) {
         return;
     }
 
-    int command_exists = system("command -v bpftool >/dev/null 2>&1");
-    if (command_exists != 0) {
+    if (!executable_in_path("bpftool")) {
         res->bpftool_available = false;
         return;
     }

@@ -38,7 +38,7 @@ dashboards, and audits.
 | `environment` | object | `{ requested_kernel_family, observed_kernel, kernel_family_match, image_source_url, image_sha256, requested_distro, requested_distro_version, observed_os_id, observed_os_version_id, distro_match }` — `kernel_family_match: false` / `distro_match: false` mean this target ran a different kernel series / distribution than the profile requested and cannot support a claim about it; an unset match is unknown, not a mismatch |
 | `profile` / `host` | object | `{ distro, version, kernel_family, kernel, arch }` (requested vs actual) |
 | `validation` | object | `{ load_status, load_error_code, load_error, attach_mode, attach_status, attach_attempted, attach_passed, attach_failed }` |
-| `functional` | object | optional behavior tests: `{ status, tests[] }` |
+| `functional` | object | optional behavior tests: `{ status, tests[] }`. The raw validator `result.json` (`validator.v0.4`) also carries `functional.truncated` (bool) and `functional.dropped_tests` (int): a plan with more than 64 tests runs only the first 64, reports the rest as dropped and fails `functional.status`; these two fields are not copied into this report |
 | `btf` | object | `{ kernel_btf_available, artifact_has_btf, artifact_has_btf_ext }` |
 | `failed_stage` | string | `load` \| `attach` \| `functional` \| `command` \| `transport` \| `infra` |
 | `classification_code` | enum | **why it failed** — see taxonomy below |

@@ -132,7 +132,15 @@ if alive "$tag_bg"; then
 else
   pass "bg-straggler: background process killed with the command's process group"
 fi
-fn_case escaped-session "setsid sleep $tag_escape & echo started" 2 "$timed_out" 4000
+# The escapee signals readiness only after setsid() and sh waits for it, so
+# it has really left the group before sh exits (otherwise the group kill
+# may take it down first and the case would pass instead of timing out).
+ready="$work/escape-ready"
+fn_case escaped-session \
+  "setsid sh -c 'touch $ready; exec sleep $tag_escape' & while [ ! -e $ready ]; do sleep 0.05; done; echo started" \
+  2 "$timed_out" 4000
+check "escaped-session: error names the escaped process" \
+  '.functional.tests[0].error | contains("outside its process group")' "$work/fn-escaped-session.json"
 for t in "$tag_fg" "$tag_pipe"; do
   if alive "$t"; then flunk "timed-out command left 'sleep $t' running"; else pass "timed-out command 'sleep $t' killed"; fi
 done
@@ -207,6 +215,14 @@ if jq -e '.fake_bpftool == true and .argv == "feature probe -j kernel"' \
 else
   flunk "log-dir metacharacters: probe output missing from --log-dir"
 fi
+
+mkdir -p "$work/emptybin" "$work/nobpftool-logs"
+set +e
+PATH="$work/emptybin" "$work/validator" --artifact "$work/progs1.bpf.o" --out "$work/nobpftool.json" \
+  --log-dir "$work/nobpftool-logs" --attach-mode disabled >/dev/null 2>&1
+set -e
+check "bpftool absent from PATH: reported unavailable, not probed" \
+  '.capabilities.bpftool_available == false and .capabilities.bpftool_probe_ok == false' "$work/nobpftool.json"
 
 long="$work/long"
 for ((i = 0; i < 6; i++)); do long="$long/$(printf 'x%.0s' {1..200})"; done
