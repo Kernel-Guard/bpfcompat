@@ -198,6 +198,12 @@ Consumers that need strict environment fidelity should gate on
 `targets[].environment.kernel_family_match` and
 `targets[].environment.distro_match`.
 
+The environment contract records distribution (`/etc/os-release`) and kernel
+series only. It does not observe security posture — kernel lockdown, Secure
+Boot, or the LSM stack — and a posture word in a profile id (e.g. `-lockdown`)
+is not evidence of that posture. (Per-profile claims: see
+`docs/profile-claims.md`, pending in PR #255.)
+
 **Answers:** *was the environment we intended to validate the one that ran?*
 
 ---
