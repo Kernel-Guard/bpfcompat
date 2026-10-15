@@ -465,10 +465,24 @@ func runHistoryVerify(args []string) int {
 		return runner.ExitToolError
 	}
 
+	// Same contract as `admin verify-chain`: a work directory that does not
+	// exist has no history to verify, so it is a tool error rather than a
+	// passing check that checked nothing. An existing directory with no
+	// history yet is still a success, but says so on stderr.
+	if info, statErr := os.Stat(*workDir); statErr != nil {
+		fmt.Fprintf(os.Stderr, "history verify: work directory %s: %v\n", *workDir, statErr)
+		return runner.ExitToolError
+	} else if !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "history verify: work directory %s is not a directory\n", *workDir)
+		return runner.ExitToolError
+	}
 	verification, err := registry.VerifyArtifactVersionHistory(*workDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "history verify failed: %v\n", err)
 		return runner.ExitToolError
+	}
+	if len(verification) == 0 {
+		fmt.Fprintf(os.Stderr, "note: no local artifact version history under %s; nothing was verified\n", *workDir)
 	}
 	failed := 0
 	for _, row := range verification {

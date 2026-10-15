@@ -119,7 +119,9 @@ func protectInputs(d Diff, outPath, kind string) error {
 // no inode to compare, so the paths are resolved as far as they can be: the
 // directory through EvalSymlinks, then the base name. That catches two routes
 // to one directory while still allowing an output file that has yet to be
-// created.
+// created. A final component that is itself a symlink (a dangling one, whose
+// target is the file a write would create) is followed first, so a link to a
+// not-yet-written output is compared as that output.
 func SameFile(a, b string) bool {
 	if ai, err := os.Stat(a); err == nil {
 		if bi, err := os.Stat(b); err == nil {
@@ -129,11 +131,39 @@ func SameFile(a, b string) bool {
 	return resolvedPath(a) == resolvedPath(b)
 }
 
+// maxSymlinkHops bounds how many symlinks resolvedPath follows in the final
+// path component, matching the kernel's MAXSYMLINKS so a loop terminates.
+const maxSymlinkHops = 40
+
 func resolvedPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return p
 	}
+	cur := resolveParent(abs)
+	for range maxSymlinkHops {
+		info, err := os.Lstat(cur)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return cur
+		}
+		target, err := os.Readlink(cur)
+		if err != nil {
+			return cur
+		}
+		if !filepath.IsAbs(target) {
+			// Relative to the directory holding the link, already resolved,
+			// so a ".." in the target climbs from the real directory.
+			target = filepath.Join(filepath.Dir(cur), target)
+		}
+		cur = resolveParent(filepath.Clean(target))
+	}
+	return cur
+}
+
+// resolveParent resolves the directory of an absolute path through
+// EvalSymlinks and keeps the base name; a directory that does not resolve
+// (for example one yet to be created) is kept as spelled.
+func resolveParent(abs string) string {
 	dir, base := filepath.Split(abs)
 	resolvedDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
