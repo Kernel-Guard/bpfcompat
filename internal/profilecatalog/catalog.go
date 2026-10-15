@@ -10,13 +10,24 @@
 //     the historical behavior and stays byte-for-byte unchanged.
 //  3. The built-in catalog compiled into the binary (vm/profiles at build time).
 //
-// Profiles from 1 and 2 are used in place, so a relative image.local_path keeps
-// resolving against the current directory exactly as before. A built-in
-// profile is written into the run's own directory with a relative
-// image.local_path rebased under the image cache root ($BPFCOMPAT_CACHE_DIR,
-// default $XDG_CACHE_HOME/bpfcompat or ~/.cache/bpfcompat), so an installed CLI
-// keeps one shared image cache instead of downloading into whatever directory
-// it was started from.
+// Relative image.local_path contract:
+//
+//   - ./vm/profiles (2): the file is used in place and a relative image path
+//     resolves against the current directory, i.e. the checkout root
+//     ("vm/cache/x.qcow2"). Checkout and Action behaviour is unchanged.
+//   - $BPFCOMPAT_PROFILE_DIR (1) and built-in (3): a relative image path
+//     resolves under the image cache root ($BPFCOMPAT_CACHE_DIR, default
+//     $XDG_CACHE_HOME/bpfcompat or ~/.cache/bpfcompat). The profile is copied
+//     into the run directory with the path rebased; the user's file is never
+//     modified. An absolute image path is used as written (and an env-dir
+//     profile with one is used in place).
+//
+// Rebasing env-dir profiles under the cache root, not the profile directory or
+// the CWD, gives the same answer from any working directory, and keeps the
+// checkout's repo-relative "vm/cache/..." paths meaningful:
+// BPFCOMPAT_PROFILE_DIR=<checkout>/vm/profiles with BPFCOMPAT_CACHE_DIR=<checkout>
+// resolves to exactly the checkout's images. Resolving against the profile
+// directory would turn those into <checkout>/vm/profiles/vm/cache/....
 package profilecatalog
 
 import (
@@ -145,6 +156,9 @@ type Resolved struct {
 func (r Resolved) Note() string {
 	switch r.Source {
 	case SourceEnvDir:
+		if r.File != r.Path {
+			return fmt.Sprintf("profile source: %s (%s, sha256 %s; staged as %s with the relative image.local_path under the image cache)", EnvProfileDir, r.Path, r.SHA256, r.File)
+		}
 		return fmt.Sprintf("profile source: %s (%s, sha256 %s)", EnvProfileDir, r.File, r.SHA256)
 	case SourceCheckout:
 		return fmt.Sprintf("profile source: ./%s (%s, sha256 %s)", CheckoutDir, r.File, r.SHA256)
@@ -160,57 +174,85 @@ func (r Resolved) Note() string {
 }
 
 // Resolve locates profile id and returns a file vm.LoadProfile can read.
-// On-disk profiles are used in place. A built-in profile is written to
+// Checkout profiles are used in place. A built-in profile, and an env-dir
+// profile with a relative image.local_path, is written to
 // stageDir/profiles/<id>.yaml (stageDir is the run directory, so the file is
-// also run evidence) with its relative image.local_path rebased under
-// CacheRoot().
+// also run evidence) with that path rebased under CacheRoot().
 func Resolve(id, stageDir string) (Resolved, error) {
 	loc, err := Locate(id)
 	if err != nil {
 		return Resolved{}, err
 	}
-	if loc.Source != SourceBuiltin {
-		data, err := os.ReadFile(loc.Path)
-		if err != nil {
-			return Resolved{}, fmt.Errorf("read profile %s: %w", loc.Path, err)
-		}
-		return Resolved{Location: loc, File: loc.Path, SHA256: digest(data)}, nil
-	}
-	data, err := fs.ReadFile(builtinFS, path.Join("profiles", id+".yaml"))
+	data, err := readProfile(loc)
 	if err != nil {
-		return Resolved{}, fmt.Errorf("read built-in profile %q: %w", id, err)
+		return Resolved{}, err
 	}
-	res := Resolved{Location: loc, SHA256: digest(data)}
-	if info, err := os.Stat(CheckoutDir); err == nil && info.IsDir() {
-		res.CheckoutDirPresent = true
+	res := Resolved{Location: loc, File: loc.Path, SHA256: digest(data)}
+	switch loc.Source {
+	case SourceCheckout:
+		return res, nil
+	case SourceEnvDir:
+		local, err := imageLocalPath(data)
+		if err != nil {
+			return Resolved{}, fmt.Errorf("profile %s: %w", loc.Path, err)
+		}
+		if local == "" || filepath.IsAbs(local) {
+			return res, nil
+		}
+	case SourceBuiltin:
+		if info, err := os.Stat(CheckoutDir); err == nil && info.IsDir() {
+			res.CheckoutDirPresent = true
+		}
 	}
 	root, err := CacheRoot()
 	if err != nil {
 		return Resolved{}, err
 	}
-	data, err = rebaseImagePath(data, root)
+	staged, err := rebaseImagePath(data, root)
 	if err != nil {
-		return Resolved{}, fmt.Errorf("built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("profile %q: %w", id, err)
 	}
+	if res.File, err = stageProfile(id, staged, stageDir); err != nil {
+		return Resolved{}, err
+	}
+	return res, nil
+}
+
+func readProfile(loc Location) ([]byte, error) {
+	if loc.Source == SourceBuiltin {
+		data, err := fs.ReadFile(builtinFS, path.Join("profiles", loc.ID+".yaml"))
+		if err != nil {
+			return nil, fmt.Errorf("read built-in profile %q: %w", loc.ID, err)
+		}
+		return data, nil
+	}
+	data, err := os.ReadFile(loc.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read profile %s: %w", loc.Path, err)
+	}
+	return data, nil
+}
+
+// stageProfile writes data to stageDir/profiles/<id>.yaml, never overwriting.
+func stageProfile(id string, data []byte, stageDir string) (string, error) {
 	dir := filepath.Join(stageDir, "profiles")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return "", fmt.Errorf("stage profile %q: %w", id, err)
 	}
 	out := filepath.Join(dir, id+".yaml")
 	// O_EXCL: never overwrite an existing file, even inside the run dir.
-	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- runner-owned run directory; id validated above.
+	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- runner-owned run directory; id validated by Locate.
 	if err != nil {
-		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return "", fmt.Errorf("stage profile %q: %w", id, err)
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return "", fmt.Errorf("stage profile %q: %w", id, err)
 	}
 	if err := f.Close(); err != nil {
-		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return "", fmt.Errorf("stage profile %q: %w", id, err)
 	}
-	res.File = out
-	return res, nil
+	return out, nil
 }
 
 func digest(data []byte) string {
@@ -255,39 +297,61 @@ func BuiltinIDs() []string {
 // BuiltinCount is len(BuiltinIDs()).
 func BuiltinCount() int { return len(BuiltinIDs()) }
 
-// ImagePath returns the image.local_path a profile resolved by Resolve would
-// use, as an absolute path (for diagnostics such as `bpfcompat doctor`).
+type imageFields struct {
+	Image struct {
+		LocalPath string `yaml:"local_path"`
+		SHA256    string `yaml:"sha256"`
+	} `yaml:"image"`
+}
+
+func parseImage(data []byte) (imageFields, error) {
+	var p imageFields
+	err := yaml.Unmarshal(data, &p)
+	return p, err
+}
+
+func imageLocalPath(data []byte) (string, error) {
+	p, err := parseImage(data)
+	return p.Image.LocalPath, err
+}
+
+// ImagePath returns the absolute image path a profile resolved by Resolve
+// would use (for diagnostics such as `bpfcompat doctor`).
 func ImagePath(loc Location) (string, error) {
-	var data []byte
-	var err error
-	if loc.Source == SourceBuiltin {
-		data, err = fs.ReadFile(builtinFS, path.Join("profiles", loc.ID+".yaml"))
-	} else {
-		data, err = os.ReadFile(loc.Path)
-	}
+	data, err := readProfile(loc)
 	if err != nil {
 		return "", err
 	}
-	var p struct {
-		Image struct {
-			LocalPath string `yaml:"local_path"`
-		} `yaml:"image"`
-	}
-	if err := yaml.Unmarshal(data, &p); err != nil {
+	local, err := imageLocalPath(data)
+	if err != nil {
 		return "", err
 	}
-	local := p.Image.LocalPath
 	if local == "" || filepath.IsAbs(local) {
 		return local, nil
 	}
-	if loc.Source == SourceBuiltin {
-		root, err := CacheRoot()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(root, local), nil
+	if loc.Source == SourceCheckout {
+		return filepath.Abs(local)
 	}
-	return filepath.Abs(local)
+	root, err := CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, filepath.FromSlash(local)), nil
+}
+
+// ImagePin returns the profile's pinned image.sha256 (lower-case), or "" when
+// the profile pins none. Only this value is an expectation; a digest computed
+// from a downloaded or cached file is an observation.
+func ImagePin(loc Location) (string, error) {
+	data, err := readProfile(loc)
+	if err != nil {
+		return "", err
+	}
+	p, err := parseImage(data)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(strings.TrimSpace(p.Image.SHA256)), nil
 }
 
 // rebaseImagePath rewrites a relative image.local_path to root/local_path,

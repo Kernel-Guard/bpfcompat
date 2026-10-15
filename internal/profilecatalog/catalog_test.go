@@ -364,3 +364,95 @@ func TestResolvedRecordsSourcePathAndDigest(t *testing.T) {
 		t.Fatalf("env resolution = %+v / %q", res, n)
 	}
 }
+
+// A relative image.local_path in a profile from BPFCOMPAT_PROFILE_DIR resolves
+// under the image cache root, exactly like a built-in profile, so the result
+// does not depend on the working directory.
+func TestEnvDirRelativeImagePathResolvesUnderCacheRoot(t *testing.T) {
+	isolate(t, fstest.MapFS{})
+	cache := t.TempDir()
+	t.Setenv(EnvCacheDir, cache)
+	envDir := t.TempDir()
+	envFile := filepath.Join(envDir, "demo-1.0.yaml")
+	writeFile(t, envFile, testProfile)
+	t.Setenv(EnvProfileDir, envDir)
+	want := filepath.Join(cache, "vm", "cache", "demo.qcow2")
+
+	for _, cwd := range []string{t.TempDir(), t.TempDir()} {
+		t.Chdir(cwd)
+		stage := t.TempDir()
+		res, err := Resolve("demo-1.0", stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Source != SourceEnvDir || res.Path != envFile || res.SHA256 != sha(testProfile) {
+			t.Fatalf("resolution = %+v", res)
+		}
+		if res.File != filepath.Join(stage, "profiles", "demo-1.0.yaml") {
+			t.Fatalf("relative image path: profile must be staged, File=%q", res.File)
+		}
+		p, err := vm.LoadProfile(res.File)
+		if err != nil || p.Image.LocalPath != want {
+			t.Fatalf("from %s: image.local_path = %q, %v; want %q", cwd, p.Image.LocalPath, err, want)
+		}
+		if n := res.Note(); !strings.Contains(n, envFile) || !strings.Contains(n, "staged as "+res.File) {
+			t.Fatalf("note = %q", n)
+		}
+		img, err := ImagePath(res.Location)
+		if err != nil || img != want {
+			t.Fatalf("ImagePath = %q, %v; want %q", img, err, want)
+		}
+		if orig, _ := os.ReadFile(envFile); string(orig) != testProfile {
+			t.Fatal("the user's profile file must not be modified")
+		}
+	}
+}
+
+func TestEnvDirAbsoluteImagePathUsedInPlace(t *testing.T) {
+	isolate(t, fstest.MapFS{})
+	body := strings.Replace(testProfile, `"vm/cache/demo.qcow2"`, `"/srv/images/demo.qcow2"`, 1)
+	envDir := t.TempDir()
+	envFile := filepath.Join(envDir, "demo-1.0.yaml")
+	writeFile(t, envFile, body)
+	t.Setenv(EnvProfileDir, envDir)
+	stage := t.TempDir()
+	res, err := Resolve("demo-1.0", stage)
+	if err != nil || res.File != envFile {
+		t.Fatalf("absolute image path: want the file in place, got %+v, %v", res, err)
+	}
+	if entries, _ := os.ReadDir(stage); len(entries) != 0 {
+		t.Fatalf("nothing should be staged, found %d entries", len(entries))
+	}
+	if n := res.Note(); strings.Contains(n, "staged") {
+		t.Fatalf("note = %q", n)
+	}
+}
+
+// The checkout keeps the historical contract: relative image paths resolve
+// against the working directory (the repo root).
+func TestCheckoutRelativeImagePathStaysWorkingDirectoryRelative(t *testing.T) {
+	cwd := isolate(t, fstest.MapFS{})
+	writeFile(t, filepath.Join(cwd, "vm", "profiles", "demo-1.0.yaml"), testProfile)
+	t.Setenv(EnvCacheDir, t.TempDir())
+	loc, err := Locate("demo-1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := ImagePath(loc)
+	if err != nil || img != filepath.Join(cwd, "vm", "cache", "demo.qcow2") {
+		t.Fatalf("ImagePath = %q, %v", img, err)
+	}
+}
+
+func TestImagePinReportsProfileDigest(t *testing.T) {
+	isolate(t, builtinWith("demo-1.0", strings.Replace(testProfile, "  local_path:", "  sha256: \"ABCDEF\"\n  local_path:", 1)))
+	t.Setenv(EnvCacheDir, t.TempDir())
+	pin, err := ImagePin(Location{ID: "demo-1.0", Source: SourceBuiltin})
+	if err != nil || pin != "abcdef" {
+		t.Fatalf("ImagePin = %q, %v", pin, err)
+	}
+	isolate(t, builtinWith("demo-1.0", testProfile))
+	if pin, err := ImagePin(Location{ID: "demo-1.0", Source: SourceBuiltin}); err != nil || pin != "" {
+		t.Fatalf("unpinned ImagePin = %q, %v", pin, err)
+	}
+}

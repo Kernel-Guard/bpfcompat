@@ -166,3 +166,27 @@ func writeFileT(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// A relative image.local_path in a BPFCOMPAT_PROFILE_DIR profile resolves
+// under the image cache root, so two unrelated working directories agree.
+func TestFirstRunEnvDirImagePathIndependentOfWorkingDirectory(t *testing.T) {
+	profiles := t.TempDir()
+	src, err := os.ReadFile(filepath.Join("..", "..", "vm", "profiles", "debian-12-6.1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFileT(t, filepath.Join(profiles, "debian-12-6.1.yaml"), string(src))
+	writeFileT(t, filepath.Join(profiles, "one.yaml"), "name: one\nprofiles:\n  - id: debian-12-6.1\n")
+	cache := t.TempDir()
+	want := filepath.Join(cache, "vm", "cache", "debian-12.qcow2")
+	env := []string{profilecatalog.EnvProfileDir + "=" + profiles, profilecatalog.EnvCacheDir + "=" + cache, "PATH=" + t.TempDir()}
+	for _, dir := range []string{t.TempDir(), t.TempDir()} {
+		res := runBuiltCLI(t, dir, env, "doctor", "--command-mode", "--matrix", filepath.Join(profiles, "one.yaml"))
+		if !strings.Contains(res.stdout, "(env, from ") || !strings.Contains(res.stdout, want) {
+			t.Fatalf("from %s: doctor does not resolve the env-dir image under the cache (%s):\n%s", dir, want, res.stdout)
+		}
+		if !strings.Contains(res.stdout, "image digest not pinned") {
+			t.Errorf("doctor should say the image is not pinned:\n%s", res.stdout)
+		}
+	}
+}

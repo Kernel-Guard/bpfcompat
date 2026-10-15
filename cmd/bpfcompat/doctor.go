@@ -159,6 +159,13 @@ func doctorChecks(profileIDs []string, setName string, wantValidator bool) []doc
 				detail += "; image not cached yet, the first run downloads it (hundreds of MB) to " + img
 			}
 		}
+		if pin, err := profilecatalog.ImagePin(loc); err == nil {
+			if pin != "" {
+				detail += "; image digest pinned (sha256 " + pin + "), verified on every run"
+			} else {
+				detail += "; image digest not pinned (the observed sha256 is recorded as provenance, not verified)"
+			}
+		}
 		checks = append(checks, doctorCheck{doctorOK, "profile " + id, detail})
 	}
 
