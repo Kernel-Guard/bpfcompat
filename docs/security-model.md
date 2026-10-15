@@ -28,6 +28,8 @@ This is a gated runtime delivery proof, not a production runtime loading service
 - Agent rollback, unload, and revocation drills are available through `bpfcompat agent rollback`, `bpfcompat agent unload`, and `bpfcompat agent revocation-drill`; each can append evidence to the local load ledger.
 - API runtime execute can be emergency-blocked with `BPFCOMPAT_API_RUNTIME_EXECUTE_KILL_SWITCH=true`; denied attempts are written to runtime decision audit.
 - API runtime execute rejects request-level overrides for workdir/output path/manifest path/validator path/sudo options/timeout and enforces verified-history by default.
+- API runtime select and fetch share the same override rule set: `workdir`, `out_dir`, `require_verified_history=false` and probe sudo overrides are rejected with 400, so neither anonymous runtime delivery nor an authenticated caller can read another directory (for example another tenant's registry) or write outside the server's configured workdir.
+- API runtime decisions (`GET /api/runtime/decisions`) applies the same rule set to its `workdir` query parameter, so decision history is read only from the server's configured workdir.
 
 This preserves VM isolation as the normal operational path while keeping host execution behind an explicit safety gate.
 
