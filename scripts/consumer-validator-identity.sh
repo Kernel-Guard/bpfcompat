@@ -20,7 +20,9 @@
 #                  Every failure is fatal: there is no fallback to another
 #                  version and no fallback from release mode to a source build.
 #   verify-report  check a bpfcompat JSON report against the resolved identity:
-#                  artifact mode -> .validator.sha256; command mode ->
+#                  artifact mode -> .validator.sha256, at least one target,
+#                  and every target status == pass with validator
+#                  load_status == pass; command mode ->
 #                  .command.binary.sha256 plus, for every target, the
 #                  guest-observed "bpfcompat-validator-sha256=<sha>" line.
 #
@@ -219,6 +221,15 @@ verify_report() {
     got="$(jq -r '.validator.sha256 // empty' "$report")"
     [[ "$got" == "$want" ]] ||
       die "report validator sha256 ${got:-<missing>} != resolved validator ${want}"
+    # A matching validator sha256 proves nothing if the validator never ran
+    # or did not load the artifact: require at least one target, and every
+    # target (consumer-external profiles are all required and all expected
+    # to pass) must have passed with the validator's own load stage = pass.
+    jq -e '
+      (.targets | type == "array" and length > 0) and
+      all(.targets[]; .status == "pass" and .validation.load_status == "pass")
+    ' "$report" >/dev/null ||
+      die "report has no targets or a target whose status/validator load is not pass"
   else
     got="$(jq -r '.command.binary.sha256 // empty' "$report")"
     [[ "$got" == "$want" ]] ||

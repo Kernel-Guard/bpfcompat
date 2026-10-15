@@ -261,12 +261,34 @@ expect_verify FAIL "command mode without a shipped binary" command "$tmp/r-nobin
 jq '.targets[1].functional.tests[0].stdout_tail = "built"' "$tmp/r-good.json" >"$tmp/r-nomarker.json"
 expect_verify FAIL "one target without the guest marker" command "$tmp/r-nomarker.json"
 
-jq -n --arg s "$want_sha" '{validator: {sha256: $s}, targets: []}' >"$tmp/a-good.json"
+artifact_report() { # $1 = validator sha256
+  jq -n --arg s "$1" '{
+    validator: {sha256: $s},
+    targets: [
+      {profile_id: "a", required: true, status: "pass", validation: {load_status: "pass"}},
+      {profile_id: "b", required: true, status: "pass", validation: {load_status: "pass"}}
+    ]}'
+}
+artifact_report "$want_sha" >"$tmp/a-good.json"
 expect_verify PASS "artifact mode bound to resolved validator" artifact "$tmp/a-good.json"
-jq -n --arg s "$old_sha" '{validator: {sha256: $s}, targets: []}' >"$tmp/a-drift.json"
+artifact_report "$old_sha" >"$tmp/a-drift.json"
 expect_verify FAIL "artifact mode ran another validator" artifact "$tmp/a-drift.json"
-jq -n '{targets: []}' >"$tmp/a-missing.json"
+jq 'del(.validator)' "$tmp/a-good.json" >"$tmp/a-missing.json"
 expect_verify FAIL "artifact mode report without validator identity" artifact "$tmp/a-missing.json"
+# A matching sha256 alone is not evidence: the validator must have run and
+# loaded the artifact on every target.
+jq '.targets = []' "$tmp/a-good.json" >"$tmp/a-empty.json"
+expect_verify FAIL "artifact mode report with no targets" artifact "$tmp/a-empty.json"
+jq 'del(.targets)' "$tmp/a-good.json" >"$tmp/a-notargets.json"
+expect_verify FAIL "artifact mode report without a targets array" artifact "$tmp/a-notargets.json"
+jq '.targets[1].validation.load_status = "fail"' "$tmp/a-good.json" >"$tmp/a-loadfail.json"
+expect_verify FAIL "artifact mode target whose validator load failed" artifact "$tmp/a-loadfail.json"
+jq '.targets[1].validation.load_status = "skipped"' "$tmp/a-good.json" >"$tmp/a-loadskip.json"
+expect_verify FAIL "artifact mode target whose validator load was skipped" artifact "$tmp/a-loadskip.json"
+jq 'del(.targets[0].validation)' "$tmp/a-good.json" >"$tmp/a-noload.json"
+expect_verify FAIL "artifact mode target without a load status" artifact "$tmp/a-noload.json"
+jq '.targets[0].status = "infra_error"' "$tmp/a-good.json" >"$tmp/a-infra.json"
+expect_verify FAIL "artifact mode target that did not pass" artifact "$tmp/a-infra.json"
 
 echo "[consumer-validator-identity-test] passed=${pass} failed=${failures}"
 [[ "$failures" -eq 0 ]]
