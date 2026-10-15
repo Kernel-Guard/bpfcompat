@@ -193,14 +193,19 @@ aggregator binds every piece of evidence to the attested candidate
   a distinct `- Known-good digest:`, and `- Completed:` is after
   `generated_at`. A drill of an earlier candidate is refused.
 - **Incident.** The note must contain `[bpfcompat-promotion-incident:v1]`,
-  name `promote-release`, and link the deliberately rejected run as
+  name `promote-release`, and link the deliberately rejected run, and only
+  that run, as
   `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. Written
   policy does not require the incident drill to target the current candidate,
   so an earlier candidate's fail-closed drill is accepted; the output records
   `incident.promotion_run_id` and `incident.candidate_bound`.
 - **Operator.** The confirmation must contain
-  `[bpfcompat-solo-promotion:v1]`, the operator login, and the SHA-256 of the
-  attested `release-candidate-evidence.json` it confirms.
+  `[bpfcompat-solo-promotion:v1]`, the operator login, and, as a whole token,
+  the SHA-256 of the attested `release-candidate-evidence.json` it confirms.
+
+Every JSON input (the manifest, candidate evidence, campaign metadata and
+reports, the Falco report, canary manifests and component records) must be
+exactly one JSON object; a concatenated multi-document file is refused.
 
 Run:
 

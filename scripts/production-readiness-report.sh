@@ -42,6 +42,22 @@ evidence_path() {
   printf '%s\n' "$resolved"
 }
 
+# require_single_object <file> <what>: `jq -e` judges only the last value of a
+# multi-document stream, so a failing record followed by a passing one would
+# pass. Every JSON input must be exactly one object.
+require_single_object() {
+  jq -se 'length == 1 and (.[0] | type == "object")' "$1" >/dev/null 2>&1 ||
+    fail "$2 must be exactly one JSON object: $(basename "$1")"
+}
+
+# json_evidence_path <relative path>: evidence_path for a JSON document.
+json_evidence_path() {
+  local resolved
+  resolved="$(evidence_path "$1")" || exit 2
+  require_single_object "$resolved" "evidence"
+  printf '%s\n' "$resolved"
+}
+
 verify_hash() {
   local path="$1"
   local expected="$2"
@@ -75,6 +91,7 @@ md_field() {
   ' "$1" || fail "$(basename "$1") must contain exactly one \"- $2: \`...\`\" line"
 }
 
+require_single_object "$input" "the input manifest"
 jq -e '
   .schema_version == "v0.1" and
   (.release_version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and
@@ -92,7 +109,7 @@ jq -e '
 
 release_version="$(jq -r '.release_version' "$input")"
 
-candidate="$(evidence_path "$(jq -r '.candidate.evidence' "$input")")"
+candidate="$(json_evidence_path "$(jq -r '.candidate.evidence' "$input")")"
 verify_hash "$candidate" "$(jq -r '.candidate.evidence_sha256' "$input")"
 jq -e --arg release_version "$release_version" '
   .schema_version == "v0.1" and
@@ -153,8 +170,8 @@ while IFS= read -r campaign; do
   campaign_index=$((campaign_index + 1))
   metadata_rel="$(jq -r '.metadata' <<<"$campaign")"
   report_rel="$(jq -r '.report' <<<"$campaign")"
-  metadata="$(evidence_path "$metadata_rel")"
-  report="$(evidence_path "$report_rel")"
+  metadata="$(json_evidence_path "$metadata_rel")"
+  report="$(json_evidence_path "$report_rel")"
 
   # A scheduled run executes the workflow from the default branch, so
   # workflow_sha identifies the workflow source only. What was tested is the
@@ -303,7 +320,7 @@ p95_ms="$(sed -n "${p95_rank}p" "$tmp/durations.sorted")"
 [[ "$p95_ms" -le 720000 ]] ||
   fail "campaign target p95 ${p95_ms}ms exceeds the 12-minute budget"
 
-falco_report="$(evidence_path "$(jq -r '.falco.report' "$input")")"
+falco_report="$(json_evidence_path "$(jq -r '.falco.report' "$input")")"
 verify_hash "$falco_report" "$(jq -r '.falco.report_sha256' "$input")"
 jq -e '
   (.falco.workflow_run_id | type == "number" and . > 0) and
@@ -351,7 +368,7 @@ previous_canary_epoch=0
 while IFS= read -r canary; do
   milestone="$(jq -r '.milestone' <<<"$canary")"
   evidence_rel="$(jq -r '.evidence' <<<"$canary")"
-  canary_evidence="$(evidence_path "$evidence_rel")"
+  canary_evidence="$(json_evidence_path "$evidence_rel")"
   canary_sha="$(jq -r '.evidence_sha256' <<<"$canary")"
   verify_hash "$canary_evidence" "$canary_sha"
 
@@ -429,7 +446,7 @@ while IFS= read -r canary; do
     ' "$canary_evidence")"
     [[ -n "$component_rel" ]] ||
       fail "RC canary ${milestone} must record exactly one ${check}.json component"
-    component="$(evidence_path "${canary_dir_rel}/${component_rel#evidence/}")"
+    component="$(json_evidence_path "${canary_dir_rel}/${component_rel#evidence/}")"
     verify_hash "$component" "$(jq -r --arg p "$component_rel" '.components[] | select(.path == $p) | .sha256' "$canary_evidence")"
     jq -e \
       --arg check "$check" \
@@ -506,12 +523,16 @@ grep -Fq '[bpfcompat-promotion-incident:v1]' "$incident" ||
 # candidate is recorded as incident.candidate_bound.
 grep -Fq 'promote-release' "$incident" ||
   fail "incident evidence does not name the promote-release workflow"
-incident_run_id="$(
+# Exactly one distinct run may be linked, so the rejected run is unambiguous.
+incident_run_ids="$(
   grep -oE 'https://github\.com/Kernel-Guard/bpfcompat/actions/runs/[1-9][0-9]*' "$incident" |
-    head -n 1 | awk -F/ '{print $NF}' || true
+    awk -F/ '{print $NF}' | sort -u || true
 )"
-[[ -n "$incident_run_id" ]] ||
+[[ -n "$incident_run_ids" ]] ||
   fail "incident evidence does not link the rejected promote-release run (https://github.com/Kernel-Guard/bpfcompat/actions/runs/<id>)"
+[[ "$(wc -l <<<"$incident_run_ids")" -eq 1 ]] ||
+  fail "incident evidence links more than one workflow run; it must link only the rejected promote-release run"
+incident_run_id="$incident_run_ids"
 incident_candidate_bound=false
 if grep -qE "(^|[^[:alnum:].-])${candidate_tag//./\\.}([^[:alnum:]]|$)" "$incident"; then
   incident_candidate_bound=true
@@ -520,7 +541,8 @@ fi
 operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
 verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
 # The confirmation must name the exact attested candidate evidence it covers.
-grep -Fq "$candidate_evidence_sha" "$operator_evidence" ||
+# Whole token only: not a substring of a longer hex string.
+grep -Eq "(^|[^0-9A-Fa-f])${candidate_evidence_sha}([^0-9A-Fa-f]|$)" "$operator_evidence" ||
   fail "operator evidence does not name candidate evidence SHA-256 ${candidate_evidence_sha}"
 operator="$(jq -r '.operator.login' "$input")"
 approval_mode="$(jq -r '.operator.approval_mode' "$input")"

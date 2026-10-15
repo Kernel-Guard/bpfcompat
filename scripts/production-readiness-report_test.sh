@@ -550,12 +550,48 @@ expect_refused "a canary container check of another image" "$tmp/bad-canary-cont
 restore "$canary2"
 restore "$container_component"
 
+# Multi-document JSON: `jq -e` judges only the last value, so a failing record
+# followed by a passing one must not pass.
+keep "$container_component"
+keep "$canary2"
+{ jq '.status = "fail" | .digest = ("sha256:" + ("4" * 64))' "$container_component.keep"; cat "$container_component.keep"; } \
+  >"$container_component"
+jq --arg sha "$(sha256sum "$container_component" | awk '{print $1}')" \
+  '(.components[] | select(.path | endswith("/container.json")) | .sha256) = $sha' "$canary2.keep" >"$canary2"
+rehash "$canary2" '.canaries[2].evidence_sha256' "$tmp/bad-multidoc.json"
+expect_refused "a failing component record followed by a passing one" "$tmp/bad-multidoc.json" "must be exactly one JSON object: container.json"
+restore "$canary2"
+restore "$container_component"
+keep "$canary1"
+{ jq '.checks.container = "fail"' "$canary1.keep"; cat "$canary1.keep"; } >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-multidoc.json"
+expect_refused "a failing canary manifest followed by a passing one" "$tmp/bad-multidoc.json" "must be exactly one JSON object: release-candidate-canary.json"
+restore "$canary1"
+keep "$falco_report"
+{ jq '.summary.status = "fail"' "$falco_report.keep"; cat "$falco_report.keep"; } >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/bad-multidoc.json"
+expect_refused "a failing Falco report followed by a passing one" "$tmp/bad-multidoc.json" "must be exactly one JSON object: modern-bpf-compat.json"
+restore "$falco_report"
+{ cat "$tmp/input.json"; cat "$tmp/input.json"; } >"$tmp/bad-multidoc-input.json"
+expect_refused "a multi-document input manifest" "$tmp/bad-multidoc-input.json" "the input manifest must be exactly one JSON object"
+
+# Incident: exactly one linked run, so the rejected run is unambiguous.
+keep "$incident_note"
+cat "$incident_note.keep" >"$incident_note"
+printf '%s\n' '- Successful retry: https://github.com/Kernel-Guard/bpfcompat/actions/runs/6001' >>"$incident_note"
+rehash "$incident_note" .incident.evidence_sha256 "$tmp/bad-incident-tworuns.json"
+expect_refused "an incident note linking two runs" "$tmp/bad-incident-tworuns.json" "links more than one workflow run"
+restore "$incident_note"
+
 # Operator: the confirmation names the exact candidate evidence.
 operator_note="$tmp/operator/evidence.md"
 keep "$operator_note"
 printf '%s\n' '[bpfcompat-solo-promotion:v1] ErenAri confirmed exact evidence' >"$operator_note"
 rehash "$operator_note" .operator.evidence_sha256 "$tmp/bad-operator.json"
 expect_refused "an operator confirmation not bound to the candidate evidence" "$tmp/bad-operator.json" "operator evidence does not name candidate evidence SHA-256"
+printf '%s\n' "[bpfcompat-solo-promotion:v1] ErenAri confirmed evidence 0${CANDIDATE_SHA}" >"$operator_note"
+rehash "$operator_note" .operator.evidence_sha256 "$tmp/bad-operator.json"
+expect_refused "an operator note with the digest inside a longer hex string" "$tmp/bad-operator.json" "operator evidence does not name candidate evidence SHA-256"
 restore "$operator_note"
 
 # --- Attestation path, without the test bypass ---------------------------------
