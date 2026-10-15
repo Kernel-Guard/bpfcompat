@@ -66,6 +66,18 @@ func attachEvidenceFixtures() []attachFixture {
 				m["capabilities"] = map[string]any{"program_types": map[string]any{"tracing": map[string]any{"status": "unsupported", "error_code": -22}}}
 				m["logs"] = map[string]any{"libbpf": "libbpf: prog 'fe': BPF program load failed: Invalid argument"}
 			}},
+		// The validator process ran out of file descriptors (#259): infra,
+		// not a fact about the artifact.
+		{"load failure EMFILE (fd limit)", "required", nil, fakeAttach{mode: "required", accounting: true, programCount: 1, records: 1,
+			selected: 1, attachable: 1, status: "skipped", loadFail: true, programs: tracingProgs("not_attempted")},
+			func(m map[string]any) {
+				m["load"] = map[string]any{"status": "fail", "error_code": -24, "error": "Too many open files"}
+			}},
+		{"load failure ENFILE (fd limit)", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,
+			selected: 1, attachable: 1, status: "skipped", loadFail: true, programs: tracingProgs("not_attempted")},
+			func(m map[string]any) {
+				m["load"] = map[string]any{"status": "fail", "error_code": -23, "error": "Too many open files in system"}
+			}},
 		{"unrecognized validator status", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,
 			selected: 1, attachable: 1, attempted: 1, passed: 1, status: "pass", programs: tracingProgs("attached")},
 			func(m map[string]any) {
@@ -149,13 +161,16 @@ func TestAttachEvidenceFixturesCoverTheContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		seen[ev.Status+"/"+ev.ClassificationCode] = true
+		if ev.Status == "infra_error" && strings.Contains(ev.InfraError, "ran out of file descriptors") {
+			seen["infra_error/fd-limit"] = true
+		}
 		seen["accounting="+ev.Validation.AttachAccounting] = true
 		seen["coverage="+ev.Validation.AttachCoverage] = true
 	}
 	for _, want := range []string{
 		"pass/", "unsupported/ATTACH_NOT_EXERCISED", "unsupported/ATTACH_SCOPE_EMPTY",
 		"infra_error/ATTACH_ACCOUNTING_UNAVAILABLE", "infra_error/ATTACH_ACCOUNTING_INCONSISTENT",
-		"fail/ATTACH_FAILED", "fail/FUNCTIONAL_TEST_FAILURE", "fail/UNSUPPORTED_PROGRAM_TYPE", "infra_error/",
+		"fail/ATTACH_FAILED", "fail/FUNCTIONAL_TEST_FAILURE", "fail/UNSUPPORTED_PROGRAM_TYPE", "infra_error/", "infra_error/fd-limit",
 		"accounting=" + schema.AttachAccountingV1, "accounting=" + schema.AttachAccountingUnavailable,
 		"accounting=" + schema.AttachAccountingInconsistent,
 		"coverage=" + schema.AttachCoverageComplete, "coverage=" + schema.AttachCoveragePartial,

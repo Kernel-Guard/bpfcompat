@@ -246,6 +246,29 @@ func TestLibraryMatchesRunnerEvaluation(t *testing.T) {
 	}
 }
 
+// A load that failed because the validator process ran out of file
+// descriptors is the validator's environment, not the artifact (as in the
+// CLI since #259): infra_error, not INCOMPATIBLE.
+func TestLibraryLoadFDLimitIsInfraError(t *testing.T) {
+	for _, code := range []int{-24, -23} {
+		d := doc{mode: "required", accounting: true, loadFail: true, status: "skipped",
+			programs: []prog{{name: "tp_a", section: "tracepoint/x/y", outcome: "not_attempted", selected: true}}}
+		var m map[string]any
+		if err := json.Unmarshal(d.bytes(t), &m); err != nil {
+			t.Fatal(err)
+		}
+		m["load"] = map[string]any{"status": "fail", "error_code": code, "error": "Too many open files"}
+		data, _ := json.Marshal(m)
+		r, err := parseResult(data, newConfig(WithMode(LoadAttachRequired)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.OK() || r.Compatible() || r.Status != "infra_error" || r.Verdict != schema.VerdictInfraError || r.FailedStage != "infra" {
+			t.Fatalf("code %d: got status=%s verdict=%s stage=%s", code, r.Status, r.Verdict, r.FailedStage)
+		}
+	}
+}
+
 // The matrix path carries the engine's attach evidence through unchanged.
 func TestResultFromTargetCarriesAttachEvidence(t *testing.T) {
 	progs := []schema.AttachProgram{{Name: "tp_a", Selected: true, Outcome: "attached"}, {Name: "xdp_pass", Selected: true, Outcome: "not_attachable_by_validator"}}

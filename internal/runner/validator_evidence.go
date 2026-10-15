@@ -124,6 +124,13 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 				}
 			}
 		}
+	case vr.Load.Status == "fail" && loadHitFDLimit(vr.Load.ErrorCode):
+		// Mirrors executeTarget (#259): running out of file descriptors is
+		// the validator process's limit, not a fact about the artifact.
+		ev.Status = "infra_error"
+		ev.FailedStage = "infra"
+		ev.InfraError = fmt.Sprintf("the validator process ran out of file descriptors while loading (code=%d %s): a limit of the validator's environment in the guest, not a property of the artifact", vr.Load.ErrorCode, vr.Load.Error)
+		ev.Notes = append(ev.Notes, "validator load error: "+ev.InfraError)
 	case vr.Load.Status == "fail":
 		ev.Status = "fail"
 		ev.FailedStage = "load"
