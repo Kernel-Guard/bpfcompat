@@ -616,3 +616,45 @@ func main() {
 	}
 	return binaryPath
 }
+
+func TestArtifactRecordCanonicalSHA256MatchesVerifiedComputedHash(t *testing.T) {
+	workDir := t.TempDir()
+	record := ArtifactVersionRecord{
+		RunID:           "run-canon-1",
+		RunStartedAt:    "2026-10-01T00:00:00Z",
+		CreatedAt:       "2026-10-01T00:00:01Z",
+		ArtifactName:    "canon",
+		ArtifactVersion: "v1",
+		ArtifactPath:    "/tmp/canon.bpf.o",
+		ArtifactSHA256:  strings.Repeat("a", 64),
+		MatrixPath:      "/tmp/mvp.yaml",
+		SummaryStatus:   "pass",
+		JSONReportPath:  "/tmp/canon.json",
+	}
+	if err := PersistArtifactVersion(workDir, record); err != nil {
+		t.Fatalf("persist record: %v", err)
+	}
+	stored, err := FindArtifactVersion(workDir, "canon", "v1")
+	if err != nil {
+		t.Fatalf("find record: %v", err)
+	}
+	rows, err := VerifyArtifactVersionHistory(workDir)
+	if err != nil || len(rows) != 1 || !rows[0].Verified {
+		t.Fatalf("expected one verified row, got rows=%+v err=%v", rows, err)
+	}
+	got, err := ArtifactRecordCanonicalSHA256(stored)
+	if err != nil {
+		t.Fatalf("canonical hash: %v", err)
+	}
+	if got != rows[0].ComputedSHA256 || got != stored.RecordSHA256 {
+		t.Fatalf("canonical hash %s != computed %s / record %s", got, rows[0].ComputedSHA256, stored.RecordSHA256)
+	}
+	stored.ArtifactSHA256 = strings.Repeat("b", 64)
+	mutated, err := ArtifactRecordCanonicalSHA256(stored)
+	if err != nil {
+		t.Fatalf("canonical hash: %v", err)
+	}
+	if mutated == got {
+		t.Fatalf("expected artifact_sha256 change to alter the canonical hash")
+	}
+}
