@@ -22,6 +22,8 @@ GitHub repository UI/API (they cannot be set from committed files).
 | Release-channel alias isolation | `scripts/promote-release.sh` | tag releases (`v*`) |
 | Protected-environment preflight | `scripts/check-production-environment.sh` | tag releases (`v*`) |
 | Exact-input manual publication | `.github/workflows/promote-release.yml` | explicit `workflow_dispatch` |
+| Pinned validator build inputs (digest-pinned builder, exact libbpf/libelf/zlib/zstd/glibc/GCC) | `validator/build-inputs.lock`, `scripts/build-validator-pinned.sh` | all release-artifacts builds |
+| Stable validator == qualified release-candidate validator | `scripts/check-validator-matches-candidate.sh` | stable tags (`vX.Y.Z`) |
 | Protected moving-alias rollback drill | `.github/workflows/rollback-drill.yml` | explicit `workflow_dispatch` from `main` |
 
 The tagged-release workflow builds candidate binaries once, tests those bytes
@@ -35,6 +37,17 @@ Promotion pauses for 15 minutes at the `production-release` environment. The
 workflows refuse release processing unless that environment has no required
 reviewers, disables administrator bypass, and restricts deployments to `v*`
 tags. This is an explicit solo-maintainer posture, not independent review.
+
+The static validator links distro libbpf, libelf, zlib, zstd and glibc, so
+its bytes depend on those packages, not only on `validator/` sources. It is
+built in the digest-pinned builder image named in `validator/build-inputs.lock`
+with exactly the packages listed there; the build fails closed if any version
+is unavailable, proves the linked libbpf version and compiler from the binary,
+and must be byte-identical to the lock's recorded reproduction when the
+validator tree is unchanged. A stable tag additionally refuses any validator
+whose sha256 differs from its release candidate's, because the qualification
+campaigns ran exactly those bytes. Changing the lock means a new release
+candidate.
 
 Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
 (`X.Y`, `latest`) are reachable only through the stable release channel.
