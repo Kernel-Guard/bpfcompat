@@ -18,6 +18,15 @@ WorkingDirectory=/opt/bpfcompat-src
 ExecStart=/usr/local/bin/bpfcompat serve --addr 127.0.0.1:8080 --workdir /var/lib/bpfcompat-demo --matrix matrices/mvp.yaml
 Restart=on-failure
 RestartSec=3
+# Graceful drain: SIGTERM goes to bpfcompat only (KillMode=mixed), which stops
+# taking new validations and waits for in-flight ones up to
+# BPFCOMPAT_API_SHUTDOWN_DRAIN_TIMEOUT (default 10m), then cancels the rest and
+# gives the runner up to 30s to kill QEMU and remove overlays. The default
+# KillMode=control-group would SIGTERM the QEMU guests at the same moment.
+# TimeoutStopSec must exceed drain timeout + 30s; raise it together with the
+# drain timeout. On overrun systemd SIGKILLs the whole cgroup.
+KillMode=mixed
+TimeoutStopSec=11min
 
 # Hardening compatible with running QEMU/KVM. Note this is deliberately looser
 # than bpfcompat-agent.service: the demo spawns qemu, which needs /dev/kvm and a
