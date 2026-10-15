@@ -43,10 +43,15 @@ const (
 	defaultAddr        = ":8080"
 	defaultConcurrency = 2
 	defaultTimeout     = 8 * time.Minute
-	// maxMultipartFormBytes bounds how much of a multipart form is held in
-	// memory; larger file parts spill to temp files. It does NOT bound the
-	// request body — maxUploadBytes (BPFCOMPAT_API_MAX_UPLOAD_BYTES) does.
-	maxMultipartFormBytes = 128 << 20
+	// maxMultipartFormBytes bounds how much of a multipart form's FILE
+	// parts is held in memory; larger file parts spill to temp files
+	// (removed by releaseUploadForm). Go additionally budgets non-file
+	// fields at this value + 10 MiB, so pasted source_code / manifest_text
+	// / report_json may be up to ~18 MiB. It does NOT bound the request
+	// body — maxUploadBytes (BPFCOMPAT_API_MAX_UPLOAD_BYTES) does. Kept
+	// small because uploads are parsed before (registry) or independently
+	// of the run, so every concurrent, even unauthenticated, upload pays it.
+	maxMultipartFormBytes = 8 << 20
 	// defaultMaxUploadBytes is the default hard cap on the whole multipart
 	// request body for validate and registry uploads (enforced with
 	// http.MaxBytesReader; overflow is answered with 413).
@@ -1941,6 +1946,7 @@ func (s *Server) handleRegistryArtifactUpload(w http.ResponseWriter, r *http.Req
 		writeError(w, status, err.Error())
 		return
 	}
+	defer s.releaseUploadForm(r)
 	tenant := strings.TrimSpace(r.FormValue("tenant"))
 	projectID := strings.TrimSpace(r.FormValue("project"))
 	artifactName := strings.TrimSpace(r.FormValue("artifact_name"))
@@ -2484,6 +2490,9 @@ func (s *Server) prepareValidateUpload(w http.ResponseWriter, r *http.Request) (
 	if status, err := parseUploadForm(w, r); err != nil {
 		return runner.Config{}, "", status, err
 	}
+	// Everything the run needs is copied into requestDir below, so the
+	// parsed form (and its spilled temp files) can go when this returns.
+	defer s.releaseUploadForm(r)
 	requestDir, err := s.newUploadDir()
 	if err != nil {
 		return runner.Config{}, "", http.StatusInternalServerError, err
@@ -3048,7 +3057,10 @@ func maxUploadBytes() int64 {
 }
 
 // parseUploadForm caps the request body at maxUploadBytes and parses it as
-// a multipart form. Overflow maps to 413, any other parse error to 400.
+// a multipart form. Overflow (of the body cap or of the in-memory budget
+// for non-file fields) maps to 413, any other parse error to 400. On
+// success the caller must defer releaseUploadForm(r): on a failed parse Go
+// has already removed any spilled temp files.
 func parseUploadForm(w http.ResponseWriter, r *http.Request) (int, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
 	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
@@ -3056,9 +3068,26 @@ func parseUploadForm(w http.ResponseWriter, r *http.Request) (int, error) {
 		if errors.As(err, &tooLarge) {
 			return http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds the %d-byte upload limit (%s)", tooLarge.Limit, envMaxUploadBytes)
 		}
+		if errors.Is(err, multipart.ErrMessageTooLarge) {
+			return http.StatusRequestEntityTooLarge, fmt.Errorf("multipart non-file fields exceed the in-memory limit (%d bytes); send large content as a file part", maxMultipartFormBytes+(10<<20))
+		}
 		return http.StatusBadRequest, fmt.Errorf("parse multipart form: %w", err)
 	}
 	return 0, nil
+}
+
+// releaseUploadForm removes the temp files that file parts larger than
+// maxMultipartFormBytes were spilled to. net/http's own end-of-request
+// cleanup cannot be relied on: it only sees the *http.Request it created,
+// and withRequestLogging hands handlers an r.WithContext copy, so the
+// form parsed here is invisible to it and the temp files would leak.
+func (s *Server) releaseUploadForm(r *http.Request) {
+	if r.MultipartForm == nil {
+		return
+	}
+	if err := r.MultipartForm.RemoveAll(); err != nil {
+		s.log().Warn("remove multipart temp files", slog.String("error", err.Error()))
+	}
 }
 
 func (s *Server) resolveMatrixPath(r *http.Request, requestDir string) (string, error) {
