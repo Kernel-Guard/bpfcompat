@@ -18,8 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   - Each target's notes record which source the profile came from, its path,
     and its sha256.
   - Built-in profiles cache their images under `$BPFCOMPAT_CACHE_DIR`
-    (default `~/.cache/bpfcompat`). The exact profile used is saved under the
-    run directory.
+    (default `~/.cache/bpfcompat`). So do `BPFCOMPAT_PROFILE_DIR` profiles
+    with a relative `image.local_path`. The exact profile used is saved under
+    the run directory.
   - Checkout and GitHub Action runs still resolve `./vm/profiles` first, so
     their behavior is unchanged.
 - `bpfcompat doctor` checks a host for VM-backed runs:
@@ -37,6 +38,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   user, not merely present.
 
 ### Fixed
+- Concurrent runs sharing an image cache no longer download the same image
+  several times and replace it under each other.
+  - Before, a run could record the digest of an image that another run then
+    replaced.
+  - Downloads now take a per-image lock and publish atomically. A published
+    image is never replaced, and `.download` leftovers from a killed run are
+    cleaned up.
+  - Target notes now say whether the recorded `base image sha256` was
+    verified against a pinned `image.sha256` or is unverified provenance.
 - VM image downloads are now staged next to the cached image instead of in
   the run directory.
   - Before, a run directory and image cache on different filesystems (for

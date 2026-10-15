@@ -480,16 +480,33 @@ Verify provenance with
   silent fallback to the built-in copy. Each target's `notes` record the
   source used, the profile path, and its sha256. `bpfcompat doctor` shows the
   same information before a run.
-- **Images** download to a temporary file next to their final cache path and
-  are renamed into place only after the pinned digest (if any) matches. That
-  works when the run directory and the image cache are on different
-  filesystems, and never leaves a partial image at the final path.
-  Profiles read from disk keep resolving `image.local_path`
-  against the working directory (`./vm/cache/...` in a checkout). Built-in
-  profiles cache images under `$BPFCOMPAT_CACHE_DIR` (default
-  `~/.cache/bpfcompat`, or `$XDG_CACHE_HOME/bpfcompat`), so each image (a few
-  hundred MB) downloads once per host. The run directory keeps the exact
-  profile used, at `.bpfcompat/runs/<run-id>/profiles/<id>.yaml`.
+- **Image paths.** A relative `image.local_path` resolves differently by
+  source:
+  - Profiles from `./vm/profiles` resolve it against the working directory,
+    i.e. the checkout root (`./vm/cache/...`), as before.
+  - Built-in profiles and `$BPFCOMPAT_PROFILE_DIR` profiles resolve it under
+    `$BPFCOMPAT_CACHE_DIR` (default `~/.cache/bpfcompat`, or
+    `$XDG_CACHE_HOME/bpfcompat`). The answer is the same from any directory,
+    and each image (a few hundred MB) downloads once per host.
+    `BPFCOMPAT_CACHE_DIR=<checkout>` reuses a checkout's `vm/cache`.
+  - An absolute path is used as written.
+
+  A rebased profile is copied into the run directory, at
+  `.bpfcompat/runs/<run-id>/profiles/<id>.yaml`; your file is never modified.
+- **Image downloads and digests.** A download takes a per-image lock in the
+  cache (`<image>.lock`). It is staged next to its final path and renamed into
+  place, so concurrent runs download an image once. The run directory and
+  cache may be on different filesystems, and no partial image ever appears
+  at the final path. A published image is never replaced; delete it to
+  refresh.
+  - Each target's notes record the observed `base image sha256: …` of the
+    bytes it booted. That is provenance.
+  - A `base image digest:` note says whether it was **verified** against the
+    profile's pinned `image.sha256` (a mismatch fails the run) or is **not
+    verified** because the profile pins none.
+  - The `<image>.sha256` sidecar is a copy for operators and is never trusted.
+  - `.download` leftovers from a killed run are removed by the next download
+    of that image.
 - **Reports**: `--out` is required and names the JSON report; `--markdown` is
   optional. Both are written where you point them. Run state and evidence go
   under `--workdir` (default `./.bpfcompat`), one fresh directory per run.
