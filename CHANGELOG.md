@@ -34,6 +34,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     a best-effort attach failure — even a long-standing one, which the old
     differ reported as `UNCHANGED_COMPATIBLE`. Regenerating the baseline with
     this release clears it.
+  - `NEW_REGRESSION` and `FIXED` cells record `changed_inputs`,
+    `unknown_inputs` and `attribution` (`artifact_only`, `environment_only`,
+    `validator_only`, `multiple`, `none_recorded`, `unknown`): which
+    **recorded** inputs differ, never a cause. An os-release or validator
+    identity recorded on only one side is listed as unknown, not skipped.
+    The classification is unchanged; a kernel-upgrade failure stays a
+    gating `NEW_REGRESSION`.
 - **Required attach and libbpf section aliases.** The validator's auto-attach
   allow-list is unchanged and does not include `tp/` (alias of
   `tracepoint/`), `kprobe.multi/`, `raw_tp.w/` and similar. In required mode

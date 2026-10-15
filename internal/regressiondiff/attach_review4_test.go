@@ -113,7 +113,7 @@ func TestFixedCellsAreNotWordedAsRegressions(t *testing.T) {
 	c := compat()
 	c.Environment.ObservedKernel = "5.15.0-189-generic"
 	cell := onlyCell(t, build(t, report(b), report(c)))
-	if cell.Classification != Fixed || cell.Attribution != AttributionEnvironment {
+	if cell.Classification != Fixed || cell.Attribution != AttributionEnvironmentOnly {
 		t.Fatalf("got %s/%s", cell.Classification, cell.Attribution)
 	}
 	if strings.Contains(cell.Reason, "regressed") {
@@ -141,7 +141,7 @@ func TestCommandModeLoaderIsItsOwnInput(t *testing.T) {
 		br, cr := report(compat()), report(incompat())
 		br.Command, cr.Command = cmd("L1"), cmd("L2")
 		cell := onlyCell(t, build(t, br, cr))
-		if cell.Attribution != AttributionArtifact || strings.Join(cell.ChangedInputs, ",") != "loader" ||
+		if cell.Attribution != AttributionArtifactOnly || strings.Join(cell.ChangedInputs, ",") != "loader" ||
 			!strings.Contains(cell.Reason, "loader") {
 			t.Fatalf("got %s %v: %s", cell.Attribution, cell.ChangedInputs, cell.Reason)
 		}

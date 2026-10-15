@@ -43,7 +43,7 @@ const (
 	// is a statement about the obligation between the two runs, not by itself
 	// about the candidate's artifact: the observed kernel may also have moved
 	// within the profile's family. Cell.Attribution says which recorded
-	// inputs changed.
+	// inputs differ -- an observation, not a cause.
 	NewRegression = "NEW_REGRESSION"
 
 	// ExistingIncompatibility: broken before, broken now. A known limitation --
@@ -138,16 +138,25 @@ type Cell struct {
 	RequiredChanged bool   `json:"required_changed,omitempty"`
 	Classification  string `json:"classification"`
 	Reason          string `json:"reason"`
-	// ChangedInputs and Attribution say, for a cell whose outcome changed
-	// (NEW_REGRESSION, FIXED), which recorded inputs differ between the two
-	// runs: "artifact" (artifact.sha256), "loader" (command-mode loader
+	// ChangedInputs, UnknownInputs and Attribution describe, for a cell whose
+	// outcome changed (NEW_REGRESSION, FIXED), the RECORDED inputs of the two
+	// runs. They are observations, not causes: inputs the reports do not
+	// record (kernel config, boot parameters, image contents, host, timing)
+	// may also differ.
+	//
+	// Inputs: "artifact" (artifact.sha256), "loader" (command-mode loader
 	// sha256), "kernel" (observed kernel release), "os" (observed os-release
-	// identity), "validator" (artifact-mode validator sha256). Attribution is
-	// "artifact" (artifact/loader only), "environment" (kernel/os only),
-	// "validator", "multiple", "none_recorded", or "unknown" when an identity
-	// is missing. The classification is about the obligation; this
-	// is what the evidence can and cannot attribute it to.
+	// identity), "validator" (artifact-mode validator sha256).
+	// ChangedInputs lists those recorded on both sides with different
+	// values; UnknownInputs those that cannot be compared (artifact, loader
+	// or kernel missing on either side; os or validator recorded on one side
+	// only). Attribution names the category of the recorded difference:
+	// "artifact_only", "environment_only", "validator_only", "multiple",
+	// "none_recorded", or "unknown" when an unknown input could add a
+	// category. The classification is about the obligation and is never
+	// changed by these fields.
 	ChangedInputs []string `json:"changed_inputs,omitempty"`
+	UnknownInputs []string `json:"unknown_inputs,omitempty"`
 	Attribution   string   `json:"attribution,omitempty"`
 	Baseline      CellSide `json:"baseline"`
 	Candidate     CellSide `json:"candidate"`
@@ -854,7 +863,7 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 	// failure on a kernel outside the obligation's requested family is not
 	// evidence about this obligation. Established is not "identical": the
 	// observed kernel may differ within the family (a kernel upgrade), and
-	// attribute() records that rather than blaming the artifact.
+	// attribute() records which recorded inputs differ, never a cause.
 	if cell.Baseline.EnvironmentEstablished && cell.Candidate.EnvironmentEstablished {
 		if reason, regressed := attachRegression(cell.Baseline.attach, cell.Candidate.attach); regressed {
 			if depth, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {

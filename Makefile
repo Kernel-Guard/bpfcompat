@@ -153,7 +153,7 @@ examples:
 	$(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_$(BPF_TARGET_ARCH) -I$(BPF_ARCH_INCLUDE) \
 	  -c examples/unsupported-attach/unsupported_attach.bpf.c \
 	  -o examples/unsupported-attach/unsupported_attach.bpf.o
-	for f in tracing_only xdp_only mixed variants; do \
+	for f in tracing_only xdp_only mixed variants ctx_in_record ctx_beyond_record; do \
 	  $(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_$(BPF_TARGET_ARCH) -I$(BPF_ARCH_INCLUDE) \
 	    -c examples/attach-coverage/$$f.bpf.c -o examples/attach-coverage/$$f.bpf.o || exit 1; \
 	done

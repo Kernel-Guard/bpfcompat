@@ -101,15 +101,15 @@ func TestRegressionSaysWhichInputsChanged(t *testing.T) {
 		mustSay, mustNotSay          string
 	}{
 		{"A: different artifacts, same observed kernel", "aaa", "bbb", "5.15.0-186-generic", "5.15.0-186-generic",
-			"artifact", []string{"artifact"}, "only the shipped program changed", "kernel changed"},
+			"artifact_only", []string{"artifact"}, "among the recorded inputs only the shipped program differs", "kernel differ"},
 		{"B: same artifact across a kernel upgrade", "aaa", "aaa", "5.15.0-186-generic", "5.15.0-189-generic",
-			"environment", []string{"kernel"}, "the shipped program is unchanged", "the artifact changed"},
+			"environment_only", []string{"kernel"}, "the shipped program is recorded as unchanged", "the artifact changed"},
 		{"C: artifact and kernel both changed", "aaa", "bbb", "5.15.0-186-generic", "5.15.0-189-generic",
-			"multiple", []string{"artifact", "kernel"}, "cannot be attributed", "only the shipped program changed"},
+			"multiple", []string{"artifact", "kernel"}, "does not separate their effects", "only the shipped program differs"},
 		{"neither recorded as changed", "aaa", "aaa", "5.15.0-186-generic", "5.15.0-186-generic",
-			"none_recorded", nil, "neither", "only the shipped program changed"},
+			"none_recorded", nil, "no recorded input differs", "only the shipped program differs"},
 		{"artifact identity missing", "", "bbb", "5.15.0-186-generic", "5.15.0-186-generic",
-			"unknown", nil, "cannot be determined", "only the shipped program changed"},
+			"unknown", nil, "cannot be fully determined", "only the shipped program differs"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,7 +136,7 @@ func TestPerProgramAttachRegressionCarriesAttribution(t *testing.T) {
 	c.Environment.ObservedKernel = "5.15.0-189-generic"
 	br, cr := report(b), report(c)
 	cell := onlyCell(t, build(t, br, cr))
-	if cell.Classification != NewRegression || cell.Attribution != "environment" {
+	if cell.Classification != NewRegression || cell.Attribution != AttributionEnvironmentOnly {
 		t.Fatalf("got %s attribution=%q: %s", cell.Classification, cell.Attribution, cell.Reason)
 	}
 }
