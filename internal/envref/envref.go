@@ -347,6 +347,11 @@ var catalog = []Var{
 		Description: "Maximum concurrent VM-backed validate jobs. Hard cap is 64.",
 	},
 	{
+		Name: "BPFCOMPAT_API_MAX_ARTIFACT_EXPANDED_BYTES", Default: "536870912",
+		Category:    "HTTP Server",
+		Description: "Absolute cap on bytes an uploaded OCI/gzip/tar artifact may expand to on disk during validate. The effective bound is min(this, max(64x upload size, 1 MiB)); clamped to [1 MiB, 8 GiB]. CLI runs are unaffected (8 GiB).",
+	},
+	{
 		Name: "BPFCOMPAT_API_MAX_QUEUED_VALIDATE_JOBS", Default: "20",
 		Category:    "HTTP Server",
 		Description: "Maximum queued validate jobs. Beyond this, /api/v1/validate/start returns 429.",

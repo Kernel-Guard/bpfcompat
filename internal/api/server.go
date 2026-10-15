@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/agent"
+	"github.com/kernel-guard/bpfcompat/internal/artifact"
 	"github.com/kernel-guard/bpfcompat/internal/cloudregistry"
 	"github.com/kernel-guard/bpfcompat/internal/manifest"
 	"github.com/kernel-guard/bpfcompat/internal/matrix"
@@ -2332,7 +2333,13 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.validateRunner()(r.Context(), cfg)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if errors.Is(err, artifact.ErrOCILimitExceeded) {
+			// The upload expands past the API's OCI extraction bound: a
+			// client-side problem, not a server fault.
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if err := s.autoSyncValidationArtifact(cfg, result); err != nil {
@@ -2429,6 +2436,10 @@ func (s *Server) buildValidateRunnerConfig(r *http.Request) (runner.Config, int,
 	if err != nil {
 		return runner.Config{}, http.StatusBadRequest, err
 	}
+	artifactInfo, err := os.Stat(artifactPath)
+	if err != nil {
+		return runner.Config{}, http.StatusInternalServerError, fmt.Errorf("stat uploaded artifact: %w", err)
+	}
 	manifestPath, err := extractManifest(r, requestDir)
 	if err != nil {
 		return runner.Config{}, http.StatusBadRequest, err
@@ -2481,6 +2492,9 @@ func (s *Server) buildValidateRunnerConfig(r *http.Request) (runner.Config, int,
 		Runner:          runner.RunnerVM,
 		Concurrency:     concurrency,
 		Timeout:         timeout,
+		// Uploads are untrusted: bound OCI-archive expansion relative to the
+		// upload instead of the CLI's 8 GiB ceiling (see artifact_limits.go).
+		OCILimits: apiArtifactOCILimits(artifactInfo.Size()),
 	}
 	if err := cfg.Validate(); err != nil {
 		return runner.Config{}, http.StatusBadRequest, fmt.Errorf("invalid request config: %w", err)
@@ -2499,7 +2513,9 @@ func (s *Server) runValidateJob(jobID string, cfg runner.Config) {
 			job.State = "failed"
 			job.Stage = "failed"
 			job.Message = "Validation failed"
-			job.Error = err.Error()
+			// Served to (possibly anonymous) clients via validate/status:
+			// strip host paths the same way writeError does.
+			job.Error = redactErrorMessage(err.Error())
 			job.FinishedAt = time.Now().UTC()
 		})
 		recordValidateJobTerminal("failed")
