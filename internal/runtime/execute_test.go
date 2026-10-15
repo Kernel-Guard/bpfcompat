@@ -49,6 +49,7 @@ func TestExecuteArtifactOnHostPass(t *testing.T) {
 
 	result, err := ExecuteArtifactOnHost(context.Background(), ExecuteRequest{
 		ArtifactPath:        artifactPath,
+		ExpectedSHA256:      rehashSHA([]byte("dummy")),
 		AttachMode:          "best-effort",
 		ProbeFeatures:       true,
 		AllowHostLoad:       true,
@@ -98,6 +99,7 @@ func TestExecuteArtifactOnHostFailClassification(t *testing.T) {
 
 	result, err := ExecuteArtifactOnHost(context.Background(), ExecuteRequest{
 		ArtifactPath:        artifactPath,
+		ExpectedSHA256:      rehashSHA([]byte("dummy")),
 		AttachMode:          "required",
 		ProbeFeatures:       true,
 		AllowHostLoad:       true,

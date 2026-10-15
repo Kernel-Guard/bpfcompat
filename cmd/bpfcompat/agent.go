@@ -825,6 +825,7 @@ func runAgentApply(args []string) int {
 		}
 		execution, err := runtime.ExecuteArtifactOnHost(context.Background(), runtime.ExecuteRequest{
 			ArtifactPath:        fetchResult.OutputPath,
+			ExpectedSHA256:      fetchResult.VerifiedSHA256(),
 			ManifestPath:        manifestToUse,
 			AttachMode:          strings.TrimSpace(*attachMode),
 			ProbeFeatures:       *probeFeatures,
