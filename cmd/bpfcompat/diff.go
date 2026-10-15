@@ -110,14 +110,22 @@ func runDiff(args []string) int {
 
 // distinctOutputs refuses --out and --markdown pointing at one file.
 func distinctOutputs(outPath, markdownPath string) error {
-	out, markdown := strings.TrimSpace(outPath), strings.TrimSpace(markdownPath)
-	if out == "" || markdown == "" {
+	return refuseSameFile("--out", outPath, "--markdown", markdownPath, "the Markdown would overwrite the JSON evidence")
+}
+
+// refuseSameFile refuses two path flags that name one file, so a command never
+// writes one of its outputs over another output or over one of its inputs.
+// Either path being empty means that flag is unused and there is nothing to
+// compare. consequence says what would be lost.
+func refuseSameFile(aFlag, aPath, bFlag, bPath, consequence string) error {
+	a, b := strings.TrimSpace(aPath), strings.TrimSpace(bPath)
+	if a == "" || b == "" {
 		return nil
 	}
 	// Compared by file identity, not by path text: a link or a second route to
 	// the same directory is the same file, however differently it is spelled.
-	if regressiondiff.SameFile(out, markdown) {
-		return fmt.Errorf("--out and --markdown are the same file (%s); the Markdown would overwrite the JSON evidence", out)
+	if regressiondiff.SameFile(a, b) {
+		return fmt.Errorf("%s and %s are the same file (%s); %s", aFlag, bFlag, a, consequence)
 	}
 	return nil
 }
