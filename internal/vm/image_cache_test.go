@@ -77,8 +77,8 @@ func TestEnsureImageAvailableStagesDownloadBesideCachedImage(t *testing.T) {
 	if sum != hex.EncodeToString(want[:]) {
 		t.Fatalf("digest %s", sum)
 	}
-	if names := dirEntries(t, cacheDir); len(names) != 2 { // image + .sha256 sidecar
-		t.Fatalf("cache dir should hold only the image and its sidecar, got %v", names)
+	if names := dirEntries(t, cacheDir); len(names) != 3 { // image, .sha256 sidecar, .lock
+		t.Fatalf("cache dir should hold only the image, its sidecar and lock, got %v", names)
 	}
 }
 
@@ -98,8 +98,8 @@ func TestEnsureImageAvailableRenameFailureLeavesNoPartialImage(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cache downloaded image") {
 		t.Fatalf("want a cache error, got %v", err)
 	}
-	if names := dirEntries(t, cacheDir); len(names) != 0 {
-		t.Fatalf("cache dir must be left empty after a failed rename, got %v", names)
+	if names := dirEntries(t, cacheDir); len(names) != 1 || names[0] != "demo.qcow2.lock" {
+		t.Fatalf("cache dir must hold only the lock file after a failed rename, got %v", names)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestEnsureImageAvailablePinMismatchLeavesNoPartialImage(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("want checksum mismatch, got %v", err)
 	}
-	if names := dirEntries(t, cacheDir); len(names) != 0 {
-		t.Fatalf("cache dir must be left empty after a pin mismatch, got %v", names)
+	if names := dirEntries(t, cacheDir); len(names) != 1 || names[0] != "demo.qcow2.lock" {
+		t.Fatalf("cache dir must hold only the lock file after a pin mismatch, got %v", names)
 	}
 }

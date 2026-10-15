@@ -2,8 +2,6 @@ package vm
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -208,7 +206,8 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 	if imageSHA != "" {
-		result.Notes = append(result.Notes, fmt.Sprintf("base image sha256: %s", imageSHA))
+		// Observed digest (provenance), then whether it was verified against a pin.
+		result.Notes = append(result.Notes, fmt.Sprintf("base image sha256: %s", imageSHA), baseImageDigestNote(req.Profile))
 	}
 
 	overlayPath := filepath.Join(vmRunDir, "overlay.qcow2")
@@ -719,22 +718,11 @@ func waitProcessExit(cmd *exec.Cmd, timeout time.Duration) error {
 	}
 }
 
-// renameImageFn moves a finished download into the image cache; tests inject
-// failures (e.g. EXDEV) through it.
-var renameImageFn = os.Rename
-
-// imageDownloadTempPath returns a unique, not-yet-existing name in the same
-// directory as the cached image, so concurrent runs never share a temp file.
-func imageDownloadTempPath(imagePath string) (string, error) {
-	suffix := make([]byte, 8)
-	if _, err := rand.Read(suffix); err != nil {
-		return "", fmt.Errorf("image download temp name: %w", err)
-	}
-	return fmt.Sprintf("%s.%s.download", imagePath, hex.EncodeToString(suffix)), nil
-}
-
-// ensureImageAvailable returns the cached image path and the digest recomputed
-// from the bytes used by this run. A pinned profile fails closed on mismatch.
+// ensureImageAvailable returns the cached image path and the sha256 observed
+// on its bytes for this run (provenance). A pinned image.sha256 is the gate: a
+// download or cached image that does not match it fails the run. Downloads
+// into the shared cache are locked and published atomically; see
+// image_cache.go.
 func ensureImageAvailable(ctx context.Context, profile Profile) (string, string, error) {
 	basePath := profile.Image.LocalPath
 	if basePath == "" {
@@ -744,52 +732,25 @@ func ensureImageAvailable(ctx context.Context, profile Profile) (string, string,
 	if err != nil {
 		return "", "", fmt.Errorf("resolve image path: %w", err)
 	}
+	pinned := strings.TrimSpace(profile.Image.SHA256)
 
 	if _, err := os.Stat(basePathAbs); err != nil {
 		if profile.Image.SourceURL == "" {
 			return "", "", fmt.Errorf("image missing at %s and no source URL provided", basePathAbs)
 		}
-		if err := os.MkdirAll(filepath.Dir(basePathAbs), 0o755); err != nil {
-			return "", "", fmt.Errorf("create image cache directory: %w", err)
-		}
-		// Stage the download beside its final path, not in the run dir: the
-		// image cache can be on another filesystem (tmpfs /tmp, a bind mount,
-		// a separate $HOME), where a rename fails with EXDEV after the whole
-		// download. A same-directory rename is atomic, so the final path only
-		// ever holds a complete, verified image.
-		tempPath, err := imageDownloadTempPath(basePathAbs)
-		if err != nil {
+		if err := publishImage(ctx, profile.Image.SourceURL, basePathAbs, pinned); err != nil {
 			return "", "", err
 		}
-		defer func() { _ = os.Remove(tempPath) }() // no-op once renamed
-		if err := downloadFile(ctx, profile.Image.SourceURL, tempPath); err != nil {
-			return "", "", fmt.Errorf("download image: %w", err)
-		}
-		if pinned := strings.TrimSpace(profile.Image.SHA256); pinned != "" {
-			sum, err := fileSHA256(tempPath)
-			if err != nil {
-				return "", "", err
-			}
-			if !strings.EqualFold(sum, pinned) {
-				_ = os.Remove(tempPath)
-				return "", "", fmt.Errorf("image checksum mismatch for %s: got %s want %s", profile.Image.SourceURL, sum, pinned)
-			}
-		}
-		if err := renameImageFn(tempPath, basePathAbs); err != nil {
-			return "", "", fmt.Errorf("cache downloaded image: %w", err)
-		}
-		// Invalidate any stale sidecar from a previous image at this path.
-		_ = os.Remove(basePathAbs + ".sha256")
 	}
 
-	sum, err := ensureImageChecksum(basePathAbs)
+	observed, err := ensureImageChecksum(basePathAbs)
 	if err != nil {
 		return "", "", fmt.Errorf("hash cached image %s: %w", basePathAbs, err)
 	}
-	if pinned := strings.TrimSpace(profile.Image.SHA256); pinned != "" && !strings.EqualFold(sum, pinned) {
-		return "", "", fmt.Errorf("cached image %s checksum mismatch: got %s want %s (delete the cached file and its .sha256 sidecar to re-download)", basePathAbs, sum, pinned)
+	if pinned != "" && !strings.EqualFold(observed, pinned) {
+		return "", "", fmt.Errorf("cached image %s checksum mismatch: got %s want %s (pinned image.sha256; delete the cached file to re-download)", basePathAbs, observed, pinned)
 	}
-	return basePathAbs, sum, nil
+	return basePathAbs, observed, nil
 }
 
 func createOverlayImage(ctx context.Context, baseImage, overlayPath string) error {
