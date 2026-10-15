@@ -17,8 +17,8 @@ import (
 // ("ubuntu-test") that no catalog contains. Tests that exercise the real
 // resolver swap profilecatalog.Resolve back in explicitly.
 func TestMain(m *testing.M) {
-	resolveProfileFn = func(id, _ string) (string, error) {
-		return filepath.Join("vm", "profiles", id+".yaml"), nil
+	resolveProfileFn = func(id, _ string) (profilecatalog.Resolved, error) {
+		return profilecatalog.Resolved{File: filepath.Join("vm", "profiles", id+".yaml")}, nil
 	}
 	os.Exit(m.Run())
 }
@@ -64,7 +64,7 @@ func TestExecuteTargetUsesBuiltinProfileOutsideCheckout(t *testing.T) {
 	t.Cleanup(func() { executeProfileFn = orig })
 	executeProfileFn = func(_ context.Context, req vm.ExecutionRequest) vm.ExecutionResult {
 		image = req.Profile.Image.LocalPath
-		return vm.ExecutionResult{Status: "infra_error", InfraError: "stubbed executor"}
+		return vm.ExecutionResult{Status: "infra_error", InfraError: "stubbed executor", Notes: []string{"stubbed note"}}
 	}
 	cacheRoot, err := profilecatalog.CacheRoot()
 	if err != nil {
@@ -82,4 +82,19 @@ func TestExecuteTargetUsesBuiltinProfileOutsideCheckout(t *testing.T) {
 	if !strings.HasPrefix(image, filepath.Join(cacheRoot, "vm", "cache")+string(filepath.Separator)) {
 		t.Fatalf("image.local_path %q not rebased under the cache root %q", image, cacheRoot)
 	}
+	// The report must say where the profile came from, and keep the
+	// executor's own notes as well.
+	if !containsNote(target.Notes, "profile source: built-in catalog") || !containsNote(target.Notes, loaded) ||
+		!containsNote(target.Notes, "stubbed note") {
+		t.Fatalf("target notes = %q; want the profile source note and the executor's notes", target.Notes)
+	}
+}
+
+func containsNote(notes []string, want string) bool {
+	for _, n := range notes {
+		if strings.Contains(n, want) {
+			return true
+		}
+	}
+	return false
 }

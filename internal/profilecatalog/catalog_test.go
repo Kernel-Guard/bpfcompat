@@ -1,6 +1,8 @@
 package profilecatalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -148,8 +150,8 @@ func TestOnDiskProfilesAreUsedInPlace(t *testing.T) {
 	writeFile(t, checkout, testProfile)
 	stage := t.TempDir()
 	got, err := Resolve("demo-1.0", stage)
-	if err != nil || got != checkout {
-		t.Fatalf("Resolve = %q, %v; want %q", got, err, checkout)
+	if err != nil || got.File != checkout || got.Source != SourceCheckout {
+		t.Fatalf("Resolve = %+v, %v; want %q", got, err, checkout)
 	}
 	if entries, _ := os.ReadDir(stage); len(entries) != 0 {
 		t.Fatalf("on-disk profile must not be staged, found %d entries", len(entries))
@@ -162,10 +164,11 @@ func TestBuiltinProfileStagedWithImageUnderCacheRoot(t *testing.T) {
 	t.Setenv(EnvCacheDir, cache)
 	stage := t.TempDir()
 
-	got, err := Resolve("demo-1.0", stage)
+	res, err := Resolve("demo-1.0", stage)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := res.File
 	if want := filepath.Join(stage, "profiles", "demo-1.0.yaml"); got != want {
 		t.Fatalf("staged at %q, want %q", got, want)
 	}
@@ -199,11 +202,11 @@ func TestBuiltinAbsoluteImagePathUntouched(t *testing.T) {
 	body := strings.Replace(testProfile, `"vm/cache/demo.qcow2"`, `"/srv/images/demo.qcow2"`, 1)
 	isolate(t, builtinWith("demo-1.0", body))
 	t.Setenv(EnvCacheDir, t.TempDir())
-	got, err := Resolve("demo-1.0", t.TempDir())
+	res, err := Resolve("demo-1.0", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := vm.LoadProfile(got)
+	p, err := vm.LoadProfile(res.File)
 	if err != nil || p.Image.LocalPath != "/srv/images/demo.qcow2" {
 		t.Fatalf("absolute local_path changed: %q, %v", p.Image.LocalPath, err)
 	}
@@ -248,10 +251,116 @@ func TestBuiltinCatalogCoversRepoProfiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("--quick profile %s: %v", id, err)
 		}
-		if _, err := vm.LoadProfile(got); err != nil {
+		if _, err := vm.LoadProfile(got.File); err != nil {
 			t.Fatalf("--quick profile %s does not load from the built-in catalog: %v", id, err)
 		}
 	}
 }
 
 var origBuiltin = builtinFS
+
+func sha(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])
+}
+
+// A dangling symlink at ./vm/profiles/<id>.yaml is a broken checkout, not an
+// absent profile: os.Stat reports ENOENT for it, so lookup must use Lstat and
+// refuse instead of quietly using the built-in copy.
+func TestDanglingSymlinkDoesNotFallBackToBuiltin(t *testing.T) {
+	cwd := isolate(t, builtinWith("demo-1.0", testProfile))
+	dir := filepath.Join(cwd, "vm", "profiles")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(cwd, "missing-target.yaml"), filepath.Join(dir, "demo-1.0.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Locate("demo-1.0")
+	if err == nil || !strings.Contains(err.Error(), "dangling symlink") {
+		t.Fatalf("want dangling symlink error, got %v", err)
+	}
+	if _, err := Resolve("demo-1.0", t.TempDir()); err == nil {
+		t.Fatal("Resolve must fail too")
+	}
+}
+
+func TestSymlinkToRegularFileIsUsed(t *testing.T) {
+	cwd := isolate(t, fstest.MapFS{})
+	target := filepath.Join(cwd, "elsewhere", "demo.yaml")
+	writeFile(t, target, testProfile)
+	dir := filepath.Join(cwd, "vm", "profiles")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "demo-1.0.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	loc, err := Locate("demo-1.0")
+	if err != nil || loc.Source != SourceCheckout || loc.Path != link {
+		t.Fatalf("got %+v, %v", loc, err)
+	}
+}
+
+func TestResolvedRecordsSourcePathAndDigest(t *testing.T) {
+	cwd := isolate(t, builtinWith("demo-1.0", testProfile))
+	t.Setenv(EnvCacheDir, t.TempDir())
+
+	// Built-in, no ./vm/profiles at all.
+	res, err := Resolve("demo-1.0", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Source != SourceBuiltin || res.SHA256 != sha(testProfile) || res.CheckoutDirPresent {
+		t.Fatalf("built-in resolution = %+v", res)
+	}
+	note := res.Note()
+	for _, want := range []string{"profile source: built-in catalog", "sha256 " + sha(testProfile), res.File} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note %q missing %q", note, want)
+		}
+	}
+	if strings.Contains(note, "./vm/profiles exists") {
+		t.Errorf("no checkout dir, but note warns about one: %q", note)
+	}
+
+	// Built-in while ./vm/profiles exists but lacks the id: say so.
+	if err := os.MkdirAll(filepath.Join(cwd, "vm", "profiles"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	res, err = Resolve("demo-1.0", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.CheckoutDirPresent || !strings.Contains(res.Note(), "./vm/profiles exists but has no demo-1.0.yaml") {
+		t.Fatalf("missing checkout-dir warning: %+v / %q", res, res.Note())
+	}
+
+	// Checkout.
+	checkout := filepath.Join(cwd, "vm", "profiles", "demo-1.0.yaml")
+	body := testProfile + "# local edit\n"
+	writeFile(t, checkout, body)
+	res, err = Resolve("demo-1.0", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Source != SourceCheckout || res.File != checkout || res.SHA256 != sha(body) {
+		t.Fatalf("checkout resolution = %+v", res)
+	}
+	if n := res.Note(); !strings.Contains(n, "profile source: ./vm/profiles") || !strings.Contains(n, checkout) {
+		t.Fatalf("checkout note = %q", n)
+	}
+
+	// Explicit env dir.
+	envDir := t.TempDir()
+	writeFile(t, filepath.Join(envDir, "demo-1.0.yaml"), testProfile)
+	t.Setenv(EnvProfileDir, envDir)
+	res, err = Resolve("demo-1.0", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := res.Note(); res.Source != SourceEnvDir || !strings.Contains(n, "profile source: "+EnvProfileDir) || !strings.Contains(n, envDir) {
+		t.Fatalf("env resolution = %+v / %q", res, n)
+	}
+}

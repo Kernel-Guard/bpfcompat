@@ -538,14 +538,17 @@ func executeTarget(
 		Required:  matrixProfile.RequiredBool(),
 	}
 
-	profilePath, err := resolveProfileFn(matrixProfile.ID, runDir)
+	resolvedProfile, err := resolveProfileFn(matrixProfile.ID, runDir)
 	if err != nil {
 		target.Status = "infra_error"
 		target.FailedStage = "infra"
 		target.InfraError = fmt.Sprintf("load profile: %v", err)
 		return target, true, false
 	}
-	profilePathAbs, err := filepath.Abs(profilePath)
+	if note := resolvedProfile.Note(); note != "" {
+		target.Notes = append(target.Notes, note)
+	}
+	profilePathAbs, err := filepath.Abs(resolvedProfile.File)
 	if err != nil {
 		target.Status = "infra_error"
 		target.InfraError = fmt.Sprintf("resolve profile path: %v", err)
@@ -646,7 +649,7 @@ func executeTarget(
 	target.ValidatorResult = execResult.ValidatorResultPath
 	target.ValidatorExit = execResult.ValidatorExitCode
 	target.InfraError = execResult.InfraError
-	target.Notes = execResult.Notes
+	target.Notes = append(target.Notes, execResult.Notes...)
 
 	if execResult.Status == "infra_error" {
 		target.FailedStage = "infra"

@@ -20,6 +20,8 @@
 package profilecatalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -123,49 +125,97 @@ func Locate(id string) (Location, error) {
 	return Location{}, &NotFoundError{ID: id, Searched: searched}
 }
 
-// Resolve returns a profile file path that vm.LoadProfile can read. On-disk
-// profiles are returned in place. A built-in profile is written to
+// Resolved is a profile ready to load, plus what a report needs to say where
+// it came from.
+type Resolved struct {
+	Location
+	// File is what vm.LoadProfile reads: Location.Path for on-disk profiles,
+	// the staged copy in the run directory for a built-in one.
+	File string
+	// SHA256 is the digest of the profile as found (the on-disk file, or the
+	// embedded bytes before the image path is rebased).
+	SHA256 string
+	// CheckoutDirPresent is set when a built-in profile was used although
+	// ./vm/profiles exists in the working directory (it lacks this id).
+	CheckoutDirPresent bool
+}
+
+// Note is the one-line target note recording the profile's source, path and
+// digest. It is empty for a zero Resolved (test stubs).
+func (r Resolved) Note() string {
+	switch r.Source {
+	case SourceEnvDir:
+		return fmt.Sprintf("profile source: %s (%s, sha256 %s)", EnvProfileDir, r.File, r.SHA256)
+	case SourceCheckout:
+		return fmt.Sprintf("profile source: ./%s (%s, sha256 %s)", CheckoutDir, r.File, r.SHA256)
+	case SourceBuiltin:
+		note := fmt.Sprintf("profile source: built-in catalog of this binary (sha256 %s; staged as %s with image.local_path under the image cache)", r.SHA256, r.File)
+		if r.CheckoutDirPresent {
+			note += fmt.Sprintf("; note: ./%s exists but has no %s.yaml", CheckoutDir, r.ID)
+		}
+		return note
+	default:
+		return ""
+	}
+}
+
+// Resolve locates profile id and returns a file vm.LoadProfile can read.
+// On-disk profiles are used in place. A built-in profile is written to
 // stageDir/profiles/<id>.yaml (stageDir is the run directory, so the file is
 // also run evidence) with its relative image.local_path rebased under
 // CacheRoot().
-func Resolve(id, stageDir string) (string, error) {
+func Resolve(id, stageDir string) (Resolved, error) {
 	loc, err := Locate(id)
 	if err != nil {
-		return "", err
+		return Resolved{}, err
 	}
 	if loc.Source != SourceBuiltin {
-		return loc.Path, nil
+		data, err := os.ReadFile(loc.Path)
+		if err != nil {
+			return Resolved{}, fmt.Errorf("read profile %s: %w", loc.Path, err)
+		}
+		return Resolved{Location: loc, File: loc.Path, SHA256: digest(data)}, nil
 	}
 	data, err := fs.ReadFile(builtinFS, path.Join("profiles", id+".yaml"))
 	if err != nil {
-		return "", fmt.Errorf("read built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("read built-in profile %q: %w", id, err)
+	}
+	res := Resolved{Location: loc, SHA256: digest(data)}
+	if info, err := os.Stat(CheckoutDir); err == nil && info.IsDir() {
+		res.CheckoutDirPresent = true
 	}
 	root, err := CacheRoot()
 	if err != nil {
-		return "", err
+		return Resolved{}, err
 	}
 	data, err = rebaseImagePath(data, root)
 	if err != nil {
-		return "", fmt.Errorf("built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("built-in profile %q: %w", id, err)
 	}
 	dir := filepath.Join(stageDir, "profiles")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
 	}
 	out := filepath.Join(dir, id+".yaml")
 	// O_EXCL: never overwrite an existing file, even inside the run dir.
 	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- runner-owned run directory; id validated above.
 	if err != nil {
-		return "", fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		return "", fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
 	}
 	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("stage built-in profile %q: %w", id, err)
+		return Resolved{}, fmt.Errorf("stage built-in profile %q: %w", id, err)
 	}
-	return out, nil
+	res.File = out
+	return res, nil
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // CacheRoot is where built-in profiles keep their images: $BPFCOMPAT_CACHE_DIR,
@@ -279,15 +329,22 @@ func mappingValue(n *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// profileFileExists reports whether p is a profile file. Only "does not
-// exist" lets lookup move on to the next location; any other stat failure (or
-// a non-regular file) is an error, so a broken checkout never silently falls
-// back to the built-in catalog.
+// profileFileExists reports whether p is a profile file. Only a truly absent
+// entry (Lstat: no such name) lets lookup move on to the next location. Any
+// other failure is an error, so a broken checkout never silently falls back
+// to the built-in catalog. That covers a dangling symlink (which os.Stat
+// alone reports as "does not exist"), a non-regular file, and a stat error.
 func profileFileExists(p string) (bool, error) {
-	info, err := os.Stat(p)
+	if _, err := os.Lstat(p); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat profile %s: %w", p, err)
+	}
+	info, err := os.Stat(p) // follow a symlink to what it names
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return false, nil
+		return false, fmt.Errorf("profile %s is a dangling symlink", p)
 	case err != nil:
 		return false, fmt.Errorf("stat profile %s: %w", p, err)
 	case !info.Mode().IsRegular():
