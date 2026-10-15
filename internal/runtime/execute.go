@@ -111,6 +111,7 @@ type runtimeValidatorResult struct {
 	} `json:"capabilities"`
 	Discovery struct {
 		Programs []struct {
+			Name    string `json:"name"`
 			Section string `json:"section"`
 		} `json:"programs"`
 	} `json:"discovery"`
@@ -294,6 +295,7 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 			LibbpfLog:          vr.Logs.Libbpf,
 			KernelRelease:      vr.Host.Release,
 			ProgramSections:    runtimeDiscoveredProgramSections(vr),
+			ProgramNames:       runtimeDiscoveredProgramNames(vr),
 			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
 			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
 		})
@@ -433,6 +435,16 @@ func readRuntimeValidatorResult(path string) (runtimeValidatorResult, error) {
 		return runtimeValidatorResult{}, fmt.Errorf("parse validator result: %w", err)
 	}
 	return out, nil
+}
+
+// runtimeDiscoveredProgramNames returns the discovered program names
+// untrimmed so the classifier can neutralize them in the libbpf log (VAL-1).
+func runtimeDiscoveredProgramNames(vr runtimeValidatorResult) []string {
+	names := make([]string, 0, len(vr.Discovery.Programs))
+	for _, p := range vr.Discovery.Programs {
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 func runtimeDiscoveredProgramSections(vr runtimeValidatorResult) []string {

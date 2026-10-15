@@ -725,21 +725,7 @@ func executeTarget(
 				vr.Attach.Failed,
 			))
 		}
-		cl := classifier.Classify(classifier.Input{
-			LoadStatus:         vr.Load.Status,
-			LoadErrorCode:      vr.Load.ErrorCode,
-			LoadError:          vr.Load.Error,
-			AttachStatus:       vr.Attach.Status,
-			AttachMode:         vr.Attach.Mode,
-			KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
-			ArtifactHasBTF:     vr.BTF.ArtifactHasBTF,
-			ArtifactHasBTFExt:  vr.BTF.ArtifactHasBTFExt,
-			LibbpfLog:          vr.Logs.Libbpf,
-			KernelRelease:      vr.Host.Release,
-			ProgramSections:    discoveredProgramSections(vr),
-			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
-			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
-		})
+		cl := classifier.Classify(classifierInput(vr))
 		target.ClassificationCode = cl.Code
 		target.ClassificationConfidence = cl.Confidence
 		target.ClassificationReason = cl.Reason
@@ -777,21 +763,7 @@ func executeTarget(
 				vr.Attach.Failed,
 			))
 		}
-		cl := classifier.Classify(classifier.Input{
-			LoadStatus:         vr.Load.Status,
-			LoadErrorCode:      vr.Load.ErrorCode,
-			LoadError:          vr.Load.Error,
-			AttachStatus:       vr.Attach.Status,
-			AttachMode:         vr.Attach.Mode,
-			KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
-			ArtifactHasBTF:     vr.BTF.ArtifactHasBTF,
-			ArtifactHasBTFExt:  vr.BTF.ArtifactHasBTFExt,
-			LibbpfLog:          vr.Logs.Libbpf,
-			KernelRelease:      vr.Host.Release,
-			ProgramSections:    discoveredProgramSections(vr),
-			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
-			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
-		})
+		cl := classifier.Classify(classifierInput(vr))
 		target.ClassificationCode = cl.Code
 		target.ClassificationConfidence = cl.Confidence
 		target.ClassificationReason = cl.Reason
@@ -1003,6 +975,38 @@ func compactSingleLineTail(text string, maxChars int) string {
 		return compact
 	}
 	return "..." + string(runes[len(runes)-maxChars:])
+}
+
+// classifierInput builds the failure-classifier input from a validator
+// result. ProgramNames carries the raw discovered names so the classifier
+// can neutralize them in the libbpf log (VAL-1).
+func classifierInput(vr validatorResult) classifier.Input {
+	return classifier.Input{
+		LoadStatus:         vr.Load.Status,
+		LoadErrorCode:      vr.Load.ErrorCode,
+		LoadError:          vr.Load.Error,
+		AttachStatus:       vr.Attach.Status,
+		AttachMode:         vr.Attach.Mode,
+		KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
+		ArtifactHasBTF:     vr.BTF.ArtifactHasBTF,
+		ArtifactHasBTFExt:  vr.BTF.ArtifactHasBTFExt,
+		LibbpfLog:          vr.Logs.Libbpf,
+		KernelRelease:      vr.Host.Release,
+		ProgramSections:    discoveredProgramSections(vr),
+		ProgramNames:       discoveredProgramNames(vr),
+		TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
+		TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
+	}
+}
+
+// discoveredProgramNames returns the discovered program names untrimmed:
+// the classifier must match them exactly as libbpf echoed them.
+func discoveredProgramNames(vr validatorResult) []string {
+	names := make([]string, 0, len(vr.Discovery.Programs))
+	for _, p := range vr.Discovery.Programs {
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 func discoveredProgramSections(vr validatorResult) []string {

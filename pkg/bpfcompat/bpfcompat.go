@@ -240,6 +240,7 @@ type validatorDoc struct {
 	} `json:"logs"`
 	Discovery struct {
 		Programs []struct {
+			Name    string `json:"name"`
 			Section string `json:"section"`
 		} `json:"programs"`
 	} `json:"discovery"`
@@ -284,8 +285,10 @@ func parseResult(data []byte) (Result, error) {
 
 	if !res.Loadable {
 		sections := make([]string, 0, len(d.Discovery.Programs))
+		names := make([]string, 0, len(d.Discovery.Programs))
 		for _, p := range d.Discovery.Programs {
 			sections = append(sections, p.Section)
+			names = append(names, p.Name)
 		}
 		cl := classifier.Classify(classifier.Input{
 			LoadStatus:         d.Load.Status,
@@ -299,6 +302,7 @@ func parseResult(data []byte) (Result, error) {
 			LibbpfLog:          d.Logs.Libbpf,
 			KernelRelease:      d.Host.Release,
 			ProgramSections:    sections,
+			ProgramNames:       names,
 		})
 		res.Classification = Classification{Code: cl.Code, Confidence: cl.Confidence, Reason: cl.Reason}
 	}

@@ -3,6 +3,7 @@ package classifier
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -19,6 +20,10 @@ type Input struct {
 	LibbpfLog          string
 	KernelRelease      string
 	ProgramSections    []string
+	// ProgramNames are the program names the validator discovered in the
+	// artifact's ELF. They are attacker-controlled and libbpf echoes them
+	// verbatim into LibbpfLog, so Classify neutralizes them before matching.
+	ProgramNames       []string
 	TracingProbeStatus string
 	TracingProbeError  int
 }
@@ -43,7 +48,10 @@ var kernelVersionPrefixRe = regexp.MustCompile(`^\s*([0-9]+)\.([0-9]+)`)
 var verifierProcessedInsnsRe = regexp.MustCompile(`\bprocessed \d+ insns`)
 
 func Classify(in Input) Result {
-	lowerBlob := strings.ToLower(in.LibbpfLog + "\n" + in.LoadError)
+	// Every check below reads the log only after the artifact-controlled
+	// program names have been neutralized (see neutralizeProgramNames).
+	libbpfLog := neutralizeProgramNames(in.LibbpfLog, in.ProgramNames)
+	lowerBlob := strings.ToLower(libbpfLog + "\n" + in.LoadError)
 
 	if in.AttachStatus == "fail" {
 		return Result{
@@ -54,7 +62,7 @@ func Classify(in Input) Result {
 		}
 	}
 
-	if match := libbpfMapCreateFailureRe.FindStringSubmatch(in.LibbpfLog); match != nil {
+	if match := libbpfMapCreateFailureRe.FindStringSubmatch(libbpfLog); match != nil {
 		mapName := strings.TrimSpace(match[1])
 		errTail := strings.TrimSpace(match[2])
 		return Result{
@@ -164,14 +172,16 @@ func Classify(in Input) Result {
 		return verifierRejection()
 	}
 
-	// Explicit security-module denial markers only. A bare "lsm" substring is
-	// deliberately not one: it matches every BPF-LSM section name
-	// ("lsm/file_open") that libbpf echoes into its log.
+	// Explicit security-module denial markers only. Bare "lsm", "selinux"
+	// and "apparmor" substrings are deliberately not markers: they match
+	// BPF-LSM section names ("lsm/file_open") and ordinary program or attach
+	// target names ("trace_selinux_inode") that libbpf echoes into its log.
+	// Only the kernel's own audit/denial phrasing counts.
 	if containsAny(lowerBlob,
 		"denied by policy",
 		"security policy",
-		"apparmor",
-		"selinux",
+		"selinux is preventing",
+		`apparmor="denied"`,
 		"avc: denied",
 		"avc:  denied",
 		"lsm=") {
@@ -244,6 +254,49 @@ func hasVerifierLog(lowerBlob string) bool {
 		"back-edge",
 		"invalid stack") ||
 		verifierProcessedInsnsRe.MatchString(lowerBlob)
+}
+
+// untrustedNamePlaceholder replaces artifact-controlled program names in the
+// log. It contains none of the classifier's match strings.
+const untrustedNamePlaceholder = "<program>"
+
+// libbpfProgramNameQuotes are the only forms in which libbpf (1.x, and the
+// 0.x releases before it) quotes a program name in WARN/INFO output:
+// "prog '%s'" (about 90 call sites, including "to prog '%s'") and
+// "program '%s'" (corrupted/static/new/skeleton program). Map, extern,
+// section and object names use other prefixes and are left alone.
+var libbpfProgramNameQuotes = []string{"prog '", "program '"}
+
+// neutralizeProgramNames removes artifact-controlled program names from the
+// libbpf log before any pattern is matched against it (VAL-1). Program names
+// come straight from the artifact's ELF symbol table and libbpf prints them
+// verbatim, so without this a name could forge whole log lines (a fake
+// "libbpf: map 'X': failed to create" line or a fake verifier log) or carry
+// marker words such as "lockdown" into the blob.
+//
+// A name is blanked only where libbpf quotes it as a program name
+// ("prog 'NAME'" / "program 'NAME'"), never anywhere else: a name such as
+// "-- BEGIN PROG LOAD LOG --\n" must not be able to erase the genuine
+// verifier framing, and a program called "rb" must not blank map 'rb'.
+// Longer names are handled first so that a name containing a shorter one is
+// removed whole.
+func neutralizeProgramNames(libbpfLog string, names []string) string {
+	if libbpfLog == "" || len(names) == 0 {
+		return libbpfLog
+	}
+	ordered := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != "" {
+			ordered = append(ordered, n)
+		}
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
+	for _, n := range ordered {
+		for _, q := range libbpfProgramNameQuotes {
+			libbpfLog = strings.ReplaceAll(libbpfLog, q+n+"'", q+untrustedNamePlaceholder+"'")
+		}
+	}
+	return libbpfLog
 }
 
 func containsAny(blob string, patterns ...string) bool {
