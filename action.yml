@@ -71,6 +71,10 @@ inputs:
     description: Keep VM overlays/logs on target failure.
     required: false
     default: "false"
+  require-gate:
+    description: "Opt-in (true/false; empty means false). Fail the step when no compatibility gate was evaluated: in test/command mode when the matrix has no required target, in suite mode for every case without one, in diff mode unless at least one profile is required in both reports (a diagnostic candidate or baseline, or a diff with no gate evidence, fails). Default false keeps such diagnostic runs passing. See docs/gate-contract.md."
+    required: false
+    default: "false"
   build:
     description: Build ./bin/bpfcompat with make before running tests.
     required: false
@@ -135,6 +139,15 @@ outputs:
   diff-markdown:
     description: "Diff mode: absolute path of the diff Markdown."
     value: ${{ steps.run.outputs.diff-markdown }}
+  diff-gate:
+    description: "Diff mode: enforced only when at least one profile is required in both reports; none for a diagnostic diff; empty when the diff carries no gate evidence."
+    value: ${{ steps.run.outputs.gate }}
+  diff-baseline-gate:
+    description: "Diff mode: the baseline report's own gate (enforced when it has a required target, none for a diagnostic run)."
+    value: ${{ steps.run.outputs.baseline-gate }}
+  diff-candidate-gate:
+    description: "Diff mode: the candidate report's own gate (enforced when it has a required target, none for a diagnostic run)."
+    value: ${{ steps.run.outputs.candidate-gate }}
 
 runs:
   using: composite
@@ -246,6 +259,7 @@ runs:
         INPUT_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
         INPUT_DIFF_OUT: ${{ inputs.diff-out }}
         INPUT_DIFF_MARKDOWN: ${{ inputs.diff-markdown }}
+        INPUT_REQUIRE_GATE: ${{ inputs.require-gate }}
       run: |
         set -euo pipefail
 
@@ -342,6 +356,18 @@ runs:
           BPFCOMPAT_BIN="$binary_path" exec bash "$action_root/scripts/action-diff.sh"
         fi
 
+        # require-gate is opt-in and strictly boolean; it reaches the shell only
+        # through env. Empty means the default (false), as in diff mode, which
+        # validates it in scripts/action-diff.sh. The value is never echoed: a
+        # newline in it could start a second workflow command.
+        case "$INPUT_REQUIRE_GATE" in
+          "" | true | false) ;;
+          *)
+            echo "::error::require-gate must be true or false"
+            exit 1
+            ;;
+        esac
+
         if [[ -n "$suite_path" ]]; then
           if [[ ! -f "$suite_path" ]]; then
             echo "::error::suite file not found: $suite_path"
@@ -364,6 +390,9 @@ runs:
           )
           if [[ -n "$suite_markdown_path" ]]; then
             cmd+=(--markdown "$suite_markdown_path")
+          fi
+          if [[ "$INPUT_REQUIRE_GATE" == true ]]; then
+            cmd+=(--require-gate)
           fi
 
           echo "Running: ${cmd[*]}"
@@ -461,6 +490,9 @@ runs:
         fi
         if [[ "${{ inputs.keep-vm-on-failure }}" == "true" ]]; then
           cmd+=(--keep-vm-on-failure=true)
+        fi
+        if [[ "$INPUT_REQUIRE_GATE" == true ]]; then
+          cmd+=(--require-gate)
         fi
 
         echo "Running: ${cmd[*]}"

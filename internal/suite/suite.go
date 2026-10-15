@@ -93,17 +93,23 @@ type RunOptions struct {
 	Concurrency           int
 	StopOnFailure         bool
 	UnsafeAllowHostRunner bool
+	// RequireGate fails (exit 1) every case that evaluated no compatibility
+	// gate. See gate.go.
+	RequireGate bool
 }
 
 type Summary struct {
-	SchemaVersion string        `json:"schema_version"`
-	Name          string        `json:"name"`
-	StartedAt     string        `json:"started_at"`
-	FinishedAt    string        `json:"finished_at"`
-	DurationMS    int64         `json:"duration_ms"`
-	Status        string        `json:"status"`
-	ExitCode      int           `json:"exit_code"`
-	Cases         []CaseSummary `json:"cases"`
+	SchemaVersion string `json:"schema_version"`
+	Name          string `json:"name"`
+	StartedAt     string `json:"started_at"`
+	FinishedAt    string `json:"finished_at"`
+	DurationMS    int64  `json:"duration_ms"`
+	Status        string `json:"status"`
+	ExitCode      int    `json:"exit_code"`
+	// Gate: "enforced" (every case gated), "none" (no case gated), "partial",
+	// or "unknown". See gate.go.
+	Gate  string        `json:"gate,omitempty"`
+	Cases []CaseSummary `json:"cases"`
 }
 
 type CaseSummary struct {
@@ -113,6 +119,7 @@ type CaseSummary struct {
 	Matrix             string              `json:"matrix"`
 	Status             string              `json:"status"`
 	ExitCode           int                 `json:"exit_code"`
+	Gate               string              `json:"gate,omitempty"`
 	Error              string              `json:"error,omitempty"`
 	RunID              string              `json:"run_id,omitempty"`
 	ReportJSONPath     string              `json:"report_json_path,omitempty"`
@@ -254,6 +261,7 @@ caseLoop:
 				Name:     spec.Cases[i].Name,
 				Status:   "error",
 				ExitCode: runner.ExitToolError,
+				Gate:     GateUnknown,
 				Error:    ctx.Err().Error(),
 			}
 			summary.Cases = append(summary.Cases, caseSummary)
@@ -268,6 +276,7 @@ caseLoop:
 			caseSummary.Status = "error"
 			caseSummary.ExitCode = runner.ExitToolError
 			caseSummary.Error = err.Error()
+			caseSummary = applyCaseGate(caseSummary, opts.RequireGate)
 			summary.Cases = append(summary.Cases, caseSummary)
 			updateSuiteStatus(&summary, caseSummary.ExitCode)
 			if opts.StopOnFailure {
@@ -276,7 +285,7 @@ caseLoop:
 			continue
 		}
 
-		result, err := runner.ExecuteBootstrap(ctx, cfg)
+		result, err := executeBootstrapFn(ctx, cfg)
 		if err != nil {
 			caseSummary.Status = "error"
 			caseSummary.ExitCode = runner.ExitToolError
@@ -284,6 +293,7 @@ caseLoop:
 		} else {
 			caseSummary = caseSummaryFromRun(caseSummary, result)
 		}
+		caseSummary = applyCaseGate(caseSummary, opts.RequireGate)
 
 		summary.Cases = append(summary.Cases, caseSummary)
 		updateSuiteStatus(&summary, caseSummary.ExitCode)
@@ -292,6 +302,7 @@ caseLoop:
 		}
 	}
 
+	summary.Gate = aggregateGate(summary.Cases)
 	summary = finishSummary(summary, started)
 	if opts.OutPath != "" {
 		if err := WriteJSON(opts.OutPath, summary); err != nil {
@@ -371,6 +382,7 @@ func buildRunnerConfig(baseDir string, spec Spec, c Case, opts RunOptions) (runn
 func caseSummaryFromRun(base CaseSummary, result runner.RunResult) CaseSummary {
 	base.Status = result.Report.Summary.Status
 	base.ExitCode = result.ExitCode
+	base.Gate = schema.RunGate(result.Report.Targets)
 	base.RunID = result.Report.Run.ID
 	base.ReportJSONPath = result.Report.Paths.JSON
 	base.ReportMarkdownPath = result.Report.Paths.Markdown
@@ -545,13 +557,14 @@ func RenderMarkdown(summary Summary) string {
 	b.WriteString(fmt.Sprintf("- Suite: `%s`\n", markdownCell(summary.Name)))
 	b.WriteString(fmt.Sprintf("- Status: `%s`\n", markdownCell(summary.Status)))
 	b.WriteString(fmt.Sprintf("- Exit Code: `%d`\n", summary.ExitCode))
+	writeSuiteGate(&b, summary.Gate)
 	b.WriteString(fmt.Sprintf("- Started: `%s`\n", markdownCell(summary.StartedAt)))
 	if summary.FinishedAt != "" {
 		b.WriteString(fmt.Sprintf("- Finished: `%s`\n", markdownCell(summary.FinishedAt)))
 	}
 	b.WriteString("\n## Cases\n\n")
-	b.WriteString("| Case | Mode | Status | Required pass/fail | Behavior | Profiles | Report |\n")
-	b.WriteString("|---|---|---|---:|---:|---:|---|\n")
+	b.WriteString("| Case | Mode | Status | Gate | Required pass/fail | Behavior | Profiles | Report |\n")
+	b.WriteString("|---|---|---|---|---:|---:|---:|---|\n")
 	for i := range summary.Cases {
 		c := &summary.Cases[i]
 		reportPath := firstNonEmpty(c.ReportMarkdownPath, c.ReportJSONPath, "-")
@@ -563,18 +576,19 @@ func RenderMarkdown(summary Summary) string {
 		if c.BehaviorStatus != "" {
 			behavior = fmt.Sprintf("%s %d/%d", c.BehaviorStatus, c.BehaviorPassed, c.BehaviorFailed)
 		}
-		b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` | %d/%d | `%s` | %d | `%s` |\n",
+		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` | `%s` | %d/%d | `%s` | %d | `%s` |\n",
 			markdownCell(c.Name),
 			markdownCell(mode),
 			markdownCell(c.Status),
+			markdownCell(firstNonEmpty(c.Gate, GateUnknown)),
 			c.RequiredPassed,
 			c.RequiredFailed,
 			markdownCell(behavior),
 			c.TotalProfiles,
 			markdownCell(reportPath),
-		))
+		)
 		if c.Error != "" {
-			b.WriteString(fmt.Sprintf("| `%s` error |  |  |  |  |  | %s |\n", markdownCell(c.Name), markdownCell(c.Error)))
+			fmt.Fprintf(&b, "| `%s` error |  |  |  |  |  |  | %s |\n", markdownCell(c.Name), markdownCell(c.Error))
 		}
 	}
 	writeCollectionMatrix(&b, summary)

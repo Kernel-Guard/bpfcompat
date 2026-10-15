@@ -24,7 +24,7 @@ dashboards, and audits.
 | `validator` | object, optional | Artifact-mode libbpf validator binary name, size, and SHA-256. The staged bytes are reused for every target. |
 | `matrix` | object | `{ path, name?, profiles[] }` — the kernel set requested |
 | `targets[]` | array | one entry per kernel profile (below) |
-| `summary` | object | `{ status, verdict?, complete?, notes[]? }` — `status` is `pass`/`fail`/`error`; `verdict` is `COMPATIBLE`/`INCOMPATIBLE`/`INFRA_ERROR`; `complete: false` means at least one target produced no compatibility answer |
+| `summary` | object | `{ status, verdict?, complete?, gate?, notes[]? }` — `status` is `pass`/`fail`/`error`; `verdict` is `COMPATIBLE`/`INCOMPATIBLE`/`INFRA_ERROR`; `complete: false` means at least one target produced no compatibility answer; `gate` is `enforced` (at least one required target, so `verdict` is a compatibility gate) or `none` (no required target: a diagnostic run whose `COMPATIBLE` is vacuous — read `targets[].verdict`). See [gate-contract.md](gate-contract.md) |
 | `paths` | object | `{ run_dir, json, markdown? }` |
 
 ## `targets[]` — per-kernel result

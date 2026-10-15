@@ -188,6 +188,7 @@ func runTest(args []string) int {
 
 	timeoutText := fs.String("timeout", "180s", "Per-target timeout duration")
 	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
+	fs.BoolVar(&cfg.RequireGate, "require-gate", false, "Exit 1 if the matrix has no required target (no compatibility gate evaluated; summary.gate \"none\"). Default: such a diagnostic run exits 0")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat test --artifact <file> --matrix <file> --out <file> [flags]\n  bpfcompat test --command <cmd> --matrix <file> --out <file> [--command-binary <file>] [flags]\n\n")
@@ -243,6 +244,7 @@ func runTestCommand(args []string) int {
 	fs.IntVar(&cfg.Concurrency, "concurrency", 2, "Maximum concurrent VM jobs")
 	timeoutText := fs.String("timeout", "180s", "Per-target timeout duration")
 	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
+	fs.BoolVar(&cfg.RequireGate, "require-gate", false, "Exit 1 if the matrix has no required target (no compatibility gate evaluated; summary.gate \"none\"). Default: such a diagnostic run exits 0")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat test-command --cmd <loader cmd> --matrix <file> --out <file> [--bin <file>] [--artifact <file>] [flags]\n\n")
@@ -294,7 +296,7 @@ func executeTestConfig(cfg runner.Config) int {
 	}
 
 	printSummary(result)
-	return result.ExitCode
+	return gateExitCode(result, cfg.RequireGate)
 }
 
 func stripHiddenUnsafeHostRunnerFlag(args []string) ([]string, bool, error) {

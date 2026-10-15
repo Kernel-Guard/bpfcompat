@@ -25,6 +25,7 @@ func runDiff(args []string) int {
 	candidate := fs.String("candidate", "", "Path to the candidate (release under evaluation) compatibility report JSON")
 	outPath := fs.String("out", "", "Path to write the diff JSON (optional; printed to stdout when neither --out nor --markdown is set)")
 	markdownPath := fs.String("markdown", "", "Path to write the diff Markdown (optional)")
+	requireGate := fs.Bool("require-gate", false, "Exit 1 if no cell is required in either report (diagnostic diff, summary.gate \"none\"). Default: such a diff exits 0")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat diff --baseline <report.json> --candidate <report.json> [flags]\n\n")
 		fmt.Fprintf(fs.Output(), "Compares two bpfcompat evidence reports and reports only NEW compatibility\n")
@@ -105,7 +106,7 @@ func runDiff(args []string) int {
 	fmt.Fprintf(summaryOut, "Inconclusive required: %d | optional: %d | coverage added: %d | removed required: %d | removed optional: %d\n",
 		s.InconclusiveRequired, s.InconclusiveOptional, s.CoverageAddedCount, s.CoverageRemovedRequired, s.CoverageRemovedOptional)
 
-	return regressiondiff.ExitCode(d)
+	return regressiondiff.GateExitCode(d, *requireGate)
 }
 
 // distinctOutputs refuses --out and --markdown pointing at one file.

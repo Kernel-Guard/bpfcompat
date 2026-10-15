@@ -62,8 +62,14 @@ type SummaryInfo struct {
 	// bpfcompat cannot execute, or a guest whose kernel did not match the one
 	// the profile requested. A COMPATIBLE run with Complete=false means
 	// "nothing we managed to test was incompatible", not "the matrix passed".
-	Complete *bool    `json:"complete,omitempty"`
-	Notes    []string `json:"notes,omitempty"`
+	Complete *bool `json:"complete,omitempty"`
+	// Gate says whether Verdict is a compatibility gate: "enforced" when at
+	// least one target is required, "none" when no target is required (a
+	// diagnostic run whose COMPATIBLE verdict is vacuous). Additive; absent in
+	// reports written before it existed, where it can be derived from
+	// targets[].required. See RunGate.
+	Gate  string   `json:"gate,omitempty"`
+	Notes []string `json:"notes,omitempty"`
 }
 
 type Target struct {

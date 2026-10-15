@@ -146,9 +146,15 @@ type Summary struct {
 	CoverageRemovedOptional int `json:"coverage_removed_optional"`
 	// BaselineComplete/CandidateComplete surface Gate 1's run-level coverage
 	// flag, so an incomplete input cannot be read as a full comparison.
-	BaselineComplete  *bool  `json:"baseline_complete,omitempty"`
-	CandidateComplete *bool  `json:"candidate_complete,omitempty"`
-	Result            string `json:"result"`
+	BaselineComplete  *bool `json:"baseline_complete,omitempty"`
+	CandidateComplete *bool `json:"candidate_complete,omitempty"`
+	// Gate is "enforced" only when at least one profile is required in both
+	// reports; otherwise it is a diagnostic diff, not a gate (see gate.go).
+	// BaselineGate/CandidateGate are each input's own report gate.
+	Gate          string `json:"gate,omitempty"`
+	BaselineGate  string `json:"baseline_gate,omitempty"`
+	CandidateGate string `json:"candidate_gate,omitempty"`
+	Result        string `json:"result"`
 }
 
 type Diff struct {
@@ -309,6 +315,16 @@ func validateSummary(r schema.ReportV01, side string) error {
 		if want := schema.RunVerdict(r.Targets); got != want {
 			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
 				"summary.verdict is %q but its own required targets add up to %q; this report does not agree with itself", got, want)}
+		}
+	}
+	if got := strings.TrimSpace(r.Summary.Gate); got != "" {
+		if got != schema.GateEnforced && got != schema.GateNone {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.gate is %q, which is not a known gate state", got)}
+		}
+		if want := schema.RunGate(r.Targets); got != want {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.gate is %q but its own targets add up to %q; this report does not agree with itself", got, want)}
 		}
 	}
 	if r.Summary.Complete != nil {
@@ -718,6 +734,7 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	d.Summary.BaselineComplete = baseline.Summary.Complete
 	d.Summary.CandidateComplete = candidate.Summary.Complete
 	d.Summary.Result = overallResult(d.Summary)
+	applyGate(&d, baseline, candidate)
 	return d, nil
 }
 

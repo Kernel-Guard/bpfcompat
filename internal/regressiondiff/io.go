@@ -198,6 +198,7 @@ func Markdown(d Diff) string {
 	// weaker claim than it looks, and this is what a reader sees first.
 	writeCoverage(&b, "Baseline", d.Summary.BaselineComplete)
 	writeCoverage(&b, "Candidate", d.Summary.CandidateComplete)
+	writeGate(&b, d.Summary)
 
 	b.WriteString("\n## Summary\n\n")
 	b.WriteString("| Outcome | Count |\n|---|---:|\n")
@@ -314,4 +315,17 @@ func absOrOriginal(path string) string {
 		return abs
 	}
 	return path
+}
+
+// writeGate states up front whether the result is a gate at all.
+func writeGate(b *strings.Builder, s Summary) {
+	if s.Gate == "" {
+		return
+	}
+	if s.Gate == schema.GateNone {
+		b.WriteString("- Gate: `none` — no required comparison: diagnostic diff, not a gate\n")
+	} else {
+		fmt.Fprintf(b, "- Gate: `%s`\n", s.Gate)
+	}
+	fmt.Fprintf(b, "- Report gates: baseline `%s` -> candidate `%s`\n", emptyAsDash(s.BaselineGate), emptyAsDash(s.CandidateGate))
 }

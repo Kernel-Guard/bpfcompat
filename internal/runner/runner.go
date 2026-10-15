@@ -320,6 +320,7 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 			Status:   status,
 			Verdict:  runVerdict,
 			Complete: &complete,
+			Gate:     schema.RunGate(targets),
 			Notes:    notes,
 		},
 		Paths: schema.Paths{
@@ -513,7 +514,11 @@ func executeTargets(
 	case schema.VerdictInfraError:
 		notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
 	default:
-		notes = append(notes, "All required profiles passed validator load checks.")
+		if schema.RunGate(targets) == schema.GateNone {
+			notes = append(notes, schema.NoGateNote)
+		} else {
+			notes = append(notes, "All required profiles passed validator load checks.")
+		}
 	}
 
 	return targets, notes
