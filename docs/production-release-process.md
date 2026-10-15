@@ -94,10 +94,12 @@ unchanged, leaves the drill alias on the known-good digest, and uploads
 artifact as the rollback drill note.
 
 Download four chronological scheduled campaign artifacts, one expanded Falco
-artifact, the attested candidate evidence, all three RC canary manifests, the
-rollback drill note, the fail-closed promotion incident note, and the
-operator's written promotion confirmation into one private working directory.
-Create an input manifest with paths relative to that directory:
+artifact, the attested candidate evidence, all three complete RC canary
+artifacts (each `release-candidate-canary.json` together with the
+`components/` directory uploaded beside it), the rollback drill note, the
+fail-closed promotion incident note, and the operator's written promotion
+confirmation into one private working directory. Create an input manifest with
+paths relative to that directory:
 
 ```json
 {
@@ -112,7 +114,7 @@ Create an input manifest with paths relative to that directory:
   "falco": {
     "workflow_run_id": 123456789,
     "commit_sha": "<40-character commit SHA>",
-    "started_at": "2026-08-03T06:00:00Z",
+    "started_at": "<the report's run.started_at, e.g. 2026-08-03T06:15:35Z>",
     "report": "falco/modern-bpf-compat.json",
     "report_sha256": "<sha256>"
   },
@@ -159,11 +161,53 @@ Create an input manifest with paths relative to that directory:
 ```
 
 The real manifest contains exactly four campaign entries and exactly three
-canary entries in `manual`, `t-plus-24h`, and `t-plus-72h` order. The two timed
-canaries must come from `schedule` events, and every canary must bind the same
-RC tag, commit, and image digest as the attested candidate. The incident note
-must contain `[bpfcompat-promotion-incident:v1]` and describe the deliberately
-rejected promotion run. Run:
+canary entries in `manual`, `t-plus-24h`, and `t-plus-72h` order. The
+aggregator binds every piece of evidence to the attested candidate
+(`generated_at`, tag, commit, image digest, evidence SHA-256):
+
+- **Falco.** `falco.started_at` must equal the report's own `run.started_at`,
+  and, as for the campaigns, that run must start after the candidate's
+  `generated_at`: evidence must postdate the candidate it graduates.
+  `workflow_run_id` and `commit_sha` are not recorded in the report and remain
+  operator-asserted (`falco.run_identity` in the output). Written policy does
+  not require the Falco lane to run the candidate's own bpfcompat, so this is
+  not enforced; the output records `falco.validator_sha256` and
+  `falco.candidate_bound` (true only when the report names the candidate's
+  validator).
+- **Canaries.** The two timed canaries must come from `schedule` events, and
+  every canary must bind the same RC tag, commit, and image digest as the
+  attested candidate. Completion times must be in milestone order and at least
+  0, 20, and 68 hours after `generated_at`. These are floors derived from the
+  plan job's 20-30h and 68-78h windows after publication: publication time is
+  not in the attested evidence, but it never precedes `generated_at`. The plan
+  job itself enforces the upper bounds. Each canary's components must be
+  artifacts of that canary's own run (`*canary-component-<check>-<run ID>/`),
+  and the `<check>.json` record of each of the five checks must be present,
+  match its recorded SHA-256, pass, and name the candidate tag and commit; the
+  container record must name the candidate digest and the external-consumers
+  record the canary's `external_consumer_run_id`.
+- **Rollback drill.** The note must be the `evidence.md` written by
+  `rollback-drill.yml` for this candidate: `- Drill alias:` is
+  `ghcr.io/kernel-guard/bpfcompat:rollback-drill-vX.Y.Z-rc.N`,
+  `- Candidate digest:` is the candidate image digest, `- Final digest:` equals
+  a distinct `- Known-good digest:`, and `- Completed:` is after
+  `generated_at`. A drill of an earlier candidate is refused.
+- **Incident.** The note must contain `[bpfcompat-promotion-incident:v1]`,
+  name `promote-release`, and link the deliberately rejected run, and only
+  that run, as
+  `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. Written
+  policy does not require the incident drill to target the current candidate,
+  so an earlier candidate's fail-closed drill is accepted; the output records
+  `incident.promotion_run_id` and `incident.candidate_bound`.
+- **Operator.** The confirmation must contain
+  `[bpfcompat-solo-promotion:v1]`, the operator login, and, as a whole token,
+  the SHA-256 of the attested `release-candidate-evidence.json` it confirms.
+
+Every JSON input (the manifest, candidate evidence, campaign metadata and
+reports, the Falco report, canary manifests and component records) must be
+exactly one JSON object; a concatenated multi-document file is refused.
+
+Run:
 
 ```bash
 scripts/production-readiness-report.sh \
