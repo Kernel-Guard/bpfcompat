@@ -367,9 +367,13 @@ func normalizeExpectedArtifactSHA256(raw string) (string, error) {
 // stageVerifiedExecCopy opens sourcePath without following a final
 // symlink, copies it into a new private 0700 directory and checks the
 // sha256 of exactly the bytes written against expectedSHA256. On success
-// the caller owns privateDir and must remove it.
-func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (privateDir, privatePath string, err error) {
-	src, err := os.OpenFile(sourcePath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+// the caller owns the returned directory and must remove it; on any error
+// the directory has already been removed.
+func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (string, string, error) {
+	// O_NONBLOCK keeps a FIFO swapped in for the artifact from blocking the
+	// open forever; it is refused by the regular-file check below and has
+	// no effect on reads from a regular file.
+	src, err := os.OpenFile(sourcePath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return "", "", fmt.Errorf("open artifact for pre-execute verification (symlinks are refused): %w", err)
 	}
@@ -382,40 +386,42 @@ func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (privateDir, priva
 		return "", "", fmt.Errorf("artifact %s is not a regular file", sourcePath)
 	}
 
-	privateDir, err = os.MkdirTemp("", "bpfcompat-exec-")
+	dir, err := os.MkdirTemp("", "bpfcompat-exec-")
 	if err != nil {
 		return "", "", fmt.Errorf("create private execute directory: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = os.RemoveAll(privateDir)
-			privateDir, privatePath = "", ""
-		}
-	}()
-	if err = os.Chmod(privateDir, 0o700); err != nil {
-		return "", "", fmt.Errorf("restrict private execute directory: %w", err)
+	privatePath, err := copyAndVerifyIntoPrivateDir(src, info.Size(), dir, filepath.Base(sourcePath), expectedSHA256, sourcePath)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return "", "", err
 	}
+	return dir, privatePath, nil
+}
 
-	privatePath = filepath.Join(privateDir, filepath.Base(sourcePath))
+func copyAndVerifyIntoPrivateDir(src *os.File, size int64, dir, name, expectedSHA256, sourcePath string) (string, error) {
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("restrict private execute directory: %w", err)
+	}
+	privatePath := filepath.Join(dir, name)
 	dst, err := os.OpenFile(privatePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
-		return "", "", fmt.Errorf("create private artifact copy: %w", err)
+		return "", fmt.Errorf("create private artifact copy: %w", err)
 	}
 	h := sha256.New()
 	// Bound the copy to the size seen at open; a file that grows afterwards
 	// fails the digest check instead of filling the temp filesystem.
-	_, copyErr := io.Copy(io.MultiWriter(dst, h), io.LimitReader(src, info.Size()+1))
+	_, copyErr := io.Copy(io.MultiWriter(dst, h), io.LimitReader(src, size+1))
 	closeErr := dst.Close()
 	if copyErr != nil {
-		return "", "", fmt.Errorf("copy artifact to private execute directory: %w", copyErr)
+		return "", fmt.Errorf("copy artifact to private execute directory: %w", copyErr)
 	}
 	if closeErr != nil {
-		return "", "", fmt.Errorf("close private artifact copy: %w", closeErr)
+		return "", fmt.Errorf("close private artifact copy: %w", closeErr)
 	}
 	if actual := hex.EncodeToString(h.Sum(nil)); actual != expectedSHA256 {
-		return "", "", fmt.Errorf("artifact sha256 mismatch before host execute: expected=%s got=%s path=%s", expectedSHA256, actual, sourcePath)
+		return "", fmt.Errorf("artifact sha256 mismatch before host execute: expected=%s got=%s path=%s", expectedSHA256, actual, sourcePath)
 	}
-	return privateDir, privatePath, nil
+	return privatePath, nil
 }
 
 func resolveExistingPath(pathText, label string) (string, error) {
