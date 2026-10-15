@@ -71,7 +71,10 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   `attribution: "errno_only"`. The name is the program's libbpf name, unique
   within an object. At most 64 programs are recorded per target
   (`attach_records_truncated` marks the rest); the counts always cover the
-  whole object.
+  whole object. For objects with more than 64 programs, `bpfcompat diff`
+  compares the unrecorded programs only through those counts: a change in
+  them is `INCONCLUSIVE`, but two unrecorded programs swapping state with
+  identical counts is not detectable from the report.
 
 The validator record must agree with itself: the attach phase runs exactly when
 the object loaded and attach is not disabled, tries every attachable program,
