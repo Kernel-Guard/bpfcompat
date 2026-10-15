@@ -38,9 +38,12 @@ const (
 	// UnchangedCompatible: supported before, supported now.
 	UnchangedCompatible = "UNCHANGED_COMPATIBLE"
 
-	// NewRegression: the baseline proved this environment worked and the
-	// candidate proves it no longer does. The primary product signal, and the
-	// only classification that is a statement about the candidate's software.
+	// NewRegression: the baseline proved this obligation (profile) worked and
+	// the candidate proves it no longer does. The primary product signal. It
+	// is a statement about the obligation between the two runs, not by itself
+	// about the candidate's artifact: the observed kernel may also have moved
+	// within the profile's family. Cell.Attribution says which recorded
+	// inputs changed.
 	NewRegression = "NEW_REGRESSION"
 
 	// ExistingIncompatibility: broken before, broken now. A known limitation --
@@ -129,14 +132,24 @@ type CellSide struct {
 }
 
 type Cell struct {
-	Key             string   `json:"key"`
-	ProfileID       string   `json:"profile_id"`
-	Required        bool     `json:"required"`
-	RequiredChanged bool     `json:"required_changed,omitempty"`
-	Classification  string   `json:"classification"`
-	Reason          string   `json:"reason"`
-	Baseline        CellSide `json:"baseline"`
-	Candidate       CellSide `json:"candidate"`
+	Key             string `json:"key"`
+	ProfileID       string `json:"profile_id"`
+	Required        bool   `json:"required"`
+	RequiredChanged bool   `json:"required_changed,omitempty"`
+	Classification  string `json:"classification"`
+	Reason          string `json:"reason"`
+	// ChangedInputs and Attribution say, for a cell whose outcome changed
+	// (NEW_REGRESSION, FIXED), which recorded inputs differ between the two
+	// runs: "artifact" (artifact.sha256), "kernel" (observed kernel release),
+	// "os" (observed os-release identity), "validator" (artifact-mode
+	// validator sha256). Attribution is "artifact", "environment" (kernel/os
+	// only), "validator", "multiple", "none_recorded", or "unknown" when an
+	// identity is missing. The classification is about the obligation; this
+	// is what the evidence can and cannot attribute it to.
+	ChangedInputs []string `json:"changed_inputs,omitempty"`
+	Attribution   string   `json:"attribution,omitempty"`
+	Baseline      CellSide `json:"baseline"`
+	Candidate     CellSide `json:"candidate"`
 }
 
 type Summary struct {
@@ -722,7 +735,9 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	for _, id := range ids {
 		bt, hasBase := baseByID[id]
 		ct, hasCand := candByID[id]
-		d.Cells = append(d.Cells, classify(id, bt, hasBase, ct, hasCand, incomparable))
+		cell := classify(id, bt, hasBase, ct, hasCand, incomparable)
+		attribute(&cell, d.Baseline, d.Candidate)
+		d.Cells = append(d.Cells, cell)
 	}
 
 	d.Summary = summarize(d.Cells)
@@ -835,7 +850,10 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 	// regression whatever the verdicts say: best-effort mode reports it as
 	// COMPATIBLE, and an existing incompatibility elsewhere in the object
 	// would otherwise hide it. It needs both environments established -- a
-	// failure on another kernel is not a regression of this obligation.
+	// failure on a kernel outside the obligation's requested family is not
+	// evidence about this obligation. Established is not "identical": the
+	// observed kernel may differ within the family (a kernel upgrade), and
+	// attribute() records that rather than blaming the artifact.
 	if cell.Baseline.EnvironmentEstablished && cell.Candidate.EnvironmentEstablished {
 		if reason, regressed := attachRegression(cell.Baseline.attach, cell.Candidate.attach); regressed {
 			if depth, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {

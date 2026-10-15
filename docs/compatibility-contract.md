@@ -72,9 +72,15 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   within an object. At most 64 programs are recorded per target
   (`attach_records_truncated` marks the rest); the counts always cover the
   whole object. For objects with more than 64 programs, `bpfcompat diff`
-  compares the unrecorded programs only through those counts: a change in
-  them is `INCONCLUSIVE`, but two unrecorded programs swapping state with
-  identical counts is not detectable from the report.
+  can compare the unrecorded programs only through those counts. That proves
+  per-program comparability only when every unrecorded program on both sides
+  is in the same attach state; otherwise two of them could swap (one
+  attached → failed, another failed → attached) with every count unchanged,
+  so the cell is `INCONCLUSIVE`, never `UNCHANGED_COMPATIBLE` or `FIXED`. A
+  regression proven inside the records is still `NEW_REGRESSION`. In the
+  runner, required-mode verdicts use only whole-object counts (every selected
+  program attached, none failed); a manifest-required program outside the
+  records is treated as not attached.
 
 The validator record must agree with itself: the attach phase runs exactly when
 the object loaded and attach is not disabled, tries every attachable program,
@@ -111,10 +117,14 @@ symbol or a missing tracefs; `EINVAL` has dozens of sources — so a failure is
 `ATTACH_FAILED` at `low` confidence. Only when every failing attach returned
 `EOPNOTSUPP`/`ENOTSUPP` is it `UNSUPPORTED_ATTACH_TYPE`, at `medium`.
 
-`--validation-mode load_attach` does not by itself make attach required; only
-`attach.required` in the manifest does. The manifest has no way to say
-"best-effort" explicitly, so changing that default needs a schema decision
-first.
+`--validation-mode load_attach` loads the object and attempts attach, in the
+mode the manifest selects: **best-effort** unless at least one manifest program
+sets `attach.required: true`, in which case **required** applies to every
+selected program. Without a manifest it is best-effort. It skips behaviour
+commands. It does not by itself make attach required. The manifest has no way
+to say "best-effort" explicitly (`attach.required` is a boolean whose `false`
+equals absent), so changing this default needs a schema decision first.
+`load_only` sets attach to `disabled` (coverage `not_evaluated`).
 
 ### The project's own loader (command mode)
 

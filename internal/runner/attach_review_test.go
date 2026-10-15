@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,32 @@ func TestRunNoteKeepsTheGeneralExplanationForOtherGaps(t *testing.T) {
 	only := strings.Join(runVerdictNotes(targets[:1]), "\n")
 	if strings.Contains(only, "booted a kernel other than") {
 		t.Fatalf("attach-only gap blamed on execution: %s", only)
+	}
+}
+
+func TestRequiredVerdictOnTruncatedRecordsRestsOnWholeObjectCounts(t *testing.T) {
+	// 70 programs, 64 recorded. The verdict may be COMPATIBLE only because the
+	// whole-object counts say every selected program attached and none failed
+	// -- never because the recorded ones did.
+	mk := func(passed, failed int, status string) fakeAttach {
+		progs := make([]fakeProgram, 0, 64)
+		for i := 0; i < 64; i++ {
+			progs = append(progs, fakeProgram{name: "p" + strconv.Itoa(i), section: "tracepoint/a/b", outcome: "attached", autoload: true})
+		}
+		return fakeAttach{mode: "required", accounting: true, programCount: 70, records: 64,
+			selected: 70, attachable: 70, attempted: 70, passed: passed, failed: failed, status: status, programs: progs}
+	}
+	r := mk(70, 0, "pass")
+	if got := runAttachTarget(t, "required", validatorTuning{}, r.json(t)); got.Verdict != schema.VerdictCompatible {
+		t.Fatalf("all 70 attached by count: got %s", got.Verdict)
+	}
+	r = mk(69, 1, "fail")
+	if got := runAttachTarget(t, "required", validatorTuning{}, r.json(t)); got.Verdict != schema.VerdictIncompatible {
+		t.Fatalf("a failure outside the records must still fail required mode: got %s", got.Verdict)
+	}
+	r = mk(70, 0, "pass")
+	if got := runAttachTarget(t, "required", validatorTuning{requiredAttachPrograms: []string{"p69"}}, r.json(t)); got.Verdict == schema.VerdictCompatible {
+		t.Fatal("a manifest-required program outside the records cannot be shown attached by name")
 	}
 }
 
