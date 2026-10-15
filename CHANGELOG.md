@@ -57,6 +57,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   (`validation.attach_*`, `attach_programs[]`), and an *attach not fully
   exercised* marker in the Markdown report and Action summary. Additive
   (schema v0.1 stability contract).
+- The validator records every program, up to an explicit bound of 1024
+  (`attach.records_bound`), instead of only the first 64; above the bound the
+  records say they are truncated. Programs past the 64th also stay attached
+  for the functional tests (their links used to be destroyed right after
+  attach). Objects up to 1024 programs (Falco modern_bpf: 206) now compare
+  per program in `bpfcompat diff`. The validator also raises its soft
+  open-file limit to the hard limit: objects with about 1000 programs used to
+  fail to load with `EMFILE` (`Too many open files`), a limit of the
+  validator process, not of the kernel under test.
 
 ## [0.4.0-rc.4] - 2026-10-14
 

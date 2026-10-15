@@ -159,7 +159,10 @@ exercised" from "exercised and passed":
   `--attach-mode` string runs as `best-effort`).
 - `attach.program_count`, `selected`, `not_selected`, `attachable`,
   `not_attachable` — counted over the whole object; `records` is how many
-  per-program records follow (at most 64).
+  per-program records follow: one per program, up to `attach.records_bound`
+  (1024). Fewer records than `program_count` happens only at that bound and
+  marks the records as truncated; the counts still cover the whole object.
+  Validators before v0.5 wrote at most 64 records and no `records_bound`.
 - per program in `discovery.programs[]`: `autoload`, `attach_outcome`
   (`attached`, `failed`, `not_attachable_by_validator`, `not_selected`,
   `not_attempted`), `attach_operation` (`bpf_program__attach` when tried) and

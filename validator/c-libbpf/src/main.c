@@ -23,6 +23,17 @@
 
 #define LIBBPF_LOG_CAPACITY (256 * 1024)
 #define MAX_ITEMS 64
+/* Per-program records written to result.json: one per program in the object,
+ * up to this hard bound. A record is about 4.9 KiB in memory (the 4 KiB
+ * isolated-load verifier tail dominates) and typically a few hundred bytes of
+ * JSON (at most ~10 KiB with a full escaped load_log), so 1024 records cost at
+ * most ~5 MiB of memory and stay well inside the 32 MiB report bound the
+ * differ reads, even across many targets. Real objects are far below it
+ * (Falco modern_bpf: 206 programs). Above the bound the records stop at the
+ * bound, "records" says how many were written, and every whole-object count
+ * still covers all programs, so a consumer sees the truncation; nothing is
+ * dropped silently. The Go runner and differ use the same bound. */
+#define MAX_PROGRAM_RECORDS 1024
 #define MAX_MAP_FIXUPS 32
 
 /* A pre-load adjustment for a map whose final shape the artifact's own
@@ -188,7 +199,10 @@ struct validator_result {
     bool tracepoint_events_available;
     int map_count;
     int program_count;
-    struct discovered_program programs[MAX_ITEMS];
+    /* program_records entries (min(program_count, MAX_PROGRAM_RECORDS)),
+     * allocated at discovery. */
+    struct discovered_program *programs;
+    int program_records;
     int functional_test_count;
     struct functional_test functional_tests[MAX_ITEMS];
     char functional_status[16];
@@ -200,7 +214,7 @@ struct validator_result {
     int attach_passed;
     int attach_failed;
     /* Scope and capability, counted over every program in the object (not
-     * only the first MAX_ITEMS records): selected = autoload-enabled,
+     * only the first MAX_PROGRAM_RECORDS records): selected = autoload-enabled,
      * attachable = selected and the section is an auto-attach candidate. */
     int attach_selected;
     int attach_not_selected;
@@ -208,12 +222,16 @@ struct validator_result {
     int attach_not_attachable;
     char libbpf_log[LIBBPF_LOG_CAPACITY];
     size_t libbpf_log_len;
-    struct bpf_link *links[MAX_ITEMS];
+    /* Every successful attach, held until destroy_links() after the
+     * functional tests; grows on demand. */
+    struct bpf_link **links;
     int link_count;
+    int link_capacity;
 };
 
 static struct validator_result *g_result;
 static void set_memlock_rlimit(void);
+static void raise_nofile_rlimit(void);
 
 static void usage(const char *prog) {
     fprintf(stderr,
@@ -1442,6 +1460,19 @@ static void run_functional_tests(struct validator_result *res) {
     }
 }
 
+/* Every loaded program and every link holds a file descriptor. A guest login
+ * shell's soft RLIMIT_NOFILE is often 1024, which made an object with ~1000
+ * programs fail to load with EMFILE -- a limit of the validator's process,
+ * not of the kernel under test. Loaders that ship such objects raise the
+ * limit; raise the soft limit to the hard limit (never above it). */
+static void raise_nofile_rlimit(void) {
+    struct rlimit rlim;
+    if (getrlimit(RLIMIT_NOFILE, &rlim) == 0 && rlim.rlim_cur < rlim.rlim_max) {
+        rlim.rlim_cur = rlim.rlim_max;
+        (void)setrlimit(RLIMIT_NOFILE, &rlim);
+    }
+}
+
 static void set_memlock_rlimit(void) {
     struct rlimit rlim = {
         .rlim_cur = RLIM_INFINITY,
@@ -1454,8 +1485,21 @@ static void discover_programs_and_maps(struct validator_result *res, struct bpf_
     struct bpf_program *prog;
     struct bpf_map *map;
 
+    int total = 0;
     bpf_object__for_each_program(prog, obj) {
-        if (res->program_count < MAX_ITEMS) {
+        total++;
+    }
+    res->program_records = total < MAX_PROGRAM_RECORDS ? total : MAX_PROGRAM_RECORDS;
+    if (res->program_records > 0) {
+        res->programs = calloc((size_t)res->program_records, sizeof(*res->programs));
+        if (!res->programs) {
+            fprintf(stderr, "out of memory allocating %d program records\n", res->program_records);
+            exit(1);
+        }
+    }
+
+    bpf_object__for_each_program(prog, obj) {
+        if (res->program_count < res->program_records) {
             const char *name = bpf_program__name(prog);
             const char *section = bpf_program__section_name(prog);
             snprintf(res->programs[res->program_count].name,
@@ -1519,6 +1563,22 @@ static void finalize_attach_status(struct validator_result *res, enum attach_mod
     snprintf(res->attach_status, sizeof(res->attach_status), "warn");
 }
 
+/* Keep a link until destroy_links(). Returns false only when the table
+ * cannot grow; the caller then reports the attach as failed. */
+static bool retain_link(struct validator_result *res, struct bpf_link *link) {
+    if (res->link_count == res->link_capacity) {
+        int capacity = res->link_capacity ? res->link_capacity * 2 : 64;
+        struct bpf_link **grown = realloc(res->links, (size_t)capacity * sizeof(*grown));
+        if (!grown) {
+            return false;
+        }
+        res->links = grown;
+        res->link_capacity = capacity;
+    }
+    res->links[res->link_count++] = link;
+    return true;
+}
+
 static void set_attach_outcome(struct discovered_program *p, const char *outcome) {
     snprintf(p->attach_outcome, sizeof(p->attach_outcome), "%s", outcome);
 }
@@ -1538,7 +1598,7 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
     int program_index = 0;
     bpf_object__for_each_program(prog, obj) {
         struct discovered_program *rec =
-            program_index < MAX_ITEMS ? &res->programs[program_index] : NULL;
+            program_index < res->program_records ? &res->programs[program_index] : NULL;
         const char *section = bpf_program__section_name(prog);
         bool selected = bpf_program__autoload(prog);
         bool attachable = is_auto_attach_candidate(section);
@@ -1582,6 +1642,12 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
         if (rec) {
             snprintf(rec->attach_operation, sizeof(rec->attach_operation), "bpf_program__attach");
         }
+        if (link && !retain_link(res, link)) {
+            /* Not kept attached for the functional tests: not a pass. */
+            (void)bpf_link__destroy(link);
+            link = NULL;
+            err = -ENOMEM;
+        }
         if (!link) {
             res->attach_failed++;
             if (rec) {
@@ -1595,11 +1661,6 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
             if (rec) {
                 set_attach_outcome(rec, "attached");
                 snprintf(rec->attach_status, sizeof(rec->attach_status), "pass");
-            }
-            if (res->link_count < MAX_ITEMS) {
-                res->links[res->link_count++] = link;
-            } else {
-                (void)bpf_link__destroy(link);
             }
         }
     }
@@ -1615,6 +1676,9 @@ static void destroy_links(struct validator_result *res) {
         }
     }
     res->link_count = 0;
+    free(res->links);
+    res->links = NULL;
+    res->link_capacity = 0;
 }
 
 /* Trial-load a single program in isolation: re-open the object, enable autoload
@@ -1983,7 +2047,7 @@ static void probe_per_program_loads(struct validator_result *res) {
     if (!res->opts.probe_features) {
         return;
     }
-    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
+    int max_items = res->program_records;
     for (int i = 0; i < max_items; i++) {
         g_trial_log_len = 0;
         g_trial_log[0] = '\0';
@@ -2020,6 +2084,7 @@ static void run_libbpf_load(struct validator_result *res) {
 
     libbpf_set_print(libbpf_log_callback);
     set_memlock_rlimit();
+    raise_nofile_rlimit();
     snprintf(res->attach_status, sizeof(res->attach_status), "skipped");
 
     obj = bpf_object__open_file(res->opts.artifact, NULL);
@@ -2252,7 +2317,7 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "    \"program_count\": %d,\n", res->program_count);
     fprintf(f, "    \"map_count\": %d,\n", res->map_count);
     fprintf(f, "    \"programs\": [\n");
-    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
+    int max_items = res->program_records;
     for (int i = 0; i < max_items; i++) {
         fprintf(f, "      {\"name\":\"");
         escape_json_string(f, res->programs[i].name);
@@ -2297,7 +2362,8 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "    \"effective_mode\": \"%s\",\n",
             attach_mode_name(parse_attach_mode(res->opts.attach_mode)));
     fprintf(f, "    \"program_count\": %d,\n", res->program_count);
-    fprintf(f, "    \"records\": %d,\n", res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS);
+    fprintf(f, "    \"records\": %d,\n", res->program_records);
+    fprintf(f, "    \"records_bound\": %d,\n", MAX_PROGRAM_RECORDS);
     fprintf(f, "    \"selected\": %d,\n", res->attach_selected);
     fprintf(f, "    \"not_selected\": %d,\n", res->attach_not_selected);
     fprintf(f, "    \"attachable\": %d,\n", res->attach_attachable);

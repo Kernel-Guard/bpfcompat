@@ -26,7 +26,7 @@ import (
 // Coverage is never derived from the set of programs that succeeded.
 
 const (
-	maxDiffAttachRecords   = 256
+	maxDiffAttachRecords   = 1024 // = the validator's MAX_PROGRAM_RECORDS
 	maxDiffAttachNameBytes = 256
 	maxDiffAttachDetail    = 512
 	maxListedPrograms      = 6
@@ -342,7 +342,7 @@ func attachComparability(b, c attachSide) string {
 		parts = append(parts, "the candidate adds "+listNames(added)+", whose attach failed, with no baseline to compare")
 	}
 	if (b.truncated || c.truncated) && b.phaseRan && c.phaseRan && (!b.whollyAttached() || !c.whollyAttached()) {
-		// Beyond the 64 per-program records a program has no identity: it
+		// Beyond the per-program records a program has no identity: it
 		// can be a different program on each side, swap state with another,
 		// or move across the record boundary when programs are added or
 		// removed earlier in the object, all with every count unchanged. No
