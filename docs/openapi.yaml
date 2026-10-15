@@ -479,6 +479,26 @@ paths:
   /api/v1/registry/history/verify:
     get:
       summary: Verify the signed artifact history chain
+      description: |
+        The chain check is backward-only: deleting the newest records still
+        verifies. Compare `summary.head_sha256` and `summary.records` with a
+        value pinned outside the registry to detect such a rollback.
+      parameters:
+        - in: query
+          name: tenant
+          required: true
+          schema: { type: string }
+        - in: query
+          name: project
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Per-record verification results and chain summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryHistoryVerifyResponse"
   /api/v1/registry/audit/events:
     get:
       summary: List audit events
@@ -671,6 +691,25 @@ components:
         host_probe:
           type: object
           additionalProperties: true
+    RegistryHistoryVerifyResponse:
+      type: object
+      properties:
+        verification:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        summary:
+          type: object
+          properties:
+            total: { type: integer }
+            failed: { type: integer }
+            records:
+              type: integer
+              description: Number of records in the history chain.
+            head_sha256:
+              type: string
+              description: record_sha256 of the last record (chain head); empty when the history is empty.
     RegistryProjectRequest:
       type: object
       required: [tenant, project]

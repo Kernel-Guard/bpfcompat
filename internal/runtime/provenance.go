@@ -20,6 +20,7 @@ type HistoryVerificationSelected struct {
 type HistoryVerificationResult struct {
 	SchemaVersion string                      `json:"schema_version"`
 	Records       int                         `json:"records"`
+	HeadSHA256    string                      `json:"head_sha256,omitempty"`
 	Failed        int                         `json:"failed"`
 	Verified      bool                        `json:"verified"`
 	Selected      HistoryVerificationSelected `json:"selected"`
@@ -40,7 +41,7 @@ func VerifySelectedArtifactProvenance(workDir string, selected registry.Artifact
 	if err != nil {
 		return result, fmt.Errorf("verify artifact history: %w", err)
 	}
-	result.Records = len(verification)
+	result.Records, result.HeadSHA256 = registry.ArtifactHistoryHead(verification)
 	if len(verification) == 0 {
 		return result, fmt.Errorf("no artifact history records found")
 	}

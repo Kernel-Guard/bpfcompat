@@ -2248,11 +2248,14 @@ func (s *Server) handleRegistryHistoryVerify(w http.ResponseWriter, r *http.Requ
 			failed++
 		}
 	}
+	records, head := registry.ArtifactHistoryHead(verification)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"verification": verification,
 		"summary": map[string]any{
-			"total":  len(verification),
-			"failed": failed,
+			"total":       len(verification),
+			"failed":      failed,
+			"records":     records,
+			"head_sha256": head,
 		},
 	})
 }
