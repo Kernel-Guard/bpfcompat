@@ -770,6 +770,15 @@ func executeTarget(
 			}
 		}
 		return target, false, false
+	case vr.Load.Status == "fail" && loadHitFDLimit(vr.Load.ErrorCode):
+		// Every loaded program and link holds a file descriptor; running out
+		// of them is the validator process's limit in the guest, not a fact
+		// about the artifact. The load evidence above is kept.
+		target.Status = "infra_error"
+		target.FailedStage = "infra"
+		target.InfraError = fmt.Sprintf("the validator process ran out of file descriptors while loading (code=%d %s): a limit of the validator's environment in the guest, not a property of the artifact", vr.Load.ErrorCode, vr.Load.Error)
+		target.Notes = append(target.Notes, "validator load error: "+target.InfraError)
+		return target, true, false
 	case vr.Load.Status == "fail":
 		target.Status = "fail"
 		target.FailedStage = "load"
@@ -867,6 +876,12 @@ func executeTarget(
 		target.InfraError = fmt.Sprintf("unrecognized validator status load=%q status=%q", vr.Load.Status, vr.Status)
 		return target, true, false
 	}
+}
+
+// loadHitFDLimit reports a load error code of EMFILE or ENFILE (Linux errno
+// 24 and 23, as the validator in the Linux guest records them, negated).
+func loadHitFDLimit(code int) bool {
+	return code == -24 || code == -23
 }
 
 func functionalFromValidator(vr validatorResult) *schema.Functional {

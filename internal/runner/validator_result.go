@@ -33,10 +33,13 @@ type validatorResult struct {
 		EffectiveMode string `json:"effective_mode"`
 		ProgramCount  *int   `json:"program_count"`
 		Records       *int   `json:"records"`
-		Selected      *int   `json:"selected"`
-		NotSelected   *int   `json:"not_selected"`
-		Attachable    *int   `json:"attachable"`
-		NotAttachable *int   `json:"not_attachable"`
+		// RecordsBound is the validator's per-program record bound
+		// (MAX_PROGRAM_RECORDS); validators before it do not write it.
+		RecordsBound  *int `json:"records_bound"`
+		Selected      *int `json:"selected"`
+		NotSelected   *int `json:"not_selected"`
+		Attachable    *int `json:"attachable"`
+		NotAttachable *int `json:"not_attachable"`
 	} `json:"attach"`
 	Functional struct {
 		Status string `json:"status"`

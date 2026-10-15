@@ -11,10 +11,11 @@ import (
 )
 
 // Bounds on the attach accounting a validator result may carry. The validator
-// writes at most 64 records with fixed-size fields; anything beyond these
-// limits did not come from it and is rejected rather than trimmed.
+// writes one record per program up to MAX_PROGRAM_RECORDS (1024; validators
+// before v0.5 wrote at most 64), with fixed-size fields; anything beyond
+// these limits did not come from it and is rejected rather than trimmed.
 const (
-	maxAttachRecords     = 256
+	maxAttachRecords     = 1024
 	maxAttachNameBytes   = 256
 	maxAttachDetailBytes = 512
 	maxAttachCount       = 1 << 20
@@ -120,6 +121,18 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 		return reject("%d program records exceed the bound of %d", len(vr.Discovery.Programs), maxAttachRecords)
 	case acc.records != len(vr.Discovery.Programs):
 		return reject("records=%d but %d program records are present", acc.records, len(vr.Discovery.Programs))
+	}
+	// A validator that declares its record bound stops recording only there:
+	// fewer records than programs below that bound is a silent truncation.
+	if b := at.RecordsBound; b != nil {
+		switch {
+		case *b <= 0 || *b > maxAttachRecords:
+			return reject("attach.records_bound=%d is outside 1..%d", *b, maxAttachRecords)
+		case acc.records > *b:
+			return reject("records=%d exceeds the declared record bound %d", acc.records, *b)
+		case acc.records < acc.programCount && acc.records != *b:
+			return reject("records=%d of program_count=%d although the declared record bound is %d", acc.records, acc.programCount, *b)
+		}
 	}
 
 	// The attach phase runs exactly when the object loaded and attach is not
