@@ -23,8 +23,12 @@ Point it at a local `.bpf.o` or a **published gadget by OCI reference**, on your
 laptop or as a CI gate — `--quick` needs no matrix file:
 
 ```sh
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out report.json
 ```
+
+`--out` is required: it names the JSON report (add `--markdown report.md` for a
+readable copy). A KVM-capable Linux host with QEMU is needed; see
+[Install](#install) and [Prerequisites](#prerequisites).
 
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
@@ -315,7 +319,7 @@ extracts the eBPF object, auto-sizes runtime-sized maps, and validates it across
 kernels with no manifest and no matrix file:
 
 ```sh
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out trace_open.json
 ```
 
 Pulled straight from the registry, Inspektor Gadget's `trace_open`/`trace_exec`
