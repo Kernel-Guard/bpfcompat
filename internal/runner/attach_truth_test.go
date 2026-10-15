@@ -375,7 +375,7 @@ func TestBestEffortAttachFailureIsMarked(t *testing.T) {
 	if got.Verdict != schema.VerdictCompatible {
 		t.Fatalf("best-effort verdict is unchanged, got %s", got.Verdict)
 	}
-	if !notesContain(got, "attach not fully exercised") || !notesContain(got, "tp_b") {
+	if !notesContain(got, "attach not fully attached") || !notesContain(got, "tp_b") {
 		t.Fatalf("a best-effort attach failure must be visible and named: %v", got.Notes)
 	}
 }
@@ -474,7 +474,7 @@ func TestTruncatedRecordsUseCountsNotRecords(t *testing.T) {
 	if got.Validation.AttachAccounting != "v1" || !got.Validation.AttachRecordsTruncated {
 		t.Fatalf("accounting=%q truncated=%t", got.Validation.AttachAccounting, got.Validation.AttachRecordsTruncated)
 	}
-	if !notesContain(got, "attach not fully exercised") {
+	if !notesContain(got, "attach not fully attached") || !notesContain(got, "records cover 64 of 70") {
 		t.Fatalf("failure outside the records must still be visible: %v", got.Notes)
 	}
 }

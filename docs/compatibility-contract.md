@@ -65,8 +65,19 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   what was **exercised**, never about what succeeded.
 - `validation.attach_programs[]` — per program: `name` (the stable identity),
   `section`, `selected`, `outcome`, and for failures the raw `operation`,
-  `errno` and `detail`, plus `reason_class` — only the errno family, with
-  `attribution: "errno_only"`.
+  `errno` and `detail`, plus `reason_class` — only the errno family
+  (`ERRNO_ENOENT`, `ERRNO_EINVAL`, `ERRNO_EPERM_EACCES`, `ERRNO_EOPNOTSUPP`,
+  `ERRNO_EBUSY_EEXIST`, `ERRNO_OTHER`, `ERRNO_UNKNOWN`), with
+  `attribution: "errno_only"`. The name is the program's libbpf name, unique
+  within an object. At most 64 programs are recorded per target
+  (`attach_records_truncated` marks the rest); the counts always cover the
+  whole object.
+
+The validator record must agree with itself: the attach phase runs exactly when
+the object loaded and attach is not disabled, tries every attachable program,
+and its status follows from the counts. A record that breaks this is discarded
+(`attach_accounting: "inconsistent"`), and `bpfcompat diff` refuses a report
+whose attach fields contradict each other.
 
 With `attach.required` in the manifest, the target is COMPATIBLE only when
 **every selected program attached** and every program the manifest marks

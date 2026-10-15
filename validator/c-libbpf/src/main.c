@@ -1578,11 +1578,11 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
         res->attach_attempted++;
         errno = 0;
         struct bpf_link *link = bpf_program__attach(prog);
+        int err = errno ? -errno : -EINVAL; /* before anything else can touch errno */
         if (rec) {
             snprintf(rec->attach_operation, sizeof(rec->attach_operation), "bpf_program__attach");
         }
         if (!link) {
-            int err = errno ? -errno : -EINVAL;
             res->attach_failed++;
             if (rec) {
                 set_attach_outcome(rec, "failed");

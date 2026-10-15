@@ -75,6 +75,31 @@ func validateAttachAccounting(t *schema.Target, i int, id, side string) error {
 	case len(v.AttachPrograms) > v.AttachProgramCount:
 		return bad("more per-program records than programs")
 	}
+	// The attach-phase invariants the runner enforces on the validator's
+	// record. Without them a report can keep the arithmetic and still claim
+	// the phase "did not run" for a program the baseline attached.
+	switch v.AttachEffectiveMode {
+	case "disabled", "best-effort", "required":
+	default:
+		return bad("unknown attach_effective_mode %q", v.AttachEffectiveMode)
+	}
+	if v.AttachMode != v.AttachEffectiveMode {
+		return bad("attach_mode %q differs from attach_effective_mode %q", v.AttachMode, v.AttachEffectiveMode)
+	}
+	loadPassed := v.LoadStatus == "pass"
+	phaseRan := loadPassed && v.AttachEffectiveMode != "disabled"
+	switch {
+	case phaseRan && v.AttachAttempted != v.AttachAttachable:
+		return bad("attempted=%d but attachable=%d although the attach phase ran", v.AttachAttempted, v.AttachAttachable)
+	case !phaseRan && v.AttachAttempted != 0:
+		return bad("attempted=%d although the attach phase did not run", v.AttachAttempted)
+	}
+	if want := expectedCoverage(v, loadPassed); v.AttachCoverage != want {
+		return bad("attach_coverage %q but the counts imply %q", v.AttachCoverage, want)
+	}
+	if want := expectedStatus(v, phaseRan); v.AttachStatus != want {
+		return bad("attach_status %q but the counts imply %q", v.AttachStatus, want)
+	}
 	seen := make(map[string]bool, len(v.AttachPrograms))
 	tally := map[string]int{}
 	for j := range v.AttachPrograms {
@@ -90,6 +115,11 @@ func validateAttachAccounting(t *schema.Target, i int, id, side string) error {
 			return bad("program %q has unknown outcome %q", p.Name, p.Outcome)
 		case p.Selected == (p.Outcome == schema.AttachOutcomeNotSelected):
 			return bad("program %q selected=%t contradicts outcome %q", p.Name, p.Selected, p.Outcome)
+		case phaseRan && p.Outcome == schema.AttachOutcomeNotAttempted:
+			return bad("program %q is %q although the attach phase ran", p.Name, p.Outcome)
+		case !phaseRan && (p.Outcome == schema.AttachOutcomeAttached || p.Outcome == schema.AttachOutcomeFailed ||
+			p.Outcome == schema.AttachOutcomeNotAttachable):
+			return bad("program %q is %q although the attach phase did not run", p.Name, p.Outcome)
 		}
 		seen[p.Name] = true
 		tally[p.Outcome]++
@@ -113,6 +143,37 @@ func validateAttachAccounting(t *schema.Target, i int, id, side string) error {
 		return bad("attach_records_truncated=%t but %d of %d programs are recorded", v.AttachRecordsTruncated, len(v.AttachPrograms), v.AttachProgramCount)
 	}
 	return nil
+}
+
+// expectedCoverage recomputes attach_coverage from the counts, exactly as the
+// runner derives it.
+func expectedCoverage(v *schema.Validation, loadPassed bool) string {
+	switch {
+	case !loadPassed || v.AttachEffectiveMode == "disabled":
+		return schema.AttachCoverageNotEvaluated
+	case v.AttachSelected == 0:
+		return schema.AttachCoverageEmpty
+	case v.AttachAttempted == 0:
+		return schema.AttachCoverageNone
+	case v.AttachAttempted < v.AttachSelected:
+		return schema.AttachCoveragePartial
+	default:
+		return schema.AttachCoverageComplete
+	}
+}
+
+// expectedStatus is the validator's attach status as a function of the counts.
+func expectedStatus(v *schema.Validation, phaseRan bool) string {
+	switch {
+	case !phaseRan || v.AttachAttempted == 0:
+		return "skipped"
+	case v.AttachFailed == 0:
+		return "pass"
+	case v.AttachEffectiveMode == "required":
+		return "fail"
+	default:
+		return "warn"
+	}
 }
 
 // attachSide is one side's attach evidence, as the differ reads it.
@@ -244,6 +305,20 @@ func attachComparability(b, c attachSide) string {
 	if len(added) > 0 {
 		sort.Strings(added)
 		parts = append(parts, "the candidate adds "+listNames(added)+", whose attach failed, with no baseline to compare")
+	}
+	if c.truncated {
+		// Absent from truncated records is not the same as removed: the
+		// program may be among the unrecorded ones, in any state.
+		var unseen []string
+		for name, bp := range b.programs {
+			if _, ok := c.programs[name]; !ok && bp.Outcome == schema.AttachOutcomeAttached {
+				unseen = append(unseen, fmt.Sprintf("%q", name))
+			}
+		}
+		if len(unseen) > 0 {
+			sort.Strings(unseen)
+			parts = append(parts, "baseline-attached "+listNames(unseen)+" cannot be located in the candidate's truncated per-program records")
+		}
 	}
 	if c.truncated && c.failed > c.failedInRecords() {
 		parts = append(parts, fmt.Sprintf("the candidate has %d attach failure(s) outside its per-program records", c.failed-c.failedInRecords()))

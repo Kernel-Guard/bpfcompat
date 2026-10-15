@@ -78,7 +78,7 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 			}
 			status := target.Status
 			if status == "pass" && notFullyExercised(&target) {
-				status += " (" + notFullyExercisedMarker + ")"
+				status += " (" + attachMarker(target.Validation) + ")"
 			}
 			b.WriteString(fmt.Sprintf("| %s | `%s` | `%s` | `%s` | `%s` | `%t` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
 				escapePipes(friendlyProfile(target.ProfileID)),
@@ -121,7 +121,7 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 					summary, _ := attachSummary(target.Validation)
 					marker := ""
 					if target.Status == "pass" && notFullyExercised(&target) {
-						marker = " — " + notFullyExercisedMarker
+						marker = " — " + attachMarker(target.Validation)
 					}
 					fmt.Fprintf(&b, "- Attach coverage: `%s` — %s%s\n",
 						target.Validation.AttachCoverage, escapePipes(summary), marker)

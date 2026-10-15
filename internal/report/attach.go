@@ -8,10 +8,16 @@ import (
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
 
-// notFullyExercisedMarker is appended to a passing target whose selected
-// programs were not all attached: some were not exercised, or failed under
-// best-effort.
-const notFullyExercisedMarker = "attach not fully exercised"
+// attachMarker is appended to a passing target whose selected programs were
+// not all attached. "Not exercised" (the validator never tried some) and "not
+// fully attached" (everything was tried, something failed under best-effort)
+// are different facts and are named separately.
+func attachMarker(v *schema.Validation) string {
+	if v != nil && v.AttachSelected > v.AttachAttempted {
+		return "attach not fully exercised"
+	}
+	return "attach not fully attached"
+}
 
 // attachSummary renders a target's attach accounting in one line, e.g.
 // "3/5 attached, 2 not exercised (lsm/ x2)". full reports whether every

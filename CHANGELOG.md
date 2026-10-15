@@ -29,6 +29,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   a new program whose attach failed, or missing per-program accounting
   alongside an attach failure, is `INCONCLUSIVE` instead of
   `UNCHANGED_COMPATIBLE`. Malformed attach accounting in a report is refused.
+  - **Expect one round of `INCONCLUSIVE` after upgrading** on lanes whose
+    baseline was produced before attach accounting and whose candidate has
+    a best-effort attach failure — even a long-standing one, which the old
+    differ reported as `UNCHANGED_COMPATIBLE`. Regenerating the baseline with
+    this release clears it.
+- **Required attach and libbpf section aliases.** The validator's auto-attach
+  allow-list is unchanged and does not include `tp/` (alias of
+  `tracepoint/`), `kprobe.multi/`, `raw_tp.w/` and similar. In required mode
+  an object using them is now `UNSUPPORTED`/`ATTACH_NOT_EXERCISED` instead of
+  a `COMPATIBLE` that never attached them.
 
 ### Fixed
 - Programs disabled by `program_variants` selection were still passed to

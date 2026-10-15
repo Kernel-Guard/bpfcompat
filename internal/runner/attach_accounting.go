@@ -114,8 +114,6 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 		return reject("selected=%d + not_selected=%d != program_count=%d", acc.selected, acc.notSelected, acc.programCount)
 	case acc.attachable+acc.notAttachable != acc.selected:
 		return reject("attachable=%d + not_attachable=%d != selected=%d", acc.attachable, acc.notAttachable, acc.selected)
-	case acc.attempted != 0 && acc.attempted != acc.attachable:
-		return reject("attempted=%d but attachable=%d; the attach phase must try every attachable program or none", acc.attempted, acc.attachable)
 	case acc.records > acc.programCount:
 		return reject("records=%d exceeds program_count=%d", acc.records, acc.programCount)
 	case len(vr.Discovery.Programs) > maxAttachRecords:
@@ -124,7 +122,24 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 		return reject("records=%d but %d program records are present", acc.records, len(vr.Discovery.Programs))
 	}
 
-	phaseRan := acc.attempted > 0
+	// The attach phase runs exactly when the object loaded and attach is not
+	// disabled, and then tries every attachable program. The status the
+	// validator reports is a function of the counts; a record whose status
+	// disagrees with them (a "pass" next to a failed attach) is rejected, so
+	// no verdict rests on whichever of the two fields is greener.
+	phaseRan := vr.Load.Status == "pass" && acc.effectiveMode != "disabled"
+	if phaseRan && acc.attempted != acc.attachable {
+		return reject("attempted=%d but attachable=%d; the attach phase must try every attachable program", acc.attempted, acc.attachable)
+	}
+	if !phaseRan && acc.attempted != 0 {
+		return reject("attempted=%d although the attach phase did not run", acc.attempted)
+	}
+	if want := expectedAttachStatus(phaseRan, acc); at.Status != want {
+		return reject("attach.status=%q but the counts imply %q", truncateBytes(at.Status, 32), want)
+	}
+	if at.Status == "fail" && vr.Status != "fail" {
+		return reject("attach.status is fail but the overall status is %q", truncateBytes(vr.Status, 32))
+	}
 	seen := make(map[string]struct{}, len(vr.Discovery.Programs))
 	tally := map[string]int{}
 	selectedRecords := 0
@@ -150,13 +165,12 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 		}
 		seen[p.Name] = struct{}{}
 		switch p.AttachOutcome {
-		case schema.AttachOutcomeAttached, schema.AttachOutcomeFailed:
+		case schema.AttachOutcomeAttached, schema.AttachOutcomeFailed, schema.AttachOutcomeNotAttachable:
 			if !*p.Autoload {
 				return reject("program %q was not selected but reports outcome %q", p.Name, p.AttachOutcome)
 			}
-		case schema.AttachOutcomeNotAttachable:
-			if !*p.Autoload {
-				return reject("program %q was not selected but reports outcome %q", p.Name, p.AttachOutcome)
+			if !phaseRan {
+				return reject("program %q reports %q although the attach phase did not run", p.Name, p.AttachOutcome)
 			}
 		case schema.AttachOutcomeNotSelected:
 			if *p.Autoload {
@@ -215,6 +229,21 @@ func accountAttach(vr validatorResult, requestedMode string) attachAccounting {
 	return acc
 }
 
+// expectedAttachStatus is the validator's finalize_attach_status as a function
+// of the accounted counts.
+func expectedAttachStatus(phaseRan bool, acc attachAccounting) string {
+	switch {
+	case !phaseRan || acc.attempted == 0:
+		return "skipped"
+	case acc.failed == 0:
+		return "pass"
+	case acc.effectiveMode == "required":
+		return "fail"
+	default:
+		return "warn"
+	}
+}
+
 // attachCoverage is how much of the selected scope the attach phase exercised.
 // It is computed from scope and attempts, never from successes.
 func attachCoverage(acc attachAccounting, loadPassed bool) string {
@@ -245,19 +274,19 @@ func attachErrnoClass(errno int) string {
 	}
 	switch errno {
 	case 0:
-		return "UNKNOWN"
+		return "ERRNO_UNKNOWN"
 	case int(syscall.ENOENT):
-		return "TARGET_NOT_FOUND"
+		return "ERRNO_ENOENT"
 	case int(syscall.EPERM), int(syscall.EACCES):
-		return "PERMISSION_DENIED"
+		return "ERRNO_EPERM_EACCES"
 	case int(syscall.EOPNOTSUPP), 524: // 524 = kernel-internal ENOTSUPP
-		return "OPERATION_NOT_SUPPORTED"
+		return "ERRNO_EOPNOTSUPP"
 	case int(syscall.EINVAL):
-		return "INVALID_ARGUMENT"
+		return "ERRNO_EINVAL"
 	case int(syscall.EBUSY), int(syscall.EEXIST):
-		return "BUSY"
+		return "ERRNO_EBUSY_EEXIST"
 	default:
-		return "OTHER"
+		return "ERRNO_OTHER"
 	}
 }
 
@@ -396,7 +425,13 @@ func attachCoverageNote(acc attachAccounting, coverage string) string {
 	if acc.truncated() {
 		parts = append(parts, fmt.Sprintf("per-program records cover %d of %d programs", acc.records, acc.programCount))
 	}
-	return "attach not fully exercised: " + strings.Join(parts, ", ")
+	// "Not exercised" and "tried and failed" are different facts; the marker
+	// names whichever applies.
+	marker := "attach not fully attached"
+	if notExercised > 0 {
+		marker = "attach not fully exercised"
+	}
+	return marker + ": " + strings.Join(parts, ", ")
 }
 
 // attachFailuresForClassifier hands the classifier the raw per-program attach

@@ -19,7 +19,23 @@ const (
 // function; EINVAL is returned for dozens of unrelated reasons. Only an
 // explicit "operation not supported" from every failing attach is read as an
 // unsupported attach type, and even that at medium confidence.
-func classifyAttachFailure(failures []AttachFailure) Result {
+func classifyAttachFailure(failures []AttachFailure, total int) Result {
+	if total > len(failures) {
+		// Some failures fall outside the per-program records: nothing is
+		// known about their errno, so no cause can be claimed for the set.
+		reason := fmt.Sprintf("Attach failed after load succeeded; only %d of %d failures are in the validator's per-program records, so the cause is not established", len(failures), total)
+		if len(failures) > 0 {
+			reason += ": " + describeAttachFailures(failures)
+		} else {
+			reason += "."
+		}
+		return Result{
+			Code:        "ATTACH_FAILED",
+			Confidence:  "low",
+			Reason:      reason,
+			Remediation: "Inspect the per-program attach errno and the libbpf log in the report for the failing attach point.",
+		}
+	}
 	if len(failures) > 0 && allNotSupported(failures) {
 		return Result{
 			Code:       "UNSUPPORTED_ATTACH_TYPE",

@@ -511,7 +511,32 @@ func executeTargets(
 	case schema.VerdictIncompatible:
 		notes = append(notes, "Compatibility check failed on at least one required profile.")
 	case schema.VerdictInfraError:
-		notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
+		attachGaps, otherGaps := 0, 0
+		for i := range targets {
+			t := &targets[i]
+			if !t.Required || t.Verdict == schema.VerdictIncompatible {
+				continue
+			}
+			if t.Verdict == schema.VerdictCompatible {
+				// A pass on a kernel other than the one requested is also an
+				// unestablished contract, and keeps the general note.
+				if !schema.EstablishedRequestedEnvironment(t) {
+					otherGaps++
+				}
+				continue
+			}
+			if t.FailedStage == "attach" {
+				attachGaps++
+			} else {
+				otherGaps++
+			}
+		}
+		if attachGaps > 0 {
+			notes = append(notes, fmt.Sprintf("Required attach was not fully exercised on %d required target(s): the object loaded, but some selected programs were not attached (a kind the validator cannot attach, not selected, or unaccounted). This is not a statement about the artifact. Check targets[].classification_code and validation.attach_programs.", attachGaps))
+		}
+		if otherGaps > 0 || attachGaps == 0 {
+			notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
+		}
 	default:
 		notes = append(notes, "All required profiles passed validator load checks.")
 	}
@@ -818,6 +843,7 @@ func executeTarget(
 			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
 			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
 			AttachFailures:     attachFailuresForClassifier(acc, vr),
+			AttachFailedTotal:  vr.Attach.Failed,
 		})
 		target.ClassificationCode = cl.Code
 		target.ClassificationConfidence = cl.Confidence

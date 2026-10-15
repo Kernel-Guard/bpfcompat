@@ -2,6 +2,7 @@ package regressiondiff
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -306,6 +307,80 @@ func TestDeletingAttachEvidenceNeverBuysGreen(t *testing.T) {
 				t.Fatalf("deleting attach evidence bought %s: %s", c.Classification, c.Reason)
 			}
 		})
+	}
+}
+
+// Counterexamples from the independent review: records that keep the
+// arithmetic but break the attach-phase invariants, or delete a regression
+// through the truncation path.
+func TestAttachPhaseInvariantsCannotBeBentIntoGreen(t *testing.T) {
+	green := map[string]bool{UnchangedCompatible: true, Fixed: true, CoverageAdded: true}
+	notAttempted := ap{"a", tpSec, schema.AttachOutcomeNotAttempted, 0}
+	cases := map[string]func() schema.Target{
+		"attached -> never attempted, load passed, mode unchanged": func() schema.Target {
+			return withAttach(compat(), "best-effort", notAttempted)
+		},
+		"same, claiming coverage complete and status pass": func() schema.Target {
+			tg := withAttach(compat(), "best-effort", notAttempted)
+			tg.Validation.AttachCoverage = schema.AttachCoverageComplete
+			tg.Validation.AttachStatus = "pass"
+			return tg
+		},
+		"regression record deleted through truncation": func() schema.Target {
+			tg := withAttach(compat(), "best-effort", failed("a"))
+			v := tg.Validation
+			v.AttachPrograms = nil
+			v.AttachRecordsTruncated = true
+			v.AttachFailed, v.AttachAttempted = 0, 0
+			v.AttachStatus = "skipped"
+			return tg
+		},
+		"status pass next to a failure": func() schema.Target {
+			tg := withAttach(compat(), "best-effort", attached("a"), failed("b"))
+			tg.Validation.AttachStatus = "pass"
+			return tg
+		},
+		"coverage none while every program was tried": func() schema.Target {
+			tg := withAttach(compat(), "best-effort", attached("a"))
+			tg.Validation.AttachCoverage = schema.AttachCoverageNone
+			return tg
+		},
+	}
+	for name, mk := range cases {
+		t.Run(name, func(t *testing.T) {
+			base := withAttach(compat(), "best-effort", attached("a"), attached("b"))
+			d, err := buildErr(report(base), report(mk()))
+			if err != nil {
+				var inv *InvalidEvidenceError
+				if !errors.As(err, &inv) {
+					t.Fatalf("unexpected error type: %v", err)
+				}
+				return
+			}
+			if c := onlyCell(t, d); green[c.Classification] {
+				t.Fatalf("bought %s: %s", c.Classification, c.Reason)
+			}
+		})
+	}
+}
+
+func TestTruncatedCandidateMustStillShowBaselineAttachedPrograms(t *testing.T) {
+	base := withAttach(compat(), "best-effort", attached("a"), attached("b"))
+	// The candidate has 70 programs and records 64 of them; "a" is not among
+	// the records, so what happened to it is unknown.
+	var progs []ap
+	progs = append(progs, attached("b"))
+	for i := 0; i < 63; i++ {
+		progs = append(progs, attached(fmt.Sprintf("p%02d", i)))
+	}
+	cand := withAttach(compat(), "best-effort", progs...)
+	v := cand.Validation
+	v.AttachProgramCount, v.AttachSelected, v.AttachAttachable = 70, 70, 70
+	v.AttachAttempted, v.AttachPassed = 70, 70
+	v.AttachRecordsTruncated = true
+	c := onlyCell(t, build(t, report(base), report(cand)))
+	if c.Classification != Inconclusive || !strings.Contains(c.Reason, `"a"`) {
+		t.Fatalf("got %s: %s", c.Classification, c.Reason)
 	}
 }
 

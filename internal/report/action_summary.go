@@ -94,7 +94,7 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 			attach, _ := attachSummary(target.Validation)
 			status := emptyAs(target.Status, "unknown")
 			if target.Status == "pass" && notFullyExercised(target) {
-				status += " (" + notFullyExercisedMarker + ")"
+				status += " (" + attachMarker(target.Validation) + ")"
 			}
 			fmt.Fprintf(&b, "| %s | %t | `%s` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
 				markdownTableCell(target.ProfileID),
@@ -111,8 +111,8 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 			b.WriteString(fmt.Sprintf("\n_Showing %d of %d profiles. Download the JSON/Markdown artifacts for full target logs._\n", limit, len(targets)))
 		}
 		if partial > 0 {
-			fmt.Fprintf(&b, "\n**Attach:** %d passing target(s) — %s: some selected programs were not attached (not exercised by the validator, or failed under best-effort). A pass there proves load, not attach, for those programs.\n",
-				partial, notFullyExercisedMarker)
+			fmt.Fprintf(&b, "\n**Attach:** %d passing target(s) did not attach every selected program (not exercised by the validator, or failed under best-effort). A pass there proves load, not attach, for those programs.\n",
+				partial)
 		}
 	}
 
