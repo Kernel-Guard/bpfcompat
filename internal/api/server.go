@@ -3135,8 +3135,10 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 		// touch, including host files pulled in via #include "/abs/path",
 		// macro-computed includes, or __has_include probes. Never return
 		// them to API clients; keep the full text in the server log only.
+		// sourcePath embeds the client-chosen upload filename; strip line
+		// breaks before it reaches the log sink (CWE-117).
 		logger.Warn("source upload compile failed",
-			slog.String("source", sourcePath),
+			slog.String("source", sanitizeLogValue(sourcePath)),
 			slog.Bool("sandboxed", sandboxed),
 			slog.String("error", err.Error()),
 			slog.String("clang_output", truncateForLog(trimmed, maxCompileDiagnosticLogBytes)),
