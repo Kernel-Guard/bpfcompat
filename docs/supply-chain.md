@@ -52,6 +52,26 @@ candidate.
 Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
 (`X.Y`, `latest`) are reachable only through the stable release channel.
 
+### Validator lock maintenance (known limitation)
+
+`validator/build-inputs.lock` pins exact package versions, several of them from
+the `noble-updates` pocket (e.g. `libc6-dev`, `zlib1g-dev`, `libelf-dev`,
+`gcc-13`). Ubuntu's archive keeps only the newest version in `-updates`, so
+the next stable-release update (SRU) of any of them removes the pinned version
+and `scripts/build-validator-pinned.sh` then fails closed at `apt-get install`.
+That is intended: bump the lock (new versions, new `reproduces=` line from a
+pinned build), which changes the shipped validator and therefore needs a new
+release candidate. Pinning the apt step to a fixed snapshot.ubuntu.com
+timestamp would keep old versions installable. It is a follow-up: one local
+experiment (snapshot `20261014T154800Z`, `ca-certificates` installed first)
+reproduced the qualified validator byte-for-byte in about 8 minutes, but an
+earlier identical attempt stalled for over 13 minutes, so it is not wired into
+the release build until it is shown to be reliable.
+
+`dist/validator-build-inputs.json` is a build record: it is attested with the
+candidate provenance and kept in the workflow run artifact, but it is not a
+release asset and is not listed in `SHA256SUMS`.
+
 ### Verifying a signed release
 
 ```bash

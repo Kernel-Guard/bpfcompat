@@ -77,6 +77,25 @@ else
   fail "no stable-only check-validator-matches-candidate.sh step in build-and-sign"
 fi
 
+subjects="$(python3 - "$WORKFLOW" <<'PY'
+import sys, yaml
+job = (yaml.safe_load(open(sys.argv[1])).get("jobs") or {}).get("build-and-sign") or {}
+for step in job.get("steps") or []:
+    if step.get("name") == "Attest candidate provenance":
+        print((step.get("with") or {}).get("subject-path", ""))
+PY
+)"
+if grep -qx '[[:space:]]*dist/validator-build-inputs.json' <<<"$subjects"; then
+  pass "validator build-input record is a provenance subject"
+else
+  fail "dist/validator-build-inputs.json is not in the candidate provenance subjects"
+fi
+if grep -q "'.sha256 == \$sha' dist/validator-build-inputs.json" <<<"$build_steps"; then
+  pass "build-and-sign binds the build-input record to the shipped validator sha256"
+else
+  fail "build-and-sign does not check the build-input record against the shipped validator"
+fi
+
 # ---------------------------------------------------------------- 2. lock
 expect 0 "repository lock is well-formed" bash "$BUILDER" --check-lock
 bad_lock() {

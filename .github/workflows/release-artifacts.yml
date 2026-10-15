@@ -137,6 +137,8 @@ jobs:
           bash scripts/build-validator-pinned.sh \
             dist/bpfcompat-validator-static-linux-amd64 \
             dist/validator-build-inputs.json
+          jq -e --arg sha "$(sha256sum dist/bpfcompat-validator-static-linux-amd64 | awk '{print $1}')" \
+            '.sha256 == $sha' dist/validator-build-inputs.json >/dev/null
       - name: Stage production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         env:
@@ -204,6 +206,9 @@ jobs:
           format: cyclonedx-json
           output-file: dist/bpfcompat.sbom.cdx.json
       - name: Attest candidate provenance
+        # validator-build-inputs.json records the validator's pinned build
+        # inputs. It is attested and kept in the run artifact; it is a build
+        # record, not a release asset, and not in SHA256SUMS.
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -211,6 +216,7 @@ jobs:
             dist/bpfcompat-linux-amd64
             dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
+            dist/validator-build-inputs.json
       - name: Attest production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1

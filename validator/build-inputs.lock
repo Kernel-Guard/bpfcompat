@@ -4,9 +4,11 @@
 # The validator statically links distro libbpf, libelf, zlib, zstd and glibc,
 # so its bytes are decided by these packages, not only by validator/ sources.
 # Building on the moving `ubuntu-latest` label let them drift silently: rc.2/rc.3
-# and rc.4 have the same validator/c-libbpf tree but different bytes (zlib and
-# glibc updates), and an Ubuntu 26.04 build links libbpf 1.6 + GCC 15 instead
-# of the qualified libbpf 1.3 + GCC 13.
+# and rc.4 have the same validator/c-libbpf tree but different bytes, plausibly
+# from image-supplied static libraries (symbol-size diffs are in zlib and glibc
+# objects; the runner logs did not record the libc6-dev version), and an Ubuntu
+# 26.04 build links libbpf 1.6 + GCC 15 instead of the qualified libbpf 1.3 +
+# GCC 13.
 #
 # scripts/build-validator-pinned.sh builds inside builder_image with exactly
 # these packages and fails closed if apt cannot provide them.
