@@ -2,6 +2,8 @@ package vm
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -200,7 +202,7 @@ func ExecuteProfile(ctx context.Context, req ExecutionRequest) (result Execution
 		return
 	}
 
-	baseImagePath, imageSHA, err := ensureImageAvailable(ctx, req.Profile, vmRunDir)
+	baseImagePath, imageSHA, err := ensureImageAvailable(ctx, req.Profile)
 	if err != nil {
 		result.InfraError = err.Error()
 		return
@@ -717,9 +719,23 @@ func waitProcessExit(cmd *exec.Cmd, timeout time.Duration) error {
 	}
 }
 
+// renameImageFn moves a finished download into the image cache; tests inject
+// failures (e.g. EXDEV) through it.
+var renameImageFn = os.Rename
+
+// imageDownloadTempPath returns a unique, not-yet-existing name in the same
+// directory as the cached image, so concurrent runs never share a temp file.
+func imageDownloadTempPath(imagePath string) (string, error) {
+	suffix := make([]byte, 8)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", fmt.Errorf("image download temp name: %w", err)
+	}
+	return fmt.Sprintf("%s.%s.download", imagePath, hex.EncodeToString(suffix)), nil
+}
+
 // ensureImageAvailable returns the cached image path and the digest recomputed
 // from the bytes used by this run. A pinned profile fails closed on mismatch.
-func ensureImageAvailable(ctx context.Context, profile Profile, vmRunDir string) (string, string, error) {
+func ensureImageAvailable(ctx context.Context, profile Profile) (string, string, error) {
 	basePath := profile.Image.LocalPath
 	if basePath == "" {
 		return "", "", fmt.Errorf("profile %q missing image.local_path", profile.ID)
@@ -736,7 +752,16 @@ func ensureImageAvailable(ctx context.Context, profile Profile, vmRunDir string)
 		if err := os.MkdirAll(filepath.Dir(basePathAbs), 0o755); err != nil {
 			return "", "", fmt.Errorf("create image cache directory: %w", err)
 		}
-		tempPath := filepath.Join(vmRunDir, "image-download.tmp")
+		// Stage the download beside its final path, not in the run dir: the
+		// image cache can be on another filesystem (tmpfs /tmp, a bind mount,
+		// a separate $HOME), where a rename fails with EXDEV after the whole
+		// download. A same-directory rename is atomic, so the final path only
+		// ever holds a complete, verified image.
+		tempPath, err := imageDownloadTempPath(basePathAbs)
+		if err != nil {
+			return "", "", err
+		}
+		defer func() { _ = os.Remove(tempPath) }() // no-op once renamed
 		if err := downloadFile(ctx, profile.Image.SourceURL, tempPath); err != nil {
 			return "", "", fmt.Errorf("download image: %w", err)
 		}
@@ -750,7 +775,7 @@ func ensureImageAvailable(ctx context.Context, profile Profile, vmRunDir string)
 				return "", "", fmt.Errorf("image checksum mismatch for %s: got %s want %s", profile.Image.SourceURL, sum, pinned)
 			}
 		}
-		if err := os.Rename(tempPath, basePathAbs); err != nil {
+		if err := renameImageFn(tempPath, basePathAbs); err != nil {
 			return "", "", fmt.Errorf("cache downloaded image: %w", err)
 		}
 		// Invalidate any stale sidecar from a previous image at this path.
