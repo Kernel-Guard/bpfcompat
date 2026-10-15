@@ -76,27 +76,43 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 
 	if len(report.Targets) > 0 {
 		b.WriteString("\n## Compatibility Matrix\n\n")
-		b.WriteString("| Profile | Required | Status | Kernel | BTF | Functional | Class |\n")
-		b.WriteString("|---|---:|---|---|---|---|---|\n")
+		b.WriteString("| Profile | Required | Status | Kernel | BTF | Functional | Attach | Class |\n")
+		b.WriteString("|---|---:|---|---|---|---|---|---|\n")
 		targets := report.Targets
 		limit := opts.MaxTargets
 		if len(targets) < limit {
 			limit = len(targets)
 		}
+		partial := 0
+		for i := range targets {
+			if targets[i].Status == "pass" && notFullyExercised(&targets[i]) {
+				partial++
+			}
+		}
 		for i := 0; i < limit; i++ {
 			target := &targets[i]
-			b.WriteString(fmt.Sprintf("| %s | %t | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
+			attach, _ := attachSummary(target.Validation)
+			status := emptyAs(target.Status, "unknown")
+			if target.Status == "pass" && notFullyExercised(target) {
+				status += " (" + notFullyExercisedMarker + ")"
+			}
+			fmt.Fprintf(&b, "| %s | %t | `%s` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
 				markdownTableCell(target.ProfileID),
 				target.Required,
-				markdownTableCell(emptyAs(target.Status, "unknown")),
+				markdownTableCell(status),
 				markdownTableCell(targetKernel(target)),
 				markdownTableCell(targetBTF(target)),
 				markdownTableCell(targetFunctional(target)),
+				markdownTableCell(attach),
 				markdownTableCell(emptyAs(target.ClassificationCode, "-")),
-			))
+			)
 		}
 		if len(targets) > limit {
 			b.WriteString(fmt.Sprintf("\n_Showing %d of %d profiles. Download the JSON/Markdown artifacts for full target logs._\n", limit, len(targets)))
+		}
+		if partial > 0 {
+			fmt.Fprintf(&b, "\n**Attach:** %d passing target(s) — %s: some selected programs were not attached (not exercised by the validator, or failed under best-effort). A pass there proves load, not attach, for those programs.\n",
+				partial, notFullyExercisedMarker)
 		}
 	}
 
@@ -227,15 +243,20 @@ func remediationHints(failures []*schema.Target) []string {
 	}
 
 	hintByClass := map[string]string{
-		"MISSING_BTF":              "`MISSING_BTF`: use a non-CO-RE fallback, provide external BTF, or remove CO-RE dependency for that kernel band.",
-		"CORE_RELOCATION_FAILURE":  "`CORE_RELOCATION_FAILURE`: validate against the target BTF layout and ship a profile-specific variant when field layouts diverge.",
-		"UNSUPPORTED_PROGRAM_TYPE": "`UNSUPPORTED_PROGRAM_TYPE`: ship an older-kernel-compatible variant, for example avoid fentry/fexit on kernels before 5.5.",
-		"UNSUPPORTED_MAP_TYPE":     "`UNSUPPORTED_MAP_TYPE`: use a map-compatible fallback for older kernels, for example perfbuf instead of ringbuf where needed.",
-		"UNSUPPORTED_ATTACH_TYPE":  "`UNSUPPORTED_ATTACH_TYPE`: change the hook/attach strategy for that kernel or make attach optional in the manifest.",
-		"POLICY_DENIED":            "`POLICY_DENIED`: check kernel lockdown, unprivileged BPF, capabilities, and runner security policy.",
-		"CAPABILITY_FAILURE":       "`CAPABILITY_FAILURE`: compare the failed helper/map/program capability against the target profile and select a compatible variant.",
-		"VERIFIER_REJECTION":       "`VERIFIER_REJECTION`: inspect the validator/libbpf logs from the uploaded report artifact.",
-		"FUNCTIONAL_TEST_FAILURE":  "`FUNCTIONAL_TEST_FAILURE`: inspect the functional command output and project-specific test assets; the artifact loaded but did not satisfy the integration test.",
+		"MISSING_BTF":                    "`MISSING_BTF`: use a non-CO-RE fallback, provide external BTF, or remove CO-RE dependency for that kernel band.",
+		"CORE_RELOCATION_FAILURE":        "`CORE_RELOCATION_FAILURE`: validate against the target BTF layout and ship a profile-specific variant when field layouts diverge.",
+		"UNSUPPORTED_PROGRAM_TYPE":       "`UNSUPPORTED_PROGRAM_TYPE`: ship an older-kernel-compatible variant, for example avoid fentry/fexit on kernels before 5.5.",
+		"UNSUPPORTED_MAP_TYPE":           "`UNSUPPORTED_MAP_TYPE`: use a map-compatible fallback for older kernels, for example perfbuf instead of ringbuf where needed.",
+		"UNSUPPORTED_ATTACH_TYPE":        "`UNSUPPORTED_ATTACH_TYPE`: change the hook/attach strategy for that kernel or make attach optional in the manifest.",
+		"ATTACH_FAILED":                  "`ATTACH_FAILED`: inspect the per-program attach errno in the report; the errno alone does not establish the cause.",
+		"ATTACH_NOT_EXERCISED":           "`ATTACH_NOT_EXERCISED`: attach is required, but the validator cannot attach some selected programs (e.g. lsm, xdp, tc, cgroup); only their load was proven. Validate those with your own loader (`--command`) or drop `attach.required`.",
+		"ATTACH_SCOPE_EMPTY":             "`ATTACH_SCOPE_EMPTY`: attach is required, but the object selects no programs; check `program_variants` and the artifact.",
+		"ATTACH_ACCOUNTING_UNAVAILABLE":  "`ATTACH_ACCOUNTING_UNAVAILABLE`: the validator predates attach accounting; use the validator shipped with this bpfcompat release.",
+		"ATTACH_ACCOUNTING_INCONSISTENT": "`ATTACH_ACCOUNTING_INCONSISTENT`: the validator's attach record did not add up and was discarded; report it with the validator result attached.",
+		"POLICY_DENIED":                  "`POLICY_DENIED`: check kernel lockdown, unprivileged BPF, capabilities, and runner security policy.",
+		"CAPABILITY_FAILURE":             "`CAPABILITY_FAILURE`: compare the failed helper/map/program capability against the target profile and select a compatible variant.",
+		"VERIFIER_REJECTION":             "`VERIFIER_REJECTION`: inspect the validator/libbpf logs from the uploaded report artifact.",
+		"FUNCTIONAL_TEST_FAILURE":        "`FUNCTIONAL_TEST_FAILURE`: inspect the functional command output and project-specific test assets; the artifact loaded but did not satisfy the integration test.",
 	}
 
 	keys := make([]string, 0, len(seenClasses))

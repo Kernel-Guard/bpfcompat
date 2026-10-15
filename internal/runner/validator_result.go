@@ -27,6 +27,16 @@ type validatorResult struct {
 		Attempted int    `json:"attempted"`
 		Passed    int    `json:"passed"`
 		Failed    int    `json:"failed"`
+		// Accounting fields (validator "v1"); pointers so a missing count is
+		// distinguishable from zero.
+		Accounting    string `json:"accounting"`
+		EffectiveMode string `json:"effective_mode"`
+		ProgramCount  *int   `json:"program_count"`
+		Records       *int   `json:"records"`
+		Selected      *int   `json:"selected"`
+		NotSelected   *int   `json:"not_selected"`
+		Attachable    *int   `json:"attachable"`
+		NotAttachable *int   `json:"not_attachable"`
 	} `json:"attach"`
 	Functional struct {
 		Status string `json:"status"`
@@ -109,9 +119,14 @@ type validatorResult struct {
 			Section      string `json:"section"`
 			AttachStatus string `json:"attach_status,omitempty"`
 			AttachError  string `json:"attach_error,omitempty"`
-			LoadStatus   string `json:"load_status,omitempty"`
-			LoadErrno    int    `json:"load_errno,omitempty"`
-			LoadLog      string `json:"load_log,omitempty"`
+			// Attach accounting (validator "v1").
+			Autoload        *bool  `json:"autoload,omitempty"`
+			AttachOutcome   string `json:"attach_outcome,omitempty"`
+			AttachOperation string `json:"attach_operation,omitempty"`
+			AttachErrno     int    `json:"attach_errno,omitempty"`
+			LoadStatus      string `json:"load_status,omitempty"`
+			LoadErrno       int    `json:"load_errno,omitempty"`
+			LoadLog         string `json:"load_log,omitempty"`
 		} `json:"programs"`
 	} `json:"discovery"`
 	Logs struct {

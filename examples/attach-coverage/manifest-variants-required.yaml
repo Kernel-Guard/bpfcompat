@@ -1,0 +1,12 @@
+name: attach-coverage-variants-required
+programs:
+  - name: getpid_new
+    section: tracepoint/syscalls/sys_enter_getpid
+    attach:
+      kind: tracepoint
+      required: true
+program_variants:
+  - group: getpid
+    programs:
+      - name: getpid_new
+      - name: getpid_old

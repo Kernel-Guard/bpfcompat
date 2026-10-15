@@ -66,7 +66,11 @@ cause — and the part that compounds in value as more real-world failures are c
 | `CORE_RELOCATION_FAILURE` | A CO-RE relocation could not be applied | Validate against the target BTF layout; ship a profile-specific variant where field layouts diverge |
 | `UNSUPPORTED_PROGRAM_TYPE` | Program type not available on this kernel | Older-kernel-compatible variant (e.g. avoid fentry/fexit before 5.5) |
 | `UNSUPPORTED_MAP_TYPE` | Map type not available (e.g. ringbuf < 5.8) | Map-compatible fallback (e.g. perfbuf instead of ringbuf) |
-| `UNSUPPORTED_ATTACH_TYPE` | Attach/hook not available | Change the hook strategy, or make attach optional in the manifest |
+| `UNSUPPORTED_ATTACH_TYPE` | Every failing attach returned `EOPNOTSUPP`/`ENOTSUPP` (confidence `medium`) | Change the hook strategy, or make attach optional in the manifest |
+| `ATTACH_FAILED` | An attempted attach failed; the per-program errno does not establish why (confidence `low`) | Inspect `validation.attach_programs[]` errno/detail and the libbpf log |
+| `ATTACH_NOT_EXERCISED` | Attach is required, but selected programs were not attached because the validator cannot attach their kind, or a manifest-required program was not attached — **not** a statement about the artifact (`verdict: UNSUPPORTED`) | Validate those programs with your own loader (command mode), or drop `attach.required` |
+| `ATTACH_SCOPE_EMPTY` | Attach is required, but no program was selected (`verdict: UNSUPPORTED`) | Check `program_variants` and the artifact |
+| `ATTACH_ACCOUNTING_UNAVAILABLE` / `ATTACH_ACCOUNTING_INCONSISTENT` | Required attach coverage could not be established from the validator's record (`verdict: INFRA_ERROR`) | Use the validator shipped with this release; report an inconsistent record |
 | `POLICY_DENIED` | Host policy blocked load/attach | Check kernel lockdown, unprivileged-BPF sysctl, capabilities, runner policy |
 | `CAPABILITY_FAILURE` | A probed helper/map/prog capability failed | Compare against the target profile; select a compatible variant |
 | `VERIFIER_REJECTION` | The verifier rejected the program | Inspect the validator/libbpf log in the report |

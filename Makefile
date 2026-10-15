@@ -153,6 +153,10 @@ examples:
 	$(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_$(BPF_TARGET_ARCH) -I$(BPF_ARCH_INCLUDE) \
 	  -c examples/unsupported-attach/unsupported_attach.bpf.c \
 	  -o examples/unsupported-attach/unsupported_attach.bpf.o
+	for f in tracing_only xdp_only mixed variants; do \
+	  $(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_$(BPF_TARGET_ARCH) -I$(BPF_ARCH_INCLUDE) \
+	    -c examples/attach-coverage/$$f.bpf.c -o examples/attach-coverage/$$f.bpf.o || exit 1; \
+	done
 
 examples-arm64:
 	$(MAKE) examples BPF_TARGET_ARCH=arm64 BPF_ARCH_INCLUDE=/usr/include/aarch64-linux-gnu

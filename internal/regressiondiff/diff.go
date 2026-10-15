@@ -119,6 +119,13 @@ type CellSide struct {
 	// AttachMode is how much of the contract was exercised: load-only evidence
 	// does not support a claim that attaching still works.
 	AttachMode string `json:"attach_mode,omitempty"`
+	// AttachAccounting and AttachCoverage say whether per-program attach
+	// outcomes were compared and how much of the scope was exercised.
+	AttachAccounting string `json:"attach_accounting,omitempty"`
+	AttachCoverage   string `json:"attach_coverage,omitempty"`
+	AttachFailed     int    `json:"attach_failed,omitempty"`
+
+	attach attachSide
 }
 
 type Cell struct {
@@ -281,7 +288,7 @@ func validateTarget(t *schema.Target, i int, id, side string) error {
 				i, id, *env.DistroMatch, env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID, match)}
 		}
 	}
-	return nil
+	return validateAttachAccounting(t, i, id, side)
 }
 
 // validateSummary rejects a report whose run-level summary contradicts its own
@@ -613,7 +620,11 @@ func sideOf(t *schema.Target) CellSide {
 	}
 	if t.Validation != nil {
 		s.AttachMode = t.Validation.AttachMode
+		s.AttachAccounting = t.Validation.AttachAccounting
+		s.AttachCoverage = t.Validation.AttachCoverage
+		s.AttachFailed = t.Validation.AttachFailed
 	}
+	s.attach = attachSideOf(t)
 	return s
 }
 
@@ -820,6 +831,21 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Reason = reason
 		return cell
 	}
+	// A program that attached at baseline and fails in the candidate is a
+	// regression whatever the verdicts say: best-effort mode reports it as
+	// COMPATIBLE, and an existing incompatibility elsewhere in the object
+	// would otherwise hide it. It needs both environments established -- a
+	// failure on another kernel is not a regression of this obligation.
+	if cell.Baseline.EnvironmentEstablished && cell.Candidate.EnvironmentEstablished {
+		if reason, regressed := attachRegression(cell.Baseline.attach, cell.Candidate.attach); regressed {
+			if depth, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {
+				reason += "; " + depth
+			}
+			cell.Classification = NewRegression
+			cell.Reason = reason
+			return cell
+		}
+	}
 	if reason, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {
 		cell.Classification = Inconclusive
 		cell.Reason = reason
@@ -848,6 +874,17 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 	default:
 		cell.Classification = Fixed
 		cell.Reason = "incompatible at baseline and compatible in the candidate"
+	}
+	// "Still supported" and "fixed" are claims about attach too. They do not
+	// survive attach evidence that is not like-for-like. A proven regression
+	// or a known incompatibility stands as it is.
+	if cell.Classification == UnchangedCompatible || cell.Classification == Fixed {
+		if reason := attachComparability(cell.Baseline.attach, cell.Candidate.attach); reason != "" {
+			cell.Classification = Inconclusive
+			cell.Reason = reason
+			return cell
+		}
+		cell.Reason += removedPrograms(cell.Baseline.attach, cell.Candidate.attach)
 	}
 	return cell
 }

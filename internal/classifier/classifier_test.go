@@ -16,14 +16,66 @@ func TestClassifyMissingBTF(t *testing.T) {
 	}
 }
 
-func TestClassifyAttachFailure(t *testing.T) {
+func TestClassifyAttachFailureWithoutEvidenceIsNotAnAttachTypeClaim(t *testing.T) {
+	// An attach failure with no per-program errno says only that attach
+	// failed. Calling it an unsupported attach type, at high confidence,
+	// claimed a cause nothing established.
 	result := Classify(Input{
 		LoadStatus:   "pass",
 		AttachStatus: "fail",
 		AttachMode:   "required",
 	})
-	if result.Code != "UNSUPPORTED_ATTACH_TYPE" {
-		t.Fatalf("expected UNSUPPORTED_ATTACH_TYPE, got %s", result.Code)
+	if result.Code != "ATTACH_FAILED" || result.Confidence != "low" {
+		t.Fatalf("expected ATTACH_FAILED/low, got %s/%s", result.Code, result.Confidence)
+	}
+}
+
+func TestClassifyAttachFailureAttribution(t *testing.T) {
+	cases := []struct {
+		name     string
+		failures []AttachFailure
+		wantCode string
+		wantConf string
+	}{
+		{"EINVAL alone", []AttachFailure{{Program: "kp", Section: "kprobe/x", Errno: -22, Detail: "Invalid argument"}}, "ATTACH_FAILED", "low"},
+		{"ENOENT on a kprobe", []AttachFailure{{Program: "kp", Section: "kprobe/x", Errno: -2, Detail: "No such file or directory"}}, "ATTACH_FAILED", "low"},
+		{"ENOENT on a tracepoint", []AttachFailure{{Program: "tp", Section: "tracepoint/a/b", Errno: -2, Detail: "No such file or directory"}}, "ATTACH_FAILED", "low"},
+		{"EPERM", []AttachFailure{{Program: "kp", Section: "kprobe/x", Errno: -1, Detail: "Operation not permitted"}}, "ATTACH_FAILED", "low"},
+		{"unknown errno", []AttachFailure{{Program: "kp", Section: "kprobe/x", Errno: 0, Detail: ""}}, "ATTACH_FAILED", "low"},
+		{"EOPNOTSUPP", []AttachFailure{{Program: "f", Section: "fentry/x", Errno: -95, Detail: "Operation not supported"}}, "UNSUPPORTED_ATTACH_TYPE", "medium"},
+		{"ENOTSUPP", []AttachFailure{{Program: "f", Section: "fentry/x", Errno: -524}}, "UNSUPPORTED_ATTACH_TYPE", "medium"},
+		{"mixed EOPNOTSUPP and ENOENT", []AttachFailure{
+			{Program: "f", Section: "fentry/x", Errno: -95},
+			{Program: "kp", Section: "kprobe/x", Errno: -2},
+		}, "ATTACH_FAILED", "low"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Classify(Input{LoadStatus: "pass", AttachStatus: "fail", AttachMode: "required", AttachFailures: tc.failures})
+			if got.Code != tc.wantCode || got.Confidence != tc.wantConf {
+				t.Fatalf("want %s/%s, got %s/%s", tc.wantCode, tc.wantConf, got.Code, got.Confidence)
+			}
+			lower := strings.ToLower(got.Reason + " " + got.Remediation)
+			for _, claim := range []string{"missing symbol", "symbol is missing", "tracepoint does not exist", "permission denied by", "not supported by this kernel"} {
+				if strings.Contains(lower, claim) {
+					t.Fatalf("reason asserts an unproven cause %q: %q", claim, got.Reason)
+				}
+			}
+			if !strings.Contains(got.Reason, tc.failures[0].Program) {
+				t.Fatalf("reason must name the failing program: %q", got.Reason)
+			}
+		})
+	}
+}
+
+func TestClassifyAttachFailureReasonIsBounded(t *testing.T) {
+	var failures []AttachFailure
+	for i := 0; i < 200; i++ {
+		failures = append(failures, AttachFailure{Program: strings.Repeat("p", 200), Section: "kprobe/x", Errno: -2, Detail: strings.Repeat("d", 400)})
+	}
+	got := Classify(Input{LoadStatus: "pass", AttachStatus: "fail", AttachFailures: failures})
+	if len(got.Reason) > 2048 {
+		t.Fatalf("reason is unbounded: %d bytes", len(got.Reason))
 	}
 }
 

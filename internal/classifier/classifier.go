@@ -21,6 +21,17 @@ type Input struct {
 	ProgramSections    []string
 	TracingProbeStatus string
 	TracingProbeError  int
+	// AttachFailures are the programs whose attach was attempted and failed,
+	// with the raw errno (0 when the validator did not record one).
+	AttachFailures []AttachFailure
+}
+
+// AttachFailure is the raw evidence for one failed attach.
+type AttachFailure struct {
+	Program string
+	Section string
+	Errno   int
+	Detail  string
 }
 
 type Result struct {
@@ -42,12 +53,7 @@ func Classify(in Input) Result {
 	lowerBlob := strings.ToLower(in.LibbpfLog + "\n" + in.LoadError)
 
 	if in.AttachStatus == "fail" {
-		return Result{
-			Code:        "UNSUPPORTED_ATTACH_TYPE",
-			Confidence:  "high",
-			Reason:      "Attach failed after load succeeded.",
-			Remediation: "Use a supported attach point for this kernel/profile or ship a fallback artifact.",
-		}
+		return classifyAttachFailure(in.AttachFailures)
 	}
 
 	if match := libbpfMapCreateFailureRe.FindStringSubmatch(in.LibbpfLog); match != nil {

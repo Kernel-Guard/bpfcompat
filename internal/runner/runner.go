@@ -693,6 +693,11 @@ func executeTarget(
 		AttachPassed:    vr.Attach.Passed,
 		AttachFailed:    vr.Attach.Failed,
 	}
+	acc := accountAttach(vr, attachMode)
+	applyAttachAccounting(target.Validation, acc, vr.Load.Status == "pass")
+	if acc.state == schema.AttachAccountingInconsistent {
+		target.Notes = append(target.Notes, "attach accounting discarded: "+acc.problem)
+	}
 	target.Functional = functionalFromValidator(vr)
 	target.Notes = append(target.Notes, functionalNotes(vr)...)
 
@@ -709,6 +714,27 @@ func executeTarget(
 				vr.Attach.Passed,
 				vr.Attach.Failed,
 			))
+		}
+		if note := attachCoverageNote(acc, target.Validation.AttachCoverage); note != "" {
+			target.Notes = append(target.Notes, note)
+		}
+		// Required attach is a claim about every selected program. Loading
+		// the object and attaching some of it does not establish it.
+		if attachMode == "required" {
+			if code, reason := requiredAttachGap(acc, tuning.requiredAttachPrograms); code != "" {
+				target.FailedStage = "attach"
+				target.ClassificationCode = code
+				target.ClassificationConfidence = "high"
+				target.ClassificationReason = reason
+				target.Notes = append(target.Notes, fmt.Sprintf("classification: %s (%s)", code, "high"))
+				if code == codeAttachAccountingUnavailable || code == codeAttachAccountingInconsistent {
+					target.Status = "infra_error"
+					target.InfraError = reason
+					return target, true, false
+				}
+				target.Status = "unsupported"
+				return target, false, false
+			}
 		}
 		return target, false, false
 	case vr.Load.Status == "fail":
@@ -791,6 +817,7 @@ func executeTarget(
 			ProgramSections:    discoveredProgramSections(vr),
 			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
 			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
+			AttachFailures:     attachFailuresForClassifier(acc, vr),
 		})
 		target.ClassificationCode = cl.Code
 		target.ClassificationConfidence = cl.Confidence
@@ -1122,10 +1149,18 @@ type validatorTuning struct {
 	progTypes       []vm.ProgTypeOverride
 	progVariants    []vm.ProgVariantGroup
 	probeCompanions []string
+	// requiredAttachPrograms are the manifest programs marked
+	// attach.required; in required mode each must have been attached.
+	requiredAttachPrograms []string
 }
 
 func validatorTuningFromManifest(mf manifest.Manifest) validatorTuning {
 	var tuning validatorTuning
+	for _, program := range mf.Programs {
+		if program.Attach.Required {
+			tuning.requiredAttachPrograms = append(tuning.requiredAttachPrograms, program.Name)
+		}
+	}
 	for _, fixup := range mf.Maps {
 		vmFixup := vm.MapFixup{
 			Name:              fixup.Name,

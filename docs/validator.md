@@ -141,6 +141,36 @@ alive, and requires the expected marker to appear in `trace_pipe`.
 - `best-effort`: attach failures do not fail overall status if load passed.
 - `required`: attach failures fail overall validator status.
 
+The validator attaches only programs that are **selected** (autoload enabled
+after `program_variants` selection) and whose section is one it can attach
+without outside context: `tracepoint/`, `raw_tracepoint/`, `raw_tp/`,
+`kprobe/`, `kretprobe/`, `ksyscall/`, `kretsyscall/`, `fentry/`, `fexit/`,
+`fmod_ret/`, `tp_btf/`, `uprobe/`, `uretprobe/`, `usdt/`. Everything else
+(`lsm/`, `xdp`, `tc`/`tcx`, `cgroup*`, `sk_*`, `struct_ops`, `iter/`,
+`perf_event`, the `tp/` alias, …) is loaded but **not attached**. Programs a
+variant selection disabled are not loaded and are never attached.
+
+### Attach accounting (`attach.accounting: "v1"`)
+
+`result.json` accounts for every program, so a consumer can tell "not
+exercised" from "exercised and passed":
+
+- `attach.effective_mode` — the mode actually applied (an unknown
+  `--attach-mode` string runs as `best-effort`).
+- `attach.program_count`, `selected`, `not_selected`, `attachable`,
+  `not_attachable` — counted over the whole object; `records` is how many
+  per-program records follow (at most 64).
+- per program in `discovery.programs[]`: `autoload`, `attach_outcome`
+  (`attached`, `failed`, `not_attachable_by_validator`, `not_selected`,
+  `not_attempted`), `attach_operation` (`bpf_program__attach` when tried) and
+  `attach_errno` (raw negative errno). The existing `attach_status` and
+  `attach_error` fields keep their meaning.
+
+The runner validates this record and rejects it (`attach_accounting:
+"inconsistent"`) when the counts do not add up; an older validator without it
+is reported as `attach_accounting: "unavailable"`. What each outcome means for
+a verdict is in [compatibility-contract.md](compatibility-contract.md#attach-coverage).
+
 ## Failure evidence used upstream
 
 Host-side classification consumes:

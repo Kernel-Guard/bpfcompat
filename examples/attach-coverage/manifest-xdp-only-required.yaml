@@ -1,0 +1,7 @@
+name: attach-coverage-xdp-only-required
+programs:
+  - name: xdp_pass
+    section: xdp
+    attach:
+      kind: xdp
+      required: true
