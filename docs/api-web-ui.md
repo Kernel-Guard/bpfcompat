@@ -305,6 +305,51 @@ applies even to callers that present a valid API key or JWT. The clang child pro
 with a minimal environment (`PATH`, `TMPDIR`, `CPATH`, `C_INCLUDE_PATH` if set, plus
 `LANG=C`/`LC_ALL=C`); server secrets such as `BPFCOMPAT_API_*` are not passed to it.
 
+clang runs inside a bubblewrap (`bwrap`) sandbox even for authenticated callers, because
+anything it can read (`.incbin "/path"`, `#include`, `__has_include`) could be embedded in the
+object and come back through report notes. The sandbox has fresh namespaces (including the
+network), sees only `/usr` and the `/bin`/`/sbin`/`/lib*` links read-only, `/etc/ld.so.cache`,
+a minimal `/dev`, an empty `/tmp`, read-only `CPATH`/`C_INCLUDE_PATH` directories outside
+`/usr`, and the request's upload directory at `/work`. It has no host `/proc`, `/etc`, home or
+service state. It also applies CPU, 2 GiB address-space and 64 MiB file-size limits. The
+`clang` found on the server's `PATH` must live under `/usr` (or another directory visible in the
+sandbox).
+
+Fail-closed behaviour: on the first source compile the server checks whether `bwrap` can run
+`clang --version` in that sandbox and caches the result for the life of the process (restart
+after fixing the host). If the check fails, source uploads return `503` ("no working compiler
+sandbox; upload a prebuilt .bpf.o artifact") and the server logs
+`source compile sandbox unavailable` with the reason. Prebuilt `artifact_file` uploads are
+unaffected. `BPFCOMPAT_API_UNSANDBOXED_SOURCE_COMPILE=true` (default `false`) lets the server
+compile on the bare host anyway. Each such compile logs a warning, and any caller allowed to
+compile source can then embed readable host files in the object.
+
+Host setup for the sandbox:
+
+- Install bubblewrap (`apt-get install bubblewrap`). bwrap is used unprivileged (not setuid), which
+  works with systemd `NoNewPrivileges=true`. The unit must not set `RestrictNamespaces=`, and
+  `RestrictAddressFamilies=` must keep `AF_NETLINK` (bwrap configures the loopback device in the new
+  network namespace).
+- Ubuntu 23.10 and later set `kernel.apparmor_restrict_unprivileged_userns=1`. Unprivileged bwrap
+  then fails (`setting up uid map: Permission denied` or
+  `loopback: Failed RTM_NEWADDR: Operation not permitted`) unless an AppArmor profile grants it
+  `userns`. Some Ubuntu releases ship `bwrap-userns-restrict` for this. Ubuntu 24.04 (apparmor
+  4.0.1) has no bwrap profile installed by default; that was checked on one 24.04.4 host, and
+  other releases are unverified. A minimal profile in the style of the ones Ubuntu ships for other
+  sandboxing tools, at `/etc/apparmor.d/bwrap`:
+
+  ```
+  abi <abi/4.0>,
+  include <tunables/global>
+  profile bwrap /usr/bin/bwrap flags=(unconfined) {
+    userns,
+    include if exists <local/bwrap>
+  }
+  ```
+
+  Load it with `apparmor_parser -r /etc/apparmor.d/bwrap`. This lets every local user create user
+  namespaces through bwrap, so weigh that against the host's policy. Then restart the server.
+
 ## `POST /api/registry/projects` JSON body
 
 ```json
