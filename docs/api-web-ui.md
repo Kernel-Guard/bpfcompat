@@ -96,7 +96,7 @@ Open:
 - `GET /api/registry/artifacts?tenant=<tenant>&project=<project>[&artifact_name=<name>&limit=<n>]`
 - `GET /api/registry/artifacts/download?tenant=<tenant>&project=<project>&artifact_name=<name>&version=<v>`
 - `GET /api/registry/history/verify?tenant=<tenant>&project=<project>`
-- `GET /api/registry/audit/events?tenant=<tenant>[&project=<project>&limit=<n>]`
+- `GET /api/registry/audit/events?tenant=<tenant>[&project=<project>&limit=<n>]` (always requires a registry token, even for public projects)
 
 `GET /api/runtime/probe` query options (all optional):
 
@@ -226,6 +226,12 @@ Sample grant file:
 }
 ```
 
+Every grant needs an explicit `tenant`. A grant with an empty or missing
+`tenant` authorizes nothing (the server logs a warning when it loads one);
+use `"tenant": "*"` only for a deliberate all-tenant grant. An empty
+`projects` list still covers every project of the grant's tenant for
+project-scoped requests.
+
 Optional bootstrap shortcut for local demos:
 
 ```bash
@@ -242,7 +248,7 @@ Optional identity gate for registry endpoints:
 - per-action scope/role gates apply to registry actions with:
   - `BPFCOMPAT_API_WRITE_JWT_REQUIRED_SCOPES_<ACTION>`
   - `BPFCOMPAT_API_WRITE_JWT_REQUIRED_ROLES_<ACTION>`
-- when identity token claims include `tenant` and/or `projects`, they are enforced against requested registry tenant/project scope.
+- tenant/project-scoped registry requests require an identity `tenant` claim that matches the requested tenant; a `projects` claim further narrows the allowed projects. A `projects` claim without a `tenant` claim is rejected.
 
 Operational controls (env-configurable):
 

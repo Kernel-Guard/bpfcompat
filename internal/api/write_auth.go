@@ -943,16 +943,16 @@ func enforceWriteIdentityTenantProject(identity writeAuthIdentity, tenant, proje
 		return nil
 	}
 	identityTenant := strings.TrimSpace(identity.Tenant)
-	// SECURITY: a JWT with neither tenant nor projects claim must not be
-	// treated as an org-wide wildcard. Previously, both checks returned nil
-	// when their claim was empty, so a token containing only {sub, exp,
-	// can_write} authenticated against every tenant/project. Require either
-	// an explicit tenant claim match or an explicit projects entry covering
-	// this project.
-	if identityTenant == "" && len(identity.Projects) == 0 {
-		return fmt.Errorf("identity has no tenant or projects claim; cannot authorize tenant %q project %q", tenant, project)
+	// SECURITY: a JWT/mTLS identity without a tenant claim must not be
+	// treated as an org-wide wildcard. A bare {sub, exp, can_write} token
+	// used to authenticate against every tenant/project, and a token with
+	// only a projects claim matched that project name in every tenant
+	// (projects:["*"] matched everything). Require an explicit tenant claim
+	// that matches; a projects claim then narrows it further.
+	if identityTenant == "" {
+		return fmt.Errorf("identity has no tenant claim; cannot authorize tenant %q project %q", tenant, project)
 	}
-	if identityTenant != "" && identityTenant != tenant {
+	if identityTenant != tenant {
 		return fmt.Errorf("identity tenant %q is not authorized for tenant %q", identityTenant, tenant)
 	}
 	if len(identity.Projects) > 0 {

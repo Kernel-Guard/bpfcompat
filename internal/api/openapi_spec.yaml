@@ -495,7 +495,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Identity-Token
-      description: JWT (HS256 or RS256) with at least `sub`, `exp`, and either `tenant` or `projects`.
+      description: JWT (HS256 or RS256) with at least `sub` and `exp`; tenant/project-scoped requests also require a matching `tenant` claim, which an optional `projects` claim narrows.
     mutualTLS:
       type: mutualTLS
       description: Verified client certificate plus explicit server-side identity-map grant.
