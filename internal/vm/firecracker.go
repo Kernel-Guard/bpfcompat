@@ -425,6 +425,7 @@ func runFirecrackerWithMarkers(ctx context.Context, firecrackerPath, configPath,
 	apiSock := filepath.Join(vmRunDir, "firecracker.sock")
 	_ = os.Remove(apiSock)
 	cmd := exec.CommandContext(runCtx, firecrackerPath, "--api-sock", apiSock, "--config-file", configPath)
+	killWithParent(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
