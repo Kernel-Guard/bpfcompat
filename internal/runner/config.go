@@ -68,7 +68,11 @@ type Config struct {
 	Timeout               time.Duration
 	KeepVMOnFailure       bool
 	UnsafeAllowHostRunner bool
-	Progress              ProgressReporter
+	// RequireGate is the CLI's opt-in --require-gate: a finished run with no
+	// required target (summary.gate "none") exits 1 instead of 0. The runner
+	// itself does not read it; the report is identical either way.
+	RequireGate bool
+	Progress    ProgressReporter
 }
 
 const (

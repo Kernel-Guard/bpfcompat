@@ -38,6 +38,11 @@ func BuildGitHubActionSummary(report schema.ReportV01, opts ActionSummaryOptions
 	// The job summary is what a downstream maintainer actually reads. A
 	// COMPATIBLE run that did not cover the whole matrix must say so here, not
 	// only in the JSON.
+	// RunVerdict ignores optional targets, so with none required the verdict
+	// above is vacuous. Derived from the targets so older reports get it too.
+	if schema.RunGate(report.Targets) == schema.GateNone {
+		b.WriteString("**Gate:** `none` — no required targets: diagnostic run, not a compatibility gate. Read the per-target results below.\n\n")
+	}
 	if report.Summary.Complete != nil && !*report.Summary.Complete {
 		b.WriteString("**Coverage:** `incomplete` — at least one target produced no compatibility answer.\n\n")
 	}

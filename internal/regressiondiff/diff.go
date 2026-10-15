@@ -311,6 +311,16 @@ func validateSummary(r schema.ReportV01, side string) error {
 				"summary.verdict is %q but its own required targets add up to %q; this report does not agree with itself", got, want)}
 		}
 	}
+	if got := strings.TrimSpace(r.Summary.Gate); got != "" {
+		if got != schema.GateEnforced && got != schema.GateNone {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.gate is %q, which is not a known gate state", got)}
+		}
+		if want := schema.RunGate(r.Targets); got != want {
+			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(
+				"summary.gate is %q but its own targets add up to %q; this report does not agree with itself", got, want)}
+		}
+	}
 	if r.Summary.Complete != nil {
 		if want := schema.RunComplete(r.Targets); *r.Summary.Complete != want {
 			return &InvalidEvidenceError{Side: side, Reason: fmt.Sprintf(

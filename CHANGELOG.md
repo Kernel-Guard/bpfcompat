@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- A run whose matrix has no required target is marked as a diagnostic run,
+  not a satisfied compatibility gate.
+  - `RunVerdict` ignores optional targets, so such a run reports
+    `COMPATIBLE` and exits 0 whatever happened. That stays the default.
+  - New additive `summary.gate` field: `enforced` or `none`.
+  - The run note "All required profiles passed" is replaced by an explicit
+    no-gate note.
+  - The Action job summary prints `Gate: none`.
+  - New opt-in `--require-gate` on `test` and `test-command` makes such a
+    run exit 1.
+  - `bpfcompat diff` refuses a `summary.gate` that contradicts the report's
+    own targets.
+  - See `docs/gate-contract.md`.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
