@@ -507,6 +507,15 @@ func executeTargets(
 		})
 	}
 
+	notes = append(notes, runVerdictNotes(targets)...)
+
+	return targets, notes
+}
+
+// runVerdictNotes explains the run-level verdict. An attach-coverage gap is
+// named as such rather than as a boot or transport failure.
+func runVerdictNotes(targets []schema.Target) []string {
+	var notes []string
 	switch schema.RunVerdict(targets) {
 	case schema.VerdictIncompatible:
 		notes = append(notes, "Compatibility check failed on at least one required profile.")
@@ -540,8 +549,7 @@ func executeTargets(
 	default:
 		notes = append(notes, "All required profiles passed validator load checks.")
 	}
-
-	return targets, notes
+	return notes
 }
 
 func executeTarget(

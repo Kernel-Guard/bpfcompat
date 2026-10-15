@@ -119,7 +119,8 @@ jq -e '.targets[] | has("btf")' reports/core-relocation-mvp.json >/dev/null
 
 # The fixture's kprobe target does not exist: attach fails with ENOENT, which
 # is ATTACH_FAILED (the errno does not establish an unsupported attach type).
-jq -e '.. | objects | select(.classification_code? == "ATTACH_FAILED" or .code? == "ATTACH_FAILED")' reports/unsupported-attach-mvp.json >/dev/null
+# A kernel that refuses every attach with EOPNOTSUPP yields UNSUPPORTED_ATTACH_TYPE.
+jq -e '.. | objects | select(.classification_code? == "ATTACH_FAILED" or .classification_code? == "UNSUPPORTED_ATTACH_TYPE" or .code? == "ATTACH_FAILED" or .code? == "UNSUPPORTED_ATTACH_TYPE")' reports/unsupported-attach-mvp.json >/dev/null
 
 jq -e '.. | objects | select(.classification_code? == "UNKNOWN" or .code? == "UNKNOWN")' reports/unknown-load-fail-mvp.json >/dev/null
 
@@ -127,7 +128,6 @@ required_codes=(
   "UNSUPPORTED_MAP_TYPE"
   "MISSING_BTF"
   "CORE_RELOCATION_FAILURE"
-  "ATTACH_FAILED"
   "UNKNOWN"
 )
 

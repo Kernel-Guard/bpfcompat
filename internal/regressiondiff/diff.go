@@ -909,6 +909,9 @@ func describeSide(side string, s CellSide) string {
 		// what booted, which is a different fact from booting the wrong
 		// thing, and only one of them is a finding about the environment.
 		return side + " does not record which kernel it ran (no environment.kernel_family_match), so it cannot support a claim about the environment this obligation names"
+	case (s.Verdict == schema.VerdictUnsupported || s.Verdict == schema.VerdictInfraError) &&
+		strings.HasPrefix(s.ClassificationCode, "ATTACH_"):
+		return fmt.Sprintf("%s loaded the object but did not establish required attach coverage (%s)", side, s.ClassificationCode)
 	case s.Verdict == schema.VerdictInfraError:
 		return side + " could not establish compatibility (infrastructure failure)"
 	case s.Verdict == schema.VerdictUnsupported:

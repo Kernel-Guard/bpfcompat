@@ -120,6 +120,21 @@ func TestRunNoteNamesUnexercisedRequiredAttach(t *testing.T) {
 	}
 }
 
+func TestRunNoteKeepsTheGeneralExplanationForOtherGaps(t *testing.T) {
+	targets := []schema.Target{
+		{ProfileID: "a", Required: true, Status: "unsupported", Verdict: schema.VerdictUnsupported, FailedStage: "attach"},
+		{ProfileID: "b", Required: true, Status: "infra_error", Verdict: schema.VerdictInfraError, FailedStage: "infra"},
+	}
+	notes := strings.Join(runVerdictNotes(targets), "\n")
+	if !strings.Contains(notes, "attach was not fully exercised on 1") || !strings.Contains(notes, "booted a kernel other than") {
+		t.Fatalf("both explanations are needed: %s", notes)
+	}
+	only := strings.Join(runVerdictNotes(targets[:1]), "\n")
+	if strings.Contains(only, "booted a kernel other than") {
+		t.Fatalf("attach-only gap blamed on execution: %s", only)
+	}
+}
+
 func TestReasonClassNamesTheErrnoNotACause(t *testing.T) {
 	progs := []fakeProgram{{name: "kp", section: "kprobe/foo", outcome: "failed", autoload: true, errno: -2, detail: "No such file or directory"}}
 	r := fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,

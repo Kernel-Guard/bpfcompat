@@ -364,6 +364,68 @@ func TestAttachPhaseInvariantsCannotBeBentIntoGreen(t *testing.T) {
 	}
 }
 
+// Round-2 review counterexamples.
+func TestLoadStatusCannotBeBentToSkipThePhaseInvariant(t *testing.T) {
+	green := map[string]bool{UnchangedCompatible: true, Fixed: true, CoverageAdded: true}
+	for _, load := range []string{"fail", ""} {
+		t.Run("load_status="+load, func(t *testing.T) {
+			base := withAttach(compat(), "best-effort", attached("a"))
+			cand := withAttach(compat(), "best-effort", ap{"a", tpSec, schema.AttachOutcomeNotAttempted, 0})
+			v := cand.Validation
+			v.LoadStatus = load
+			v.AttachCoverage = schema.AttachCoverageNotEvaluated
+			v.AttachStatus = "skipped"
+			d, err := buildErr(report(base), report(cand))
+			if err != nil {
+				return
+			}
+			if c := onlyCell(t, d); green[c.Classification] {
+				t.Fatalf("bought %s: %s", c.Classification, c.Reason)
+			}
+		})
+	}
+}
+
+func TestTruncatedBaselineCannotHideAShrinkingScope(t *testing.T) {
+	var bprogs, cprogs []ap
+	for i := 0; i < 64; i++ {
+		bprogs = append(bprogs, attached(fmt.Sprintf("p%02d", i)))
+		cprogs = append(cprogs, attached(fmt.Sprintf("p%02d", i)))
+	}
+	base := withAttach(compat(), "best-effort", bprogs...)
+	bv := base.Validation
+	bv.AttachProgramCount, bv.AttachSelected, bv.AttachAttachable = 65, 65, 65
+	bv.AttachAttempted, bv.AttachPassed = 65, 65
+	bv.AttachRecordsTruncated = true
+	// The 65th program, outside the baseline's records, is now not selected.
+	cand := withAttach(compat(), "best-effort", append(cprogs, ap{"p64", tpSec, schema.AttachOutcomeNotSelected, 0})...)
+	c := onlyCell(t, build(t, report(base), report(cand)))
+	if c.Classification != Inconclusive {
+		t.Fatalf("got %s: %s", c.Classification, c.Reason)
+	}
+}
+
+func TestCandidateThatAttachesNothingIsNotStillSupported(t *testing.T) {
+	base := withAttach(compat(), "best-effort", attached("a"))
+	cand := withAttach(compat(), "best-effort")
+	c := onlyCell(t, build(t, report(base), report(cand)))
+	if c.Classification != Inconclusive {
+		t.Fatalf("got %s: %s", c.Classification, c.Reason)
+	}
+}
+
+func TestUnexercisedRequiredAttachIsExplainedAsSuch(t *testing.T) {
+	base := withAttach(compat(), "required", attached("a"))
+	cand := withAttach(target("ubuntu-22.04-5.15", schema.VerdictUnsupported, true), "required",
+		attached("a"), ap{"x", "xdp", schema.AttachOutcomeNotAttachable, 0})
+	cand.ClassificationCode = "ATTACH_NOT_EXERCISED"
+	c := onlyCell(t, build(t, report(base), report(cand)))
+	if c.Classification != Inconclusive || !strings.Contains(c.Reason, "ATTACH_NOT_EXERCISED") ||
+		strings.Contains(c.Reason, "could not execute this environment") {
+		t.Fatalf("got %s: %s", c.Classification, c.Reason)
+	}
+}
+
 func TestTruncatedCandidateMustStillShowBaselineAttachedPrograms(t *testing.T) {
 	base := withAttach(compat(), "best-effort", attached("a"), attached("b"))
 	// The candidate has 70 programs and records 64 of them; "a" is not among

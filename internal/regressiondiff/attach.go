@@ -86,6 +86,17 @@ func validateAttachAccounting(t *schema.Target, i int, id, side string) error {
 	if v.AttachMode != v.AttachEffectiveMode {
 		return bad("attach_mode %q differs from attach_effective_mode %q", v.AttachMode, v.AttachEffectiveMode)
 	}
+	// The phase invariant hangs on load_status, so load_status itself must be
+	// explicit and must agree with the verdict: a COMPATIBLE target whose
+	// object "did not load" would otherwise switch the invariant off.
+	switch v.LoadStatus {
+	case "pass", "fail":
+	default:
+		return bad("load_status %q must be pass or fail when attach accounting is recorded", v.LoadStatus)
+	}
+	if v.LoadStatus == "fail" && (strings.TrimSpace(t.Status) == "pass" || strings.TrimSpace(t.Verdict) == schema.VerdictCompatible) {
+		return bad("load_status fail contradicts status %q / verdict %q", t.Status, t.Verdict)
+	}
 	loadPassed := v.LoadStatus == "pass"
 	phaseRan := loadPassed && v.AttachEffectiveMode != "disabled"
 	switch {
@@ -182,6 +193,10 @@ type attachSide struct {
 	truncated bool
 	failed    int // aggregate attach failures, with or without accounting
 	programs  map[string]*schema.AttachProgram
+
+	// Whole-object counts, compared when per-program records cannot be.
+	selected, attachable, notAttachable, passed int
+	coverage                                    string
 }
 
 func attachSideOf(t *schema.Target) attachSide {
@@ -200,6 +215,8 @@ func attachSideOf(t *schema.Target) attachSide {
 	}
 	s.accounted = true
 	s.truncated = len(v.AttachPrograms) < v.AttachProgramCount
+	s.selected, s.attachable, s.notAttachable = v.AttachSelected, v.AttachAttachable, v.AttachNotAttachable
+	s.passed, s.coverage = v.AttachPassed, v.AttachCoverage
 	s.programs = make(map[string]*schema.AttachProgram, len(v.AttachPrograms))
 	for i := range v.AttachPrograms {
 		s.programs[v.AttachPrograms[i].Name] = &v.AttachPrograms[i]
@@ -269,7 +286,7 @@ func attachComparability(b, c attachSide) string {
 		}
 		return ""
 	}
-	var scope, capability, section, added []string
+	var scope, capability, section, added, untried []string
 	for name, cp := range c.programs {
 		bp, ok := b.programs[name]
 		if !ok {
@@ -283,8 +300,12 @@ func attachComparability(b, c attachSide) string {
 			section = append(section, fmt.Sprintf("%q", name))
 		case bp.Selected != cp.Selected:
 			scope = append(scope, fmt.Sprintf("%q", name))
+		case bp.Outcome == schema.AttachOutcomeAttached && cp.Outcome == schema.AttachOutcomeNotAttempted:
+			// Attached at baseline, never tried in the candidate: whatever
+			// the reason, the candidate did not show it still attaches.
+			untried = append(untried, fmt.Sprintf("%q", name))
 		case bp.Outcome == schema.AttachOutcomeNotAttempted || cp.Outcome == schema.AttachOutcomeNotAttempted:
-			// Capability unknown on one side; the mode rule covers this.
+			// Capability unknown on one side.
 		case (bp.Outcome == schema.AttachOutcomeNotAttachable) != (cp.Outcome == schema.AttachOutcomeNotAttachable):
 			capability = append(capability, fmt.Sprintf("%q", name))
 		}
@@ -301,6 +322,19 @@ func attachComparability(b, c attachSide) string {
 	if len(section) > 0 {
 		sort.Strings(section)
 		parts = append(parts, "section changed under the same program name for "+listNames(section))
+	}
+	if len(untried) > 0 {
+		sort.Strings(untried)
+		parts = append(parts, listNames(untried)+" attached at baseline and was not attempted in the candidate")
+	}
+	if (b.truncated || c.truncated) &&
+		(b.selected != c.selected || b.attachable != c.attachable || b.notAttachable != c.notAttachable) {
+		parts = append(parts, fmt.Sprintf(
+			"per-program records are truncated and the whole-object scope changed (selected %d -> %d, attachable %d -> %d, not attachable %d -> %d)",
+			b.selected, c.selected, b.attachable, c.attachable, b.notAttachable, c.notAttachable))
+	}
+	if b.passed > 0 && (c.coverage == schema.AttachCoverageEmpty || c.coverage == schema.AttachCoverageNone) {
+		parts = append(parts, fmt.Sprintf("the candidate attached nothing (attach_coverage %q) where the baseline attached %d program(s)", c.coverage, b.passed))
 	}
 	if len(added) > 0 {
 		sort.Strings(added)
