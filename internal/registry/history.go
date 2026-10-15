@@ -87,13 +87,23 @@ func PersistArtifactVersion(workDir string, record ArtifactVersionRecord) error 
 	record.SupportedProfiles = dedupeSorted(record.SupportedProfiles)
 	record.FailedProfiles = dedupeSorted(record.FailedProfiles)
 	record.ClassificationCode = dedupeSorted(record.ClassificationCode)
-	if err := applyArtifactRecordProvenance(workDir, &record); err != nil {
-		return err
-	}
 
 	registryDir := filepath.Join(filepath.Clean(workDir), "registry")
 	if err := os.MkdirAll(registryDir, 0o755); err != nil {
 		return fmt.Errorf("create registry directory: %w", err)
+	}
+
+	// Reading the previous record hash, first-use key creation, signing and
+	// the append must be one critical section; otherwise concurrent writers
+	// sharing a WorkDir fork the hash chain and race the signing key.
+	unlock, err := lockArtifactHistory(registryDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := applyArtifactRecordProvenance(workDir, &record); err != nil {
+		return err
 	}
 
 	indexPath := filepath.Join(registryDir, "artifact_versions.jsonl")
@@ -201,7 +211,17 @@ func VerifyArtifactVersionHistory(workDir string) ([]ArtifactVersionVerification
 }
 
 func BackfillArtifactVersionProvenance(workDir string) (int, error) {
-	indexPath := filepath.Join(filepath.Clean(workDir), "registry", "artifact_versions.jsonl")
+	registryDir := filepath.Join(filepath.Clean(workDir), "registry")
+	indexPath := filepath.Join(registryDir, "artifact_versions.jsonl")
+	if _, err := os.Stat(registryDir); err == nil {
+		// The backfill rewrites the whole index; hold the history lock so a
+		// concurrent PersistArtifactVersion append is not lost or re-chained.
+		unlock, err := lockArtifactHistory(registryDir)
+		if err != nil {
+			return 0, err
+		}
+		defer unlock()
+	}
 	records, err := readArtifactVersionRecords(indexPath)
 	if err != nil {
 		return 0, err
@@ -550,18 +570,29 @@ func ensureArtifactRegistrySigner(workDir string) (artifactRegistrySigner, error
 	privatePath := filepath.Join(filepath.Clean(workDir), artifactSigningPrivateKeyPath)
 	publicPath := filepath.Join(filepath.Clean(workDir), artifactSigningPublicKeyPath)
 
-	if raw, err := os.ReadFile(privatePath); err == nil {
+	readExisting := func(raw []byte) (artifactRegistrySigner, error) {
 		privateKey, err := decodeEd25519PrivateKey(strings.TrimSpace(string(raw)))
 		if err != nil {
 			return artifactRegistrySigner{}, fmt.Errorf("decode artifact registry signing private key: %w", err)
 		}
 		publicKey := ed25519.PublicKey(privateKey.Public().(ed25519.PublicKey))
 		keyID := keyIDFromPublicKey(publicKey)
+		// Recover from a crash between creating the private key and writing
+		// its public half; an existing public key file is never replaced.
+		if _, err := os.Stat(publicPath); errors.Is(err, os.ErrNotExist) {
+			if err := writeArtifactRegistryPublicKey(publicPath, keyID, publicKey); err != nil {
+				return artifactRegistrySigner{}, err
+			}
+		}
 		return artifactRegistrySigner{
 			PrivateKey: privateKey,
 			PublicKey:  publicKey,
 			KeyID:      keyID,
 		}, nil
+	}
+
+	if raw, err := os.ReadFile(privatePath); err == nil {
+		return readExisting(raw)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return artifactRegistrySigner{}, fmt.Errorf("read artifact registry signing private key: %w", err)
 	}
@@ -575,12 +606,21 @@ func ensureArtifactRegistrySigner(workDir string) (artifactRegistrySigner, error
 	if err := os.MkdirAll(filepath.Dir(privatePath), 0o700); err != nil {
 		return artifactRegistrySigner{}, fmt.Errorf("create artifact registry key directory: %w", err)
 	}
-	if err := os.WriteFile(privatePath, []byte(base64.StdEncoding.EncodeToString(privateKey)+"\n"), 0o600); err != nil {
-		return artifactRegistrySigner{}, fmt.Errorf("write artifact registry signing private key: %w", err)
+	created, err := createArtifactRegistryPrivateKey(privatePath, []byte(base64.StdEncoding.EncodeToString(privateKey)+"\n"))
+	if err != nil {
+		return artifactRegistrySigner{}, err
 	}
-	publicPayload := fmt.Sprintf("%s %s\n", keyID, base64.StdEncoding.EncodeToString(publicKey))
-	if err := os.WriteFile(publicPath, []byte(publicPayload), 0o644); err != nil {
-		return artifactRegistrySigner{}, fmt.Errorf("write artifact registry signing public key: %w", err)
+	if !created {
+		// Another writer created the key first; use theirs so exactly one
+		// signing key exists and it is the one in the trusted public file.
+		raw, err := os.ReadFile(privatePath)
+		if err != nil {
+			return artifactRegistrySigner{}, fmt.Errorf("read artifact registry signing private key: %w", err)
+		}
+		return readExisting(raw)
+	}
+	if err := writeArtifactRegistryPublicKey(publicPath, keyID, publicKey); err != nil {
+		return artifactRegistrySigner{}, err
 	}
 
 	return artifactRegistrySigner{
@@ -588,6 +628,91 @@ func ensureArtifactRegistrySigner(workDir string) (artifactRegistrySigner, error
 		PublicKey:  publicKey,
 		KeyID:      keyID,
 	}, nil
+}
+
+// createArtifactRegistryPrivateKey publishes the private key at path only if
+// no key exists yet, and never exposes a partially written key: the content is
+// written and synced to a 0600 temporary file that is then hard-linked into
+// place (link fails with EEXIST if another writer won). Filesystems without
+// hard links fall back to O_CREATE|O_EXCL. It reports whether this call
+// created the key.
+func createArtifactRegistryPrivateKey(path string, content []byte) (bool, error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".artifact-registry-signing-key-*.tmp")
+	if err != nil {
+		return false, fmt.Errorf("create temporary artifact registry signing key: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("chmod temporary artifact registry signing key: %w", err)
+	}
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("write artifact registry signing private key: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("sync artifact registry signing private key: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return false, fmt.Errorf("close artifact registry signing private key: %w", err)
+	}
+
+	linkErr := os.Link(tmpPath, path)
+	if linkErr == nil {
+		return true, nil
+	}
+	if errors.Is(linkErr, os.ErrExist) {
+		return false, nil
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("write artifact registry signing private key: %w", errors.Join(err, linkErr))
+	}
+	if _, err := f.Write(content); err != nil {
+		_ = f.Close()
+		return false, fmt.Errorf("write artifact registry signing private key: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return false, fmt.Errorf("sync artifact registry signing private key: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return false, fmt.Errorf("close artifact registry signing private key: %w", err)
+	}
+	return true, nil
+}
+
+// writeArtifactRegistryPublicKey atomically replaces the trusted public key
+// file so verifiers never read a partially written key.
+func writeArtifactRegistryPublicKey(path, keyID string, publicKey ed25519.PublicKey) error {
+	payload := fmt.Sprintf("%s %s\n", keyID, base64.StdEncoding.EncodeToString(publicKey))
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".artifact-registry-signing-key-pub-*.tmp")
+	if err != nil {
+		return fmt.Errorf("write artifact registry signing public key: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write artifact registry signing public key: %w", err)
+	}
+	if _, err := tmp.WriteString(payload); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write artifact registry signing public key: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write artifact registry signing public key: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("write artifact registry signing public key: %w", err)
+	}
+	return nil
 }
 
 func ensureArtifactRecordSigner(workDir string) (artifactRecordSigner, error) {
