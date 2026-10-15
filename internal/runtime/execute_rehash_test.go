@@ -85,7 +85,7 @@ func stubRehashValidator(t *testing.T, tmp string, onRun func(artifactArg string
 
 func rehashRequest(tmp, artifactPath, validator, expected string) ExecuteRequest {
 	return ExecuteRequest{
-		ArtifactPath: artifactPath, ExpectedSHA256: expected, AttachMode: "best-effort", AllowHostLoad: true,
+		ArtifactPath: artifactPath, ArtifactRoot: filepath.Dir(artifactPath), ExpectedSHA256: expected, AttachMode: "best-effort", AllowHostLoad: true,
 		ValidatorBinaryPath: validator, WorkDir: tmp, Timeout: 5 * time.Second,
 	}
 }

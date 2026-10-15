@@ -1259,6 +1259,7 @@ func runRuntimeExecute(args []string) int {
 
 	execution, err := runtime.ExecuteArtifactOnHost(context.Background(), runtime.ExecuteRequest{
 		ArtifactPath:        fetched.OutputPath,
+		ArtifactRoot:        *outDir,
 		ExpectedSHA256:      fetched.VerifiedSHA256(),
 		ManifestPath:        manifestToUse,
 		AttachMode:          strings.TrimSpace(*attachMode),

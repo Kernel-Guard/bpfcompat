@@ -24,6 +24,10 @@ const executeSchemaVersion = "runtime_execute.v0.1"
 
 type ExecuteRequest struct {
 	ArtifactPath string
+	// ArtifactRoot is the staging directory the caller fetched the
+	// artifact into (its --out-dir / server fetch dir). It is required:
+	// ArtifactPath must resolve inside it and is opened relative to it.
+	ArtifactRoot string
 	// ExpectedSHA256 is the verified digest of the artifact (from the
 	// verified registry record / fetch). It is required: the bytes the
 	// validator loads are re-hashed against it immediately before exec.
@@ -173,7 +177,11 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 	// FetchArtifact verified it. Copy the bytes through a no-follow fd into
 	// a fresh private 0700 directory, verify the digest of exactly the
 	// bytes written, and exec on that copy.
-	privateDir, privateArtifactPath, err := stageVerifiedExecCopy(artifactPath, expectedSHA256)
+	artifactRoot, artifactRel, err := containArtifactPath(req.ArtifactRoot, artifactPath)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	privateDir, privateArtifactPath, err := stageVerifiedExecCopy(artifactRoot, artifactRel, expectedSHA256)
 	if err != nil {
 		return ExecuteResult{}, err
 	}
@@ -364,20 +372,58 @@ func normalizeExpectedArtifactSHA256(raw string) (string, error) {
 	return v, nil
 }
 
-// stageVerifiedExecCopy opens sourcePath without following a final
-// symlink, copies it into a new private 0700 directory and checks the
-// sha256 of exactly the bytes written against expectedSHA256. On success
-// the caller owns the returned directory and must remove it; on any error
-// the directory has already been removed.
-func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (string, string, error) {
+// privateExecArtifactName is the fixed file name of the private copy the
+// validator loads; it never derives from caller- or registry-supplied input.
+const privateExecArtifactName = "artifact.bpf.o"
+
+// containArtifactPath requires artifactPath to resolve strictly inside
+// root and returns the absolute root plus the local relative path. The
+// relative path comes from filepath.Rel and is checked with
+// filepath.IsLocal, so it cannot contain ".." or be absolute.
+func containArtifactPath(root, artifactPath string) (string, string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", "", errors.New("artifact root (the fetch staging directory) is required for host execution")
+	}
+	rootAbs, err := filepath.Abs(filepath.Clean(strings.TrimSpace(root)))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve artifact root: %w", err)
+	}
+	pathAbs, err := filepath.Abs(filepath.Clean(artifactPath))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve artifact path: %w", err)
+	}
+	rel, err := filepath.Rel(rootAbs, pathAbs)
+	if err != nil || rel == "." {
+		return "", "", fmt.Errorf("artifact path %s is outside the artifact root %s", pathAbs, rootAbs)
+	}
+	// Kept as its own statement so the IsLocal guard plainly dominates the
+	// use of rel (CodeQL go/path-injection recognises filepath.IsLocal).
+	if !filepath.IsLocal(rel) {
+		return "", "", fmt.Errorf("artifact path %s is outside the artifact root %s", pathAbs, rootAbs)
+	}
+	return rootAbs, rel, nil
+}
+
+// stageVerifiedExecCopy opens rel inside root (os.Root: no component may
+// escape root, and a final symlink is refused), copies it into a new
+// private 0700 directory and checks the sha256 of exactly the bytes
+// written against expectedSHA256. On success the caller owns the returned
+// directory and must remove it; on any error it has already been removed.
+func stageVerifiedExecCopy(root, rel, expectedSHA256 string) (string, string, error) {
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return "", "", fmt.Errorf("open artifact root: %w", err)
+	}
+	defer rootFS.Close()
 	// O_NONBLOCK keeps a FIFO swapped in for the artifact from blocking the
 	// open forever; it is refused by the regular-file check below and has
 	// no effect on reads from a regular file.
-	src, err := os.OpenFile(sourcePath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	src, err := rootFS.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return "", "", fmt.Errorf("open artifact for pre-execute verification (symlinks are refused): %w", err)
+		return "", "", fmt.Errorf("open artifact for pre-execute verification (symlinks and paths escaping the root are refused): %w", err)
 	}
 	defer src.Close()
+	sourcePath := filepath.Join(root, rel)
 	info, err := src.Stat()
 	if err != nil {
 		return "", "", fmt.Errorf("stat artifact for pre-execute verification: %w", err)
@@ -390,7 +436,7 @@ func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (string, string, e
 	if err != nil {
 		return "", "", fmt.Errorf("create private execute directory: %w", err)
 	}
-	privatePath, err := copyAndVerifyIntoPrivateDir(src, info.Size(), dir, filepath.Base(sourcePath), expectedSHA256, sourcePath)
+	privatePath, err := copyAndVerifyIntoPrivateDir(src, info.Size(), dir, expectedSHA256, sourcePath)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", "", err
@@ -398,11 +444,11 @@ func stageVerifiedExecCopy(sourcePath, expectedSHA256 string) (string, string, e
 	return dir, privatePath, nil
 }
 
-func copyAndVerifyIntoPrivateDir(src *os.File, size int64, dir, name, expectedSHA256, sourcePath string) (string, error) {
+func copyAndVerifyIntoPrivateDir(src *os.File, size int64, dir, expectedSHA256, sourcePath string) (string, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", fmt.Errorf("restrict private execute directory: %w", err)
 	}
-	privatePath := filepath.Join(dir, name)
+	privatePath := filepath.Join(dir, privateExecArtifactName)
 	dst, err := os.OpenFile(privatePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create private artifact copy: %w", err)

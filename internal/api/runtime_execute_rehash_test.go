@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +62,15 @@ func TestRuntimeExecutePassesVerifiedSHA256ToWorker(t *testing.T) {
 		t.Fatalf("worker ExpectedSHA256=%q, want verified record sha %q", got.ExpectedSHA256, want)
 	}
 
-	// The digest must survive the worker stdin protocol.
+	wantRoot := filepath.Join(workDir, defaultRuntimeFetchDir)
+	if got.ArtifactRoot != wantRoot {
+		t.Fatalf("worker ArtifactRoot=%q, want server-controlled fetch dir %q", got.ArtifactRoot, wantRoot)
+	}
+	if !strings.HasPrefix(got.ArtifactPath, wantRoot+string(filepath.Separator)) {
+		t.Fatalf("worker ArtifactPath=%q not under ArtifactRoot %q", got.ArtifactPath, wantRoot)
+	}
+
+	// The digest and root must survive the worker stdin protocol.
 	raw, err := json.Marshal(runtime.ExecuteWorkerRequest{Execute: got})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +79,7 @@ func TestRuntimeExecutePassesVerifiedSHA256ToWorker(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Execute.ExpectedSHA256 != want {
+	if decoded.Execute.ExpectedSHA256 != want || decoded.Execute.ArtifactRoot != wantRoot {
 		t.Fatalf("worker protocol dropped ExpectedSHA256: %s", raw)
 	}
 }
