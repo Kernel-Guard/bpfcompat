@@ -72,7 +72,7 @@ cat >>"$OUTPUT" <<EOF
 - \`ringbuf-modern\`: includes \`UNSUPPORTED_MAP_TYPE\` and markdown guidance mentions perf fallback.
 - \`perfbuf-fallback\`: summary is \`pass\` and markdown references \`perf_event\`.
 - \`core-relocation\`: includes both \`MISSING_BTF\` and \`CORE_RELOCATION_FAILURE\` and per-target BTF fields.
-- \`unsupported-attach\`: includes \`UNSUPPORTED_ATTACH_TYPE\` or \`UNSUPPORTED_PROG_TYPE\`.
+- \`unsupported-attach\`: includes \`ATTACH_FAILED\` (missing kprobe target, errno-only attribution) or \`UNSUPPORTED_ATTACH_TYPE\` (every failure EOPNOTSUPP/ENOTSUPP).
 - \`unknown-load-fail\`: includes \`UNKNOWN\` classification for non-ELF load failure.
 
 ## Raw Artifact Presence

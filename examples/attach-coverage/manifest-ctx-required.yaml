@@ -1,0 +1,7 @@
+name: attach-coverage-ctx-required
+programs:
+  - name: tp_getpid_ctx
+    section: tracepoint/syscalls/sys_enter_getpid
+    attach:
+      kind: tracepoint
+      required: true

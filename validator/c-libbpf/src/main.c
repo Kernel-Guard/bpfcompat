@@ -131,6 +131,12 @@ struct discovered_program {
     char section[256];
     char attach_status[16];
     char attach_error[256];
+    /* Attach accounting: what the validator did with this program, kept apart
+     * from the legacy attach_status so a skipped program says why. */
+    bool autoload;
+    char attach_outcome[32];
+    char attach_operation[32];
+    int attach_errno;
     char load_status[16]; /* per-program isolated load: "pass" | "fail" | "skipped" */
     int load_errno;
     char load_log[4096]; /* tail of the verifier message when an isolated load fails */
@@ -193,6 +199,13 @@ struct validator_result {
     int attach_attempted;
     int attach_passed;
     int attach_failed;
+    /* Scope and capability, counted over every program in the object (not
+     * only the first MAX_ITEMS records): selected = autoload-enabled,
+     * attachable = selected and the section is an auto-attach candidate. */
+    int attach_selected;
+    int attach_not_selected;
+    int attach_attachable;
+    int attach_not_attachable;
     char libbpf_log[LIBBPF_LOG_CAPACITY];
     size_t libbpf_log_len;
     struct bpf_link *links[MAX_ITEMS];
@@ -256,6 +269,17 @@ static enum attach_mode parse_attach_mode(const char *mode) {
         return ATTACH_MODE_REQUIRED;
     }
     return ATTACH_MODE_BEST_EFFORT;
+}
+
+static const char *attach_mode_name(enum attach_mode mode) {
+    switch (mode) {
+    case ATTACH_MODE_DISABLED:
+        return "disabled";
+    case ATTACH_MODE_REQUIRED:
+        return "required";
+    default:
+        return "best-effort";
+    }
 }
 
 static bool starts_with(const char *s, const char *prefix) {
@@ -1446,6 +1470,12 @@ static void discover_programs_and_maps(struct validator_result *res, struct bpf_
                      sizeof(res->programs[res->program_count].attach_status),
                      "skipped");
             res->programs[res->program_count].attach_error[0] = '\0';
+            res->programs[res->program_count].autoload = bpf_program__autoload(prog);
+            snprintf(res->programs[res->program_count].attach_outcome,
+                     sizeof(res->programs[res->program_count].attach_outcome),
+                     "not_attempted");
+            res->programs[res->program_count].attach_operation[0] = '\0';
+            res->programs[res->program_count].attach_errno = 0;
             snprintf(res->programs[res->program_count].load_status,
                      sizeof(res->programs[res->program_count].load_status),
                      "skipped");
@@ -1489,51 +1519,82 @@ static void finalize_attach_status(struct validator_result *res, enum attach_mod
     snprintf(res->attach_status, sizeof(res->attach_status), "warn");
 }
 
+static void set_attach_outcome(struct discovered_program *p, const char *outcome) {
+    snprintf(p->attach_outcome, sizeof(p->attach_outcome), "%s", outcome);
+}
+
+/* Attach every selected, auto-attachable program and account for every
+ * program in the object. Scope (autoload) and validator capability (section
+ * allow-list) are recorded even when the attach phase does not run, so a
+ * consumer can tell "not exercised" from "exercised and passed". Programs a
+ * prog_variants selection disabled are not loaded and are never attached:
+ * passing them to bpf_program__attach fails with "no FD" and is not evidence
+ * about the kernel. */
 static void run_attach_attempts(struct validator_result *res, struct bpf_object *obj) {
     enum attach_mode mode = parse_attach_mode(res->opts.attach_mode);
-    if (mode == ATTACH_MODE_DISABLED || !res->load_ok) {
-        finalize_attach_status(res, mode);
-        return;
-    }
+    bool phase_runs = mode != ATTACH_MODE_DISABLED && res->load_ok;
 
     struct bpf_program *prog;
     int program_index = 0;
     bpf_object__for_each_program(prog, obj) {
-        bool track = program_index < MAX_ITEMS;
+        struct discovered_program *rec =
+            program_index < MAX_ITEMS ? &res->programs[program_index] : NULL;
         const char *section = bpf_program__section_name(prog);
+        bool selected = bpf_program__autoload(prog);
+        bool attachable = is_auto_attach_candidate(section);
+        program_index++;
 
-        if (!is_auto_attach_candidate(section)) {
-            if (track) {
-                snprintf(res->programs[program_index].attach_status,
-                         sizeof(res->programs[program_index].attach_status),
-                         "skipped");
-                snprintf(res->programs[program_index].attach_error,
-                         sizeof(res->programs[program_index].attach_error),
-                         "section is not an auto-attach candidate");
+        if (rec) {
+            rec->autoload = selected;
+        }
+        if (!selected) {
+            res->attach_not_selected++;
+            if (rec) {
+                set_attach_outcome(rec, "not_selected");
+                if (phase_runs) {
+                    snprintf(rec->attach_error, sizeof(rec->attach_error),
+                             "program not selected for load (autoload disabled)");
+                }
             }
-            program_index++;
+            continue;
+        }
+        res->attach_selected++;
+        if (!attachable) {
+            res->attach_not_attachable++;
+            if (rec) {
+                set_attach_outcome(rec, phase_runs ? "not_attachable_by_validator" : "not_attempted");
+                if (phase_runs) {
+                    snprintf(rec->attach_error, sizeof(rec->attach_error),
+                             "section is not an auto-attach candidate");
+                }
+            }
+            continue;
+        }
+        res->attach_attachable++;
+        if (!phase_runs) {
             continue;
         }
 
         res->attach_attempted++;
+        errno = 0;
         struct bpf_link *link = bpf_program__attach(prog);
+        int err = errno ? -errno : -EINVAL; /* before anything else can touch errno */
+        if (rec) {
+            snprintf(rec->attach_operation, sizeof(rec->attach_operation), "bpf_program__attach");
+        }
         if (!link) {
-            int err = errno ? -errno : -EINVAL;
             res->attach_failed++;
-            if (track) {
-                snprintf(res->programs[program_index].attach_status,
-                         sizeof(res->programs[program_index].attach_status),
-                         "fail");
-                set_errno_message(err,
-                                  res->programs[program_index].attach_error,
-                                  sizeof(res->programs[program_index].attach_error));
+            if (rec) {
+                set_attach_outcome(rec, "failed");
+                rec->attach_errno = err;
+                snprintf(rec->attach_status, sizeof(rec->attach_status), "fail");
+                set_errno_message(err, rec->attach_error, sizeof(rec->attach_error));
             }
         } else {
             res->attach_passed++;
-            if (track) {
-                snprintf(res->programs[program_index].attach_status,
-                         sizeof(res->programs[program_index].attach_status),
-                         "pass");
+            if (rec) {
+                set_attach_outcome(rec, "attached");
+                snprintf(rec->attach_status, sizeof(rec->attach_status), "pass");
             }
             if (res->link_count < MAX_ITEMS) {
                 res->links[res->link_count++] = link;
@@ -1541,8 +1602,6 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
                 (void)bpf_link__destroy(link);
             }
         }
-
-        program_index++;
     }
 
     finalize_attach_status(res, mode);
@@ -2203,7 +2262,13 @@ static int write_result_json(const struct validator_result *res) {
         escape_json_string(f, res->programs[i].attach_status);
         fprintf(f, "\",\"attach_error\":\"");
         escape_json_string(f, res->programs[i].attach_error);
-        fprintf(f, "\",\"load_status\":\"");
+        fprintf(f, "\",\"autoload\":%s,\"attach_outcome\":\"",
+                res->programs[i].autoload ? "true" : "false");
+        escape_json_string(f, res->programs[i].attach_outcome);
+        fprintf(f, "\",\"attach_operation\":\"");
+        escape_json_string(f, res->programs[i].attach_operation);
+        fprintf(f, "\",\"attach_errno\":%d", res->programs[i].attach_errno);
+        fprintf(f, ",\"load_status\":\"");
         escape_json_string(f, res->programs[i].load_status);
         fprintf(f, "\",\"load_errno\":%d,\"load_log\":\"", res->programs[i].load_errno);
         escape_json_string(f, res->programs[i].load_log);
@@ -2227,7 +2292,16 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "\",\n");
     fprintf(f, "    \"attempted\": %d,\n", res->attach_attempted);
     fprintf(f, "    \"passed\": %d,\n", res->attach_passed);
-    fprintf(f, "    \"failed\": %d\n", res->attach_failed);
+    fprintf(f, "    \"failed\": %d,\n", res->attach_failed);
+    fprintf(f, "    \"accounting\": \"v1\",\n");
+    fprintf(f, "    \"effective_mode\": \"%s\",\n",
+            attach_mode_name(parse_attach_mode(res->opts.attach_mode)));
+    fprintf(f, "    \"program_count\": %d,\n", res->program_count);
+    fprintf(f, "    \"records\": %d,\n", res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS);
+    fprintf(f, "    \"selected\": %d,\n", res->attach_selected);
+    fprintf(f, "    \"not_selected\": %d,\n", res->attach_not_selected);
+    fprintf(f, "    \"attachable\": %d,\n", res->attach_attachable);
+    fprintf(f, "    \"not_attachable\": %d\n", res->attach_not_attachable);
     fprintf(f, "  },\n");
     fprintf(f, "  \"functional\": {\n");
     fprintf(f, "    \"status\": \"");

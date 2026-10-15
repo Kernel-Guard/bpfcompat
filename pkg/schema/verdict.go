@@ -25,8 +25,10 @@ const (
 	VerdictInfraError = "INFRA_ERROR"
 
 	// VerdictUnsupported: bpfcompat intentionally cannot execute this
-	// environment (no supported execution transport for the profile). Also not
-	// a statement about the user's software -- the contract was never
+	// environment (no supported execution transport for the profile), or
+	// cannot exercise the requested contract on it (attach required, but some
+	// selected programs are of a kind the validator cannot attach). Also not a
+	// statement about the user's software -- the contract was never
 	// exercised, so nothing was proven either way.
 	VerdictUnsupported = "UNSUPPORTED"
 )

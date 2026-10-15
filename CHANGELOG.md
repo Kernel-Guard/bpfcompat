@@ -7,6 +7,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Changed — verdict semantics (v0.5; changes validator bytes)
+- **Required attach means every selected program attached.** With
+  `attach.required` in the manifest, a target whose object also carries
+  programs the validator cannot attach (LSM, XDP, tc, cgroup, …), or that
+  selects no program at all, was `COMPATIBLE` after attaching only part of it
+  (or nothing). It is now `UNSUPPORTED` (`ATTACH_NOT_EXERCISED` /
+  `ATTACH_SCOPE_EMPTY`); the load evidence is kept. A manifest-required
+  program that was not attached gives the same answer.
+- **Attach failures are no longer called an unsupported attach type by
+  default.** Any attach failure used to be `UNSUPPORTED_ATTACH_TYPE` at high
+  confidence. It is now `ATTACH_FAILED` at low confidence with the raw errno;
+  `UNSUPPORTED_ATTACH_TYPE` (medium) only when every failure is
+  `EOPNOTSUPP`/`ENOTSUPP`. The experimental runtime selection policy's
+  `RequireAttachSupport` keys on `UNSUPPORTED_ATTACH_TYPE`; required-mode
+  attach failures still fail its summary and required-failed checks.
+- **`bpfcompat diff` no longer hides attach regressions.** A program that
+  attached at baseline and fails in the candidate is `NEW_REGRESSION` even
+  when both verdicts are `COMPATIBLE` (best-effort) or the baseline was
+  already `INCOMPATIBLE`. A change in attach scope or validator capability,
+  a new program whose attach failed, or missing per-program accounting
+  alongside an attach failure, is `INCONCLUSIVE` instead of
+  `UNCHANGED_COMPATIBLE`. Malformed attach accounting in a report is refused.
+  - **Expect one round of `INCONCLUSIVE` after upgrading** on lanes whose
+    baseline was produced before attach accounting and whose candidate has
+    a best-effort attach failure — even a long-standing one, which the old
+    differ reported as `UNCHANGED_COMPATIBLE`. Regenerating the baseline with
+    this release clears it.
+  - `NEW_REGRESSION` and `FIXED` cells record `changed_inputs`,
+    `unknown_inputs` and `attribution` (`artifact_only`, `environment_only`,
+    `validator_only`, `multiple`, `none_recorded`, `unknown`): which
+    **recorded** inputs differ, never a cause. An os-release or validator
+    identity recorded on only one side is listed as unknown, not skipped.
+    The classification is unchanged; a kernel-upgrade failure stays a
+    gating `NEW_REGRESSION`.
+- **Required attach and libbpf section aliases.** The validator's auto-attach
+  allow-list is unchanged and does not include `tp/` (alias of
+  `tracepoint/`), `kprobe.multi/`, `raw_tp.w/` and similar. In required mode
+  an object using them is now `UNSUPPORTED`/`ATTACH_NOT_EXERCISED` instead of
+  a `COMPATIBLE` that never attached them.
+
+### Fixed
+- Programs disabled by `program_variants` selection were still passed to
+  `bpf_program__attach`, failed with `EINVAL`, and turned a required-attach
+  run `INCOMPATIBLE`. They are no longer attached.
+
+### Added
+- Per-program attach accounting in the validator result and the report
+  (`validation.attach_*`, `attach_programs[]`), and an *attach not fully
+  exercised* marker in the Markdown report and Action summary. Additive
+  (schema v0.1 stability contract).
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added

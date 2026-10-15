@@ -46,6 +46,93 @@ A static libbpf validator loads the object and optionally attaches it.
 Provenance: `validator.basename`, `validator.sha256`, `validator.size_bytes` —
 the same staged bytes are reused for every target in the run.
 
+#### Attach coverage
+
+Loading an object and attaching it are separate claims, and an object can mix
+programs the validator attaches (tracing: tracepoints, kprobes, fentry, …)
+with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
+
+- `validation.attach_effective_mode` — `disabled`, `best-effort` or `required`.
+- `validation.attach_selected` / `attach_not_selected` — the intended scope:
+  programs that load, versus programs a `program_variants` selection disabled.
+- `validation.attach_attachable` / `attach_not_attachable` — the validator's
+  capability over that scope.
+- `validation.attach_attempted`, `attach_passed`, `attach_failed` — what was
+  tried and what happened.
+- `validation.attach_coverage` — `complete` (every selected program tried),
+  `partial`, `none`, `empty` (nothing selected), `not_evaluated` (attach
+  disabled or the object did not load), or `unavailable`. Coverage is about
+  what was **exercised**, never about what succeeded.
+- `validation.attach_programs[]` — per program: `name` (the stable identity),
+  `section`, `selected`, `outcome`, and for failures the raw `operation`,
+  `errno` and `detail`, plus `reason_class` — only the errno family
+  (`ERRNO_ENOENT`, `ERRNO_EINVAL`, `ERRNO_EPERM_EACCES`, `ERRNO_EOPNOTSUPP`,
+  `ERRNO_EBUSY_EEXIST`, `ERRNO_OTHER`, `ERRNO_UNKNOWN`), with
+  `attribution: "errno_only"`. The name is the program's libbpf name, unique
+  within an object. At most 64 programs are recorded per target
+  (`attach_records_truncated` marks the rest); the counts always cover the
+  whole object. Beyond the records a program has no identity: it can be a
+  different program on each side, swap state with another, or cross the
+  record boundary when programs are added or removed earlier in the object,
+  all with every count unchanged. So when either side's records are truncated,
+  `bpfcompat diff` shows per-program comparability only when every program on
+  both sides attached (nothing could have changed state); otherwise the cell is
+  `INCONCLUSIVE`, never `UNCHANGED_COMPATIBLE` or `FIXED`. A regression proven
+  inside the records is still `NEW_REGRESSION`; a side whose attach phase did
+  not run makes no attach claim. Consequence: a >64-program object with any
+  program that is not attached (not attachable, not selected, or failed) cannot
+  pass the diff gate on identical evidence until every program is recorded.
+  When every program attached on both sides, the cell is comparable, but
+  program removals and section changes among programs that are unrecorded on
+  both sides are not visible in it (no attach regression can hide there). In the
+  runner, required-mode verdicts use only whole-object counts (every selected
+  program attached, none failed); a manifest-required program outside the
+  records is treated as not attached.
+
+The validator record must agree with itself: the attach phase runs exactly when
+the object loaded and attach is not disabled, tries every attachable program,
+and its status follows from the counts. A record that breaks this is discarded
+(`attach_accounting: "inconsistent"`), and `bpfcompat diff` refuses a report
+whose attach fields contradict each other.
+
+With `attach.required` in the manifest, the target is COMPATIBLE only when
+**every selected program attached** and every program the manifest marks
+`attach.required` is among them:
+
+| Situation (required mode) | Verdict | `classification_code` |
+|---|---|---|
+| every selected program attached | `COMPATIBLE` | — |
+| any attempted program failed to attach | `INCOMPATIBLE` | `ATTACH_FAILED` (or `UNSUPPORTED_ATTACH_TYPE`, see below) |
+| some or all selected programs are of a kind the validator cannot attach, none failed | `UNSUPPORTED` | `ATTACH_NOT_EXERCISED` |
+| a manifest `attach.required` program was not attached (not selected, absent, or beyond the 64 per-program records) | `UNSUPPORTED` | `ATTACH_NOT_EXERCISED` |
+| no program selected | `UNSUPPORTED` | `ATTACH_SCOPE_EMPTY` |
+| validator without accounting, or accounting that does not add up, and no proven failure | `INFRA_ERROR` | `ATTACH_ACCOUNTING_UNAVAILABLE` / `_INCONSISTENT` |
+
+`UNSUPPORTED` here means what it means for a transport: the contract was not
+exercised, so nothing is claimed either way. The load evidence
+(`validation.load_*`) is kept in every case. Programs disabled by variant
+selection are outside the scope and do not affect the verdict.
+
+In `best-effort` mode (the default) the verdict is unchanged — a loaded object
+is `COMPATIBLE` — but a target whose selected programs were not all attached
+carries the marker *attach not fully exercised* in its notes, the Markdown
+report and the Action summary.
+
+Attach failures are attributed no further than the evidence goes. The errno
+alone rarely names a cause — `ENOENT` from a kprobe attach can be a missing
+symbol or a missing tracefs; `EINVAL` has dozens of sources — so a failure is
+`ATTACH_FAILED` at `low` confidence. Only when every failing attach returned
+`EOPNOTSUPP`/`ENOTSUPP` is it `UNSUPPORTED_ATTACH_TYPE`, at `medium`.
+
+`--validation-mode load_attach` loads the object and attempts attach, in the
+mode the manifest selects: **best-effort** unless at least one manifest program
+sets `attach.required: true`, in which case **required** applies to every
+selected program. Without a manifest it is best-effort. It skips behaviour
+commands. It does not by itself make attach required. The manifest has no way
+to say "best-effort" explicitly (`attach.required` is a boolean whose `false`
+equals absent), so changing this default needs a schema decision first.
+`load_only` sets attach to `disabled` (coverage `not_evaluated`).
+
 ### The project's own loader (command mode)
 
 The mode that matters for real adoption. Falco's maintainers made the point
@@ -110,6 +197,12 @@ existed, and distributions without a known `os-release` ID, carry none.
 Consumers that need strict environment fidelity should gate on
 `targets[].environment.kernel_family_match` and
 `targets[].environment.distro_match`.
+
+The environment contract records distribution (`/etc/os-release`) and kernel
+series only. It does not observe security posture — kernel lockdown, Secure
+Boot, or the LSM stack — and a posture word in a profile id (e.g. `-lockdown`)
+is not evidence of that posture. (Per-profile claims: see
+`docs/profile-claims.md`, pending in PR #255.)
 
 **Answers:** *was the environment we intended to validate the one that ran?*
 
@@ -242,3 +335,7 @@ What a `COMPATIBLE` verdict does **not** claim:
   command mode is for.
 - Attach and behaviour coverage depend on `validation_mode`; `load_only` proves
   loading, not attaching.
+- A best-effort `COMPATIBLE` proves attach only for the programs
+  `validation.attach_programs` records as `attached`. Programs the validator
+  cannot attach (LSM, XDP, tc, cgroup, …) were loaded, not attached — see
+  [Attach coverage](#attach-coverage).

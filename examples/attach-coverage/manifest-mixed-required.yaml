@@ -1,0 +1,7 @@
+name: attach-coverage-mixed-required
+programs:
+  - name: tp_getpid
+    section: tracepoint/syscalls/sys_enter_getpid
+    attach:
+      kind: tracepoint
+      required: true

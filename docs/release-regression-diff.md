@@ -95,15 +95,101 @@ releases:
 | Classification | Baseline → Candidate | Meaning |
 |---|---|---|
 | `UNCHANGED_COMPATIBLE` | COMPATIBLE → COMPATIBLE | supported before, supported now |
-| `NEW_REGRESSION` | COMPATIBLE → INCOMPATIBLE | **the product signal.** This release broke an environment the baseline proved worked |
+| `NEW_REGRESSION` | COMPATIBLE → INCOMPATIBLE, or a program that attached at baseline fails to attach in the candidate | **the product signal.** An environment the baseline proved worked is broken in the candidate run; `changed_inputs` / `attribution` say which recorded inputs differ (not why) |
 | `EXISTING_INCOMPATIBILITY` | INCOMPATIBLE → INCOMPATIBLE | a known limitation. Still visible, but not newly introduced |
 | `FIXED` | INCOMPATIBLE → COMPATIBLE | the candidate gained support |
 | `INCONCLUSIVE` | either side unproven | the change cannot be established |
 | `COVERAGE_ADDED` | absent → present | the candidate tests something new. Not a regression |
 | `COVERAGE_REMOVED` | present → absent | continued support cannot be established. Not the same as broken |
 
-`NEW_REGRESSION` is the only classification that is a statement about the
-candidate's software.
+`NEW_REGRESSION` says the **obligation** regressed between the two runs: the
+baseline proved the profile worked and the candidate proves it no longer does.
+On its own it does not say *why*, because the observed kernel is not part of the
+key: within a profile's kernel family the kernel that boots moves as the
+distribution ships updates. Each cell whose outcome changed (`NEW_REGRESSION`,
+`FIXED`) therefore records `changed_inputs`, `unknown_inputs` and
+`attribution`.
+
+**These fields are observations about recorded inputs, not causes.** They say
+which inputs the two reports *record* differ. Inputs the reports do not record
+— kernel config, boot parameters, image contents beyond os-release, the host,
+timing — may also differ. Even `artifact_only` means "among the recorded
+inputs, only the shipped program differs", which narrows the search; it is not
+proof that the artifact caused the outcome, and a matching kernel release
+string does not make it one. Every attribution reason says so.
+
+| Case | `changed_inputs` | `attribution` | Classification |
+|---|---|---|---|
+| A. different artifacts, same observed kernel | `artifact` (command mode: `artifact` and/or `loader`) | `artifact_only` | `NEW_REGRESSION` / `FIXED`; among the recorded inputs only the shipped program differs |
+| B. same artifact, kernel upgraded within the family | `kernel` (and/or `os`) | `environment_only` | `NEW_REGRESSION` — a kernel-upgrade regression; still gating, never hidden |
+| C. artifact **and** kernel changed | `artifact`, `kernel` | `multiple` | `NEW_REGRESSION` / `FIXED` of the obligation; the evidence does not separate the inputs' effects |
+| only the bpfcompat validator changed | `validator` | `validator_only` | `NEW_REGRESSION` / `FIXED`; the measuring instrument differs |
+| nothing recorded as changed | — | `none_recorded` | `NEW_REGRESSION` / `FIXED`; the same recorded program and environment produced a different outcome, so an unrecorded input or nondeterminism differs |
+| an input that could add a category cannot be compared (see `unknown_inputs`) | whatever does differ | `unknown` | `NEW_REGRESSION` / `FIXED`; no single category can be stated |
+
+The same fields are recorded, with the same meaning, on `FIXED` cells (the
+reason then says the obligation *was fixed* rather than *regressed*). They
+never change the classification.
+
+Inputs: `artifact` is `artifact.sha256`; in command mode the project's loader
+binary (`command.binary.sha256`) is a separate input, `loader`, because it is
+shipped too. `kernel` is `environment.observed_kernel`; `os` is the observed
+os-release identity; `validator` is the artifact-mode validator sha256 (a
+validator change is a note, never a reason for `INCONCLUSIVE`). Categories:
+`artifact` and `loader` are the shipped program, `kernel` and `os` the
+environment, `validator` the instrument.
+
+`unknown_inputs` lists inputs that cannot be compared: `artifact`, `loader` or
+`kernel` missing on either side, or `os` / `validator` recorded on one side
+only. A one-sided identity is never silently skipped. It makes the attribution
+`unknown` only when it could add a category the recorded differences do not
+already name: an artifact change with the os recorded on one side is `unknown`
+(the environment may also differ); a kernel change with the os recorded on one
+side stays `environment_only` (the environment differs either way) and still
+lists `os`. An `os` or `validator` identity that *neither* report records
+(reports from older bpfcompat) is stated in the reason ("not recorded by
+either run") and falls under the unrecorded-inputs caveat.
+
+The values were chosen to read as observations (`artifact_only`, not
+`artifact`). A gate that should block only when the shipped program is the
+sole recorded difference can filter on `attribution: artifact_only` (in
+command mode it may be the loader alone; `changed_inputs` says which); the
+default gate blocks on every required `NEW_REGRESSION`, because "my unchanged
+program broke on the updated kernel" is the question bpfcompat exists to
+answer.
+
+"Both environments established" means each side ran a kernel in the family its
+profile requests (`kernel_family_match: true`), not that the two kernels are
+identical. Comparing only identical kernels would hide case B.
+
+### A real attached → failed pair
+
+`examples/attach-coverage/ctx_in_record.bpf.c` and `ctx_beyond_record.bpf.c`
+are one tracepoint program (`tp_getpid_ctx`,
+`tracepoint/syscalls/sys_enter_getpid`) that differ only in one context read
+offset: 8 versus 512. The verifier bounds a tracepoint program's context reads
+by the perf trace buffer, so both load. At attach time the kernel also checks
+that the program's highest context offset fits the tracepoint's own record
+(`perf_event_set_bpf_prog`: `max_ctx_offset` beyond
+`trace_event_get_offsets()` is `-EACCES`), and `sys_enter_getpid`'s record ends
+after `__syscall_nr`. So the first attaches and the second fails with
+`EACCES` (errno -13), on the same kernel.
+
+```bash
+make examples
+bpfcompat test --artifact examples/attach-coverage/ctx_in_record.bpf.o     --matrix m.yaml --out base.json
+bpfcompat test --artifact examples/attach-coverage/ctx_beyond_record.bpf.o --matrix m.yaml --out cand.json
+bpfcompat diff --baseline base.json --candidate cand.json --out diff.json
+```
+
+In best-effort mode both reports are `COMPATIBLE`; with
+`--manifest examples/attach-coverage/manifest-ctx-required.yaml` the candidate
+is `INCOMPATIBLE`/`ATTACH_FAILED`. Either way the diff cell is
+`NEW_REGRESSION` ("program(s) "tp_getpid_ctx" (errno -13) attached at baseline
+and failed to attach in the candidate") with `changed_inputs: [artifact]` and
+`attribution: artifact_only` — here the intervention is known by construction;
+the diff itself still only says that the artifact is the one recorded input
+that differs.
 
 ### When a comparison is inconclusive
 

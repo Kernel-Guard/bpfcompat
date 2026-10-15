@@ -507,16 +507,49 @@ func executeTargets(
 		})
 	}
 
+	notes = append(notes, runVerdictNotes(targets)...)
+
+	return targets, notes
+}
+
+// runVerdictNotes explains the run-level verdict. An attach-coverage gap is
+// named as such rather than as a boot or transport failure.
+func runVerdictNotes(targets []schema.Target) []string {
+	var notes []string
 	switch schema.RunVerdict(targets) {
 	case schema.VerdictIncompatible:
 		notes = append(notes, "Compatibility check failed on at least one required profile.")
 	case schema.VerdictInfraError:
-		notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
+		attachGaps, otherGaps := 0, 0
+		for i := range targets {
+			t := &targets[i]
+			if !t.Required || t.Verdict == schema.VerdictIncompatible {
+				continue
+			}
+			if t.Verdict == schema.VerdictCompatible {
+				// A pass on a kernel other than the one requested is also an
+				// unestablished contract, and keeps the general note.
+				if !schema.EstablishedRequestedEnvironment(t) {
+					otherGaps++
+				}
+				continue
+			}
+			if t.FailedStage == "attach" {
+				attachGaps++
+			} else {
+				otherGaps++
+			}
+		}
+		if attachGaps > 0 {
+			notes = append(notes, fmt.Sprintf("Required attach was not fully exercised on %d required target(s): the object loaded, but some selected programs were not attached (a kind the validator cannot attach, not selected, or unaccounted). This is not a statement about the artifact. Check targets[].classification_code and validation.attach_programs.", attachGaps))
+		}
+		if otherGaps > 0 || attachGaps == 0 {
+			notes = append(notes, "bpfcompat could not establish the requested contract on at least one required target: it failed to run, could not be executed, or booted a kernel other than the one the profile requests. This is not a statement about the artifact. Check targets[].verdict, targets[].environment, infra_error, and serial logs.")
+		}
 	default:
 		notes = append(notes, "All required profiles passed validator load checks.")
 	}
-
-	return targets, notes
+	return notes
 }
 
 func executeTarget(
@@ -693,6 +726,11 @@ func executeTarget(
 		AttachPassed:    vr.Attach.Passed,
 		AttachFailed:    vr.Attach.Failed,
 	}
+	acc := accountAttach(vr, attachMode)
+	applyAttachAccounting(target.Validation, acc, vr.Load.Status == "pass")
+	if acc.state == schema.AttachAccountingInconsistent {
+		target.Notes = append(target.Notes, "attach accounting discarded: "+acc.problem)
+	}
 	target.Functional = functionalFromValidator(vr)
 	target.Notes = append(target.Notes, functionalNotes(vr)...)
 
@@ -709,6 +747,27 @@ func executeTarget(
 				vr.Attach.Passed,
 				vr.Attach.Failed,
 			))
+		}
+		if note := attachCoverageNote(acc, target.Validation.AttachCoverage); note != "" {
+			target.Notes = append(target.Notes, note)
+		}
+		// Required attach is a claim about every selected program. Loading
+		// the object and attaching some of it does not establish it.
+		if attachMode == "required" {
+			if code, reason := requiredAttachGap(acc, tuning.requiredAttachPrograms); code != "" {
+				target.FailedStage = "attach"
+				target.ClassificationCode = code
+				target.ClassificationConfidence = "high"
+				target.ClassificationReason = reason
+				target.Notes = append(target.Notes, fmt.Sprintf("classification: %s (%s)", code, "high"))
+				if code == codeAttachAccountingUnavailable || code == codeAttachAccountingInconsistent {
+					target.Status = "infra_error"
+					target.InfraError = reason
+					return target, true, false
+				}
+				target.Status = "unsupported"
+				return target, false, false
+			}
 		}
 		return target, false, false
 	case vr.Load.Status == "fail":
@@ -791,6 +850,8 @@ func executeTarget(
 			ProgramSections:    discoveredProgramSections(vr),
 			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
 			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
+			AttachFailures:     attachFailuresForClassifier(acc, vr),
+			AttachFailedTotal:  vr.Attach.Failed,
 		})
 		target.ClassificationCode = cl.Code
 		target.ClassificationConfidence = cl.Confidence
@@ -1122,10 +1183,18 @@ type validatorTuning struct {
 	progTypes       []vm.ProgTypeOverride
 	progVariants    []vm.ProgVariantGroup
 	probeCompanions []string
+	// requiredAttachPrograms are the manifest programs marked
+	// attach.required; in required mode each must have been attached.
+	requiredAttachPrograms []string
 }
 
 func validatorTuningFromManifest(mf manifest.Manifest) validatorTuning {
 	var tuning validatorTuning
+	for _, program := range mf.Programs {
+		if program.Attach.Required {
+			tuning.requiredAttachPrograms = append(tuning.requiredAttachPrograms, program.Name)
+		}
+	}
 	for _, fixup := range mf.Maps {
 		vmFixup := vm.MapFixup{
 			Name:              fixup.Name,

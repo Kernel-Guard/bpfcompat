@@ -149,7 +149,64 @@ type Validation struct {
 	AttachAttempted int    `json:"attach_attempted,omitempty"`
 	AttachPassed    int    `json:"attach_passed,omitempty"`
 	AttachFailed    int    `json:"attach_failed,omitempty"`
+
+	// Attach accounting (additive). AttachAccounting says whether the fields
+	// below can be trusted: "v1" (the validator accounted for every program and
+	// the counts were consistent), "unavailable" (a validator that predates
+	// accounting), or "inconsistent" (the record failed validation and was
+	// discarded). Absent on reports written before accounting existed.
+	//
+	// AttachCoverage is how much of the selected scope the attach phase
+	// exercised -- never derived from which programs succeeded: "complete",
+	// "partial", "none", "empty" (no program selected), "not_evaluated" (attach
+	// disabled or the object did not load), or "unavailable".
+	AttachAccounting       string          `json:"attach_accounting,omitempty"`
+	AttachEffectiveMode    string          `json:"attach_effective_mode,omitempty"`
+	AttachCoverage         string          `json:"attach_coverage,omitempty"`
+	AttachProgramCount     int             `json:"attach_program_count,omitempty"`
+	AttachSelected         int             `json:"attach_selected,omitempty"`
+	AttachNotSelected      int             `json:"attach_not_selected,omitempty"`
+	AttachAttachable       int             `json:"attach_attachable,omitempty"`
+	AttachNotAttachable    int             `json:"attach_not_attachable,omitempty"`
+	AttachRecordsTruncated bool            `json:"attach_records_truncated,omitempty"`
+	AttachPrograms         []AttachProgram `json:"attach_programs,omitempty"`
 }
+
+// AttachProgram is one program's attach accounting. Name is the stable
+// identity (the libbpf program name, unique within an object). Operation,
+// Errno and Detail are the raw evidence; ReasonClass is only the errno family,
+// never a claimed cause, and Attribution says so ("errno_only").
+type AttachProgram struct {
+	Name        string `json:"name"`
+	Section     string `json:"section,omitempty"`
+	Selected    bool   `json:"selected"`
+	Outcome     string `json:"outcome"`
+	Operation   string `json:"operation,omitempty"`
+	Errno       int    `json:"errno,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	ReasonClass string `json:"reason_class,omitempty"`
+	Attribution string `json:"attribution,omitempty"`
+}
+
+// Attach accounting states, coverage values and per-program outcomes.
+const (
+	AttachAccountingV1           = "v1"
+	AttachAccountingUnavailable  = "unavailable"
+	AttachAccountingInconsistent = "inconsistent"
+
+	AttachCoverageComplete     = "complete"
+	AttachCoveragePartial      = "partial"
+	AttachCoverageNone         = "none"
+	AttachCoverageEmpty        = "empty"
+	AttachCoverageNotEvaluated = "not_evaluated"
+	AttachCoverageUnavailable  = "unavailable"
+
+	AttachOutcomeAttached      = "attached"
+	AttachOutcomeFailed        = "failed"
+	AttachOutcomeNotAttachable = "not_attachable_by_validator"
+	AttachOutcomeNotSelected   = "not_selected"
+	AttachOutcomeNotAttempted  = "not_attempted"
+)
 
 type Functional struct {
 	Status string           `json:"status,omitempty"`

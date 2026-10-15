@@ -76,11 +76,15 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 			if target.Host != nil && target.Host.Kernel != "" {
 				hostKernel = target.Host.Kernel
 			}
+			status := target.Status
+			if status == "pass" && notFullyExercised(&target) {
+				status += " (" + attachMarker(target.Validation) + ")"
+			}
 			b.WriteString(fmt.Sprintf("| %s | `%s` | `%s` | `%s` | `%s` | `%t` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
 				escapePipes(friendlyProfile(target.ProfileID)),
 				escapePipes(formatTargetEnv(target.Profile)),
 				escapePipes(hostKernel),
-				target.Status,
+				status,
 				escapePipes(target.FailedStage),
 				target.Required,
 				escapePipes(btfStatus),
@@ -113,6 +117,27 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 					target.Validation.AttachPassed,
 					target.Validation.AttachFailed,
 				))
+				if target.Validation.AttachCoverage != "" {
+					summary, _ := attachSummary(target.Validation)
+					marker := ""
+					if target.Status == "pass" && notFullyExercised(&target) {
+						marker = " — " + attachMarker(target.Validation)
+					}
+					fmt.Fprintf(&b, "- Attach coverage: `%s` — %s%s\n",
+						target.Validation.AttachCoverage, escapePipes(summary), marker)
+					for i := range target.Validation.AttachPrograms {
+						p := &target.Validation.AttachPrograms[i]
+						line := fmt.Sprintf("  - `%s` (`%s`): `%s`", escapePipes(p.Name), escapePipes(p.Section), p.Outcome)
+						if p.Outcome == schema.AttachOutcomeFailed {
+							line += fmt.Sprintf(" errno=%d class=`%s` (%s) %s", p.Errno, p.ReasonClass, p.Attribution, escapePipes(p.Detail))
+						}
+						b.WriteString(line + "\n")
+					}
+					if target.Validation.AttachRecordsTruncated {
+						fmt.Fprintf(&b, "  - per-program records cover %d of %d programs\n",
+							len(target.Validation.AttachPrograms), target.Validation.AttachProgramCount)
+					}
+				}
 			}
 			if target.Functional != nil {
 				b.WriteString(fmt.Sprintf("- Functional: `%s`\n", target.Functional.Status))

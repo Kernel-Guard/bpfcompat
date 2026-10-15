@@ -784,7 +784,7 @@ func addRuntimePolicyFlags(fs *flag.FlagSet) runtimePolicyArgs {
 		minRequiredPassed:            fs.Int("policy-min-required-passed", 0, "Policy: minimum required profile passes"),
 		maxRequiredFailed:            fs.String("policy-max-required-failed", "", "Policy: maximum required profile failures (optional)"),
 		requireKernelBTF:             fs.Bool("policy-require-kernel-btf", false, "Policy: require host kernel BTF availability"),
-		requireAttachSupport:         fs.Bool("policy-require-attach-support", false, "Policy: reject history with UNSUPPORTED_ATTACH_TYPE"),
+		requireAttachSupport:         fs.Bool("policy-require-attach-support", false, "Policy: reject history with UNSUPPORTED_ATTACH_TYPE (only attach failures that returned EOPNOTSUPP/ENOTSUPP; combine with --policy-require-summary-pass to reject any required attach failure)"),
 		requireRingbufSupport:        fs.Bool("policy-require-ringbuf-support", false, "Policy: reject history with UNSUPPORTED_MAP_TYPE"),
 		requirePerfEventArraySupport: fs.Bool("policy-require-perf-event-array-support", false, "Policy: reject history with UNSUPPORTED_MAP_TYPE"),
 		denyCodes:                    fs.String("policy-deny-codes", "", "Policy: comma-separated classification deny-list"),

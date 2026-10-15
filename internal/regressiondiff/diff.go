@@ -38,9 +38,12 @@ const (
 	// UnchangedCompatible: supported before, supported now.
 	UnchangedCompatible = "UNCHANGED_COMPATIBLE"
 
-	// NewRegression: the baseline proved this environment worked and the
-	// candidate proves it no longer does. The primary product signal, and the
-	// only classification that is a statement about the candidate's software.
+	// NewRegression: the baseline proved this obligation (profile) worked and
+	// the candidate proves it no longer does. The primary product signal. It
+	// is a statement about the obligation between the two runs, not by itself
+	// about the candidate's artifact: the observed kernel may also have moved
+	// within the profile's family. Cell.Attribution says which recorded
+	// inputs differ -- an observation, not a cause.
 	NewRegression = "NEW_REGRESSION"
 
 	// ExistingIncompatibility: broken before, broken now. A known limitation --
@@ -119,17 +122,44 @@ type CellSide struct {
 	// AttachMode is how much of the contract was exercised: load-only evidence
 	// does not support a claim that attaching still works.
 	AttachMode string `json:"attach_mode,omitempty"`
+	// AttachAccounting and AttachCoverage say whether per-program attach
+	// outcomes were compared and how much of the scope was exercised.
+	AttachAccounting string `json:"attach_accounting,omitempty"`
+	AttachCoverage   string `json:"attach_coverage,omitempty"`
+	AttachFailed     int    `json:"attach_failed,omitempty"`
+
+	attach attachSide
 }
 
 type Cell struct {
-	Key             string   `json:"key"`
-	ProfileID       string   `json:"profile_id"`
-	Required        bool     `json:"required"`
-	RequiredChanged bool     `json:"required_changed,omitempty"`
-	Classification  string   `json:"classification"`
-	Reason          string   `json:"reason"`
-	Baseline        CellSide `json:"baseline"`
-	Candidate       CellSide `json:"candidate"`
+	Key             string `json:"key"`
+	ProfileID       string `json:"profile_id"`
+	Required        bool   `json:"required"`
+	RequiredChanged bool   `json:"required_changed,omitempty"`
+	Classification  string `json:"classification"`
+	Reason          string `json:"reason"`
+	// ChangedInputs, UnknownInputs and Attribution describe, for a cell whose
+	// outcome changed (NEW_REGRESSION, FIXED), the RECORDED inputs of the two
+	// runs. They are observations, not causes: inputs the reports do not
+	// record (kernel config, boot parameters, image contents, host, timing)
+	// may also differ.
+	//
+	// Inputs: "artifact" (artifact.sha256), "loader" (command-mode loader
+	// sha256), "kernel" (observed kernel release), "os" (observed os-release
+	// identity), "validator" (artifact-mode validator sha256).
+	// ChangedInputs lists those recorded on both sides with different
+	// values; UnknownInputs those that cannot be compared (artifact, loader
+	// or kernel missing on either side; os or validator recorded on one side
+	// only). Attribution names the category of the recorded difference:
+	// "artifact_only", "environment_only", "validator_only", "multiple",
+	// "none_recorded", or "unknown" when an unknown input could add a
+	// category. The classification is about the obligation and is never
+	// changed by these fields.
+	ChangedInputs []string `json:"changed_inputs,omitempty"`
+	UnknownInputs []string `json:"unknown_inputs,omitempty"`
+	Attribution   string   `json:"attribution,omitempty"`
+	Baseline      CellSide `json:"baseline"`
+	Candidate     CellSide `json:"candidate"`
 }
 
 type Summary struct {
@@ -281,7 +311,7 @@ func validateTarget(t *schema.Target, i int, id, side string) error {
 				i, id, *env.DistroMatch, env.RequestedDistro, env.RequestedDistroVersion, env.ObservedOSID, env.ObservedOSVersionID, match)}
 		}
 	}
-	return nil
+	return validateAttachAccounting(t, i, id, side)
 }
 
 // validateSummary rejects a report whose run-level summary contradicts its own
@@ -613,7 +643,11 @@ func sideOf(t *schema.Target) CellSide {
 	}
 	if t.Validation != nil {
 		s.AttachMode = t.Validation.AttachMode
+		s.AttachAccounting = t.Validation.AttachAccounting
+		s.AttachCoverage = t.Validation.AttachCoverage
+		s.AttachFailed = t.Validation.AttachFailed
 	}
+	s.attach = attachSideOf(t)
 	return s
 }
 
@@ -711,7 +745,9 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	for _, id := range ids {
 		bt, hasBase := baseByID[id]
 		ct, hasCand := candByID[id]
-		d.Cells = append(d.Cells, classify(id, bt, hasBase, ct, hasCand, incomparable))
+		cell := classify(id, bt, hasBase, ct, hasCand, incomparable)
+		attribute(&cell, d.Baseline, d.Candidate)
+		d.Cells = append(d.Cells, cell)
 	}
 
 	d.Summary = summarize(d.Cells)
@@ -820,6 +856,24 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Reason = reason
 		return cell
 	}
+	// A program that attached at baseline and fails in the candidate is a
+	// regression whatever the verdicts say: best-effort mode reports it as
+	// COMPATIBLE, and an existing incompatibility elsewhere in the object
+	// would otherwise hide it. It needs both environments established -- a
+	// failure on a kernel outside the obligation's requested family is not
+	// evidence about this obligation. Established is not "identical": the
+	// observed kernel may differ within the family (a kernel upgrade), and
+	// attribute() records which recorded inputs differ, never a cause.
+	if cell.Baseline.EnvironmentEstablished && cell.Candidate.EnvironmentEstablished {
+		if reason, regressed := attachRegression(cell.Baseline.attach, cell.Candidate.attach); regressed {
+			if depth, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {
+				reason += "; " + depth
+			}
+			cell.Classification = NewRegression
+			cell.Reason = reason
+			return cell
+		}
+	}
 	if reason, changed := validationDepthChanged(cell.Baseline, cell.Candidate); changed {
 		cell.Classification = Inconclusive
 		cell.Reason = reason
@@ -849,6 +903,17 @@ func classify(id string, bt *schema.Target, hasBase bool, ct *schema.Target, has
 		cell.Classification = Fixed
 		cell.Reason = "incompatible at baseline and compatible in the candidate"
 	}
+	// "Still supported" and "fixed" are claims about attach too. They do not
+	// survive attach evidence that is not like-for-like. A proven regression
+	// or a known incompatibility stands as it is.
+	if cell.Classification == UnchangedCompatible || cell.Classification == Fixed {
+		if reason := attachComparability(cell.Baseline.attach, cell.Candidate.attach); reason != "" {
+			cell.Classification = Inconclusive
+			cell.Reason = reason
+			return cell
+		}
+		cell.Reason += removedPrograms(cell.Baseline.attach, cell.Candidate.attach)
+	}
 	return cell
 }
 
@@ -872,6 +937,9 @@ func describeSide(side string, s CellSide) string {
 		// what booted, which is a different fact from booting the wrong
 		// thing, and only one of them is a finding about the environment.
 		return side + " does not record which kernel it ran (no environment.kernel_family_match), so it cannot support a claim about the environment this obligation names"
+	case (s.Verdict == schema.VerdictUnsupported || s.Verdict == schema.VerdictInfraError) &&
+		strings.HasPrefix(s.ClassificationCode, "ATTACH_"):
+		return fmt.Sprintf("%s loaded the object but did not establish required attach coverage (%s)", side, s.ClassificationCode)
 	case s.Verdict == schema.VerdictInfraError:
 		return side + " could not establish compatibility (infrastructure failure)"
 	case s.Verdict == schema.VerdictUnsupported:
