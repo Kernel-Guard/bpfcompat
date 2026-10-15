@@ -7,13 +7,13 @@
 #include <gelf.h>
 #include <libelf.h>
 #include <linux/bpf.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -24,6 +24,11 @@
 #define LIBBPF_LOG_CAPACITY (256 * 1024)
 #define MAX_ITEMS 64
 #define MAX_MAP_FIXUPS 32
+/* Paths built under --log-dir. parse_args rejects a --log-dir that would not
+ * fit with the longest file name the validator writes there, so no log path
+ * is ever silently truncated. */
+#define LOG_PATH_MAX 1024
+#define BPFTOOL_PROBE_FILE "bpftool-feature-kernel.json"
 
 /* A pre-load adjustment for a map whose final shape the artifact's own
  * loader decides at runtime (max_entries=0 in the object, sized by
@@ -168,7 +173,7 @@ struct validator_result {
     bool artifact_has_btf_ext;
     bool bpftool_available;
     bool bpftool_probe_ok;
-    char bpftool_probe_output_path[256];
+    char bpftool_probe_output_path[LOG_PATH_MAX];
     struct probe_status map_probe_ringbuf;
     struct probe_status map_probe_perf_event_array;
     struct probe_status map_probe_array;
@@ -182,7 +187,10 @@ struct validator_result {
     bool tracepoint_events_available;
     int map_count;
     int program_count;
-    struct discovered_program programs[MAX_ITEMS];
+    /* One entry per program in the object (program_count entries), sized at
+     * discovery: no fixed cap, so every program is reported, trial-loaded
+     * and kept attached. */
+    struct discovered_program *programs;
     int functional_test_count;
     struct functional_test functional_tests[MAX_ITEMS];
     char functional_status[16];
@@ -195,8 +203,13 @@ struct validator_result {
     int attach_failed;
     char libbpf_log[LIBBPF_LOG_CAPACITY];
     size_t libbpf_log_len;
-    struct bpf_link *links[MAX_ITEMS];
+    /* Every successful attach, held until the functional tests are done
+     * (program_count slots). */
+    struct bpf_link **links;
     int link_count;
+    /* Plan entries beyond MAX_ITEMS that were not run; any makes the
+     * functional verdict fail and is reported as functional.truncated. */
+    int functional_tests_dropped;
 };
 
 static struct validator_result *g_result;
@@ -608,6 +621,13 @@ static int parse_args(int argc, char **argv, struct options *opts) {
         fprintf(stderr, "--out is required\n");
         return -1;
     }
+    /* BPFTOOL_PROBE_FILE is the longest name written under --log-dir. */
+    if (opts->log_dir &&
+        strlen(opts->log_dir) + 1 + strlen(BPFTOOL_PROBE_FILE) >= LOG_PATH_MAX) {
+        fprintf(stderr, "--log-dir is too long (max %zu bytes)\n",
+                (size_t)LOG_PATH_MAX - 2 - strlen(BPFTOOL_PROBE_FILE));
+        return -1;
+    }
     return 0;
 }
 
@@ -1002,18 +1022,51 @@ static void run_bpftool_feature_probe(struct validator_result *res) {
     }
     res->bpftool_available = true;
 
-    snprintf(res->bpftool_probe_output_path,
-             sizeof(res->bpftool_probe_output_path),
-             "%s/bpftool-feature-kernel.json",
-             res->opts.log_dir);
+    int n = snprintf(res->bpftool_probe_output_path,
+                     sizeof(res->bpftool_probe_output_path),
+                     "%s/" BPFTOOL_PROBE_FILE,
+                     res->opts.log_dir);
+    if (n < 0 || (size_t)n >= sizeof(res->bpftool_probe_output_path)) {
+        /* parse_args bounds --log-dir, so this is unreachable; never probe
+         * into a truncated path. */
+        res->bpftool_probe_output_path[0] = '\0';
+        return;
+    }
 
-    char cmd[1400];
-    snprintf(cmd,
-             sizeof(cmd),
-             "bpftool feature probe -j kernel > %s 2>/dev/null",
-             res->bpftool_probe_output_path);
-    int probe_rc = system(cmd);
-    res->bpftool_probe_ok = (probe_rc == 0);
+    /* Run bpftool directly with a fixed argv and redirect its stdout to the
+     * output file ourselves: --log-dir is caller-controlled and must never be
+     * interpreted by a shell (the validator runs as root). */
+    int out_fd = open(res->bpftool_probe_output_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+    if (out_fd < 0) {
+        fprintf(stderr, "bpftool probe: open %s failed: %s\n",
+                res->bpftool_probe_output_path, strerror(errno));
+        return;
+    }
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "bpftool probe: fork failed: %s\n", strerror(errno));
+        close(out_fd);
+        return;
+    }
+    if (pid == 0) {
+        int null_fd = open("/dev/null", O_WRONLY);
+        if (dup2(out_fd, STDOUT_FILENO) < 0) {
+            _exit(126);
+        }
+        if (null_fd >= 0) {
+            (void)dup2(null_fd, STDERR_FILENO);
+        }
+        char *const argv[] = {"bpftool", "feature", "probe", "-j", "kernel", NULL};
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    close(out_fd);
+    int status = 0;
+    pid_t w;
+    do {
+        w = waitpid(pid, &status, 0);
+    } while (w < 0 && errno == EINTR);
+    res->bpftool_probe_ok = (w == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 static void collect_btf_and_capability_metadata(struct validator_result *res) {
@@ -1145,6 +1198,9 @@ static void load_functional_plan(struct validator_result *res) {
                     snprintf(current.name, sizeof(current.name), "functional-%d", res->functional_test_count + 1);
                 }
                 res->functional_tests[res->functional_test_count++] = current;
+            } else if (in_test) {
+                /* Over the cap: never drop a test silently. */
+                res->functional_tests_dropped++;
             }
             in_test = false;
             continue;
@@ -1219,6 +1275,25 @@ static void read_available_tail(int fd, char *dst, size_t dst_size, bool *open_f
     }
 }
 
+static long long monotonic_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000L;
+}
+
+/* Has the child exited? Leaves it a zombie (WNOWAIT): its pid is also its
+ * process-group id and must stay reserved until the group is signalled. */
+static bool child_has_exited(pid_t pid) {
+    siginfo_t info;
+    memset(&info, 0, sizeof(info));
+    if (waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT) != 0) {
+        return errno == ECHILD;
+    }
+    return info.si_pid == pid;
+}
+
 static void run_functional_command(struct functional_test *test) {
     if (!test || !test->command[0]) {
         if (test) {
@@ -1260,6 +1335,9 @@ static void run_functional_command(struct functional_test *test) {
     }
 
     if (pid == 0) {
+        /* Own process group (pgid == pid) so a timeout or a finished
+         * command can take down everything it started, not just `sh`. */
+        (void)setpgid(0, 0);
         close(stdout_pipe[0]);
         close(stderr_pipe[0]);
         dup2(stdout_pipe[1], STDOUT_FILENO);
@@ -1269,73 +1347,108 @@ static void run_functional_command(struct functional_test *test) {
         execl("/bin/sh", "sh", "-c", test->command, (char *)NULL);
         _exit(127);
     }
+    /* Also from the parent, so the group exists before any kill below
+     * regardless of scheduling (EACCES once the child has exec'd is fine:
+     * it already did it itself). */
+    (void)setpgid(pid, pid);
 
     close(stdout_pipe[1]);
     close(stderr_pipe[1]);
     set_nonblocking(stdout_pipe[0]);
     set_nonblocking(stderr_pipe[0]);
 
+    /* One hard deadline covers the command AND reading its output. The old
+     * loop killed only `sh` on timeout and then read until both pipes hit
+     * EOF, so any descendant still holding them (`sleep 60; ...`,
+     * `x | y`, `daemon &`) stretched the run past timeout_seconds without
+     * bound.
+     *
+     * Lifecycle:
+     *  - `sh` exits in time: SIGKILL its process group at once. Background
+     *    stragglers are not part of the verdict and must not outlive the
+     *    test (or keep the pipes open); output they wrote before that is
+     *    already in the pipe buffers and is still drained. The verdict is
+     *    the exit status of `sh`.
+     *  - the deadline passes first: SIGKILL the whole group; timed_out.
+     *  - `sh` exited but the pipes are still open at the deadline: a
+     *    process that left the group (setsid/setpgid) holds them. Close our
+     *    ends and report timed_out — the output is incomplete and a process
+     *    outside our control is still running.
+     * `sh` is detected with WNOWAIT and reaped only after the group has been
+     * signalled, so its pid (== pgid) cannot be recycled in between. */
     bool stdout_open = true;
     bool stderr_open = true;
-    bool child_done = false;
+    bool child_exited = false;
     int child_status = 0;
-    time_t started = time(NULL);
+    long long deadline = monotonic_ms() + (long long)test->timeout_seconds * 1000LL;
 
-    while (stdout_open || stderr_open || !child_done) {
-        if (!child_done) {
-            pid_t w = waitpid(pid, &child_status, WNOHANG);
-            if (w == pid) {
-                child_done = true;
-            }
+    for (;;) {
+        if (!child_exited && child_has_exited(pid)) {
+            child_exited = true;
+            (void)kill(-pid, SIGKILL);
         }
-
-        if (!child_done && test->timeout_seconds > 0 &&
-            time(NULL) - started >= test->timeout_seconds) {
+        if (child_exited && !stdout_open && !stderr_open) {
+            break;
+        }
+        long long remaining = deadline - monotonic_ms();
+        if (test->timeout_seconds > 0 && remaining <= 0) {
             test->timed_out = true;
-            kill(pid, SIGKILL);
-            (void)waitpid(pid, &child_status, 0);
-            child_done = true;
+            break;
+        }
+        /* While `sh` runs, wake up regularly to notice its exit. */
+        int wait_ms = 50;
+        if (child_exited && test->timeout_seconds > 0) {
+            wait_ms = remaining > 1000 ? 1000 : (int)remaining;
+        }
+        if (test->timeout_seconds > 0 && remaining < wait_ms) {
+            wait_ms = (int)remaining;
         }
 
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        int max_fd = -1;
+        struct pollfd pfds[2];
+        nfds_t nfds = 0;
+        int out_idx = -1;
+        int err_idx = -1;
         if (stdout_open) {
-            FD_SET(stdout_pipe[0], &rfds);
-            if (stdout_pipe[0] > max_fd) {
-                max_fd = stdout_pipe[0];
-            }
+            out_idx = (int)nfds;
+            pfds[nfds].fd = stdout_pipe[0];
+            pfds[nfds].events = POLLIN;
+            pfds[nfds].revents = 0;
+            nfds++;
         }
         if (stderr_open) {
-            FD_SET(stderr_pipe[0], &rfds);
-            if (stderr_pipe[0] > max_fd) {
-                max_fd = stderr_pipe[0];
-            }
+            err_idx = (int)nfds;
+            pfds[nfds].fd = stderr_pipe[0];
+            pfds[nfds].events = POLLIN;
+            pfds[nfds].revents = 0;
+            nfds++;
         }
-
-        if (max_fd >= 0) {
-            struct timeval tv = {
-                .tv_sec = 0,
-                .tv_usec = 100000,
-            };
-            int ready = select(max_fd + 1, &rfds, NULL, NULL, &tv);
-            if (ready > 0) {
-                if (stdout_open && FD_ISSET(stdout_pipe[0], &rfds)) {
-                    read_available_tail(stdout_pipe[0], test->stdout_tail, sizeof(test->stdout_tail), &stdout_open);
-                }
-                if (stderr_open && FD_ISSET(stderr_pipe[0], &rfds)) {
-                    read_available_tail(stderr_pipe[0], test->stderr_tail, sizeof(test->stderr_tail), &stderr_open);
-                }
+        int ready = poll(nfds ? pfds : NULL, nfds, wait_ms);
+        if (ready > 0) {
+            if (out_idx >= 0 && pfds[out_idx].revents) {
+                read_available_tail(stdout_pipe[0], test->stdout_tail, sizeof(test->stdout_tail), &stdout_open);
             }
-        } else if (!child_done) {
-            struct timespec ts = {
-                .tv_sec = 0,
-                .tv_nsec = 100000000,
-            };
-            (void)nanosleep(&ts, NULL);
+            if (err_idx >= 0 && pfds[err_idx].revents) {
+                read_available_tail(stderr_pipe[0], test->stderr_tail, sizeof(test->stderr_tail), &stderr_open);
+            }
         }
     }
 
+    if (!child_exited) {
+        (void)kill(-pid, SIGKILL);
+        (void)kill(pid, SIGKILL); /* in case setpgid failed */
+    }
+    pid_t w;
+    do {
+        w = waitpid(pid, &child_status, 0);
+    } while (w < 0 && errno == EINTR);
+
+    /* Keep whatever is already buffered, then drop our ends. */
+    if (stdout_open) {
+        read_available_tail(stdout_pipe[0], test->stdout_tail, sizeof(test->stdout_tail), &stdout_open);
+    }
+    if (stderr_open) {
+        read_available_tail(stderr_pipe[0], test->stderr_tail, sizeof(test->stderr_tail), &stderr_open);
+    }
     if (stdout_open) {
         close(stdout_pipe[0]);
     }
@@ -1346,7 +1459,14 @@ static void run_functional_command(struct functional_test *test) {
     if (test->timed_out) {
         test->exit_code = 124;
         snprintf(test->status, sizeof(test->status), "fail");
-        snprintf(test->error, sizeof(test->error), "functional command timed out after %d seconds", test->timeout_seconds);
+        if (child_exited) {
+            snprintf(test->error, sizeof(test->error),
+                     "functional command output was still held open after %d seconds by a process "
+                     "outside its process group",
+                     test->timeout_seconds);
+        } else {
+            snprintf(test->error, sizeof(test->error), "functional command timed out after %d seconds", test->timeout_seconds);
+        }
         return;
     }
     if (WIFEXITED(child_status)) {
@@ -1409,7 +1529,7 @@ static void run_functional_tests(struct validator_result *res) {
         }
     }
 
-    if (required_failed) {
+    if (required_failed || res->functional_tests_dropped > 0) {
         snprintf(res->functional_status, sizeof(res->functional_status), "fail");
     } else if (optional_failed) {
         snprintf(res->functional_status, sizeof(res->functional_status), "warn");
@@ -1430,8 +1550,25 @@ static void discover_programs_and_maps(struct validator_result *res, struct bpf_
     struct bpf_program *prog;
     struct bpf_map *map;
 
+    /* Size the per-program tables to the object. A fixed 64-entry table
+     * used to drop programs past the 64th from discovery and per-program
+     * trial loads, and destroy their links right after attach while
+     * attach still reported them as passed. */
+    int total = 0;
     bpf_object__for_each_program(prog, obj) {
-        if (res->program_count < MAX_ITEMS) {
+        total++;
+    }
+    if (total > 0) {
+        res->programs = calloc((size_t)total, sizeof(*res->programs));
+        res->links = calloc((size_t)total, sizeof(*res->links));
+        if (!res->programs || !res->links) {
+            fprintf(stderr, "out of memory allocating tables for %d programs\n", total);
+            exit(1);
+        }
+    }
+
+    bpf_object__for_each_program(prog, obj) {
+        if (res->program_count < total) {
             const char *name = bpf_program__name(prog);
             const char *section = bpf_program__section_name(prog);
             snprintf(res->programs[res->program_count].name,
@@ -1499,7 +1636,7 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
     struct bpf_program *prog;
     int program_index = 0;
     bpf_object__for_each_program(prog, obj) {
-        bool track = program_index < MAX_ITEMS;
+        bool track = program_index < res->program_count;
         const char *section = bpf_program__section_name(prog);
 
         if (!is_auto_attach_candidate(section)) {
@@ -1535,10 +1672,22 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
                          sizeof(res->programs[program_index].attach_status),
                          "pass");
             }
-            if (res->link_count < MAX_ITEMS) {
+            /* links has a slot per program, so every link stays alive until
+             * destroy_links() after the functional tests. */
+            if (res->link_count < res->program_count) {
                 res->links[res->link_count++] = link;
             } else {
                 (void)bpf_link__destroy(link);
+                res->attach_passed--;
+                res->attach_failed++;
+                if (track) {
+                    snprintf(res->programs[program_index].attach_status,
+                             sizeof(res->programs[program_index].attach_status),
+                             "fail");
+                    snprintf(res->programs[program_index].attach_error,
+                             sizeof(res->programs[program_index].attach_error),
+                             "link could not be retained");
+                }
             }
         }
 
@@ -1924,7 +2073,7 @@ static void probe_per_program_loads(struct validator_result *res) {
     if (!res->opts.probe_features) {
         return;
     }
-    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
+    int max_items = res->program_count;
     for (int i = 0; i < max_items; i++) {
         g_trial_log_len = 0;
         g_trial_log[0] = '\0';
@@ -2029,12 +2178,84 @@ static void write_probe_status_json(FILE *f, const struct probe_status *status) 
     fprintf(f, "\"}");
 }
 
-static int write_result_json(const struct validator_result *res) {
-    FILE *f = fopen(res->opts.out, "w");
+/* result.json is the validator's verdict, so a partially written file must
+ * never look like one. A regular (or not yet existing) --out is written to a
+ * temp file next to it and renamed into place only after every write, flush
+ * and close succeeded. Anything else (a symlink, /dev/stdout, a FIFO) is
+ * written in place, so the caller's target is honoured, with the same error
+ * checks. Any failure exits non-zero. */
+struct result_file {
+    const char *path;
+    char *tmp_path; /* NULL when writing path in place */
+};
+
+static FILE *open_result_file(const char *path, struct result_file *rf) {
+    rf->path = path;
+    rf->tmp_path = NULL;
+    struct stat st;
+    bool in_place = lstat(path, &st) == 0 && !S_ISREG(st.st_mode);
+    if (!in_place) {
+        size_t n = strlen(path) + sizeof(".tmp.XXXXXX");
+        rf->tmp_path = malloc(n);
+        if (rf->tmp_path) {
+            snprintf(rf->tmp_path, n, "%s.tmp.XXXXXX", path);
+            int fd = mkstemp(rf->tmp_path);
+            if (fd >= 0) {
+                /* mkstemp creates 0600; keep the mode fopen would give. */
+                mode_t mask = umask(0);
+                umask(mask);
+                (void)fchmod(fd, 0666 & ~mask);
+                FILE *f = fdopen(fd, "w");
+                if (f) {
+                    return f;
+                }
+                close(fd);
+                unlink(rf->tmp_path);
+            }
+            free(rf->tmp_path);
+            rf->tmp_path = NULL;
+        }
+        /* e.g. the directory is not writable but the file is: in place. */
+    }
+    FILE *f = fopen(path, "w");
     if (!f) {
         fprintf(stderr, "open output file failed: %s\n", strerror(errno));
+    }
+    return f;
+}
+
+static int finish_result_file(FILE *f, struct result_file *rf) {
+    int err = 0;
+    if (ferror(f)) {
+        err = errno ? errno : EIO;
+    }
+    if (fflush(f) != 0 && !err) {
+        err = errno;
+    }
+    if (fclose(f) != 0 && !err) {
+        err = errno;
+    }
+    if (!err && rf->tmp_path && rename(rf->tmp_path, rf->path) != 0) {
+        err = errno;
+    }
+    if (err) {
+        fprintf(stderr, "write output file %s failed: %s\n", rf->path, strerror(err));
+        if (rf->tmp_path) {
+            unlink(rf->tmp_path);
+        }
+    }
+    free(rf->tmp_path);
+    rf->tmp_path = NULL;
+    return err ? 1 : 0;
+}
+
+static int write_result_json(const struct validator_result *res) {
+    struct result_file rf;
+    FILE *f = open_result_file(res->opts.out, &rf);
+    if (!f) {
         return 1;
     }
+    errno = 0; /* so a failed write's errno is what finish_result_file reports */
 
     fprintf(f, "{\n");
     fprintf(f, "  \"schema_version\": \"validator.v0.4\",\n");
@@ -2193,7 +2414,7 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "    \"program_count\": %d,\n", res->program_count);
     fprintf(f, "    \"map_count\": %d,\n", res->map_count);
     fprintf(f, "    \"programs\": [\n");
-    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
+    int max_items = res->program_count;
     for (int i = 0; i < max_items; i++) {
         fprintf(f, "      {\"name\":\"");
         escape_json_string(f, res->programs[i].name);
@@ -2233,6 +2454,8 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "    \"status\": \"");
     escape_json_string(f, res->functional_status);
     fprintf(f, "\",\n");
+    fprintf(f, "    \"truncated\": %s,\n", res->functional_tests_dropped > 0 ? "true" : "false");
+    fprintf(f, "    \"dropped_tests\": %d,\n", res->functional_tests_dropped);
     fprintf(f, "    \"tests\": [\n");
     for (int i = 0; i < res->functional_test_count; i++) {
         const struct functional_test *test = &res->functional_tests[i];
@@ -2263,8 +2486,7 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "  }\n");
     fprintf(f, "}\n");
 
-    fclose(f);
-    return 0;
+    return finish_result_file(f, &rf);
 }
 
 int main(int argc, char **argv) {
@@ -2286,9 +2508,13 @@ int main(int argc, char **argv) {
     load_functional_plan(&res);
     run_libbpf_load(&res);
     write_libbpf_log_file(&res);
-    if (write_result_json(&res) != 0) {
+    int write_rc = write_result_json(&res);
+    bool passed = str_eq(overall_status(&res), "pass");
+    free(res.programs);
+    free(res.links);
+    if (write_rc != 0) {
         return 1;
     }
 
-    return str_eq(overall_status(&res), "pass") ? 0 : 2;
+    return passed ? 0 : 2;
 }
