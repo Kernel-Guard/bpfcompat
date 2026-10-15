@@ -114,7 +114,7 @@ func TestQueuedAsyncJobDoesNotStartAfterShutdown(t *testing.T) {
 		t.Fatalf("second job state = %q, want queued", st.State)
 	}
 
-	s.shutting.Set(true)
+	s.beginShutdown()
 	fake.unblock()
 
 	waitForCondition(t, "queued job terminal", func() bool {
@@ -199,5 +199,112 @@ func TestDrainTimeoutCancelsRunningJobs(t *testing.T) {
 	case <-syncDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("sync validate request did not finish")
+	}
+}
+
+// shutdownDuringUpload installs the post-upload hook so shutdown begins
+// (exactly as the drain goroutine does it) after the request passed its
+// early shutting check but before it registers its run, with the drain
+// already parked in inflight.Wait behind a running job.
+func shutdownDuringUpload(s *Server, waitDone chan<- struct{}) {
+	s.afterValidateUpload = func() {
+		s.beginShutdown()
+		go func() {
+			s.inflight.Wait()
+			close(waitDone)
+		}()
+		time.Sleep(20 * time.Millisecond) // let the drain park in Wait
+	}
+}
+
+// RDRAIN: a validate/start whose upload finished after shutdown began must
+// get 503 and must not register with the drain or create a job.
+func TestValidateStartRefusedWhenShutdownBeginsDuringUpload(t *testing.T) {
+	profileID := firstProfileIDForAsyncValidateTest(t)
+	fake := newBlockingValidateRunner()
+	defer fake.unblock()
+	s := shutdownTestServer(t, fake.run)
+	startAsyncJob(t, s, profileID) // keeps the drain parked in Wait
+	waitForCondition(t, "first job running", func() bool { return fake.running.Load() == 1 })
+
+	waitDone := make(chan struct{})
+	shutdownDuringUpload(s, waitDone)
+	rec := httptest.NewRecorder()
+	s.handleValidateStart(rec, newValidateMultipartRequest(t, "/api/validate/start", profileID))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("validate/start after shutdown began during upload: %d %s, want 503", rec.Code, rec.Body.String())
+	}
+	s.validateJobs.mu.RLock()
+	jobs := len(s.validateJobs.jobs)
+	s.validateJobs.mu.RUnlock()
+	if jobs != 1 {
+		t.Fatalf("%d jobs in the store, want only the pre-shutdown one", jobs)
+	}
+	fake.unblock()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain Wait did not return")
+	}
+	if got := fake.calls.Load(); got != 1 {
+		t.Fatalf("runner called %d times, want 1", got)
+	}
+}
+
+// RDRAIN: same for a synchronous validate.
+func TestSyncValidateRefusedWhenShutdownBeginsDuringUpload(t *testing.T) {
+	profileID := firstProfileIDForAsyncValidateTest(t)
+	fake := newBlockingValidateRunner()
+	defer fake.unblock()
+	s := shutdownTestServer(t, fake.run)
+	startAsyncJob(t, s, profileID)
+	waitForCondition(t, "first job running", func() bool { return fake.running.Load() == 1 })
+
+	waitDone := make(chan struct{})
+	shutdownDuringUpload(s, waitDone)
+	rec := httptest.NewRecorder()
+	s.handleValidate(rec, newValidateMultipartRequest(t, "/api/validate", profileID))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("validate after shutdown began during upload: %d %s, want 503", rec.Code, rec.Body.String())
+	}
+	fake.unblock()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain Wait did not return")
+	}
+	if got := fake.calls.Load(); got != 1 {
+		t.Fatalf("runner called %d times, want 1", got)
+	}
+}
+
+// RDRAIN: enterRun and beginShutdown are serialised, so a run can never be
+// registered with the WaitGroup once the drain may be inside Wait (which
+// panics with "WaitGroup is reused before previous Wait has returned" /
+// "Add called concurrently with Wait").
+func TestRunGateNeverAddsAfterShutdown(t *testing.T) {
+	for i := 0; i < 2000; i++ {
+		s := &Server{}
+		if !s.enterRun() { // a running job keeps Wait parked
+			t.Fatal("enterRun refused before shutdown")
+		}
+		admitted := make(chan bool, 1)
+		start := make(chan struct{})
+		go func() {
+			<-start
+			ok := s.enterRun()
+			if ok {
+				s.leaveRun()
+			}
+			admitted <- ok
+		}()
+		go func() { <-start; s.leaveRun() }()
+		close(start)
+		s.beginShutdown()
+		s.inflight.Wait()
+		<-admitted
+		if s.enterRun() {
+			t.Fatal("enterRun admitted a run after beginShutdown")
+		}
 	}
 }

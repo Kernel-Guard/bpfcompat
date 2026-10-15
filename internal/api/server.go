@@ -191,6 +191,9 @@ type Server struct {
 	runCtxOnce sync.Once
 	runCtx     context.Context
 	cancelRuns context.CancelFunc
+	// afterValidateUpload is a test-only hook run after a validate
+	// request's upload is read and before its run is registered.
+	afterValidateUpload func()
 	// uploads tracks per-request directories under workdir/uploads that
 	// an in-flight validate request or job still needs, so retention
 	// pruning never removes them.
@@ -213,6 +216,35 @@ func (s *Server) runContext() context.Context {
 func (s *Server) cancelRunContext() {
 	s.initRunContext()
 	s.cancelRuns()
+}
+
+// enterRun registers a validation run with the shutdown drain. It is the
+// only way to add to s.inflight: the Add happens under validateJobs.mu and
+// only while not shutting, and beginShutdown sets shutting under the same
+// mutex before the drain calls Wait, so no Add can ever race a Wait (which
+// panics: "WaitGroup is reused before previous Wait has returned"). It
+// returns false once shutdown began; the caller must then refuse the run
+// (503). A request can pass the early shutting check and finish a
+// minutes-long upload after SIGTERM, so this re-check is required.
+func (s *Server) enterRun() bool {
+	s.validateJobs.mu.Lock()
+	defer s.validateJobs.mu.Unlock()
+	if s.shutting.Get() {
+		return false
+	}
+	s.inflight.Add(1)
+	return true
+}
+
+// leaveRun unregisters a run admitted by enterRun.
+func (s *Server) leaveRun() { s.inflight.Done() }
+
+// beginShutdown flips the server into shutdown; after it returns enterRun
+// admits nothing, so the drain may safely Wait on s.inflight.
+func (s *Server) beginShutdown() {
+	s.validateJobs.mu.Lock()
+	defer s.validateJobs.mu.Unlock()
+	s.shutting.Set(true)
 }
 
 func (s *Server) log() *slog.Logger {
@@ -647,7 +679,7 @@ func (s *Server) serve(ctx context.Context) error {
 	go func() {
 		defer close(drained)
 		<-ctx.Done()
-		s.shutting.Set(true)
+		s.beginShutdown()
 		drainTimeout := s.shutdownDrainTimeout()
 		s.log().Info("shutdown signal received, draining inflight jobs",
 			slog.Duration("drain_timeout", drainTimeout),
@@ -2426,10 +2458,16 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	// Runs after the response is written: failed runs drop their upload,
 	// successful ones are retained (bounded) for registry-history readers.
 	defer func() { s.releaseUploadDir(uploadDir, succeeded) }()
+	if s.afterValidateUpload != nil {
+		s.afterValidateUpload()
+	}
 
 	// Track the run so the shutdown drain waits for it like an async job.
-	s.inflight.Add(1)
-	defer s.inflight.Done()
+	if !s.enterRun() {
+		writeError(w, http.StatusServiceUnavailable, errValidateShuttingDown.Error())
+		return
+	}
+	defer s.leaveRun()
 	releaseSlot, status, err := s.acquireSyncValidateRunSlot(r.Context())
 	if err != nil {
 		writeError(w, status, err.Error())
@@ -2486,6 +2524,14 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, err.Error())
 		return
 	}
+	if s.afterValidateUpload != nil {
+		s.afterValidateUpload()
+	}
+	if !s.enterRun() {
+		s.releaseUploadDir(uploadDir, false)
+		writeError(w, http.StatusServiceUnavailable, errValidateShuttingDown.Error())
+		return
+	}
 
 	profileIDs := []string{}
 	if m, err := matrix.Load(cfg.MatrixPath); err == nil {
@@ -2496,9 +2542,8 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		s.applyRunnerProgress(jobID, update)
 	}
 
-	s.inflight.Add(1)
 	go func() {
-		defer s.inflight.Done()
+		defer s.leaveRun()
 		s.runValidateJob(jobID, cfg)
 		// The job is terminal here: keep the upload only if it completed.
 		final, ok := s.getValidateJob(jobID)
@@ -2623,6 +2668,10 @@ func (s *Server) runValidateJob(jobID string, cfg runner.Config) {
 		return
 	}
 
+	// Cancelled by the drain timeout, the real runner does not return an
+	// error: it records the interrupted targets as an INFRA_ERROR verdict,
+	// so the job ends "completed" with that verdict and is still persisted
+	// (auto-sync below). This is the documented semantics; keep it.
 	result, err := s.validateRunner()(s.runContext(), cfg)
 	if err != nil {
 		s.updateValidateJob(jobID, func(job *validateJob) {
