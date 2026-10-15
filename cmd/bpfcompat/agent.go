@@ -1275,6 +1275,11 @@ func executeAgentPlan(flags agentCommonFlags) (agentPlanEnvelope, registry.Artif
 	if err != nil {
 		return agentPlanEnvelope{}, registry.ArtifactVersionRecord{}, false, fmt.Errorf("read artifact history: %w", err)
 	}
+	if req.RequireVerifiedHistory == nil || *req.RequireVerifiedHistory {
+		if warning := registry.ArtifactHistoryTrustAnchorWarning(); warning != "" {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		}
+	}
 	decision, selectedRecord, err := agent.BuildDecision(recordsWorkDir, records, req)
 	if err != nil {
 		return agentPlanEnvelope{}, registry.ArtifactVersionRecord{}, false, err

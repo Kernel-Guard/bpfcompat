@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,10 @@ const (
 	artifactSigningExternalArgsEnv    = "BPFCOMPAT_SIGNING_EXTERNAL_ARGS"
 	artifactTrustedKeysEnv            = "BPFCOMPAT_TRUSTED_SIGNING_PUBLIC_KEYS"
 	artifactTrustedKeyringPathEnv     = "BPFCOMPAT_TRUSTED_SIGNING_KEYS_PATH"
+	artifactTrustWorkdirKeysEnv       = "BPFCOMPAT_TRUST_WORKDIR_KEYS"
+
+	trustSourceWorkdir = "workdir"
+	trustSourceEnv     = "env"
 )
 
 var ErrNotFound = errors.New("registry record not found")
@@ -130,6 +135,7 @@ type ArtifactVersionVerification struct {
 	SignatureAlg       string   `json:"signature_alg,omitempty"`
 	SignatureKeyID     string   `json:"signature_key_id,omitempty"`
 	SignatureValid     bool     `json:"signature_valid"`
+	TrustSource        string   `json:"trust_source,omitempty"`
 	Verified           bool     `json:"verified"`
 	Issues             []string `json:"issues,omitempty"`
 }
@@ -182,11 +188,14 @@ func VerifyArtifactVersionHistory(workDir string) ([]ArtifactVersionVerification
 			}
 		}
 
-		signatureValid, sigErr := verifyArtifactRecordSignature(workDir, record, canonicalPayload)
+		signatureValid, trustSource, sigErr := verifyArtifactRecordSignature(workDir, record, canonicalPayload)
 		if sigErr != nil {
 			verification.Issues = append(verification.Issues, sigErr.Error())
 		}
 		verification.SignatureValid = signatureValid
+		if signatureValid {
+			verification.TrustSource = trustSource
+		}
 
 		if len(verification.Issues) == 0 {
 			verification.Verified = true
@@ -498,6 +507,7 @@ type artifactSignatureEnvelope struct {
 type trustedSigningKey struct {
 	KeyID     string
 	PublicKey ed25519.PublicKey
+	Source    string
 }
 
 type artifactRecordSigner interface {
@@ -666,25 +676,25 @@ func artifactRecordCanonicalPayloadAndHash(record ArtifactVersionRecord) ([]byte
 	return payload, hex.EncodeToString(sum[:]), nil
 }
 
-func verifyArtifactRecordSignature(workDir string, record ArtifactVersionRecord, payload []byte) (bool, error) {
+func verifyArtifactRecordSignature(workDir string, record ArtifactVersionRecord, payload []byte) (bool, string, error) {
 	signatureAlg := strings.TrimSpace(record.SignatureAlg)
 	signatureRaw := strings.TrimSpace(record.Signature)
 	pubRaw := strings.TrimSpace(record.SignaturePublicKey)
 	keyID := strings.TrimSpace(record.SignatureKeyID)
 
 	if signatureAlg == "" && signatureRaw == "" && pubRaw == "" && keyID == "" {
-		return false, fmt.Errorf("signature metadata is missing")
+		return false, "", fmt.Errorf("signature metadata is missing")
 	}
 	if signatureAlg != artifactHistorySignatureAlgorithm {
-		return false, fmt.Errorf("unsupported signature_alg %q", signatureAlg)
+		return false, "", fmt.Errorf("unsupported signature_alg %q", signatureAlg)
 	}
 
 	trustedKeys, err := loadTrustedSigningKeys(workDir)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if len(trustedKeys) == 0 {
-		return false, fmt.Errorf(
+		return false, "", fmt.Errorf(
 			"no trusted signing keys configured (check %s, %s, or %s/%s)",
 			artifactTrustedKeysEnv,
 			artifactTrustedKeyringPathEnv,
@@ -696,7 +706,7 @@ func verifyArtifactRecordSignature(workDir string, record ArtifactVersionRecord,
 	if pubRaw != "" {
 		recordPublicKey, err := decodeEd25519PublicKey(pubRaw)
 		if err != nil {
-			return false, fmt.Errorf("decode signature_public_key: %w", err)
+			return false, "", fmt.Errorf("decode signature_public_key: %w", err)
 		}
 		for _, trusted := range trustedKeys {
 			if keyID != "" && trusted.KeyID != "" && trusted.KeyID != keyID {
@@ -705,9 +715,10 @@ func verifyArtifactRecordSignature(workDir string, record ArtifactVersionRecord,
 			if string(trusted.PublicKey) != string(recordPublicKey) {
 				continue
 			}
-			return verifyRecordSignatureWithKey(record, payload, trusted.PublicKey)
+			ok, err := verifyRecordSignatureWithKey(record, payload, trusted.PublicKey)
+			return ok, trusted.Source, err
 		}
-		return false, fmt.Errorf("signature_public_key is not in trusted keyring")
+		return false, "", fmt.Errorf("signature_public_key is not in trusted keyring")
 	}
 
 	for _, trusted := range trustedKeys {
@@ -719,10 +730,10 @@ func verifyArtifactRecordSignature(workDir string, record ArtifactVersionRecord,
 			continue
 		}
 		if ok {
-			return true, nil
+			return true, trusted.Source, nil
 		}
 	}
-	return false, fmt.Errorf("signature verification failed with trusted keys")
+	return false, "", fmt.Errorf("signature verification failed with trusted keys")
 }
 
 func verifyRecordSignatureWithKey(record ArtifactVersionRecord, payload []byte, publicKey ed25519.PublicKey) (bool, error) {
@@ -754,6 +765,41 @@ func decodeEd25519PublicKey(raw string) (ed25519.PublicKey, error) {
 	return ed25519.PublicKey(publicKeyRaw), nil
 }
 
+// artifactHistoryEnvTrustAnchorConfigured reports whether an operator-pinned
+// trust anchor (outside the workdir) is configured via the environment.
+func artifactHistoryEnvTrustAnchorConfigured() bool {
+	return strings.TrimSpace(os.Getenv(artifactTrustedKeyringPathEnv)) != "" ||
+		strings.TrimSpace(os.Getenv(artifactTrustedKeysEnv)) != ""
+}
+
+func artifactHistoryTrustWorkdirKeysOverride() bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(artifactTrustWorkdirKeysEnv)))
+	return err == nil && v
+}
+
+// ArtifactHistoryTrustAnchorWarning returns a one-line operator warning when
+// artifact-history verification is anchored (at least partly) in key files
+// stored inside the workdir, or "" when an env trust anchor is in force. It
+// names env vars only and never echoes their values.
+func ArtifactHistoryTrustAnchorWarning() string {
+	if !artifactHistoryEnvTrustAnchorConfigured() {
+		return fmt.Sprintf("no artifact-history trust anchor configured (%s / %s); "+
+			"signature verification trusts key files inside the workdir and provides tamper evidence only (trust-on-first-use)",
+			artifactTrustedKeyringPathEnv, artifactTrustedKeysEnv)
+	}
+	if artifactHistoryTrustWorkdirKeysOverride() {
+		return fmt.Sprintf("%s=true: artifact-history verification also trusts key files inside the workdir in addition to the env trust anchor",
+			artifactTrustWorkdirKeysEnv)
+	}
+	return ""
+}
+
+// loadTrustedSigningKeys returns the keys that anchor artifact-history
+// signatures. Env-configured keys (BPFCOMPAT_TRUSTED_SIGNING_KEYS_PATH,
+// BPFCOMPAT_TRUSTED_SIGNING_PUBLIC_KEYS) are always trusted. Key files inside
+// the workdir are trusted only when no env anchor is configured, or when
+// BPFCOMPAT_TRUST_WORKDIR_KEYS=true: anyone who can write the workdir can
+// otherwise plant a key there and sign forged records.
 func loadTrustedSigningKeys(workDir string) ([]trustedSigningKey, error) {
 	seen := make(map[string]struct{})
 	keys := make([]trustedSigningKey, 0, 4)
@@ -772,7 +818,7 @@ func loadTrustedSigningKeys(workDir string) ([]trustedSigningKey, error) {
 		keys = append(keys, key)
 	}
 
-	addFromFile := func(path string) error {
+	addFromFile := func(path, source string) error {
 		raw, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -785,19 +831,15 @@ func loadTrustedSigningKeys(workDir string) ([]trustedSigningKey, error) {
 			return fmt.Errorf("parse trusted signing key file %q: %w", path, err)
 		}
 		for _, key := range parsed {
+			key.Source = source
 			addKey(key)
 		}
 		return nil
 	}
 
-	if err := addFromFile(filepath.Join(filepath.Clean(workDir), artifactSigningPublicKeyPath)); err != nil {
-		return nil, err
-	}
-	if err := addFromFile(filepath.Join(filepath.Clean(workDir), artifactTrustedKeyringPath)); err != nil {
-		return nil, err
-	}
+	// Env keys first so a key present in both places is reported as env.
 	if externalPath := strings.TrimSpace(os.Getenv(artifactTrustedKeyringPathEnv)); externalPath != "" {
-		if err := addFromFile(filepath.Clean(externalPath)); err != nil {
+		if err := addFromFile(filepath.Clean(externalPath), trustSourceEnv); err != nil {
 			return nil, err
 		}
 	}
@@ -807,7 +849,16 @@ func loadTrustedSigningKeys(workDir string) ([]trustedSigningKey, error) {
 			if err != nil {
 				return nil, fmt.Errorf("parse %s entry %q: %w", artifactTrustedKeysEnv, raw, err)
 			}
+			key.Source = trustSourceEnv
 			addKey(key)
+		}
+	}
+	if artifactHistoryEnvTrustAnchorConfigured() && !artifactHistoryTrustWorkdirKeysOverride() {
+		return keys, nil
+	}
+	for _, rel := range []string{artifactSigningPublicKeyPath, artifactTrustedKeyringPath} {
+		if err := addFromFile(filepath.Join(filepath.Clean(workDir), rel), trustSourceWorkdir); err != nil {
+			return nil, err
 		}
 	}
 	return keys, nil
