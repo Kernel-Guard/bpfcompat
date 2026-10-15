@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added — library attach parity (stacked on attach truth)
+- `pkg/bpfcompat` reports the same attach evidence and verdict as the CLI.
+  - The host-load (`ValidateBeforeLoad` / `ValidateBytes`) and matrix
+    (`Validate`) results now carry `Status`, `Verdict`, `FailedStage` and
+    `Notes`, plus attach accounting: `Attach.Accounting`, `Attach.Coverage`,
+    the scope counts, and per-program `Attach.Programs` with outcome, errno,
+    errno family and `errno_only` attribution.
+  - A new `LoadAttachRequired` mode and a `WithRequiredPrograms` option give
+    the library the CLI's required-attach gaps: `ATTACH_NOT_EXERCISED`,
+    `ATTACH_SCOPE_EMPTY` and `ATTACH_ACCOUNTING_*`, plus `ATTACH_FAILED`.
+  - `Compatible()` reports the whole requested contract.
+  - The evaluation is `internal/runner.EvaluateValidatorResult`, checked
+    fixture by fixture against the matrix runner.
+  - All additions are additive. `Validate` returns
+    `ErrRequiredModeNeedsManifest` for `LoadAttachRequired`.
+
 ### Changed — verdict semantics (v0.5; changes validator bytes)
 - **Required attach means every selected program attached.** With
   `attach.required` in the manifest, a target whose object also carries
