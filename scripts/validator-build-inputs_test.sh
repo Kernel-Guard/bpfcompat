@@ -110,6 +110,48 @@ bad_lock "zlib1g-dev missing" '/^pkg=zlib1g-dev=/d'
 bad_lock "libc6-dev missing" '/^pkg=libc6-dev=/d'
 bad_lock "no compiler" '/^pkg=gcc-[0-9]+=/d'
 bad_lock "malformed reproduces" 's#^reproduces=.*#reproduces=e0e7fcf8#'
+bad_lock "apt_snapshot missing (moving archive)" '/^apt_snapshot=/d'
+bad_lock "apt_snapshot not a fixed timestamp" 's#^apt_snapshot=.*#apt_snapshot=latest#'
+
+# The archive keeps only the newest version per pocket: resolving the lock from
+# it breaks at the next SRU of any pinned package (and lets unpinned transitive
+# packages drift). Every package must come from the lock's fixed snapshot, with
+# apt's signature verification intact.
+snapshot="$(awk -F= '$1 == "apt_snapshot" { print $2 }' "$LOCK")"
+if bash "$BUILDER" --render-apt-config "$tmp/apt" >"$tmp/out" 2>&1; then
+  src="$(cat "$tmp/apt/sources.list.d/"*.sources 2>/dev/null || true)"
+  conf="$(cat "$tmp/apt/apt.conf.d/"* 2>/dev/null || true)"
+  if [[ "$(grep '^URIs:' <<<"$src")" == "URIs: https://snapshot.ubuntu.com/ubuntu/${snapshot}/" ]]; then
+    pass "apt resolves only from snapshot ${snapshot}"
+  else
+    fail "apt sources are not exactly the lock's snapshot: $(grep '^URIs:' <<<"$src" | tr '\n' ' ')"
+  fi
+  if grep -qx 'Suites: noble noble-updates noble-security' <<<"$src" &&
+    grep -qx 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' <<<"$src"; then
+    pass "snapshot covers noble/-updates/-security and is signature-checked"
+  else
+    fail "snapshot sources lack the noble pockets or Signed-By"
+  fi
+  if grep -Eq 'archive\.ubuntu\.com|security\.ubuntu\.com' <<<"$src$conf"; then
+    fail "apt configuration still names the moving archive"
+  else
+    pass "apt configuration never names the moving archive"
+  fi
+  if grep -Eq '^Acquire::https::Verify-Peer|AllowInsecureRepositories "true"|AllowUnauthenticated "true"|Check-Valid-Until|trusted=yes' <<<"$src$conf"; then
+    fail "apt configuration weakens signature/TLS checks beyond the snapshot host"
+  else
+    pass "apt keeps signature verification; TLS relaxed for snapshot.ubuntu.com only"
+  fi
+else
+  fail "build-validator-pinned.sh --render-apt-config failed: $(cat "$tmp/out")"
+fi
+inside="$(awk '/"--inside"/,/^fi$/' "$BUILDER")"
+if awk '/rm -f \/etc\/apt\/sources.list/ { r = NR } /apt-get update/ && !u { u = NR } END { exit !(r && u && r < u) }' <<<"$inside" &&
+  grep -q 'render_apt_config /etc/apt' <<<"$inside"; then
+  pass "--inside drops the image's archive sources before apt-get update"
+else
+  fail "--inside does not replace the image's archive sources with the snapshot before apt-get update"
+fi
 
 # ---------------------------------------------------------------- 3. binary identity
 if command -v cc >/dev/null && command -v readelf >/dev/null && command -v objdump >/dev/null; then

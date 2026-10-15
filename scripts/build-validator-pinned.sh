@@ -5,8 +5,11 @@
 #
 # The validator statically links distro libbpf/libelf/zlib/zstd/glibc, so the
 # runner image used to decide its bytes. This builds it inside the lock's
-# digest-pinned builder_image with exactly the lock's package versions (apt
-# fails closed if one is unavailable), checks the installed versions, builds
+# digest-pinned builder_image with exactly the lock's package versions,
+# resolved from the lock's fixed snapshot.ubuntu.com timestamp (apt_snapshot)
+# rather than the moving archive, so an Ubuntu SRU cannot remove a pinned
+# version or change an unpinned transitive one (apt fails closed if the
+# snapshot cannot provide them), checks the installed versions, builds
 # `make validator-static`'s recipe, proves the binary's libbpf/compiler with
 # check-validator-build-inputs.sh, and writes a JSON record of every input.
 #
@@ -37,6 +40,11 @@ validate_lock() {
     { echo "build-validator-pinned: lock needs exactly one builder_image" >&2; return 2; }
   [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] ||
     { echo "build-validator-pinned: builder_image must be pinned by @sha256 digest, got '$image'" >&2; return 2; }
+  local snapshot
+  snapshot="$(lock_value apt_snapshot)" ||
+    { echo "build-validator-pinned: lock needs exactly one apt_snapshot" >&2; return 2; }
+  [[ "$snapshot" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] ||
+    { echo "build-validator-pinned: apt_snapshot must be a snapshot.ubuntu.com id like 20261014T154800Z, got '$snapshot'" >&2; return 2; }
   pkgs="$(lock_pkgs)"
   [[ -n "$pkgs" ]] || { echo "build-validator-pinned: lock declares no pkg= lines" >&2; return 2; }
   while IFS= read -r line; do
@@ -50,6 +58,44 @@ validate_lock() {
       { echo "build-validator-pinned: lock must pin ${required}" >&2; return 2; }
   done
 }
+
+# Write the apt configuration that resolves every package from the lock's
+# snapshot into <apt-dir> (/etc/apt in the builder). The builder image has no
+# ca-certificates, and installing them would need the moving archive, so TLS
+# peer verification is off for snapshot.ubuntu.com only. Integrity does not
+# rest on TLS: apt still requires the InRelease signature against the image's
+# ubuntu-archive-keyring (Signed-By) and the per-file hashes, and unsigned or
+# insecure repositories stay refused.
+render_apt_config() {
+  local dir="$1" snapshot
+  snapshot="$(lock_value apt_snapshot)"
+  mkdir -p "$dir/sources.list.d" "$dir/apt.conf.d"
+  cat >"$dir/sources.list.d/bpfcompat-snapshot.sources" <<EOF
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/${snapshot}/
+Suites: noble noble-updates noble-security
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+  cat >"$dir/apt.conf.d/90bpfcompat-snapshot" <<'EOF'
+Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";
+Acquire::AllowInsecureRepositories "false";
+Acquire::AllowDowngradeToInsecureRepositories "false";
+APT::Get::AllowUnauthenticated "false";
+Acquire::Retries "5";
+Acquire::http::Timeout "60";
+Acquire::https::Timeout "60";
+Acquire::Languages "none";
+EOF
+}
+
+# --render-apt-config <dir>: write the snapshot apt configuration (tests).
+if [[ "${1:-}" == "--render-apt-config" ]]; then
+  [[ $# -eq 2 ]] || { echo "Usage: $0 --render-apt-config <dir>" >&2; exit 2; }
+  validate_lock
+  render_apt_config "$2"
+  exit 0
+fi
 
 # --check-lock: validate the lock's shape only (CI regression test).
 if [[ "${1:-}" == "--check-lock" ]]; then
@@ -68,8 +114,28 @@ if [[ "${1:-}" == "--inside" ]]; then
   validate_lock
   export DEBIAN_FRONTEND=noninteractive
   mapfile -t pkgs < <(lock_pkgs)
-  apt-get update -qq
-  apt-get install -y -qq --no-install-recommends make "${pkgs[@]}" >/dev/null
+  snapshot="$(lock_value apt_snapshot)"
+  # Only the snapshot: drop the image's moving-archive sources.
+  rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+  rm -rf /var/lib/apt/lists/*
+  render_apt_config /etc/apt
+  updated=0
+  for attempt in 1 2 3; do
+    if timeout 600 apt-get update -qq; then
+      updated=1
+      break
+    fi
+    echo "::warning::apt-get update from snapshot $snapshot failed (attempt $attempt of 3)" >&2
+    sleep $((attempt * 10))
+  done
+  if [[ "$updated" -ne 1 ]]; then
+    echo "::error::cannot read the noble indexes of snapshot.ubuntu.com snapshot $snapshot" >&2
+    exit 1
+  fi
+  if ! timeout 1200 apt-get install -y -qq --no-install-recommends make "${pkgs[@]}" >/dev/null; then
+    echo "::error::snapshot $snapshot cannot provide the locked package versions; fix validator/build-inputs.lock (and cut a new release candidate)" >&2
+    exit 1
+  fi
   : >/out/installed.txt
   for spec in "${pkgs[@]}"; do
     name="${spec%%=*}"
@@ -134,6 +200,7 @@ mkdir -p "$(dirname "$out_bin")" "$(dirname "$out_json")"
 cp "$work/bpfcompat-validator" "$out_bin"
 jq -n \
   --arg image "$image" \
+  --arg snapshot "$(lock_value apt_snapshot)" \
   --arg tree "$tree" \
   --arg sha "$sha" \
   --arg reproduction "$reproduction" \
@@ -145,6 +212,7 @@ jq -n \
     sha256: $sha,
     validator_tree: $tree,
     builder_image: $image,
+    apt_snapshot: $snapshot,
     build_inputs_lock_sha256: $lock_sha,
     packages: ($installed | split("\n") | map(select(length > 0))),
     reproduction: $reproduction

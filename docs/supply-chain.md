@@ -41,7 +41,8 @@ tags. This is an explicit solo-maintainer posture, not independent review.
 The static validator links distro libbpf, libelf, zlib, zstd and glibc, so
 its bytes depend on those packages, not only on `validator/` sources. It is
 built in the digest-pinned builder image named in `validator/build-inputs.lock`
-with exactly the packages listed there; the build fails closed if any version
+with exactly the packages listed there, resolved from the lock's fixed
+snapshot.ubuntu.com timestamp; the build fails closed if any version
 is unavailable, proves the linked libbpf version and compiler from the binary,
 and must be byte-identical to the lock's recorded reproduction when the
 validator tree is unchanged. A stable tag additionally refuses any validator
@@ -52,21 +53,31 @@ candidate.
 Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
 (`X.Y`, `latest`) are reachable only through the stable release channel.
 
-### Validator lock maintenance (known limitation)
+### Validator lock maintenance
 
 `validator/build-inputs.lock` pins exact package versions, several of them from
 the `noble-updates` pocket (e.g. `libc6-dev`, `zlib1g-dev`, `libelf-dev`,
-`gcc-13`). Ubuntu's archive keeps only the newest version in `-updates`, so
-the next stable-release update (SRU) of any of them removes the pinned version
-and `scripts/build-validator-pinned.sh` then fails closed at `apt-get install`.
-That is intended: bump the lock (new versions, new `reproduces=` line from a
-pinned build), which changes the shipped validator and therefore needs a new
-release candidate. Pinning the apt step to a fixed snapshot.ubuntu.com
-timestamp would keep old versions installable. It is a follow-up: one local
-experiment (snapshot `20261014T154800Z`, `ca-certificates` installed first)
-reproduced the qualified validator byte-for-byte in about 8 minutes, but an
-earlier identical attempt stalled for over 13 minutes, so it is not wired into
-the release build until it is shown to be reliable.
+`binutils`, `gcc-13`). Ubuntu's archive keeps only the newest version in each
+pocket, so resolving them from the moving archive would fail at the next
+stable-release update (SRU) of any of them, and would let unpinned transitive
+packages (`linux-libc-dev` headers, `libisl23`/`libmpc3`/`libmpfr6`) drift.
+The lock therefore also names `apt_snapshot`, a fixed snapshot.ubuntu.com
+timestamp: the builder drops the image's archive sources and resolves every
+package from that snapshot of `noble`, `noble-updates` and `noble-security`.
+The builder image has no `ca-certificates`, so TLS peer verification is
+disabled for `snapshot.ubuntu.com` only; apt still verifies the snapshot's
+`InRelease` signature against the digest-pinned image's
+`ubuntu-archive-keyring` and every index and package hash. If the snapshot
+cannot provide a locked version, or cannot be reached after three attempts,
+`scripts/build-validator-pinned.sh` fails closed.
+
+Seven pinned builds against snapshot `20261014T154800Z` on 2026-10-15
+reproduced the qualified v0.4.0-rc.4 validator (`e0e7fcf8...`) byte-for-byte,
+each in 21-97 seconds.
+
+To move to newer packages, choose a newer snapshot, update the `pkg=` versions
+and the `reproduces=` line from a pinned build, and cut a new release
+candidate: that changes the shipped validator.
 
 `dist/validator-build-inputs.json` is a build record: it is attested with the
 candidate provenance and kept in the workflow run artifact, but it is not a
