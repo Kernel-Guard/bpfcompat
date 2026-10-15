@@ -141,6 +141,9 @@ func resultFromTarget(t schema.Target) Result {
 		Verdict:     t.Verdict,
 		FailedStage: t.FailedStage,
 		Notes:       t.Notes,
+		// The run-level rule: a target that ran another kernel series or
+		// distribution than requested does not establish the requested one.
+		environmentNotEstablished: !schema.EstablishedRequestedEnvironment(&t),
 		Kernel: KernelInfo{
 			BTF: t.BTF != nil && t.BTF.KernelBTFAvailable,
 		},

@@ -263,6 +263,34 @@ func TestResultFromTargetCarriesAttachEvidence(t *testing.T) {
 	}
 }
 
+// A target that booted a kernel outside the profile's family has a genuine
+// verdict about that kernel, but it cannot establish the requested one: the
+// CLI run is INFRA_ERROR, so the library must not call it Compatible.
+func TestResultFromTargetWrongKernelFamilyIsNotCompatible(t *testing.T) {
+	no, yes := false, true
+	tgt := schema.Target{ProfileID: "rhel-8-4.18", Required: true, Status: "pass", Verdict: schema.VerdictCompatible,
+		Environment: &schema.EnvironmentCheck{RequestedKernelFamily: "4.18", ObservedKernel: "5.15.0-206.153.7.el8uek.x86_64", KernelFamilyMatch: &no},
+		Validation:  &schema.Validation{LoadStatus: "pass"}}
+	r := resultFromTarget(tgt)
+	if !r.OK() || r.Verdict != schema.VerdictCompatible {
+		t.Fatalf("the target's own evidence must be kept: OK=%v verdict=%s", r.OK(), r.Verdict)
+	}
+	if r.Compatible() {
+		t.Fatal("Compatible() must be false when the requested environment was not established")
+	}
+	if got := schema.RunVerdict([]schema.Target{tgt}); got != schema.VerdictInfraError {
+		t.Fatalf("precondition: CLI run verdict = %s, want INFRA_ERROR", got)
+	}
+	tgt.Environment.KernelFamilyMatch = &yes
+	if r := resultFromTarget(tgt); !r.Compatible() {
+		t.Fatal("matching kernel family: Compatible() should be true")
+	}
+	tgt.Environment = nil // older report, unknown: not a mismatch
+	if r := resultFromTarget(tgt); !r.Compatible() {
+		t.Fatal("unknown environment must not be treated as a mismatch")
+	}
+}
+
 func TestValidateRefusesRequiredModeWithoutManifestContract(t *testing.T) {
 	_, err := Validate(context.Background(), Config{Artifact: "x.bpf.o", Quick: true, Mode: LoadAttachRequired})
 	if !errors.Is(err, ErrRequiredModeNeedsManifest) {

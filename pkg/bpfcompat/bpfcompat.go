@@ -86,9 +86,18 @@ type Result struct {
 	Status      string
 	Verdict     string
 	FailedStage string
-	// Notes are the load/attach notes the CLI would record, e.g.
-	// "attach not fully exercised: 1/2 selected programs attached, ...".
+	// Notes: on the host-load path, the load/attach/classification notes the
+	// CLI records for this evidence (a subset of the CLI's notes: no
+	// capability, map-fixup or per-program load notes), e.g. "attach not
+	// fully exercised: 1/2 selected programs attached, ...". On the matrix
+	// path, the target's notes as reported.
 	Notes []string
+
+	// environmentNotEstablished is set on the matrix path when the guest
+	// booted another kernel series or distribution than the profile requested
+	// (schema.EstablishedRequestedEnvironment). The target's own Verdict is
+	// kept, but the requested contract was not established.
+	environmentNotEstablished bool
 
 	// Profile is the matrix profile id this result is for. Empty for
 	// ValidateBeforeLoad (the target is simply the local kernel).
@@ -111,9 +120,14 @@ func (r Result) OK() bool { return r.Loadable }
 
 // Compatible reports whether the whole requested contract was established:
 // the object loaded and, when an attach mode was requested, the attach
-// requirements held (Verdict COMPATIBLE). With LoadAttachRequired this is the
-// check to use.
-func (r Result) Compatible() bool { return r.Verdict == schema.VerdictCompatible }
+// requirements held (Verdict COMPATIBLE). On the matrix path it also requires
+// that the guest ran the requested environment: a target that booted another
+// kernel series is not Compatible even when its own Verdict is COMPATIBLE
+// (the CLI run is INFRA_ERROR). With LoadAttachRequired this is the check to
+// use.
+func (r Result) Compatible() bool {
+	return r.Verdict == schema.VerdictCompatible && !r.environmentNotEstablished
+}
 
 // KernelInfo identifies the kernel the object was validated against.
 type KernelInfo struct {

@@ -122,11 +122,21 @@ therefore report what the CLI reports for the same evidence:
 - `Attach.Programs`: per program, the `Outcome`, plus `Errno`, `Detail`,
   `ReasonClass` and `Attribution: errno_only` for a failure. The errno
   family is evidence, not a diagnosed cause.
-- `Notes`, e.g. `attach not fully exercised: 1/2 selected programs attached,
-  1 not exercised (xdp x1)`.
+- `Notes`. On the host-load path these are the CLI's load, attach and
+  classification notes for the same evidence: a subset of the CLI's notes,
+  without the capability, map-fixup or per-program load notes. Example:
+  `attach not fully exercised: 1/2 selected programs attached, 1 not
+  exercised (xdp x1)`.
 
-Under `LoadAttachRequired`, `OK()` can be true while `Compatible()` is false.
-The object loaded, but the attach contract was not established:
+`OK()` stays the load gate only. Use `Compatible()` for the attach contract
+(and, on the matrix path, for the requested environment). Under
+`LoadAttachRequired`, `OK()` can be true while `Compatible()` is false: the
+object loaded, but the attach contract was not established.
+
+Unprivileged library use is classified exactly like the CLI. A
+`CAPABILITY_FAILURE` (INCOMPATIBLE) may reflect missing `CAP_BPF` or
+`CAP_SYS_ADMIN` on the calling process rather than the kernel. The CLI always
+runs as root inside a VM.
 
 | Evidence | Status / Classification |
 |---|---|
