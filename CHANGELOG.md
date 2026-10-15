@@ -7,6 +7,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- An installed CLI can now run `bpfcompat test --quick` from any directory.
+  - The standard VM profiles (`vm/profiles`) are compiled into the binary.
+  - Lookup order is `$BPFCOMPAT_PROFILE_DIR`, then `./vm/profiles`, then the
+    built-in catalog. An explicit directory has no fallback.
+  - A missing profile fails the target and names every location searched.
+  - Built-in profiles cache their images under `$BPFCOMPAT_CACHE_DIR`
+    (default `~/.cache/bpfcompat`). The exact profile used is saved under the
+    run directory.
+  - Checkout and GitHub Action runs still resolve `./vm/profiles` first, so
+    their behavior is unchanged.
+- `bpfcompat doctor` checks a host for VM-backed runs:
+  - host tools, with package names;
+  - real KVM usability: opens `/dev/kvm` read-write, checks the KVM API
+    version, and creates a VM;
+  - the static validator;
+  - where each profile and its image come from.
+
+### Changed
+- `bpfcompat test` / `test-command` now warn on stderr when KVM is not usable
+  and guests will fall back to slow TCG emulation. Acceleration and timeouts
+  are unchanged.
+- `make doctor` now requires `/dev/kvm` to be read-write for the current
+  user, not merely present.
+
+### Fixed
+- The README and Inspektor Gadget case-study quickstart commands now include
+  the required `--out`. Without it they exited with
+  `--out is required`.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
