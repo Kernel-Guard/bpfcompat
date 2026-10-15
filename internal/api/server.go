@@ -887,8 +887,15 @@ func (s *Server) handleAgentDecision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := cloudregistry.NewStore(s.cfg.WorkDir)
-	if _, ok := requireRegistryIdentityForAction(w, r, "agent_decision", tenant, projectID); !ok {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+	identityWriter := &loggingResponseWriter{ResponseWriter: w}
+	if _, ok := requireRegistryIdentityForAction(identityWriter, r, "agent_decision", tenant, projectID); !ok {
+		// Only a 403 means a verified identity lacked scope; anything else
+		// (missing/invalid token, verifier unavailable) is unauthenticated.
+		identityErr := cloudregistry.ErrUnauthorized
+		if identityWriter.status == http.StatusForbidden {
+			identityErr = cloudregistry.ErrForbidden
+		}
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:       "agent_decision",
 			Tenant:       tenant,
 			Project:      projectID,
@@ -898,12 +905,12 @@ func (s *Server) handleAgentDecision(w http.ResponseWriter, r *http.Request) {
 			Metadata: map[string]any{
 				"agent_id": strings.TrimSpace(req.AgentID),
 			},
-		})
+		}, identityErr)
 		return
 	}
 	principal, err := store.AuthorizeToken(bearerToken(r), tenant, projectID, false)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:       "agent_decision",
 			Tenant:       tenant,
 			Project:      projectID,
@@ -913,7 +920,7 @@ func (s *Server) handleAgentDecision(w http.ResponseWriter, r *http.Request) {
 			Metadata: map[string]any{
 				"agent_id": strings.TrimSpace(req.AgentID),
 			},
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
@@ -1779,14 +1786,14 @@ func (s *Server) handleRegistryProjects(w http.ResponseWriter, r *http.Request) 
 			}
 			principal, err := store.AuthorizeRead(token, tenant, projectID)
 			if err != nil {
-				appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+				appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 					Action:  "project_read_denied",
 					Actor:   tokenSubject(token),
 					Tenant:  tenant,
 					Project: projectID,
 					Status:  "denied",
 					Message: err.Error(),
-				})
+				}, err)
 				writeError(w, authzStatus(err), err.Error())
 				return
 			}
@@ -1820,13 +1827,13 @@ func (s *Server) handleRegistryProjects(w http.ResponseWriter, r *http.Request) 
 		}
 		principal, err := store.AuthorizeToken(token, tenant, "", false)
 		if err != nil {
-			appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+			appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 				Action:  "project_list_denied",
 				Actor:   tokenSubject(token),
 				Tenant:  tenant,
 				Status:  "denied",
 				Message: err.Error(),
-			})
+			}, err)
 			writeError(w, authzStatus(err), err.Error())
 			return
 		}
@@ -1862,14 +1869,14 @@ func (s *Server) handleRegistryProjects(w http.ResponseWriter, r *http.Request) 
 		}
 		principal, err := store.AuthorizeToken(token, reqTenant, reqProject, true)
 		if err != nil {
-			appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+			appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 				Action:  "project_upsert_denied",
 				Actor:   tokenSubject(token),
 				Tenant:  reqTenant,
 				Project: reqProject,
 				Status:  "denied",
 				Message: err.Error(),
-			})
+			}, err)
 			writeError(w, authzStatus(err), err.Error())
 			return
 		}
@@ -1930,14 +1937,14 @@ func (s *Server) handleRegistryArtifactUpload(w http.ResponseWriter, r *http.Req
 	token := bearerToken(r)
 	principal, err := store.AuthorizeToken(token, tenant, projectID, true)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:  "artifact_upload_denied",
 			Actor:   tokenSubject(token),
 			Tenant:  tenant,
 			Project: projectID,
 			Status:  "denied",
 			Message: err.Error(),
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
@@ -2065,14 +2072,14 @@ func (s *Server) handleRegistryArtifacts(w http.ResponseWriter, r *http.Request)
 	token := bearerToken(r)
 	principal, err := store.AuthorizeRead(token, tenant, projectID)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:  "artifact_list_denied",
 			Actor:   tokenSubject(token),
 			Tenant:  tenant,
 			Project: projectID,
 			Status:  "denied",
 			Message: err.Error(),
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
@@ -2122,7 +2129,7 @@ func (s *Server) handleRegistryArtifactDownload(w http.ResponseWriter, r *http.R
 	token := bearerToken(r)
 	principal, err := store.AuthorizeRead(token, tenant, projectID)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:          "artifact_download_denied",
 			Actor:           tokenSubject(token),
 			Tenant:          tenant,
@@ -2131,7 +2138,7 @@ func (s *Server) handleRegistryArtifactDownload(w http.ResponseWriter, r *http.R
 			ArtifactVersion: version,
 			Status:          "denied",
 			Message:         err.Error(),
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
@@ -2209,14 +2216,14 @@ func (s *Server) handleRegistryHistoryVerify(w http.ResponseWriter, r *http.Requ
 	token := bearerToken(r)
 	principal, err := store.AuthorizeRead(token, tenant, projectID)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:  "history_verify_denied",
 			Actor:   tokenSubject(token),
 			Tenant:  tenant,
 			Project: projectID,
 			Status:  "denied",
 			Message: err.Error(),
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
@@ -2280,14 +2287,14 @@ func (s *Server) handleRegistryAuditEvents(w http.ResponseWriter, r *http.Reques
 	// fallback must not apply here.
 	principal, err := store.AuthorizeToken(token, tenant, projectID, false)
 	if err != nil {
-		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
+		appendRegistryAuthzDenialAudit(r, store, cloudregistry.AuditEvent{
 			Action:  "audit_list_denied",
 			Actor:   tokenSubject(token),
 			Tenant:  tenant,
 			Project: projectID,
 			Status:  "denied",
 			Message: err.Error(),
-		})
+		}, err)
 		writeError(w, authzStatus(err), err.Error())
 		return
 	}
