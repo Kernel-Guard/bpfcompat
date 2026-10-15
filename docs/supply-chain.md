@@ -64,16 +64,26 @@ packages (`linux-libc-dev` headers, `libisl23`/`libmpc3`/`libmpfr6`) drift.
 The lock therefore also names `apt_snapshot`, a fixed snapshot.ubuntu.com
 timestamp: the builder drops the image's archive sources and resolves every
 package from that snapshot of `noble`, `noble-updates` and `noble-security`.
-The builder image has no `ca-certificates`, so TLS peer verification is
-disabled for `snapshot.ubuntu.com` only; apt still verifies the snapshot's
-`InRelease` signature against the digest-pinned image's
-`ubuntu-archive-keyring` and every index and package hash. If the snapshot
-cannot provide a locked version, or cannot be reached after three attempts,
-`scripts/build-validator-pinned.sh` fails closed.
+A future `apt_snapshot` is refused: snapshot.ubuntu.com answers it with the
+newest state so far, i.e. the moving archive.
 
-Seven pinned builds against snapshot `20261014T154800Z` on 2026-10-15
-reproduced the qualified v0.4.0-rc.4 validator (`e0e7fcf8...`) byte-for-byte,
-each in 21-97 seconds.
+The builder image has no `ca-certificates`, so the runner's CA bundle
+(`/etc/ssl/certs/ca-certificates.crt`, or `BPFCOMPAT_SNAPSHOT_CA_BUNDLE`) is
+mounted read-only and apt verifies TLS to `snapshot.ubuntu.com` against it
+(`apt_tls: tls-verified-host-ca` in the build record). Without a bundle the
+build falls back to `apt_tls: signature-only`: TLS peer verification is off for
+`snapshot.ubuntu.com` only. In both modes apt verifies the snapshot's
+`InRelease` signature against the digest-pinned image's
+`ubuntu-archive-keyring` and every index and package hash; without TLS an
+attacker could at most replay another genuine Ubuntu-signed index, which the
+exact-version check or the recorded byte-identity check then refuses, and that
+is no weaker than the image's default plain-http archive sources. If the
+snapshot cannot provide a locked version, or any index cannot be fetched after
+three attempts, `scripts/build-validator-pinned.sh` fails closed.
+
+Eleven pinned builds against snapshot `20261014T154800Z` on 2026-10-15, in both
+TLS modes, reproduced the qualified v0.4.0-rc.4 validator (`e0e7fcf8...`)
+byte-for-byte, each in 21-97 seconds.
 
 To move to newer packages, choose a newer snapshot, update the `pkg=` versions
 and the `reproduces=` line from a pinned build, and cut a new release
