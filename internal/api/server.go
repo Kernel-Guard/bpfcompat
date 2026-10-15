@@ -3150,8 +3150,9 @@ func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlag
 	// exited by now; require a regular file so a planted symlink (e.g. to a
 	// host file) is never followed when the server reads the artifact.
 	if err := ensureRegularCompiledObject(outPath); err != nil {
+		// sourcePath embeds the client-chosen upload filename (CWE-117).
 		logger.Warn("source upload compile produced an unusable object",
-			slog.String("source", sourcePath),
+			slog.String("source", sanitizeLogValue(sourcePath)),
 			slog.String("error", err.Error()),
 		)
 		return "", errors.New("source compilation failed: the compiler did not produce a regular object file")
