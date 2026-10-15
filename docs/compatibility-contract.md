@@ -81,7 +81,10 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   inside the records is still `NEW_REGRESSION`; a side whose attach phase did
   not run makes no attach claim. Consequence: a >64-program object with any
   program that is not attached (not attachable, not selected, or failed) cannot
-  pass the diff gate on identical evidence until every program is recorded. In the
+  pass the diff gate on identical evidence until every program is recorded.
+  When every program attached on both sides, the cell is comparable, but
+  program removals and section changes among programs that are unrecorded on
+  both sides are not visible in it (no attach regression can hide there). In the
   runner, required-mode verdicts use only whole-object counts (every selected
   program attached, none failed); a manifest-required program outside the
   records is treated as not attached.

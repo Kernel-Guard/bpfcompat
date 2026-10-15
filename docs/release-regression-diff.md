@@ -127,7 +127,8 @@ too. `kernel` is `environment.observed_kernel`; `os` is the observed os-release
 identity and `validator` the artifact-mode validator sha256, both compared only
 when both sides record them (a validator change is a note, never a reason for
 `INCONCLUSIVE`). Only `attribution: artifact` is a statement about the
-candidate's shipped program on its own. A gate that should block only on
+candidate's shipped program on its own (in command mode it may be the loader
+alone; `changed_inputs` says which). A gate that should block only on
 program changes can filter on it; the default gate blocks on every required
 `NEW_REGRESSION`, because "my unchanged program broke on the updated kernel" is
 the question bpfcompat exists to answer.
