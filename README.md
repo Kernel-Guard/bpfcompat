@@ -377,7 +377,11 @@ curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts
 ```
 
 Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`, and
-`BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)).
+`BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)). A
+pinned version must be an exact release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`), and its
+signature or attestation must come from that tag's release run. A validator
+installed outside `/usr/local/libexec/bpfcompat` is not auto-discovered: point
+`BPFCOMPAT_VALIDATOR_BIN` at it.
 
 **1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and*
 the static validator (to a location the CLI auto-discovers), checksum- and

@@ -12,20 +12,41 @@
 # Environment overrides:
 #   BPFCOMPAT_VERSION      release tag to install (default: latest)
 #   BPFCOMPAT_BIN_DIR      CLI install dir       (default: /usr/local/bin)
-#   BPFCOMPAT_LIBEXEC_DIR  validator install dir (default: /usr/local/libexec/bpfcompat)
+#   BPFCOMPAT_LIBEXEC_DIR  validator install dir (default: /usr/local/libexec/bpfcompat;
+#                          any other dir needs BPFCOMPAT_VALIDATOR_BIN at run time)
 #   BPFCOMPAT_NO_VALIDATOR set to 1 to install the CLI only
 #
 # Linux CLI assets are published for x86_64 and arm64. The static validator is
 # currently published for x86_64 only.
+#
+# The whole installer is the body of main(), called on the last line, so a
+# download cut short by `curl | sh` runs nothing instead of half an install.
 set -eu
 
 REPO="Kernel-Guard/bpfcompat"
-BIN_DIR="${BPFCOMPAT_BIN_DIR:-/usr/local/bin}"
-LIBEXEC_DIR="${BPFCOMPAT_LIBEXEC_DIR:-/usr/local/libexec/bpfcompat}"
+# The locations resolveValidatorBinary() (internal/runner) searches by itself.
+DEFAULT_LIBEXEC_DIR="/usr/local/libexec/bpfcompat"
+ALT_LIBEXEC_DIR="/usr/libexec/bpfcompat"
 
 err() { printf 'bpfcompat-install: %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# needs_root DIR: true when DIR (or, if it does not exist yet, its nearest
+# existing ancestor, which `install -d` would create it under) is not writable.
+needs_root() {
+  d="$1"
+  while [ ! -d "$d" ]; do
+    parent="$(dirname "$d")"
+    [ "$parent" != "$d" ] || break
+    d="$parent"
+  done
+  [ ! -w "$d" ]
+}
+
+main() {
+BIN_DIR="${BPFCOMPAT_BIN_DIR:-/usr/local/bin}"
+LIBEXEC_DIR="${BPFCOMPAT_LIBEXEC_DIR:-$DEFAULT_LIBEXEC_DIR}"
 
 have curl || die "curl is required"
 if have sha256sum; then SHACHK="sha256sum -c"; elif have shasum; then SHACHK="shasum -a 256 -c"; else
@@ -49,6 +70,10 @@ if [ "$VERSION" = "latest" ]; then
     | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
+# The tag is spliced into download URLs and into the exact signing identity
+# below, so it must be a plain release tag (no path segments, no regex).
+printf '%s\n' "$VERSION" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' ||
+  die "invalid release tag '$VERSION' (expected vX.Y.Z or vX.Y.Z-rc.N)"
 base="https://github.com/$REPO/releases/download/$VERSION"
 err "installing bpfcompat $VERSION (linux/$GOARCH)"
 
@@ -83,14 +108,16 @@ fi
 # 1. Cryptographic verification first. Checksums come from the same origin as
 #    the binaries, so they catch corruption but not a malicious mirror; the
 #    Sigstore signature over SHA256SUMS or GitHub's build attestation is what
-#    makes tampering detectable. Verification is mandatory.
+#    makes tampering detectable. Verification is mandatory, and it is bound to
+#    the requested tag: a signature or attestation produced by the release run
+#    of a different tag (say, a prerelease) does not vouch for $VERSION.
 if have cosign; then
   curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
     "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
   curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
     "$base/SHA256SUMS.crt" || die "cannot fetch SHA256SUMS.crt for signature verification"
   if cosign verify-blob --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-      --certificate-identity-regexp "^https://github.com/$REPO/.github/workflows/release-artifacts.yml@refs/tags/v" \
+      --certificate-identity "https://github.com/$REPO/.github/workflows/release-artifacts.yml@refs/tags/$VERSION" \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
       SHA256SUMS >/dev/null 2>&1; then
     err "cosign signature over SHA256SUMS verified"
@@ -100,11 +127,13 @@ if have cosign; then
 elif have gh && gh attestation --help >/dev/null 2>&1; then
   err "cosign not found; verifying GitHub build attestations"
   GH_REPO="$REPO" gh attestation verify "$CLI_ASSET" --repo "$REPO" \
-    --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" >/dev/null 2>&1 ||
+    --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
+    --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
     die "GitHub attestation verification FAILED for $CLI_ASSET"
   if [ "$install_validator" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$VALIDATOR_ASSET" --repo "$REPO" \
-      --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" >/dev/null 2>&1 ||
+      --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
+      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
       die "GitHub attestation verification FAILED for $VALIDATOR_ASSET"
   fi
   err "GitHub build attestations verified"
@@ -125,24 +154,37 @@ done
 $SHACHK .install-checklist >/dev/null || die "checksum verification failed for: $DL_FILES"
 err "checksums verified: $DL_FILES"
 
-# Install, using sudo only when the target dirs are not writable.
-SUDO=""
-if [ ! -w "$(dirname "$BIN_DIR")" ] || { [ -d "$BIN_DIR" ] && [ ! -w "$BIN_DIR" ]; }; then
-  if have sudo; then
-    SUDO="sudo"
-  else
-    die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
-  fi
+# Install, using sudo only for the target dirs that are not writable. Both
+# dirs are checked before anything is installed, so a missing permission
+# cannot leave the CLI installed without its validator.
+BIN_SUDO=""
+if needs_root "$BIN_DIR"; then
+  have sudo || die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
+  BIN_SUDO="sudo"
+fi
+LIBEXEC_SUDO=""
+if [ "$install_validator" = "1" ] && needs_root "$LIBEXEC_DIR"; then
+  have sudo || die "no write access to $LIBEXEC_DIR and sudo not available (set BPFCOMPAT_LIBEXEC_DIR to a writable path, or BPFCOMPAT_NO_VALIDATOR=1)"
+  LIBEXEC_SUDO="sudo"
 fi
 
-$SUDO install -d "$BIN_DIR"
-$SUDO install -m 0755 "$CLI_ASSET" "$BIN_DIR/bpfcompat"
+$BIN_SUDO install -d "$BIN_DIR"
+if [ "$install_validator" = "1" ]; then
+  $LIBEXEC_SUDO install -d "$LIBEXEC_DIR"
+fi
+$BIN_SUDO install -m 0755 "$CLI_ASSET" "$BIN_DIR/bpfcompat"
 err "installed $BIN_DIR/bpfcompat"
 
 if [ "$install_validator" = "1" ]; then
-  $SUDO install -d "$LIBEXEC_DIR"
-  $SUDO install -m 0755 "$VALIDATOR_ASSET" "$LIBEXEC_DIR/bpfcompat-validator"
-  err "installed $LIBEXEC_DIR/bpfcompat-validator (auto-discovered by 'bpfcompat test')"
+  $LIBEXEC_SUDO install -m 0755 "$VALIDATOR_ASSET" "$LIBEXEC_DIR/bpfcompat-validator"
+  case "$LIBEXEC_DIR" in
+    "$DEFAULT_LIBEXEC_DIR"|"$ALT_LIBEXEC_DIR")
+      err "installed $LIBEXEC_DIR/bpfcompat-validator (auto-discovered by 'bpfcompat test')" ;;
+    *)
+      err "installed $LIBEXEC_DIR/bpfcompat-validator"
+      err "note: 'bpfcompat test' does not search $LIBEXEC_DIR; set"
+      err "      export BPFCOMPAT_VALIDATOR_BIN=$LIBEXEC_DIR/bpfcompat-validator" ;;
+  esac
 fi
 
 printf '\n'
@@ -151,3 +193,6 @@ printf '\nNext:\n'
 printf '  bpfcompat test --artifact <your.bpf.o> --quick        # needs a KVM-capable Linux host (qemu-system-%s)\n' "$QEMU_ARCH"
 printf '  bpfcompat test --artifact ghcr.io/org/gadget:tag --quick   # validate a published OCI gadget\n'
 printf 'Docs: https://github.com/%s\n' "$REPO"
+}
+
+main "$@"
