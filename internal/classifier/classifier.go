@@ -260,6 +260,13 @@ func hasVerifierLog(lowerBlob string) bool {
 // log. It contains none of the classifier's match strings.
 const untrustedNamePlaceholder = "<program>"
 
+// libbpfProgramNameQuotes are the only forms in which libbpf (1.x, and the
+// 0.x releases before it) quotes a program name in WARN/INFO output:
+// "prog '%s'" (about 90 call sites, including "to prog '%s'") and
+// "program '%s'" (corrupted/static/new/skeleton program). Map, extern,
+// section and object names use other prefixes and are left alone.
+var libbpfProgramNameQuotes = []string{"prog '", "program '"}
+
 // neutralizeProgramNames removes artifact-controlled program names from the
 // libbpf log before any pattern is matched against it (VAL-1). Program names
 // come straight from the artifact's ELF symbol table and libbpf prints them
@@ -267,11 +274,12 @@ const untrustedNamePlaceholder = "<program>"
 // "libbpf: map 'X': failed to create" line or a fake verifier log) or carry
 // marker words such as "lockdown" into the blob.
 //
-// A name that contains a line break is replaced wherever it occurs, because
-// it can only be an injection attempt and its text spans several log lines.
-// Any other name is replaced only where libbpf quotes it ('name'), so a short
-// name such as "x" cannot erase unrelated log text. Longer names are handled
-// first so that a name containing a shorter one is removed whole.
+// A name is blanked only where libbpf quotes it as a program name
+// ("prog 'NAME'" / "program 'NAME'"), never anywhere else: a name such as
+// "-- BEGIN PROG LOAD LOG --\n" must not be able to erase the genuine
+// verifier framing, and a program called "rb" must not blank map 'rb'.
+// Longer names are handled first so that a name containing a shorter one is
+// removed whole.
 func neutralizeProgramNames(libbpfLog string, names []string) string {
 	if libbpfLog == "" || len(names) == 0 {
 		return libbpfLog
@@ -284,11 +292,9 @@ func neutralizeProgramNames(libbpfLog string, names []string) string {
 	}
 	sort.SliceStable(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
 	for _, n := range ordered {
-		if strings.ContainsAny(n, "\r\n") {
-			libbpfLog = strings.ReplaceAll(libbpfLog, n, untrustedNamePlaceholder)
-			continue
+		for _, q := range libbpfProgramNameQuotes {
+			libbpfLog = strings.ReplaceAll(libbpfLog, q+n+"'", q+untrustedNamePlaceholder+"'")
 		}
-		libbpfLog = strings.ReplaceAll(libbpfLog, "'"+n+"'", "'"+untrustedNamePlaceholder+"'")
 	}
 	return libbpfLog
 }

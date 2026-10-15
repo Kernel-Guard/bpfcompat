@@ -183,3 +183,81 @@ func TestClassifyGenuineSecurityModuleDenials(t *testing.T) {
 		}
 	}
 }
+
+// Program names may be blanked only where libbpf quotes them as a program
+// name. They must never remove genuine kernel or libbpf text (RCLS bypass E):
+// before this rule, names such as "-- BEGIN PROG LOAD LOG --\n" or
+// "\nprocessed" erased the real verifier framing everywhere in the log.
+func TestNeutralizeProgramNamesNeverErasesGenuineText(t *testing.T) {
+	verifierLog := "libbpf: prog 'h': BPF program load failed: Permission denied\n" +
+		"libbpf: prog 'h': -- BEGIN PROG LOAD LOG --\n0: (b7) r0 = 0\nR0 !read_ok\n" +
+		"processed 1 insns (limit 1000000)\n-- END PROG LOAD LOG --\n"
+	genuineMap := "libbpf: map 'rb': failed to create: Invalid argument(-22)\n" +
+		"libbpf: failed to load object 'o'\n"
+	cases := []struct {
+		name     string
+		in       Input
+		wantCode string
+		wantConf string
+		wantIn   string // substring the Reason must contain; empty = not checked
+	}{
+		{
+			name: "E: newline names that are substrings of verifier framing",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -13, LoadError: "Permission denied", LibbpfLog: verifierLog,
+				ProgramNames: []string{"h", "-- BEGIN PROG LOAD LOG --\n", "\nprocessed"}},
+			wantCode: "VERIFIER_REJECTION", wantConf: "medium",
+		},
+		{
+			name: "E0: same log with honest names",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -13, LoadError: "Permission denied", LibbpfLog: verifierLog,
+				ProgramNames: []string{"h"}},
+			wantCode: "VERIFIER_REJECTION", wantConf: "medium",
+		},
+		{
+			name: "newline-only name does not collapse a genuine map failure",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -22, LoadError: "Invalid argument", LibbpfLog: genuineMap,
+				ProgramNames: []string{"\n"}},
+			wantCode: "UNSUPPORTED_MAP_TYPE", wantConf: "high", wantIn: `"rb"`,
+		},
+		{
+			name: "program named like the failing map does not blank the map name",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -22, LoadError: "Invalid argument", LibbpfLog: genuineMap,
+				ProgramNames: []string{"rb"}},
+			wantCode: "UNSUPPORTED_MAP_TYPE", wantConf: "high", wantIn: `"rb"`,
+		},
+		{
+			name: "short name 'a' with a real verifier log",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -13, LoadError: "Permission denied",
+				LibbpfLog: fakeLibbpfLoadFailure("a", "a"), ProgramNames: []string{"a"}},
+			wantCode: "VERIFIER_REJECTION",
+		},
+		{
+			name: "short name that is also a verifier-log word",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -13, LoadError: "Permission denied",
+				LibbpfLog:    fakeLibbpfLoadFailure("processed", "o") + "processed 1 insns (limit 1000000)\n",
+				ProgramNames: []string{"processed"}},
+			wantCode: "VERIFIER_REJECTION",
+		},
+		{
+			name: "forged map line inside the program '%s' quoting form",
+			in: Input{LoadStatus: "fail", LoadErrorCode: -22, LoadError: "Invalid argument",
+				LibbpfLog:    "libbpf: sec 'kprobe/x': program '" + spoofedMapProgName + "' is static and not supported\n",
+				ProgramNames: []string{spoofedMapProgName}},
+			wantCode: "UNKNOWN",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Classify(tc.in)
+			if got.Code != tc.wantCode {
+				t.Fatalf("Classify() code = %s (%s; %s), want %s", got.Code, got.Confidence, got.Reason, tc.wantCode)
+			}
+			if tc.wantConf != "" && got.Confidence != tc.wantConf {
+				t.Fatalf("Classify() confidence = %q, want %q", got.Confidence, tc.wantConf)
+			}
+			if tc.wantIn != "" && !strings.Contains(got.Reason, tc.wantIn) {
+				t.Fatalf("Classify() reason = %q, want it to contain %s", got.Reason, tc.wantIn)
+			}
+		})
+	}
+}
