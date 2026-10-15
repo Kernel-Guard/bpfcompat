@@ -111,7 +111,7 @@ func runAdminListTokens(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -173,7 +173,7 @@ func runAdminRevokeToken(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	subj := strings.TrimSpace(*subject)
@@ -279,7 +279,7 @@ func runAdminVerifyChain(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	verification, err := registry.VerifyArtifactVersionHistory(*workDir)
@@ -338,7 +338,7 @@ func runAdminAuditExport(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	// Signing requires writing to a real file: streaming to stdout means we

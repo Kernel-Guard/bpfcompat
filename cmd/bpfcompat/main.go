@@ -82,12 +82,56 @@ func run(args []string) int {
 // stops at the first non-flag argument, so for a command that takes none a
 // stray token would silently disable every flag after it (for example an
 // --out that is then never written). Such a command must refuse to run.
-func rejectPositionalArgs(fs *flag.FlagSet) bool {
+//
+// parsed must be the slice that was passed to fs.Parse. It is used only to
+// recognise the "--dry-run false" mistake: the flag package sets a boolean
+// flag without consuming the next word, so "false" becomes the stray
+// positional. In that case the message also names the --flag=value form.
+func rejectPositionalArgs(fs *flag.FlagSet, parsed []string) bool {
 	if fs.NArg() == 0 {
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "%s: unexpected positional argument %q; this command takes only flags, and every flag after a positional argument would be ignored\n", fs.Name(), fs.Arg(0))
+	fmt.Fprintf(os.Stderr, "%s: unexpected positional argument %q; this command takes only flags, and every flag after a positional argument would be ignored%s\n", fs.Name(), fs.Arg(0), boolFlagValueHint(fs, parsed))
 	return true
+}
+
+// boolFlagValueHint returns a hint when the first stray positional is a value
+// strconv.ParseBool accepts and the token right before it was a boolean flag
+// written without "=value". Otherwise it returns "".
+func boolFlagValueHint(fs *flag.FlagSet, parsed []string) string {
+	value := fs.Arg(0)
+	if _, err := strconv.ParseBool(value); err != nil {
+		return ""
+	}
+	// fs.Args() is always a suffix of the slice given to fs.Parse, and the
+	// tokens before it parsed successfully. Replay the flag package's
+	// tokenisation over them so that a word consumed as a non-boolean flag's
+	// value (for example "--workdir --json") is not mistaken for a flag.
+	end := len(parsed) - fs.NArg()
+	lastBool := ""
+	for j := 0; j < end; {
+		tok := parsed[j]
+		j++
+		lastBool = ""
+		if tok == "--" {
+			break
+		}
+		name := strings.TrimPrefix(strings.TrimPrefix(tok, "-"), "-")
+		if strings.Contains(name, "=") {
+			continue
+		}
+		if f := fs.Lookup(name); f != nil {
+			if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+				lastBool = name
+				continue
+			}
+		}
+		j++ // a non-boolean flag consumes the next token as its value
+	}
+	if lastBool == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (boolean flags take the form --%s=<value>, e.g. --%s=%s)", lastBool, lastBool, value)
 }
 
 // runVersion prints the build identity. With --json it emits the structured
@@ -107,7 +151,7 @@ func runVersion(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	if *asJSON {
@@ -142,7 +186,7 @@ func runEnv(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	switch {
@@ -378,7 +422,7 @@ func runProfile(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args[1:]) {
 		return runner.ExitToolError
 	}
 	if *matrixPath == "" {
@@ -432,7 +476,7 @@ func runHistoryList(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -485,7 +529,7 @@ func runHistoryVerify(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -553,7 +597,7 @@ func runHistorySign(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -594,7 +638,7 @@ func runCompare(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -697,7 +741,7 @@ func runServe(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -768,8 +812,7 @@ func runRuntimeProbe(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintf(os.Stderr, "unexpected positional arguments: %v\n", fs.Args())
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -953,7 +996,7 @@ func runRuntimeSelect(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*artifactName) == "" {
@@ -1068,7 +1111,7 @@ func runRuntimeFetch(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*artifactName) == "" {
@@ -1231,7 +1274,7 @@ func runRuntimeExecute(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*artifactName) == "" {
@@ -1423,8 +1466,7 @@ func runRuntimeWorkerExecute(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintf(os.Stderr, "unexpected positional arguments: %v\n", fs.Args())
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 

@@ -275,7 +275,7 @@ func runAgentPreflight(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -643,7 +643,7 @@ func runAgentPlan(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -693,7 +693,7 @@ func runAgentApply(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 
@@ -918,7 +918,7 @@ func runAgentStatus(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	summary, err := summarizeAgentStatus(resolveAgentStatusPath(*statusPath))
@@ -957,7 +957,7 @@ func runAgentLedger(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	entries, err := agent.ListLoadLedgerEntries(*workDir, *artifactName, *limit)
@@ -1024,7 +1024,7 @@ func runAgentRollback(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	artifact := strings.TrimSpace(*artifactName)
@@ -1118,7 +1118,7 @@ func runAgentUnload(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	resolvedPin, err := resolveAgentUnloadPinPath(*pinPath, *allowNonBPFFS)
@@ -1192,7 +1192,7 @@ func runAgentRevocationDrill(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	id := resolveAgentID(*agentID)

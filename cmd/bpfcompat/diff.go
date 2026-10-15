@@ -45,7 +45,7 @@ func runDiff(args []string) int {
 	}
 	// A usage error establishes no comparison: exit 1 like any other
 	// inability to compare, never a verdict on the candidate.
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return regressiondiff.ExitInconclusive
 	}
 
