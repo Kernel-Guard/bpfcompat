@@ -86,6 +86,12 @@ jobs:
           bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
+      - name: One-command installer regression
+        # scripts/install.sh is what README consumers pipe into sh. Runs it
+        # against a local fake release (no network): signatures bound to the
+        # requested tag, fail-closed verification, truncated streams, custom
+        # install dirs and tag validation.
+        run: bash scripts/install_test.sh
       - name: Release-state fail-closed regression
         run: bash scripts/check-release-state_test.sh
       - name: Release metadata/channel regression
