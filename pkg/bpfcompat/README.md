@@ -112,6 +112,10 @@ therefore report what the CLI reports for the same evidence:
 - `Status` / `Verdict` / `FailedStage`. `Status` is "pass", "fail",
   "unsupported" or "infra_error"; `Verdict` is COMPATIBLE, INCOMPATIBLE,
   UNSUPPORTED or INFRA_ERROR. `Compatible()` is true only for COMPATIBLE.
+  On the matrix path, `Status`/`Verdict` are the target's recorded values
+  about the kernel that actually ran. A target that booted another kernel
+  series than requested can read COMPATIBLE while `Compatible()` is false,
+  because `Compatible()` additionally requires the requested environment.
 - `Attach.Accounting`:
   - `v1`: counts and per-program records add up.
   - `unavailable`: an older validator.

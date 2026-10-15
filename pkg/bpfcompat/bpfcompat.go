@@ -83,6 +83,13 @@ type Result struct {
 	// (LoadAttachRequired). Verdict is the matching schema verdict
 	// (COMPATIBLE, INCOMPATIBLE, UNSUPPORTED, INFRA_ERROR); FailedStage is
 	// "load", "attach", "validation", "infra" or empty.
+	//
+	// On the matrix path, Status and Verdict are the target's recorded values
+	// and describe the kernel the guest actually ran. A target that booted
+	// another kernel series or distribution than its profile requested can
+	// still read COMPATIBLE here; the CLI run treats it as INFRA_ERROR.
+	// Compatible() additionally requires the requested environment, so gate
+	// on Compatible(), not on Verdict == COMPATIBLE.
 	Status      string
 	Verdict     string
 	FailedStage string
