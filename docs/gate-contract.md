@@ -38,10 +38,14 @@ page defines how the two are told apart.
   carries "All required profiles passed validator load checks." Instead it
   carries: *"no required targets: diagnostic run, not a compatibility gate.
   …"*
-- **The Action job summary** (`bpfcompat report-summary`) prints
-  `**Gate:** none — no required targets: diagnostic run, not a compatibility
-  gate.` It derives this from the targets, so it also works for older
-  reports.
+- **The Action job summary** (`bpfcompat report-summary`) changes for a
+  gate-`none` run:
+  - The title is `# bpfcompat Compatibility Run (diagnostic, no gate)`
+    instead of `# bpfcompat Compatibility Gate`.
+  - The `**Gate:** none — no required targets: diagnostic run, not a
+    compatibility gate.` line comes **before** Status and Verdict.
+  - It is derived from the targets, so older reports get it too. Gated runs
+    keep the established title and layout.
 - **`--require-gate`** is opt-in, on `bpfcompat test` and `test-command`.
   - A finished run with `summary.gate: "none"` exits **1** instead of 0, and
     says why on stderr.
@@ -52,9 +56,26 @@ page defines how the two are told apart.
     kept.
   - Runs with a required target are unaffected, and a required failure still
     exits 2.
-- **`bpfcompat diff`** refuses a report whose `summary.gate` contradicts its
-  own targets or holds an unknown value. That diff is `INCONCLUSIVE` with
-  exit 1, the same handling as `summary.verdict` and `summary.complete`.
+- **`bpfcompat diff`** applies the same contract to comparisons.
+  - Only required cells can produce `NEW_REGRESSION` / exit 2. So when no
+    cell is required on either side, the diff reports `NO_NEW_REGRESSIONS`,
+    exit 0, **even when an optional target went COMPATIBLE → INCOMPATIBLE**.
+    That default is unchanged.
+  - The diff now says what kind of comparison it was:
+    - `summary.gate` is `enforced` when at least one cell is required, `none`
+      when none is;
+    - `summary.baseline_gate` and `summary.candidate_gate` give each input
+      report's gate, derived from its targets;
+    - a gate-`none` diff carries the note *"no required comparison:
+      diagnostic diff, not a gate. …"*;
+    - the Markdown shows `Gate: none — no required comparison: diagnostic
+      diff, not a gate` and `Report gates: baseline … -> candidate …` up
+      front.
+  - **`bpfcompat diff --require-gate`** (opt-in) makes a gate-`none` diff
+    exit **1** instead of 0. A required regression still exits 2.
+  - `diff` refuses a report whose `summary.gate` contradicts its own targets,
+    or holds an unknown value. That diff is `INCONCLUSIVE` with exit 1, the
+    same handling as `summary.verdict` and `summary.complete`.
 - **An empty matrix** (no targets at all) is rejected before any run:
   "matrix must contain at least one profile", exit 1.
 
@@ -95,12 +116,24 @@ gate-`none` reports can never show a required regression. The `bpfcompat
 diff` from main reads the new reports unchanged, because unknown JSON fields
 are ignored.
 
+**Diff, real VMs.** Both reports are artifact mode on `ubuntu-22.04-5.15`,
+optional:
+
+- baseline: `simple_pass.bpf.o`, COMPATIBLE;
+- candidate: a verifier-rejected XDP object, INCOMPATIBLE.
+
+| `bpfcompat diff` | result | new optional regressions | gate / baseline_gate / candidate_gate | Exit |
+|---|---|---|---|---|
+| Before (no gate signal) | NO_NEW_REGRESSIONS | 1 | — | 0 |
+| After | NO_NEW_REGRESSIONS | 1 | none / none / none (+ note, + Markdown lines) | 0 |
+| After, `--require-gate` | NO_NEW_REGRESSIONS | 1 | none / none / none | **1** |
+
 ## Limits
 
 - `bpfcompat suite` and the GitHub Action expose no `--require-gate` input
   yet. Action users get the job-summary wording, and can check
   `summary.gate` in the JSON report.
 - The Markdown report (`--markdown`) does not yet print the gate line.
-- `bpfcompat diff` does not surface the gate of each side in its own
-  summary. A diff of two diagnostic runs reports `NO_NEW_REGRESSIONS`
-  because there are no required cells to regress.
+- The GitHub Action's diff mode (`baseline-report` / `candidate-report`)
+  does not pass `--require-gate` yet. Its outputs and exit handling are
+  unchanged.

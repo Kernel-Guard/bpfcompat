@@ -22,6 +22,14 @@ func TestActionSummaryMarksOptionalOnlyRunAsNoGate(t *testing.T) {
 	if !strings.Contains(got, "**Gate:** `none`") || !strings.Contains(got, "not a compatibility gate") {
 		t.Fatalf("summary must state no gate was evaluated:\n%s", got)
 	}
+	// Wording: a diagnostic run must not lead with "Compatibility Gate" and a
+	// pass status before saying that no gate was evaluated.
+	if strings.HasPrefix(got, "# bpfcompat Compatibility Gate") {
+		t.Fatalf("a no-gate run must not be titled a Compatibility Gate:\n%s", got)
+	}
+	if gi, si := strings.Index(got, "**Gate:**"), strings.Index(got, "**Status:**"); gi < 0 || si < 0 || gi > si {
+		t.Fatalf("the Gate line must precede Status:\n%s", got)
+	}
 }
 
 func TestActionSummaryGatedRunHasNoNoGateLine(t *testing.T) {
@@ -29,7 +37,11 @@ func TestActionSummaryGatedRunHasNoNoGateLine(t *testing.T) {
 		Summary: schema.SummaryInfo{Status: "pass", Verdict: schema.VerdictCompatible},
 		Targets: []schema.Target{{ProfileID: "k", Required: true, Status: "pass", Verdict: schema.VerdictCompatible}},
 	}
-	if got := BuildGitHubActionSummary(r, ActionSummaryOptions{}); strings.Contains(got, "**Gate:** `none`") {
+	got := BuildGitHubActionSummary(r, ActionSummaryOptions{})
+	if strings.Contains(got, "**Gate:** `none`") {
 		t.Fatalf("a gated run must not be labelled no-gate:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "# bpfcompat Compatibility Gate\n") {
+		t.Fatalf("a gated run keeps its established title:\n%s", got)
 	}
 }

@@ -20,6 +20,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     run exit 1.
   - `bpfcompat diff` refuses a `summary.gate` that contradicts the report's
     own targets.
+  - `bpfcompat diff` now states when no cell is required: it adds
+    `summary.gate`, `baseline_gate` and `candidate_gate`, a "diagnostic
+    diff, not a gate" note, and a Markdown header. Such a diff still exits 0
+    (`NO_NEW_REGRESSIONS`) by default, even when an optional target
+    regressed. `diff --require-gate` makes it exit 1.
+  - The Action job summary of a run with no required target is titled
+    "Compatibility Run (diagnostic, no gate)", with the Gate line ahead of
+    Status.
   - See `docs/gate-contract.md`.
 
 ## [0.4.0-rc.4] - 2026-10-14

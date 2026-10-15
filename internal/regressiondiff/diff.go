@@ -146,9 +146,15 @@ type Summary struct {
 	CoverageRemovedOptional int `json:"coverage_removed_optional"`
 	// BaselineComplete/CandidateComplete surface Gate 1's run-level coverage
 	// flag, so an incomplete input cannot be read as a full comparison.
-	BaselineComplete  *bool  `json:"baseline_complete,omitempty"`
-	CandidateComplete *bool  `json:"candidate_complete,omitempty"`
-	Result            string `json:"result"`
+	BaselineComplete  *bool `json:"baseline_complete,omitempty"`
+	CandidateComplete *bool `json:"candidate_complete,omitempty"`
+	// Gate is "none" when no cell is required: Result cannot then report a
+	// regression, so it is a diagnostic diff, not a gate (see gate.go).
+	// BaselineGate/CandidateGate are each input's report gate.
+	Gate          string `json:"gate,omitempty"`
+	BaselineGate  string `json:"baseline_gate,omitempty"`
+	CandidateGate string `json:"candidate_gate,omitempty"`
+	Result        string `json:"result"`
 }
 
 type Diff struct {
@@ -728,6 +734,7 @@ func Build(baselineEv, candidateEv Evidence, generatedAt string) (Diff, error) {
 	d.Summary.BaselineComplete = baseline.Summary.Complete
 	d.Summary.CandidateComplete = candidate.Summary.Complete
 	d.Summary.Result = overallResult(d.Summary)
+	applyGate(&d, baseline, candidate)
 	return d, nil
 }
 
