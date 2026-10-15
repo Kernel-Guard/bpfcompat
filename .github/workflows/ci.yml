@@ -137,6 +137,11 @@ jobs:
         # Release-candidate canary observations must not span a runner-OS
         # migration of the moving ubuntu-latest label.
         run: bash scripts/canary-runner-pin_test.sh
+      - name: External-consumer validator identity regression
+        # The external-consumer canary is RC evidence; every lane that runs
+        # the validator must run the one bound to the checked-out tag/commit,
+        # never a hard-coded older release.
+        run: bash scripts/consumer-validator-identity_test.sh
       - name: Workflow token-permission regression
         # Top-level GITHUB_TOKEN permissions stay read-only and every job-level
         # write grant is listed, with a justification, in
