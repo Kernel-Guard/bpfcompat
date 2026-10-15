@@ -1,0 +1,39 @@
+# Declared build inputs of the shipped static validator
+# (bpfcompat-validator-static-linux-amd64).
+#
+# The validator statically links distro libbpf, libelf, zlib, zstd and glibc,
+# so its bytes are decided by these packages, not only by validator/ sources.
+# Building on the moving `ubuntu-latest` label let them drift silently: rc.2/rc.3
+# and rc.4 have the same validator/c-libbpf tree but different bytes, plausibly
+# from image-supplied static libraries (symbol-size diffs are in zlib and glibc
+# objects; the runner logs did not record the libc6-dev version), and an Ubuntu
+# 26.04 build links libbpf 1.6 + GCC 15 instead of the qualified libbpf 1.3 +
+# GCC 13.
+#
+# scripts/build-validator-pinned.sh builds inside builder_image with exactly
+# these packages and fails closed if apt cannot provide them.
+# scripts/check-validator-build-inputs.sh proves the result from the binary.
+# Changing any line here changes the shipped validator: cut a new release
+# candidate and re-qualify it; never change it between an RC and its stable.
+#
+# Format: one `key=value` per line; `pkg=<name>=<version>` may repeat.
+
+builder_image=docker.io/library/ubuntu@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+
+pkg=gcc-13=13.3.0-6ubuntu2~24.04.1
+pkg=gcc=4:13.2.0-7ubuntu1
+pkg=binutils=2.42-4ubuntu2.10
+pkg=libc6-dev=2.39-0ubuntu8.9
+pkg=libbpf-dev=1:1.3.0-2build2
+pkg=libelf-dev=0.190-1.1ubuntu0.1
+pkg=libzstd-dev=1.5.5+dfsg2-2build1.1
+pkg=zlib1g-dev=1:1.3.dfsg-3.1ubuntu2.2
+
+# What the binary itself must say (read with nm/objdump/readelf, never run).
+expect_libbpf=1.3
+expect_gcc_comment=GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+
+# Known reproduction: building validator/c-libbpf tree <tree> with the inputs
+# above yields <sha256>. This is v0.4.0-rc.4's qualified validator (release run
+# 38592617383), reproduced byte-for-byte in this builder on 2026-10-15.
+reproduces=6db2698f2babe43c3d247df6613c951ca2b563dc e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a

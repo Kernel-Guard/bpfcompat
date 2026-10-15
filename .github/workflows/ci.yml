@@ -78,6 +78,11 @@ jobs:
         run: bash scripts/action-diff_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
+      - name: Validator build-input pin regression
+        # The static validator links distro libbpf/zlib/glibc; it is built
+        # from validator/build-inputs.lock, never the runner image, and a
+        # stable tag must ship its release candidate's validator bytes.
+        run: bash scripts/validator-build-inputs_test.sh
       - name: Image prefetch reliability regression
         # The public matrix lane lost five of seven weekly runs (Aug-Oct 2026)
         # to a single failed image download aborting the whole prefetch. These
