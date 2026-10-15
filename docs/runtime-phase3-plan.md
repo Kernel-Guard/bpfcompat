@@ -33,7 +33,10 @@ This document tracks the initial runtime-delivery implementation.
    - each artifact version record is now linked by `prev_record_sha256`
    - records are signed with an Ed25519 key stored in workdir key material
    - optional enterprise signer mode is available via `BPFCOMPAT_SIGNING_MODE=external-cmd`
-   - `bpfcompat history verify` validates hash chain + signatures and reports tamper evidence
+   - `bpfcompat history verify` validates hash chain + signatures and reports tamper evidence;
+     like `admin verify-chain`, it exits 1 when `--workdir` does not exist or is not a
+     directory, and an existing directory with no history exits 0 with a stderr note that
+     nothing was verified
 
 ## Commands
 
