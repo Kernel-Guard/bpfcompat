@@ -339,7 +339,7 @@ var catalog = []Var{
 	{
 		Name: "BPFCOMPAT_API_SHUTDOWN_DRAIN_TIMEOUT", Default: "10m",
 		Category:    "HTTP Server",
-		Description: "Maximum wait for in-flight validate jobs during graceful shutdown.",
+		Description: "Maximum wait for in-flight validate runs (async jobs and sync requests) during graceful shutdown; still-running runs are then cancelled and given 30s to clean up.",
 	},
 	{
 		Name: "BPFCOMPAT_API_MAX_ACTIVE_VALIDATE_JOBS", Default: "2",

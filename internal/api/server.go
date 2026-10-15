@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -79,6 +80,10 @@ const (
 	// return after the context cancels. Validate jobs run on their own
 	// goroutines and are drained separately via inflight.WaitGroup.
 	httpShutdownTimeout = 15 * time.Second
+	// shutdownCancelGrace bounds the wait, after the drain timeout cancels
+	// the remaining validation runs, for those runs to unwind (kill QEMU,
+	// remove overlays) before serve returns and the process exits.
+	shutdownCancelGrace = 30 * time.Second
 	// defaultShutdownDrainTimeout is the upper bound on waiting for async
 	// validate jobs. Realistically a job completes in <= cfg.DefaultTimeout
 	// (8 min default), so 10 minutes is a comfortable margin. Overridable
@@ -178,10 +183,36 @@ type Server struct {
 	// a job that will be cancelled mid-flight. Plain int32 + atomic ops
 	// avoids pulling in a sync.Once for what's effectively a flag.
 	shutting atomicBool
+	// runCtx is the server-lifetime context every validate run (async job
+	// and, via http.Server.BaseContext, sync request) runs under. It is
+	// cancelled when the shutdown drain times out so the runner kills QEMU
+	// and removes overlays before the process exits. Created lazily so a
+	// zero Server (tests) works; access via runContext/cancelRunContext.
+	runCtxOnce sync.Once
+	runCtx     context.Context
+	cancelRuns context.CancelFunc
 	// uploads tracks per-request directories under workdir/uploads that
 	// an in-flight validate request or job still needs, so retention
 	// pruning never removes them.
 	uploads uploadTracker
+}
+
+func (s *Server) initRunContext() {
+	s.runCtxOnce.Do(func() {
+		s.runCtx, s.cancelRuns = context.WithCancel(context.Background())
+	})
+}
+
+// runContext returns the server-lifetime context validation runs use.
+func (s *Server) runContext() context.Context {
+	s.initRunContext()
+	return s.runCtx
+}
+
+// cancelRunContext cancels every validation run still using runContext.
+func (s *Server) cancelRunContext() {
+	s.initRunContext()
+	s.cancelRuns()
 }
 
 func (s *Server) log() *slog.Logger {
@@ -604,27 +635,33 @@ func (s *Server) serve(ctx context.Context) error {
 		IdleTimeout:       httpServerIdleTimeout,
 		MaxHeaderBytes:    httpServerMaxHeaderBytes,
 		TLSConfig:         tlsCfg,
+		// Every request context (and so every sync validate run) derives
+		// from the server-lifetime run context, which the drain cancels on
+		// timeout.
+		BaseContext: func(net.Listener) context.Context { return s.runContext() },
 	}
 
+	// drained is closed once the shutdown sequence below has finished;
+	// serve waits for it so the caller never exits mid-drain.
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		s.shutting.Set(true)
+		drainTimeout := s.shutdownDrainTimeout()
 		s.log().Info("shutdown signal received, draining inflight jobs",
-			slog.Duration("drain_timeout", s.shutdownDrainTimeout()),
+			slog.Duration("drain_timeout", drainTimeout),
 		)
-		// Stop accepting new connections first so the inflight set stops
-		// growing. Shutdown blocks until in-flight HTTP handlers return —
-		// for our shape that's everything except the async runValidateJob
-		// goroutines, which are tracked separately via s.inflight.
-		httpShutdownCtx, cancelHTTP := context.WithTimeout(context.Background(), httpShutdownTimeout)
-		defer cancelHTTP()
-		_ = httpServer.Shutdown(httpShutdownCtx)
-		// Now wait for the fire-and-forget validate jobs. The drain is
-		// bounded so a stuck job can't hold the process open forever — a
-		// rolling deploy will SIGKILL on overrun anyway, but the bounded
-		// wait gives operators a clean exit when jobs do finish in time.
-		drainCtx, cancelDrain := context.WithTimeout(context.Background(), s.shutdownDrainTimeout())
+		// One overall budget: HTTP shutdown plus the job drain never
+		// exceed the drain timeout.
+		drainCtx, cancelDrain := context.WithTimeout(context.Background(), drainTimeout)
 		defer cancelDrain()
+		// Stop accepting new connections first so the inflight set stops
+		// growing. Shutdown waits (bounded) for in-flight HTTP handlers;
+		// validate runs, sync and async, are tracked via s.inflight.
+		httpShutdownCtx, cancelHTTP := context.WithTimeout(drainCtx, httpShutdownTimeout)
+		_ = httpServer.Shutdown(httpShutdownCtx)
+		cancelHTTP()
 		done := make(chan struct{})
 		go func() {
 			s.inflight.Wait()
@@ -633,9 +670,23 @@ func (s *Server) serve(ctx context.Context) error {
 		select {
 		case <-done:
 			s.log().Info("shutdown drain complete; all inflight jobs finished")
+			s.cancelRunContext()
+			return
 		case <-drainCtx.Done():
-			s.log().Warn("shutdown drain timed out; remaining jobs will be terminated by exit",
-				slog.Duration("drain_timeout", s.shutdownDrainTimeout()),
+		}
+		// Bounded drain overran: cancel the remaining runs so the runner
+		// kills their QEMU guests and removes overlays, and give that
+		// cleanup a bounded grace before the process exits.
+		s.log().Warn("shutdown drain timed out; cancelling remaining validation runs",
+			slog.Duration("drain_timeout", drainTimeout),
+		)
+		s.cancelRunContext()
+		select {
+		case <-done:
+			s.log().Info("cancelled validation runs finished cleanup")
+		case <-time.After(shutdownCancelGrace):
+			s.log().Warn("cancelled validation runs did not finish cleanup in time; exiting anyway",
+				slog.Duration("grace", shutdownCancelGrace),
 			)
 		}
 	}()
@@ -665,6 +716,10 @@ func (s *Server) serve(ctx context.Context) error {
 		err = httpServer.ListenAndServe()
 	}
 	if errors.Is(err, http.ErrServerClosed) {
+		// Shutdown was called by the drain goroutine; wait for the drain
+		// so in-flight validations finish (or are cancelled and cleaned
+		// up) before the caller exits.
+		<-drained
 		return nil
 	}
 	return err
@@ -2372,6 +2427,9 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	// successful ones are retained (bounded) for registry-history readers.
 	defer func() { s.releaseUploadDir(uploadDir, succeeded) }()
 
+	// Track the run so the shutdown drain waits for it like an async job.
+	s.inflight.Add(1)
+	defer s.inflight.Done()
 	releaseSlot, status, err := s.acquireSyncValidateRunSlot(r.Context())
 	if err != nil {
 		writeError(w, status, err.Error())
@@ -2565,7 +2623,7 @@ func (s *Server) runValidateJob(jobID string, cfg runner.Config) {
 		return
 	}
 
-	result, err := s.validateRunner()(context.Background(), cfg)
+	result, err := s.validateRunner()(s.runContext(), cfg)
 	if err != nil {
 		s.updateValidateJob(jobID, func(job *validateJob) {
 			job.State = "failed"
@@ -2686,6 +2744,10 @@ func (s *Server) ensureValidateJobCapacity() error {
 // errValidateShuttingDown carries the same message validate/start returns
 // with 503 during graceful shutdown.
 var errValidateShuttingDown = errors.New("server is shutting down; retry shortly")
+
+// errValidateQueuedAtShutdown is the terminal error of an async job that
+// was still queued when graceful shutdown began.
+var errValidateQueuedAtShutdown = errors.New("server shut down before this queued validation started; resubmit it")
 
 // validateCapacityLocked reports whether a new validation (sync or async)
 // may start running now (true) or must queue (false), or returns the
@@ -2808,6 +2870,20 @@ func (s *Server) waitForValidateRunSlot(jobID string) bool {
 		}
 
 		active, _ := s.validateJobCountsLocked()
+		if job.State != "running" && s.shutting.Get() {
+			// Never start a new VM run once shutdown began.
+			now := time.Now().UTC()
+			job.State = "failed"
+			job.Stage = "failed"
+			job.Message = "Validation not started: server shutting down"
+			job.Error = errValidateQueuedAtShutdown.Error()
+			job.UpdatedAt = now
+			job.FinishedAt = now
+			s.validateJobs.mu.Unlock()
+			recordValidateJobTerminal("failed")
+			s.refreshValidateJobsGauge()
+			return false
+		}
 		if job.State == "running" {
 			acquired = true
 		} else if active < maxActiveValidateJobs() {
