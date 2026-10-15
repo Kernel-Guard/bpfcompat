@@ -15,12 +15,16 @@
 #       historical run 38609582942 KubeArmor report, which must be rejected)
 #
 # Exit: 0 accepted (VERIFIED), 1 rejected (FAILED), 2 inconclusive
-# (INFRA_ERROR or no report), 64 usage. Every violated clause is printed.
-# Acceptance evidence requires the final line to be exactly "RESULT: VERIFIED".
+# (INFRA_ERROR or no report, and no definite mismatch), 3 would-be-accepted
+# under the test seam (never acceptance), 64 usage. Every violated clause is
+# printed. Acceptance requires exit 0 and the final line exactly
+# "RESULT: VERIFIED". A definite identity mismatch (wrong validator, CLI or
+# KubeArmor commit) or broken integrity is FAILED even if INFRA_ERROR is also
+# present.
 #
 # Test seam (never set for acceptance): BPFCOMPAT_EVIDENCE_TEST_VALIDATOR_SHA256
-# replaces the expected validator sha256 so synthetic fixtures can pass; it is
-# announced and the result line is then marked as not evidence.
+# replaces the expected validator sha256 so synthetic fixtures can be checked;
+# it is announced, and a bundle that would otherwise pass exits 3, not 0.
 set -euo pipefail
 
 readonly EXPECTED_TAG="v0.4.0-rc.4"
@@ -66,6 +70,7 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 64; }
 
 rejects=0
 integrity=0
+definite=0
 infra=0
 reject() {
   echo "REJECT: $*"
@@ -74,6 +79,11 @@ reject() {
 reject_integrity() {
   reject "$@"
   integrity=$((integrity + 1))
+}
+# reject_definite: a value is present and provably wrong (identity mismatch).
+reject_definite() {
+  reject "$@"
+  definite=$((definite + 1))
 }
 inconclusive() {
   echo "INCONCLUSIVE: $*"
@@ -86,6 +96,10 @@ finish() {
     echo "RESULT: FAILED (${rejects} violated clause(s), bundle integrity broken)"
     exit 1
   fi
+  if ((definite > 0)); then
+    echo "RESULT: FAILED (${rejects} violated clause(s), ${definite} definite identity mismatch(es))"
+    exit 1
+  fi
   if ((infra > 0)); then
     echo "RESULT: INCONCLUSIVE (${infra} infrastructure condition(s); ${rejects} other violation(s))"
     exit 2
@@ -96,14 +110,24 @@ finish() {
   fi
   if [[ "$TEST_SEAM" == true ]]; then
     echo "RESULT: VERIFIED (TEST SEAM: expected validator overridden; not acceptance evidence)"
-  else
-    echo "RESULT: VERIFIED"
+    exit 3
   fi
+  echo "RESULT: VERIFIED"
   exit 0
 }
 
 # marker_values FILE PREFIX: every line starting with PREFIX, prefix stripped.
 marker_values() { grep -a -- "^$2" "$1" | sed "s/^$2//" || true; }
+# tail_json FILE: what bpfcompat v0.4.0-rc.4 stores as stdout_tail for FILE
+# (internal/vm/result.go readFileTail: last 4096 bytes, then
+# strings.TrimSpace), JSON-encoded for an exact comparison.
+tail_json() { tail -c 4096 "$1" | jq -Rs 'sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'; }
+readonly BEGIN_MARK='----- BEGIN bpfcompat-validator-json -----'
+readonly END_MARK='----- END bpfcompat-validator-json -----'
+# extract_validator_json STDOUT: the lines strictly between the markers.
+extract_validator_json() {
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '$0 == b {on=1; next} $0 == e {on=0} on' "$1"
+}
 
 # ---- report-level clauses (R*) ------------------------------------------------
 # check_report REPORT -> sets REPORT_KA_SHA (the guest-observed KubeArmor commit
@@ -125,6 +149,8 @@ check_report() {
   bin_sha="$(jq -r '.command.binary.sha256 // empty' "$report")"
   if [[ "$bin_sha" == "$EXPECTED_VALIDATOR_SHA256" ]]; then
     okline "R2 command.binary.sha256 == rc.4 validator"
+  elif [[ -n "$bin_sha" ]]; then
+    reject_definite "R2 command.binary.sha256 is ${bin_sha}, want ${EXPECTED_VALIDATOR_SHA256} (the validator shipped to the guests is not the rc.4 validator)"
   else
     reject "R2 command.binary.sha256 is ${bin_sha:-<missing>}, want ${EXPECTED_VALIDATOR_SHA256} (the validator shipped to the guests is not the rc.4 validator)"
   fi
@@ -174,6 +200,8 @@ check_report() {
     tail_sha="$(marker_values "$tailf" 'bpfcompat-validator-sha256=' | sort -u)"
     if [[ "$tail_sha" == "$EXPECTED_VALIDATOR_SHA256" ]]; then
       okline "R7 ${p}: guest-observed validator sha256 == rc.4 validator"
+    elif [[ -n "$tail_sha" ]]; then
+      reject_definite "R7 ${p}: guest-observed validator sha256 is '${tail_sha//$'\n'/,}', want ${EXPECTED_VALIDATOR_SHA256}"
     else
       reject "R7 ${p}: guest-observed validator sha256 is '${tail_sha:-<missing>}', want ${EXPECTED_VALIDATOR_SHA256}"
     fi
@@ -260,7 +288,7 @@ if [[ -f "$B/meta/bpfcompat-version.json" ]]; then
     ' "$B/meta/bpfcompat-version.json" >/dev/null 2>&1; then
     okline "B2 bpfcompat CLI is ${EXPECTED_TAG} at ${EXPECTED_COMMIT:0:12}"
   else
-    reject "B2 bpfcompat version is not ${EXPECTED_TAG}/${EXPECTED_COMMIT:0:12}: $(jq -c '{version, commit}' "$B/meta/bpfcompat-version.json" 2>/dev/null || echo unreadable)"
+    reject_definite "B2 bpfcompat version is not ${EXPECTED_TAG}/${EXPECTED_COMMIT:0:12}: $(jq -c '{version, commit}' "$B/meta/bpfcompat-version.json" 2>/dev/null || echo unreadable)"
   fi
 fi
 
@@ -271,13 +299,13 @@ if [[ -f "$B/validator/validator-identity.json" ]]; then
     and .tag == $t and .commit == $c and .sha256 == $s
     and (.provenance | startswith("sha256sums+github-attestation:"))
   ' "$B/validator/validator-identity.json" >/dev/null 2>&1 ||
-    reject "B3 validator-identity.json is not the attested ${EXPECTED_TAG} release validator ${EXPECTED_VALIDATOR_SHA256}"
+    reject_definite "B3 validator-identity.json is not the attested ${EXPECTED_TAG} release validator ${EXPECTED_VALIDATOR_SHA256}"
 fi
 if [[ -f "$B/validator/bpfcompat-validator" ]]; then
   if [[ "$(sha256sum "$B/validator/bpfcompat-validator" | awk '{print $1}')" == "$EXPECTED_VALIDATOR_SHA256" ]]; then
     okline "B3 bundled validator hashes to ${EXPECTED_VALIDATOR_SHA256}"
   else
-    reject "B3 bundled validator does not hash to ${EXPECTED_VALIDATOR_SHA256}"
+    reject_definite "B3 bundled validator does not hash to ${EXPECTED_VALIDATOR_SHA256}"
   fi
 fi
 
@@ -300,6 +328,8 @@ if [[ -f "$B/meta/guest-command.sh" && -f "$B/reports/kubearmor.json" ]]; then
   if [[ -n "$pin" ]] && ! grep -qx "KA_COMMIT=${pin}" "$B/meta/guest-command.sh"; then
     reject "B4 guest command does not pin KubeArmor to ${pin}"
   fi
+  grep -qx "EXPECTED_VALIDATOR_SHA256=${EXPECTED_VALIDATOR_SHA256}" "$B/meta/guest-command.sh" ||
+    reject "B4 guest command does not embed the expected validator sha256 for its pre-exec check"
   grep -q 'bpfcompat/releases/download' "$B/meta/guest-command.sh" &&
     reject "B4 guest command downloads a validator itself (must use \$BPFCOMPAT_BIN)"
 fi
@@ -307,7 +337,7 @@ fi
 # B5 KubeArmor commit consistency (pin == every guest-observed value).
 if [[ -n "$pin" ]]; then
   if [[ -n "$REPORT_KA_SHA" && "$REPORT_KA_SHA" != "$pin" ]]; then
-    reject "B5 guest-observed kubearmor-source-sha ${REPORT_KA_SHA} != pinned ${pin}"
+    reject_definite "B5 guest-observed kubearmor-source-sha ${REPORT_KA_SHA} != pinned ${pin}"
   fi
 fi
 
@@ -332,32 +362,75 @@ for p in "${PROFILES[@]}"; do
   else
     reject "B6 ${p}: guest-proc-version missing or not 'Linux version ${kernel:-?} ...'"
   fi
-  vs="$(marker_values "$out" 'bpfcompat-validator-sha256=' | sort -u)"
-  [[ "$vs" == "$EXPECTED_VALIDATOR_SHA256" ]] ||
-    reject "B6 ${p}: in-guest validator sha256 '${vs:-<missing>}' != ${EXPECTED_VALIDATOR_SHA256}"
+  # The guest hashes $BPFCOMPAT_BIN before executing it (-pre, the guest
+  # aborts with 93 on mismatch) and again afterwards; both must be rc.4.
+  for marker in bpfcompat-validator-sha256-pre= bpfcompat-validator-sha256=; do
+    vs="$(marker_values "$out" "$marker" | sort -u)"
+    if [[ "$vs" == "$EXPECTED_VALIDATOR_SHA256" ]]; then
+      okline "B6 ${p}: in-guest ${marker%=} == rc.4 validator"
+    elif [[ -n "$vs" ]]; then
+      reject_definite "B6 ${p}: in-guest ${marker%=} '${vs//$'\n'/,}' != ${EXPECTED_VALIDATOR_SHA256}"
+    else
+      reject "B6 ${p}: in-guest ${marker%=} line is missing"
+    fi
+  done
   ka="$(marker_values "$out" 'kubearmor-source-sha=' | sort -u)"
-  [[ -n "$pin" && "$ka" == "$pin" ]] ||
+  if [[ -z "$ka" || -z "$pin" ]]; then
     reject "B6 ${p}: in-guest kubearmor-source-sha '${ka:-<missing>}' != pinned '${pin:-<none>}'"
+  elif [[ "$ka" != "$pin" ]]; then
+    reject_definite "B6 ${p}: in-guest kubearmor-source-sha '${ka//$'\n'/,}' != pinned '${pin}'"
+  fi
+  # The object the validator loaded is the one that was built: hashed after
+  # the build (-pre) and again after the validator ran.
+  op="$(marker_values "$out" 'kubearmor-object-sha256-pre=' | sort -u)"
+  oa="$(marker_values "$out" 'kubearmor-object-sha256=' | sort -u)"
+  if [[ "$op" =~ ^[0-9a-f]{64}$ && "$op" == "$oa" ]]; then
+    okline "B6 ${p}: KubeArmor object sha256 ${op}"
+  else
+    reject "B6 ${p}: kubearmor-object-sha256-pre '${op//$'\n'/,}' and kubearmor-object-sha256 '${oa//$'\n'/,}' are not one equal 64-hex value"
+  fi
+  # B9 the full stdout is the one bpfcompat captured: its rc.4 tail must be
+  # exactly the report's stdout_tail for this target.
+  if [[ -f "$B/reports/kubearmor.json" ]] &&
+    [[ "$(jq -c --arg p "$p" '[.targets[]? | select(.profile_id == $p) | .functional.tests[]? | select(.name == "command") | .stdout_tail] | if length == 1 then .[0] else null end' "$B/reports/kubearmor.json")" == "$(tail_json "$out" | jq -c .)" ]]; then
+    okline "B9 ${p}: report stdout_tail == tail of command.stdout"
+  else
+    reject "B9 ${p}: report stdout_tail is not the tail of targets/${p}/command.stdout (stdout not bound to the report)"
+  fi
   ve="$(marker_values "$out" 'validator-exit-code=' | sort -u)"
   [[ "$ve" == 0 ]] || reject "B6 ${p}: validator-exit-code is '${ve:-<missing>}', want 0"
   if [[ -f "$B/targets/${p}/command-exit-code" ]]; then
     [[ "$(tr -d '[:space:]' <"$B/targets/${p}/command-exit-code")" == 0 ]] ||
       reject "B6 ${p}: guest command exit code is not 0"
   fi
-  nb="$(grep -c -- '^----- BEGIN bpfcompat-validator-json -----$' "$out" || true)"
-  if [[ "$nb" != 1 ]]; then
-    reject "B6 ${p}: expected exactly one validator JSON block, found ${nb}"
+  nb="$(grep -cx -- "$BEGIN_MARK" "$out" || true)"
+  ne="$(grep -cx -- "$END_MARK" "$out" || true)"
+  lb="$(grep -nx -- "$BEGIN_MARK" "$out" | head -1 | cut -d: -f1 || true)"
+  le="$(grep -nx -- "$END_MARK" "$out" | head -1 | cut -d: -f1 || true)"
+  if [[ "$nb" != 1 || "$ne" != 1 || -z "$lb" || -z "$le" || "$lb" -ge "$le" ]]; then
+    reject "B6 ${p}: expected exactly one BEGIN and one later END validator-json marker, found ${nb} BEGIN / ${ne} END"
     continue
   fi
   vj="$(mktemp)"
-  awk '/^----- BEGIN bpfcompat-validator-json -----$/ {on=1; next}
-       /^----- END bpfcompat-validator-json -----$/ {on=0}
-       on' "$out" >"$vj"
-  if ! jq -e 'type == "object"' "$vj" >/dev/null 2>&1; then
-    reject "B6 ${p}: validator JSON block is not valid JSON"
+  extract_validator_json "$out" >"$vj"
+  if ! jq -s -e 'length == 1 and (.[0] | type == "object")' "$vj" >/dev/null 2>&1; then
+    reject "B6 ${p}: validator block must hold exactly one JSON document (object); found $(jq -s 'length' "$vj" 2>/dev/null || echo 'unparseable')"
     rm -f "$vj"
     continue
   fi
+  # B10 the bundle's extracted copies are exactly what the guest printed.
+  if [[ -f "$B/targets/${p}/validator.json" ]] && cmp -s "$vj" "$B/targets/${p}/validator.json"; then
+    okline "B10 ${p}: targets/${p}/validator.json == block in command.stdout"
+  else
+    reject "B10 ${p}: targets/${p}/validator.json is missing or differs from the block in command.stdout"
+  fi
+  if [[ -f "$B/targets/${p}/libbpf.log" ]] && cmp -s <(jq -rj '.logs.libbpf // ""' "$vj") "$B/targets/${p}/libbpf.log"; then
+    okline "B10 ${p}: targets/${p}/libbpf.log == validator .logs.libbpf"
+  else
+    reject "B10 ${p}: targets/${p}/libbpf.log is missing or differs from the validator's .logs.libbpf"
+  fi
+  jq -e '.input.artifact == "system_monitor.bpf.o" and .input.probe_features == true' "$vj" >/dev/null ||
+    reject "B6 ${p}: validator input is not system_monitor.bpf.o with probe_features=true: $(jq -c '.input | {artifact, probe_features}' "$vj")"
   jq -e --arg k "$kernel" '.host.release == $k' "$vj" >/dev/null ||
     reject "B6 ${p}: validator host.release $(jq -c '.host.release' "$vj") != booted kernel '${kernel}'"
   jq -e '.status == "pass" and .load.status == "pass"' "$vj" >/dev/null ||

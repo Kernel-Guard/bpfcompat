@@ -75,13 +75,14 @@ done
 [[ -n "$checkout" && -n "$ka_commit" && -n "$out_dir" ]] || usage
 
 # The bundle is write-once: refuse to reuse a directory so no earlier
-# evidence can ever be overwritten.
+# evidence can ever be overwritten. Both paths are made absolute and checked
+# before anything is created, so a refusal leaves nothing behind.
+out_dir="$(realpath -m -- "$out_dir")"
+work_dir="$(realpath -m -- "${work_dir:-${out_dir}.work}")"
 [[ ! -e "$out_dir" ]] || { echo "refusing to reuse existing --out-dir ${out_dir}" >&2; exit 2; }
-mkdir -p "$out_dir"
-out_dir="$(cd "$out_dir" && pwd)"
-work_dir="${work_dir:-${out_dir}.work}"
 [[ ! -e "$work_dir" ]] || { echo "refusing to reuse existing --work-dir ${work_dir}" >&2; exit 2; }
-mkdir -p "$out_dir"/{meta,host,validator,reports,targets,logs}
+[[ "$work_dir" != "$out_dir" && "$work_dir" != "$out_dir"/* ]] ||
+  { echo "--work-dir must be outside --out-dir" >&2; exit 2; }
 
 # Every procedure line goes to the terminal and to logs/procedure.log; each
 # step's tool output goes to its own file under logs/.
@@ -166,6 +167,7 @@ seal() {
   exit 1
 }
 trap seal EXIT
+mkdir -p "$out_dir"/{meta,host,validator,reports,targets,logs}
 
 date -u +%Y-%m-%dT%H:%M:%SZ >"${out_dir}/meta/started-at.txt"
 log "started; dry_run=${dry_run} out=${out_dir} work=${work_dir}"
@@ -244,7 +246,9 @@ done_step
 
 # --- 2. validator identity -------------------------------------------------------
 step resolve-validator
-bash "$IDENTITY_SCRIPT" resolve --out-dir "${out_dir}/validator" --tag "$EXPECTED_TAG" \
+# The resolver's test seams must never reach a real resolution.
+env -u BPFCOMPAT_RELEASE_BASE_URL -u BPFCOMPAT_SOURCE_BUILD_CMD \
+  bash "$IDENTITY_SCRIPT" resolve --out-dir "${out_dir}/validator" --tag "$EXPECTED_TAG" \
   --repo "$REPO" --root "$checkout" >"${out_dir}/logs/resolve-validator.log" 2>&1 ||
   fail FAILED "validator resolve/verification failed (logs/resolve-validator.log)"
 IDENTITY="${out_dir}/validator/validator-identity.json"
@@ -286,12 +290,15 @@ log "KubeArmor pin: $(jq -c . "${out_dir}/meta/kubearmor-pin.json")"
 done_step
 
 # --- 4. guest command ------------------------------------------------------------
-# PR #249's KubeArmor guest command, with three changes: KubeArmor is fetched
+# PR #249's KubeArmor guest command, with these changes: KubeArmor is fetched
 # at the pinned commit instead of the floating default branch; the booted
-# kernel identity is printed; the validator's exit code is captured so its
-# full JSON is always printed (between markers) before the command exits with
-# that code. The identity markers stay at the very end so they also land in
-# the report's 4 KiB stdout_tail that verify-report reads.
+# kernel identity is printed; the built object is hashed after the build and
+# again after the validator ran; $BPFCOMPAT_BIN is hashed BEFORE it is
+# executed and the guest exits 93 unless it is the qualified rc.4 validator;
+# the validator's exit code is captured so its full JSON is always printed
+# (between markers) before the command exits with that code. The identity
+# markers stay at the very end so they also land in the report's 4 KiB
+# stdout_tail that verify-report reads.
 step guest-command
 GUEST_CMD_FILE="${out_dir}/meta/guest-command.sh"
 cat >"$GUEST_CMD_FILE" <<'GUEST'
@@ -323,6 +330,14 @@ git submodule update --init --depth 1 libbpf
 make kernel_headers >/dev/null
 make system_monitor.bpf.o >/dev/null 2>&1
 echo "built system_monitor.bpf.o against $(uname -r)"
+echo "kubearmor-object-sha256-pre=$(sha256sum system_monitor.bpf.o | cut -d' ' -f1)"
+EXPECTED_VALIDATOR_SHA256=@@EXPECTED_VALIDATOR_SHA256@@
+validator_pre="$(sha256sum "$BPFCOMPAT_BIN" | cut -d' ' -f1)"
+echo "bpfcompat-validator-sha256-pre=$validator_pre"
+if [ "$validator_pre" != "$EXPECTED_VALIDATOR_SHA256" ]; then
+  echo "refusing to execute: \$BPFCOMPAT_BIN is not the qualified validator"
+  exit 93
+fi
 set +e
 "$BPFCOMPAT_BIN" \
   --artifact system_monitor.bpf.o \
@@ -342,7 +357,8 @@ echo "kubearmor-source-sha=$(git rev-parse HEAD)"
 echo "bpfcompat-validator-sha256=$(sha256sum "$BPFCOMPAT_BIN" | cut -d' ' -f1)"
 exit "$validator_rc"
 GUEST
-sed -i "s/@@KUBEARMOR_COMMIT@@/${ka_commit}/" "$GUEST_CMD_FILE"
+sed -i -e "s/@@KUBEARMOR_COMMIT@@/${ka_commit}/" \
+  -e "s/@@EXPECTED_VALIDATOR_SHA256@@/${EXPECTED_VALIDATOR_SHA256}/" "$GUEST_CMD_FILE"
 grep -q '@@' "$GUEST_CMD_FILE" && fail FAILED "unsubstituted placeholder in guest command"
 GUEST_CMD="$(cat "$GUEST_CMD_FILE")"
 printf '%s\0expected-exit=0' "$GUEST_CMD" | sha256sum | awk '{print $1}' >"${out_dir}/meta/guest-command.invocation-sha256"
@@ -398,6 +414,17 @@ for tdir in "${work_dir}"/bpfcompat/runs/*/targets/*/; do
   for f in command.stdout command.stderr command-exit-code serial.log; do
     [[ -f "${tdir}${f}" ]] && cp "${tdir}${f}" "${out_dir}/targets/${profile}/${f}"
   done
+  # Separate copies of the validator JSON and its libbpf log. The guest's
+  # /tmp/kubearmor-load.json is not retrieved by bpfcompat, so these are
+  # extracted byte-for-byte from command.stdout (the checker re-extracts and
+  # compares them).
+  if [[ -f "${out_dir}/targets/${profile}/command.stdout" ]]; then
+    awk -v b='----- BEGIN bpfcompat-validator-json -----' -v e='----- END bpfcompat-validator-json -----' \
+      '$0 == b {on=1; next} $0 == e {on=0} on' "${out_dir}/targets/${profile}/command.stdout" \
+      >"${out_dir}/targets/${profile}/validator.json"
+    jq -rj '.logs.libbpf // ""' "${out_dir}/targets/${profile}/validator.json" \
+      >"${out_dir}/targets/${profile}/libbpf.log" 2>/dev/null || : >"${out_dir}/targets/${profile}/libbpf.log"
+  fi
 done
 shopt -u nullglob
 dirty="$(git -C "$checkout" status --porcelain --untracked-files=all)"

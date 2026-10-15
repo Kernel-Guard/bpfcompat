@@ -32,7 +32,7 @@ The offline checker rejects the historical report on its own
 | validator | release asset `bpfcompat-validator-static-linux-amd64` of `v0.4.0-rc.4`, sha256 `e0e7fcf8bd8384be3f85e4716d7330bdc0d3ae4d5de4070e815fa07c278be03a`, checked against `SHA256SUMS` and a GitHub build attestation (signer `release-artifacts.yml@refs/tags/v0.4.0-rc.4`, source digest = the commit) | `scripts/consumer-validator-identity.sh resolve` (PR #249), runner `resolve-validator`, checker B3/R2/R7/B6 |
 | KubeArmor | explicit 40-hex commit passed on the command line, fetched by commit in each guest (never the floating default branch) | runner `pin-kubearmor`, guest `test "$(git rev-parse HEAD)" = "$KA_COMMIT"`, checker B4/B5/B6 |
 | matrix | `matrices/consumer-external.yaml`: `ubuntu-24.04-6.8` and `almalinux-8-4.18`, both required | checker R4/R6 |
-| guest command | PR #249's KubeArmor command with three changes: pinned commit, booted-kernel lines, and the full validator JSON printed between markers | runner writes `meta/guest-command.sh`; checker B4 binds it to the report's `invocation_sha256` |
+| guest command | PR #249's KubeArmor command with these changes: pinned commit; booted-kernel lines; the built object hashed after the build and again after the validator ran; `$BPFCOMPAT_BIN` hashed **before** it is executed and compared with the embedded `EXPECTED_VALIDATOR_SHA256=e0e7fcf8…` (the guest exits **93** without executing it on a mismatch); the full validator JSON printed between markers | runner writes `meta/guest-command.sh`; checker B4 binds it to the report's `invocation_sha256` |
 
 ### Proposed KubeArmor commit: `f2b2da6466b47285fb2d6ef2464def8ac1219ab1`
 
@@ -50,14 +50,23 @@ The KubeArmor `main` push history comes from the GitHub repository activity API
 | 2026-10-15T07:31:10Z | `f2b2da64…` -> `28ae2f47…` |
 
 So `main` was `f2b2da64…` from 2026-10-14T10:55:24Z to 2026-10-15T07:31:10Z,
-and the clones happened inside that window. The job log also shows the libbpf
-submodule at `67a4b1464349345e483df26ed93f8d388a60cee1`, which matches the
-gitlink at `f2b2da64…`. That match does not prove the commit, though: the
-gitlink is the same at `28ae2f47…`.
+and the clones happened inside that window. The run's KubeArmor report
+artifact (`kubearmor.json`, in each target's `stderr_tail`; the job log does
+not show it) records the libbpf submodule at
+`67a4b1464349345e483df26ed93f8d388a60cee1`, which matches the gitlink at
+`f2b2da64…`. That match does not prove the commit, though: the gitlink is the
+same at `28ae2f47…`.
+
+The question also matters less than it looks. The GitHub compare API
+(`f2b2da64…...28ae2f47…`: ahead by 2, behind by 0) shows the only later
+candidate changes just two files, `deployments/helm/KubeArmor/Chart.yaml` and
+`deployments/helm/KubeArmorOperator/Chart.yaml` (+2/-2 each). The BPF source
+under `KubeArmor/BPF` is identical under either candidate.
 
 **Remaining uncertainty:** the historical log never printed the KubeArmor
 commit. The attribution rests on the push timeline only. It would be wrong only
-if the guests reached a different GitHub replica state, which is unlikely.
+if the guests reached a different GitHub replica state, which is unlikely, and
+even then the BPF source would be the same.
 
 ## Operator prerequisites
 
@@ -105,8 +114,9 @@ Add `--dry-run` to the first command to do everything except boot guests. The
 
 ### Expected runtime
 
-- Pre-boot steps: about 10 s, measured by the dry run (2026-10-15T15:23:17Z to
-  15:23:27Z) with a warm Go build cache. The first build on a cold cache adds
+- Pre-boot steps: about 10 s, measured by the dry run whose bundle is
+  `dryrun-20261015T154512Z` (`meta/started-at.txt` 2026-10-15T15:45:12Z,
+  `meta/finished-at.txt` 15:45:22Z) with a warm Go build cache. The first build on a cold cache adds
   the Go toolchain and module download.
 - Guest phase: run 38609582942's guests needed 104 s (ubuntu-24.04-6.8) and
   172 s (almalinux-8-4.18) at concurrency 2 on a hosted runner. That time
@@ -136,6 +146,10 @@ validator/bpfcompat-validator   the resolved rc.4 validator binary
 validator/validator-identity.json
 reports/kubearmor.json, .md     raw bpfcompat report
 targets/<profile>/command.stdout, command.stderr, command-exit-code, serial.log
+targets/<profile>/validator.json, libbpf.log
+                                the validator JSON and its .logs.libbpf, extracted byte-for-byte
+                                from command.stdout (bpfcompat does not retrieve the guest's
+                                /tmp/kubearmor-load.json, so this is the closest original copy)
 logs/procedure.log, make-build.log, resolve-validator.log, kubearmor-pin.log,
      bpfcompat-test.log, verify-report.log, contract-check.log
 host/host.txt, qemu-version.txt, kvm.txt, tools.txt, prerequisites.txt
@@ -155,21 +169,35 @@ anything the runner concluded.
 | R1-R5 | report `schema_version=v0.1`; `command.binary.sha256 == e0e7fcf8…`; expected exit 0; matrix `consumer-external` with exactly both profiles; summary `COMPATIBLE`/`pass`/`complete` |
 | R6 | each required profile has exactly one target with `required`, `pass`, `COMPATIBLE`, kernel-family and distro match, and a passing `command` test. The booted kernel matches the profile family (`^6\.8\.N-N-generic$` / `^4\.18\.0-….el8(_N)?.x86_64$`), and the guest base-image sha256 is recorded |
 | R7 | each target's report stdout tail has `bpfcompat-validator-sha256=e0e7fcf8…` (all such lines) and exactly one 40-hex `kubearmor-source-sha=`, and the latter is the same on both kernels |
-| B4 | report `command.invocation_sha256 == sha256(meta/guest-command.sh + "\0expected-exit=0")`. The guest command contains `KA_COMMIT=<pin>` and no validator download of its own |
+| B4 | report `command.invocation_sha256 == sha256(meta/guest-command.sh + "\0expected-exit=0")`. The guest command contains `KA_COMMIT=<pin>` and `EXPECTED_VALIDATOR_SHA256=e0e7fcf8…`, and no validator download of its own |
 | B5 | guest-observed KubeArmor commit == `meta/kubearmor-pin.json` commit (40-hex) |
-| B6 | per kernel, from the full `targets/<profile>/command.stdout`: `guest-uname-r=` equals the report's observed kernel; `guest-proc-version=Linux version <kernel> …` is present; every `bpfcompat-validator-sha256=` is `e0e7fcf8…`; `kubearmor-source-sha=` equals the pin; `validator-exit-code=0`; exactly one validator JSON block whose `host.release` is the booted kernel, `status=pass`, `load.status=pass`, `discovery.program_count == len(programs) <= 64` (not truncated); every program has a `load_status` (pass, fail or skipped); **zero `fail`** and at least one `pass` |
+| B6 | per kernel, from the full `targets/<profile>/command.stdout`: `guest-uname-r=` equals the report's observed kernel; `guest-proc-version=Linux version <kernel> …` is present; every `bpfcompat-validator-sha256-pre=` (before execution) and every `bpfcompat-validator-sha256=` (after) is `e0e7fcf8…`; `kubearmor-source-sha=` equals the pin; `kubearmor-object-sha256-pre=` (after the build) and `kubearmor-object-sha256=` (after the validator) are one equal 64-hex value; `validator-exit-code=0`; exactly one BEGIN marker and one later END marker, enclosing **exactly one** JSON document (an object) whose `input.artifact == "system_monitor.bpf.o"`, `input.probe_features == true`, `host.release` is the booted kernel, `status=pass`, `load.status=pass`, `discovery.program_count == len(programs) <= 64` (not truncated); every program has a `load_status` (pass, fail or skipped); **zero `fail`** and at least one `pass` |
+| B9 | per kernel, the report's `stdout_tail` is exactly the rc.4 tail of `targets/<profile>/command.stdout`, i.e. `internal/vm/result.go` `readFileTail`: the last 4096 bytes, then `strings.TrimSpace`. This binds the bundled stdout to what bpfcompat captured |
+| B10 | `targets/<profile>/validator.json` and `libbpf.log` exist and are byte-identical to the block (and its `.logs.libbpf`) re-extracted from `command.stdout` |
 | B7 | start and end timestamps are UTC with end >= start; `bpfcompat test` exit code 0; `kvm-access=rw` |
 | B8 | `verdict.json` is `VERIFIED`, `dry_run=false`, and has the same KubeArmor commit |
 
 Outcomes: exit 0 with the final line exactly `RESULT: VERIFIED` means
-accepted. Exit 1 (`FAILED`) means at least one clause was violated; a broken
-bundle integrity is always `FAILED`. Exit 2 (`INCONCLUSIVE`) means an
-`INFRA_ERROR` in the report, or no report at all. Any failure, infra error or
-mismatch means `FAILED` or `INCONCLUSIVE`, never `VERIFIED`. The test seam
+accepted. Exit 1 (`FAILED`) means at least one clause was violated. Broken
+bundle integrity, and any **definite identity mismatch** (a present but wrong
+validator sha, CLI version, validator identity or KubeArmor commit), is always
+`FAILED`, even if the report also carries an `INFRA_ERROR`. Exit 2
+(`INCONCLUSIVE`) means an `INFRA_ERROR` in the report, or no report at all,
+with no definite mismatch. Any failure, infra error or mismatch means `FAILED`
+or `INCONCLUSIVE`, never `VERIFIED`. The test seam
 `BPFCOMPAT_EVIDENCE_TEST_VALIDATOR_SHA256` exists only for the synthetic
-regression test. The checker prints a warning when it is set and marks its
-result line `(TEST SEAM …)`. The runner always calls the checker with the seam
-unset and requires the unqualified `RESULT: VERIFIED`.
+regression test. When it is set, the checker prints a warning, and a bundle
+that would otherwise pass exits **3** with `RESULT: VERIFIED (TEST SEAM …)`, so
+it can never be mistaken for acceptance. The runner always calls the checker
+with the seam unset, and with the resolver's own test seams
+(`BPFCOMPAT_RELEASE_BASE_URL`, `BPFCOMPAT_SOURCE_BUILD_CMD`) unset, and requires
+the unqualified `RESULT: VERIFIED`.
+
+`skipped` per-program results are accepted (but counted and printed). The
+validator reports `skipped` only when an isolated load is impossible: a
+tail-call prog-array slot initialisation fails with EBADF. That is a limit of
+isolated loading, not kernel evidence. The whole-object `load.status=pass`
+still covers those programs.
 
 Note: a per-program isolated `fail` rejects the run even when the
 whole-object load passed. This is deliberate: the contract asks for a clean
