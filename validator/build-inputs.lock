@@ -20,6 +20,15 @@
 
 builder_image=docker.io/library/ubuntu@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
+# apt resolves every package, including the unpinned transitive ones
+# (linux-libc-dev headers, libisl/libmpc/libmpfr, make), from this fixed
+# snapshot.ubuntu.com state of noble, noble-updates and noble-security, never
+# the moving archive. The archive keeps only the newest version per pocket, so
+# without it the next SRU of any pinned package makes the build fail. Integrity
+# comes from apt's InRelease signature check against the builder image's
+# ubuntu-archive-keyring. Change it only together with the pkg= versions.
+apt_snapshot=20261014T154800Z
+
 pkg=gcc-13=13.3.0-6ubuntu2~24.04.1
 pkg=gcc=4:13.2.0-7ubuntu1
 pkg=binutils=2.42-4ubuntu2.10

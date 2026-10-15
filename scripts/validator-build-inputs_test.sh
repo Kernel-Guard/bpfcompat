@@ -110,6 +110,98 @@ bad_lock "zlib1g-dev missing" '/^pkg=zlib1g-dev=/d'
 bad_lock "libc6-dev missing" '/^pkg=libc6-dev=/d'
 bad_lock "no compiler" '/^pkg=gcc-[0-9]+=/d'
 bad_lock "malformed reproduces" 's#^reproduces=.*#reproduces=e0e7fcf8#'
+bad_lock "apt_snapshot missing (moving archive)" '/^apt_snapshot=/d'
+bad_lock "apt_snapshot not a fixed timestamp" 's#^apt_snapshot=.*#apt_snapshot=latest#'
+bad_lock "apt_snapshot not a real date" 's#^apt_snapshot=.*#apt_snapshot=20261399T254800Z#'
+# snapshot.ubuntu.com serves a future id as "the newest state so far": a lock
+# naming one silently follows the moving archive until that date.
+sed -E 's#^apt_snapshot=.*#apt_snapshot=20990101T000000Z#' "$LOCK" >"$tmp/future.lock"
+expect 1 "lock refused: apt_snapshot in the future (moving archive in disguise)" \
+  env BPFCOMPAT_VALIDATOR_LOCK="$tmp/future.lock" bash "$BUILDER" --check-lock
+expect 1 "future apt_snapshot refused before any apt configuration is written" \
+  env BPFCOMPAT_VALIDATOR_LOCK="$tmp/future.lock" bash "$BUILDER" --render-apt-config "$tmp/future-apt"
+
+# The archive keeps only the newest version per pocket: resolving the lock from
+# it breaks at the next SRU of any pinned package (and lets unpinned transitive
+# packages drift). Every package must come from the lock's fixed snapshot, with
+# apt's signature verification intact.
+snapshot="$(awk -F= '$1 == "apt_snapshot" { print $2 }' "$LOCK")"
+# Print every line of <sources> <apt.conf> that relaxes TLS or signature
+# checks. The only tolerated one is the documented fallback: peer verification
+# off for snapshot.ubuntu.com when no CA bundle is available.
+tls_relaxations() {
+  {
+    grep -Ei 'trusted *= *yes|allow-insecure *= *yes|allow-weak *= *yes|allow-downgrade-to-insecure *= *yes' <<<"$1" || true
+    grep -Ei 'Verify-Host|Check-Valid-Until|Check-Date|AllowReleaseInfoChange|::SslForceVersion|::IssuerCert|::CrlFile' <<<"$2" || true
+    grep -Ei 'Verify-Peer' <<<"$2" | grep -vx 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' || true
+    grep -Ei 'AllowInsecureRepositories|AllowDowngradeToInsecureRepositories|AllowUnauthenticated|AllowWeakRepositories' <<<"$2" |
+      grep -Evi '"(false|0|no)";$' || true
+  } | sed '/^$/d'
+}
+if bash "$BUILDER" --render-apt-config "$tmp/apt" >"$tmp/out" 2>&1; then
+  src="$(cat "$tmp/apt/sources.list.d/"*.sources 2>/dev/null || true)"
+  conf="$(cat "$tmp/apt/apt.conf.d/"* 2>/dev/null || true)"
+  if [[ "$(grep '^URIs:' <<<"$src")" == "URIs: https://snapshot.ubuntu.com/ubuntu/${snapshot}/" ]]; then
+    pass "apt resolves only from snapshot ${snapshot}"
+  else
+    fail "apt sources are not exactly the lock's snapshot: $(grep '^URIs:' <<<"$src" | tr '\n' ' ')"
+  fi
+  if grep -qx 'Suites: noble noble-updates noble-security' <<<"$src" &&
+    grep -qx 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' <<<"$src"; then
+    pass "snapshot covers noble/-updates/-security and is signature-checked"
+  else
+    fail "snapshot sources lack the noble pockets or Signed-By"
+  fi
+  if grep -Eq 'archive\.ubuntu\.com|security\.ubuntu\.com' <<<"$src$conf"; then
+    fail "apt configuration still names the moving archive"
+  else
+    pass "apt configuration never names the moving archive"
+  fi
+  if [[ -n "$(tls_relaxations "$src" "$conf")" ]]; then
+    fail "apt configuration weakens signature/TLS checks: $(tls_relaxations "$src" "$conf" | tr '\n' ';')"
+  else
+    pass "no host CA bundle: signature verification kept; TLS relaxed for snapshot.ubuntu.com only"
+  fi
+  if grep -qx 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' <<<"$conf"; then
+    pass "no host CA bundle: documented signature-only fallback is used"
+  else
+    fail "no host CA bundle: expected the snapshot-scoped Verify-Peer fallback"
+  fi
+else
+  fail "build-validator-pinned.sh --render-apt-config failed: $(cat "$tmp/out")"
+fi
+# With the runner's CA bundle mounted, TLS to the snapshot is verified too.
+if bash "$BUILDER" --render-apt-config "$tmp/apt-ca" /etc/bpfcompat-snapshot-ca.crt >"$tmp/out" 2>&1; then
+  src="$(cat "$tmp/apt-ca/sources.list.d/"*.sources 2>/dev/null || true)"
+  conf="$(cat "$tmp/apt-ca/apt.conf.d/"* 2>/dev/null || true)"
+  if grep -qx 'Acquire::https::snapshot.ubuntu.com::CaInfo "/etc/bpfcompat-snapshot-ca.crt";' <<<"$conf" &&
+    ! grep -q 'Verify-Peer' <<<"$conf" && [[ -z "$(tls_relaxations "$src" "$conf")" ]]; then
+    pass "host CA bundle: TLS to snapshot.ubuntu.com verified against it, nothing relaxed"
+  else
+    fail "host CA bundle: expected CaInfo and no TLS/auth relaxation, got: $(tr '\n' ';' <<<"$conf")"
+  fi
+else
+  fail "build-validator-pinned.sh --render-apt-config <dir> <ca> failed: $(cat "$tmp/out")"
+fi
+if grep -Eq -- '--allow-unauthenticated|--allow-insecure-repositories|--allow-releaseinfo-change|trusted=yes|-o +[A-Za-z:]*(Verify|Allow|Check)' "$BUILDER"; then
+  fail "builder passes an apt option that weakens verification on the command line"
+else
+  pass "builder passes no verification-weakening apt options on the command line"
+fi
+inside="$(awk '/"--inside"/,/^fi$/' "$BUILDER")"
+if awk '/rm -f \/etc\/apt\/sources.list/ { r = NR } /apt-get update/ && !u { u = NR } END { exit !(r && u && r < u) }' <<<"$inside" &&
+  grep -q 'render_apt_config /etc/apt' <<<"$inside"; then
+  pass "--inside drops the image's archive sources before apt-get update"
+else
+  fail "--inside does not replace the image's archive sources with the snapshot before apt-get update"
+fi
+# apt-get update exits 0 when an index fetch fails (TLS error, 5xx): without
+# --error-on=any the retry never runs and the snapshot failure surfaces later.
+if grep -Eq 'apt-get update[^#]*--error-on=any' <<<"$inside"; then
+  pass "--inside treats any failed snapshot index fetch as an apt-get update failure"
+else
+  fail "--inside apt-get update ignores failed index fetches (needs --error-on=any)"
+fi
 
 # ---------------------------------------------------------------- 3. binary identity
 if command -v cc >/dev/null && command -v readelf >/dev/null && command -v objdump >/dev/null; then
