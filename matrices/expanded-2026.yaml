@@ -36,8 +36,11 @@ profiles:
     required: true
   - id: ubuntu-22.04-minimal-5.15
     required: false
+  # Not gating: lockdown is not enforced in this guest (observed "[none]"),
+  # so it adds no coverage beyond the required ubuntu-22.04-5.15 above. See
+  # docs/profile-claims.md.
   - id: ubuntu-22.04-5.15-lockdown
-    required: true
+    required: false
   - id: debian-12-6.1
     required: true
   - id: amazon-linux-2023-6.1

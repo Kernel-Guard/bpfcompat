@@ -10,7 +10,9 @@ claim support the profiles do not describe. "Runnable" is a property of
 the profile and executor, independent of whether an image is cached on any
 particular machine. For tiering rationale see
 [profile-catalog.md](profile-catalog.md); for how images are fetched and
-pinned see [image-pipeline.md](image-pipeline.md).
+pinned see [image-pipeline.md](image-pipeline.md). Runnable is not the
+same as verified: which profiles have an observed identity, and which may
+gate a release, is in [profile-claims.md](profile-claims.md).
 
 | Category | Count | Meaning |
 |---|---|---|
@@ -65,9 +67,9 @@ image is fetched on first use and its sha256 is recorded.
 | ubuntu-22.04-5.15-k5.15.0-186 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-k5.15.0-187 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-5.15-k5.15.0-189 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
-| ubuntu-22.04-5.15-lockdown | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
-| ubuntu-22.04-5.15-lockdown-k5.15.0-186 | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
-| ubuntu-22.04-5.15-lockdown-k5.15.0-189 | ubuntu | 22.04-lockdown | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
+| ubuntu-22.04-5.15-lockdown | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run; kernel lockdown NOT enforced (guest observed [none]) — plain 22.04/5.15 coverage, see profile-claims.md |
+| ubuntu-22.04-5.15-lockdown-k5.15.0-186 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run; kernel lockdown NOT enforced (guest observed [none]) — plain 22.04/5.15 coverage, see profile-claims.md |
+| ubuntu-22.04-5.15-lockdown-k5.15.0-189 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run; kernel lockdown NOT enforced (guest observed [none]) — plain 22.04/5.15 coverage, see profile-claims.md |
 | ubuntu-22.04-arm64-5.15 | ubuntu | 22.04 | 5.15 | aarch64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-minimal-5.15 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |
 | ubuntu-22.04-minimal-5.15-k5.15.0-1105 | ubuntu | 22.04 | 5.15 | x86_64 | ssh | auto-downloads vendor cloud image on first run |

@@ -7,6 +7,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Changed
+- The `ubuntu-22.04-5.15-lockdown` profiles no longer advertise kernel
+  lockdown, which their guests do not run with.
+  - The image is the stock jammy cloud image and x86_64 guests boot legacy
+    BIOS. Booted guests report `/sys/kernel/security/lockdown` as
+    `[none] integrity confidentiality` (5.15.0-185 and 5.15.0-189).
+  - `version` is now `22.04` (was `22.04-lockdown`) in the base profile and
+    both sweep children. The ids are unchanged.
+  - The profile is `required: false` in `expanded-2026` and
+    `tier3-cloud-native`. `expanded-2026` loses no coverage, because the
+    required, pinned `ubuntu-22.04-5.15` covers the same release and kernel.
+    `tier3-cloud-native` now has no required target, so its verdict is
+    informational.
+  - The support matrix marks these profiles "kernel lockdown NOT enforced".
+    A catalog test keeps a lockdown claim out of `version` and out of any
+    hand-maintained matrix's required set.
+  - New `docs/profile-claims.md` compares claimed with observed identity for
+    the commonly used matrices and proposes Gating, Reference and
+    Experimental profile classes.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
