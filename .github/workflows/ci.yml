@@ -91,6 +91,8 @@ jobs:
           bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
+      - name: Release VM gate per-report assertion regression
+        run: bash scripts/check-release-gate-reports_test.sh
       - name: One-command installer regression
         # scripts/install.sh is what README consumers pipe into sh. Runs it
         # against a local fake release (no network): signatures bound to the
