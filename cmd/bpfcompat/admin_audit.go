@@ -136,7 +136,7 @@ func runAdminAuditVerify(args []string) int {
 		}
 		return runner.ExitToolError
 	}
-	if rejectPositionalArgs(fs) {
+	if rejectPositionalArgs(fs, args) {
 		return runner.ExitToolError
 	}
 	if strings.TrimSpace(*inputPath) == "" || strings.TrimSpace(*sigPath) == "" {
