@@ -426,22 +426,34 @@ func TestUnexercisedRequiredAttachIsExplainedAsSuch(t *testing.T) {
 	}
 }
 
-func TestTruncatedCandidateMustStillShowBaselineAttachedPrograms(t *testing.T) {
+func TestTruncatedCandidateComparabilityRestsOnWholeObjectState(t *testing.T) {
 	base := withAttach(compat(), "best-effort", attached("a"), attached("b"))
 	// The candidate has 70 programs and records 64 of them; "a" is not among
-	// the records, so what happened to it is unknown.
-	var progs []ap
-	progs = append(progs, attached("b"))
-	for i := 0; i < 63; i++ {
-		progs = append(progs, attached(fmt.Sprintf("p%02d", i)))
+	// the records. Whatever it is, nothing can have regressed when every one
+	// of the 70 programs attached: "a" is either attached beyond the records
+	// or no longer in the object.
+	mk := func(passed, notAttachable int) schema.Target {
+		var progs []ap
+		progs = append(progs, attached("b"))
+		for i := 0; i < 63; i++ {
+			progs = append(progs, attached(fmt.Sprintf("p%02d", i)))
+		}
+		cand := withAttach(compat(), "best-effort", progs...)
+		v := cand.Validation
+		v.AttachProgramCount, v.AttachSelected = 70, 70
+		v.AttachAttachable, v.AttachNotAttachable = 70-notAttachable, notAttachable
+		v.AttachAttempted, v.AttachPassed = passed, passed
+		v.AttachRecordsTruncated = true
+		if notAttachable > 0 {
+			v.AttachCoverage = schema.AttachCoveragePartial
+		}
+		return cand
 	}
-	cand := withAttach(compat(), "best-effort", progs...)
-	v := cand.Validation
-	v.AttachProgramCount, v.AttachSelected, v.AttachAttachable = 70, 70, 70
-	v.AttachAttempted, v.AttachPassed = 70, 70
-	v.AttachRecordsTruncated = true
-	c := onlyCell(t, build(t, report(base), report(cand)))
-	if c.Classification != Inconclusive || !strings.Contains(c.Reason, `"a"`) {
+	if c := onlyCell(t, build(t, report(base), report(mk(70, 0)))); c.Classification != UnchangedCompatible {
+		t.Fatalf("every program attached: got %s: %s", c.Classification, c.Reason)
+	}
+	// One unrecorded program is not attachable: "a" may be that one.
+	if c := onlyCell(t, build(t, report(base), report(mk(69, 1)))); c.Classification != Inconclusive {
 		t.Fatalf("got %s: %s", c.Classification, c.Reason)
 	}
 }

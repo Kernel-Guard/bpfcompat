@@ -29,7 +29,13 @@ const (
 // and appends the matching explanation to its reason. The classification is
 // left exactly as the comparison decided it.
 func attribute(cell *Cell, b, c ReportRef) {
-	if cell.Classification != NewRegression && cell.Classification != Fixed {
+	var outcome string
+	switch cell.Classification {
+	case NewRegression:
+		outcome = "regressed"
+	case Fixed:
+		outcome = "was fixed"
+	default:
 		return
 	}
 	var changed, missing []string
@@ -42,10 +48,18 @@ func attribute(cell *Cell, b, c ReportRef) {
 			changed = append(changed, name)
 		}
 	}
-	compare("artifact", releasedIdentity(b), releasedIdentity(c))
+	// What the project ships: the artifact, and in command mode its own
+	// loader binary, compared as a separate input.
+	command := b.LoaderMode == "command" && c.LoaderMode == "command"
+	if !command || b.ArtifactSHA256 != "" || c.ArtifactSHA256 != "" {
+		compare("artifact", b.ArtifactSHA256, c.ArtifactSHA256)
+	}
+	if command {
+		compare("loader", b.LoaderSHA256, c.LoaderSHA256)
+	}
 	compare("kernel", cell.Baseline.ObservedKernel, cell.Candidate.ObservedKernel)
-	// The os-release identity and the validator are compared only when both
-	// sides record them; older reports carry neither.
+	// The os-release identity and the artifact-mode validator are compared
+	// only when both sides record them; older reports carry neither.
 	if bo, co := osIdentity(cell.Baseline), osIdentity(cell.Candidate); bo != "" && co != "" && bo != co {
 		changed = append(changed, "os")
 	}
@@ -63,33 +77,54 @@ func attribute(cell *Cell, b, c ReportRef) {
 			strings.Join(missing, " and "))
 	case len(changed) == 0:
 		cell.Attribution = AttributionNoneRecorded
-		cell.Reason += fmt.Sprintf("; neither the artifact nor the observed environment is recorded as changed (same artifact, %s)", kernels)
-	case len(changed) == 1 && changed[0] == "artifact":
+		cell.Reason += fmt.Sprintf("; neither the shipped program nor the observed environment is recorded as changed (%s)", kernels)
+	case only(changed, "artifact", "loader"):
 		cell.Attribution = AttributionArtifact
-		cell.Reason += fmt.Sprintf("; only the artifact changed (%s), so the change follows the artifact", kernels)
-	case onlyEnvironment(changed):
+		cell.Reason += fmt.Sprintf("; only the shipped program changed (%s; %s), so the change follows it",
+			strings.Join(changed, " and "), kernels)
+	case only(changed, "kernel", "os"):
 		cell.Attribution = AttributionEnvironment
-		cell.Reason += fmt.Sprintf("; the artifact is unchanged and the environment moved (%s): the obligation regressed on the newer environment, not through an artifact change", kernels)
-	case len(changed) == 1 && changed[0] == "validator":
+		cell.Reason += fmt.Sprintf("; the shipped program is unchanged and the environment moved (%s): the obligation %s on the newer environment, not through a change to the program",
+			kernels, outcome)
+	case only(changed, "validator"):
 		cell.Attribution = AttributionValidator
-		cell.Reason += "; only the bpfcompat validator changed, so the change follows the measuring instrument, not the artifact or the environment"
+		cell.Reason += "; only the bpfcompat validator changed, so the change follows the measuring instrument, not the shipped program or the environment"
 	default:
 		cell.Attribution = AttributionMultiple
-		cell.Reason += fmt.Sprintf("; %s all changed between the runs (%s), so the change cannot be attributed to the artifact alone",
-			strings.Join(changed, ", "), kernels)
+		cell.Reason += fmt.Sprintf("; %s changed between the runs (%s), so the change cannot be attributed to any one of them",
+			joinAnd(changed), kernels)
 	}
 }
 
-// releasedIdentity is what the project ships: the artifact, and in command
-// mode its own loader binary as well.
-func releasedIdentity(r ReportRef) string {
-	if r.LoaderMode == "command" {
-		if r.ArtifactSHA256 == "" && r.LoaderSHA256 == "" {
-			return ""
-		}
-		return "artifact:" + r.ArtifactSHA256 + " loader:" + r.LoaderSHA256
+// only reports whether every changed input is one of allowed.
+func only(changed []string, allowed ...string) bool {
+	if len(changed) == 0 {
+		return false
 	}
-	return r.ArtifactSHA256
+	for _, c := range changed {
+		ok := false
+		for _, a := range allowed {
+			if c == a {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func joinAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	default:
+		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+	}
 }
 
 func osIdentity(s CellSide) string {
@@ -97,15 +132,6 @@ func osIdentity(s CellSide) string {
 		return ""
 	}
 	return s.ObservedOSID + " " + s.ObservedOSVersionID
-}
-
-func onlyEnvironment(changed []string) bool {
-	for _, c := range changed {
-		if c != "kernel" && c != "os" {
-			return false
-		}
-	}
-	return len(changed) > 0
 }
 
 func orDash(s string) string {

@@ -71,13 +71,17 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   `attribution: "errno_only"`. The name is the program's libbpf name, unique
   within an object. At most 64 programs are recorded per target
   (`attach_records_truncated` marks the rest); the counts always cover the
-  whole object. For objects with more than 64 programs, `bpfcompat diff`
-  can compare the unrecorded programs only through those counts. That proves
-  per-program comparability only when every unrecorded program on both sides
-  is in the same attach state; otherwise two of them could swap (one
-  attached → failed, another failed → attached) with every count unchanged,
-  so the cell is `INCONCLUSIVE`, never `UNCHANGED_COMPATIBLE` or `FIXED`. A
-  regression proven inside the records is still `NEW_REGRESSION`. In the
+  whole object. Beyond the records a program has no identity: it can be a
+  different program on each side, swap state with another, or cross the
+  record boundary when programs are added or removed earlier in the object,
+  all with every count unchanged. So when either side's records are truncated,
+  `bpfcompat diff` shows per-program comparability only when every program on
+  both sides attached (nothing could have changed state); otherwise the cell is
+  `INCONCLUSIVE`, never `UNCHANGED_COMPATIBLE` or `FIXED`. A regression proven
+  inside the records is still `NEW_REGRESSION`; a side whose attach phase did
+  not run makes no attach claim. Consequence: a >64-program object with any
+  program that is not attached (not attachable, not selected, or failed) cannot
+  pass the diff gate on identical evidence until every program is recorded. In the
   runner, required-mode verdicts use only whole-object counts (every selected
   program attached, none failed); a manifest-required program outside the
   records is treated as not attached.

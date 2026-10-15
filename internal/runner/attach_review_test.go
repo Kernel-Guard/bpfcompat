@@ -157,8 +157,9 @@ func TestRequiredVerdictOnTruncatedRecordsRestsOnWholeObjectCounts(t *testing.T)
 		t.Fatalf("a failure outside the records must still fail required mode: got %s", got.Verdict)
 	}
 	r = mk(70, 0, "pass")
-	if got := runAttachTarget(t, "required", validatorTuning{requiredAttachPrograms: []string{"p69"}}, r.json(t)); got.Verdict == schema.VerdictCompatible {
-		t.Fatal("a manifest-required program outside the records cannot be shown attached by name")
+	got := runAttachTarget(t, "required", validatorTuning{requiredAttachPrograms: []string{"p69"}}, r.json(t))
+	if got.Verdict != schema.VerdictUnsupported || got.ClassificationCode != "ATTACH_NOT_EXERCISED" {
+		t.Fatalf("a manifest-required program outside the records cannot be shown attached by name: got %s/%s", got.Verdict, got.ClassificationCode)
 	}
 }
 

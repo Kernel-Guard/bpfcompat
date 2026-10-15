@@ -195,13 +195,22 @@ type attachSide struct {
 	programs  map[string]*schema.AttachProgram
 
 	// Whole-object counts, compared when per-program records cannot be.
-	selected, attachable, notAttachable, passed int
-	coverage                                    string
-	records, programCount                       int
-	// unrecorded counts the programs outside the per-program records by
-	// attach state (whole-object count minus recorded tally). Only non-zero
-	// states are present.
-	unrecorded map[string]int
+	selected, attachable, notAttachable, passed     int
+	coverage                                        string
+	records, programCount, failedCount, notSelected int
+	phaseRan                                        bool
+}
+
+// whollyAttached reports whether every program in the object attached: all
+// selected, all attachable, none failed. Only then does nothing about any
+// single program need to be known to rule out a hidden change.
+func (s attachSide) whollyAttached() bool {
+	return s.phaseRan && s.programCount > 0 && s.passed == s.programCount
+}
+
+func describeTruncatedSide(side string, s attachSide) string {
+	return fmt.Sprintf("%s records %d of %d programs (attached %d, failed %d, not attachable %d, not selected %d)",
+		side, s.records, s.programCount, s.passed, s.failedCount, s.notAttachable, s.notSelected)
 }
 
 func attachSideOf(t *schema.Target) attachSide {
@@ -223,70 +232,13 @@ func attachSideOf(t *schema.Target) attachSide {
 	s.selected, s.attachable, s.notAttachable = v.AttachSelected, v.AttachAttachable, v.AttachNotAttachable
 	s.passed, s.coverage = v.AttachPassed, v.AttachCoverage
 	s.records, s.programCount = len(v.AttachPrograms), v.AttachProgramCount
+	s.failedCount, s.notSelected = v.AttachFailed, v.AttachNotSelected
+	s.phaseRan = v.LoadStatus == "pass" && v.AttachEffectiveMode != "disabled"
 	s.programs = make(map[string]*schema.AttachProgram, len(v.AttachPrograms))
-	tally := map[string]int{}
 	for i := range v.AttachPrograms {
 		s.programs[v.AttachPrograms[i].Name] = &v.AttachPrograms[i]
-		tally[v.AttachPrograms[i].Outcome]++
-	}
-	// Whole-object count per state. validateAttachAccounting has already
-	// established the phase invariants these rely on.
-	phaseRan := v.LoadStatus == "pass" && v.AttachEffectiveMode != "disabled"
-	whole := map[string]int{
-		schema.AttachOutcomeAttached:    v.AttachPassed,
-		schema.AttachOutcomeFailed:      v.AttachFailed,
-		schema.AttachOutcomeNotSelected: v.AttachNotSelected,
-	}
-	if phaseRan {
-		whole[schema.AttachOutcomeNotAttachable] = v.AttachNotAttachable
-	} else {
-		whole[schema.AttachOutcomeNotAttempted] = v.AttachSelected
-	}
-	s.unrecorded = map[string]int{}
-	for state, n := range whole {
-		if rest := n - tally[state]; rest > 0 {
-			s.unrecorded[state] = rest
-		}
 	}
 	return s
-}
-
-// uniformUnrecorded reports the single attach state shared by every program
-// outside the records ("" with ok=true when there are none), or ok=false when
-// the unrecorded programs are in more than one state.
-func (s attachSide) uniformUnrecorded() (state string, ok bool) {
-	switch len(s.unrecorded) {
-	case 0:
-		return "", true
-	case 1:
-		for k := range s.unrecorded {
-			return k, true
-		}
-	}
-	return "", false
-}
-
-func describeUnrecorded(side string, s attachSide) string {
-	keys := make([]string, 0, len(s.unrecorded))
-	for k := range s.unrecorded {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%d %s", s.unrecorded[k], k))
-	}
-	return fmt.Sprintf("%s records %d of %d programs; unrecorded: %s", side, s.records, s.programCount, strings.Join(parts, ", "))
-}
-
-func (s attachSide) failedInRecords() int {
-	n := 0
-	for _, p := range s.programs {
-		if p.Outcome == schema.AttachOutcomeFailed {
-			n++
-		}
-	}
-	return n
 }
 
 // attachRegression reports programs attempted on both sides that attached at
@@ -382,12 +334,6 @@ func attachComparability(b, c attachSide) string {
 		sort.Strings(untried)
 		parts = append(parts, listNames(untried)+" attached at baseline and was not attempted in the candidate")
 	}
-	if (b.truncated || c.truncated) &&
-		(b.selected != c.selected || b.attachable != c.attachable || b.notAttachable != c.notAttachable) {
-		parts = append(parts, fmt.Sprintf(
-			"per-program records are truncated and the whole-object scope changed (selected %d -> %d, attachable %d -> %d, not attachable %d -> %d)",
-			b.selected, c.selected, b.attachable, c.attachable, b.notAttachable, c.notAttachable))
-	}
 	if b.passed > 0 && (c.coverage == schema.AttachCoverageEmpty || c.coverage == schema.AttachCoverageNone) {
 		parts = append(parts, fmt.Sprintf("the candidate attached nothing (attach_coverage %q) where the baseline attached %d program(s)", c.coverage, b.passed))
 	}
@@ -395,37 +341,18 @@ func attachComparability(b, c attachSide) string {
 		sort.Strings(added)
 		parts = append(parts, "the candidate adds "+listNames(added)+", whose attach failed, with no baseline to compare")
 	}
-	if c.truncated {
-		// Absent from truncated records is not the same as removed: the
-		// program may be among the unrecorded ones, in any state.
-		var unseen []string
-		for name, bp := range b.programs {
-			if _, ok := c.programs[name]; !ok && bp.Outcome == schema.AttachOutcomeAttached {
-				unseen = append(unseen, fmt.Sprintf("%q", name))
-			}
-		}
-		if len(unseen) > 0 {
-			sort.Strings(unseen)
-			parts = append(parts, "baseline-attached "+listNames(unseen)+" cannot be located in the candidate's truncated per-program records")
-		}
-	}
-	if b.truncated || c.truncated {
-		// Unrecorded programs are compared only through counts. That proves
-		// nothing about any one of them unless every unrecorded program on
-		// both sides is in the same state: then no unrecorded program can
-		// have moved from one state to another. Otherwise two of them can
-		// swap -- one attached -> failed, another failed -> attached -- with
-		// every count unchanged.
-		bs, bok := b.uniformUnrecorded()
-		cs, cok := c.uniformUnrecorded()
-		if !bok || !cok || (bs != "" && cs != "" && bs != cs) {
-			parts = append(parts, "per-program comparability cannot be shown for programs outside the truncated records ("+
-				describeUnrecorded("baseline", b)+"; "+describeUnrecorded("candidate", c)+
-				"), so a change among the unrecorded programs cannot be ruled out")
-		}
-	}
-	if c.truncated && c.failed > c.failedInRecords() {
-		parts = append(parts, fmt.Sprintf("the candidate has %d attach failure(s) outside its per-program records", c.failed-c.failedInRecords()))
+	if (b.truncated || c.truncated) && b.phaseRan && c.phaseRan && (!b.whollyAttached() || !c.whollyAttached()) {
+		// Beyond the 64 per-program records a program has no identity: it
+		// can be a different program on each side, swap state with another,
+		// or move across the record boundary when programs are added or
+		// removed earlier in the object, all with every count unchanged. No
+		// per-program comparison can be shown from such records unless there
+		// is nothing to compare -- every program on both sides attached. A
+		// side whose attach phase did not run makes no attach claim and is
+		// left to the mode and verdict rules.
+		parts = append(parts, "per-program records are truncated ("+
+			describeTruncatedSide("baseline", b)+"; "+describeTruncatedSide("candidate", c)+
+			"); beyond the records program identity is unknown, so per-program comparability holds only when every program on both sides attached, which it did not")
 	}
 	if len(parts) == 0 {
 		return ""
@@ -435,7 +362,7 @@ func attachComparability(b, c attachSide) string {
 
 // removedPrograms lists baseline programs the candidate no longer contains.
 func removedPrograms(b, c attachSide) string {
-	if !b.accounted || !c.accounted || c.truncated {
+	if !b.accounted || !c.accounted || b.truncated || c.truncated {
 		return ""
 	}
 	var gone []string

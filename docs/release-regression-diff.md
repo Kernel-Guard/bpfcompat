@@ -111,20 +111,24 @@ distribution ships updates. Each cell whose outcome changed (`NEW_REGRESSION`,
 
 | Case | `changed_inputs` | `attribution` | Classification |
 |---|---|---|---|
-| A. different artifacts, same observed kernel | `artifact` | `artifact` | `NEW_REGRESSION` — the change follows the artifact |
+| A. different artifacts, same observed kernel | `artifact` (command mode: `artifact` and/or `loader`) | `artifact` | `NEW_REGRESSION` — the change follows the shipped program |
 | B. same artifact, kernel upgraded within the family | `kernel` (and/or `os`) | `environment` | `NEW_REGRESSION` — a kernel-upgrade regression; still gating, never hidden |
-| C. artifact **and** kernel changed | `artifact`, `kernel` | `multiple` | `NEW_REGRESSION` of the obligation; the reason says the change cannot be attributed to the artifact alone |
+| C. artifact **and** kernel changed | `artifact`, `kernel` | `multiple` | `NEW_REGRESSION` of the obligation; the reason says the change cannot be attributed to any one input |
 | only the bpfcompat validator changed | `validator` | `validator` | `NEW_REGRESSION`; the measuring instrument changed |
-| nothing recorded as changed | — | `none_recorded` | `NEW_REGRESSION`; same artifact on the same kernel produced a different outcome |
-| an artifact sha256 or observed kernel missing on either side | — | `unknown` | `NEW_REGRESSION`; attribution cannot be determined |
+| nothing recorded as changed | — | `none_recorded` | `NEW_REGRESSION`; the same program on the same kernel produced a different outcome |
+| an identity (artifact, loader in command mode, observed kernel) missing on either side | — | `unknown` | `NEW_REGRESSION`; attribution cannot be determined |
 
-`artifact` is `artifact.sha256` (in command mode, together with the loader
-binary's sha256); `kernel` is `environment.observed_kernel`; `os` is the
-observed os-release identity, compared only when both sides record it;
-`validator` is the artifact-mode validator sha256 (a change is a note, never a
-reason for `INCONCLUSIVE`). Only `attribution: artifact` is a statement about the
-candidate's software on its own. A gate that should block only on artifact
-changes can filter on it; the default gate blocks on every required
+The same fields are recorded, with the same meaning, on `FIXED` cells (the
+reason then says the obligation *was fixed* rather than *regressed*).
+
+`artifact` is `artifact.sha256`; in command mode the project's loader binary
+(`command.binary.sha256`) is a separate input, `loader`, because it is shipped
+too. `kernel` is `environment.observed_kernel`; `os` is the observed os-release
+identity and `validator` the artifact-mode validator sha256, both compared only
+when both sides record them (a validator change is a note, never a reason for
+`INCONCLUSIVE`). Only `attribution: artifact` is a statement about the
+candidate's shipped program on its own. A gate that should block only on
+program changes can filter on it; the default gate blocks on every required
 `NEW_REGRESSION`, because "my unchanged program broke on the updated kernel" is
 the question bpfcompat exists to answer.
 

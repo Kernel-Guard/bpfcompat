@@ -140,11 +140,12 @@ type Cell struct {
 	Reason          string `json:"reason"`
 	// ChangedInputs and Attribution say, for a cell whose outcome changed
 	// (NEW_REGRESSION, FIXED), which recorded inputs differ between the two
-	// runs: "artifact" (artifact.sha256), "kernel" (observed kernel release),
-	// "os" (observed os-release identity), "validator" (artifact-mode
-	// validator sha256). Attribution is "artifact", "environment" (kernel/os
-	// only), "validator", "multiple", "none_recorded", or "unknown" when an
-	// identity is missing. The classification is about the obligation; this
+	// runs: "artifact" (artifact.sha256), "loader" (command-mode loader
+	// sha256), "kernel" (observed kernel release), "os" (observed os-release
+	// identity), "validator" (artifact-mode validator sha256). Attribution is
+	// "artifact" (artifact/loader only), "environment" (kernel/os only),
+	// "validator", "multiple", "none_recorded", or "unknown" when an identity
+	// is missing. The classification is about the obligation; this
 	// is what the evidence can and cannot attribute it to.
 	ChangedInputs []string `json:"changed_inputs,omitempty"`
 	Attribution   string   `json:"attribution,omitempty"`

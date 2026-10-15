@@ -56,7 +56,7 @@ func TestTruncatedSwapAmongUnrecordedProgramsIsInconclusive(t *testing.T) {
 	if c.Classification == UnchangedCompatible || c.Classification == Fixed {
 		t.Fatalf("truncated records with unrecorded programs in more than one state compared as %s: %s", c.Classification, c.Reason)
 	}
-	if c.Classification != Inconclusive || !strings.Contains(c.Reason, "unrecorded") {
+	if c.Classification != Inconclusive || !strings.Contains(c.Reason, "program identity is unknown") {
 		t.Fatalf("got %s: %s", c.Classification, c.Reason)
 	}
 }
@@ -101,15 +101,15 @@ func TestRegressionSaysWhichInputsChanged(t *testing.T) {
 		mustSay, mustNotSay          string
 	}{
 		{"A: different artifacts, same observed kernel", "aaa", "bbb", "5.15.0-186-generic", "5.15.0-186-generic",
-			"artifact", []string{"artifact"}, "only the artifact changed", "kernel changed"},
+			"artifact", []string{"artifact"}, "only the shipped program changed", "kernel changed"},
 		{"B: same artifact across a kernel upgrade", "aaa", "aaa", "5.15.0-186-generic", "5.15.0-189-generic",
-			"environment", []string{"kernel"}, "the artifact is unchanged", "the artifact changed"},
+			"environment", []string{"kernel"}, "the shipped program is unchanged", "the artifact changed"},
 		{"C: artifact and kernel both changed", "aaa", "bbb", "5.15.0-186-generic", "5.15.0-189-generic",
-			"multiple", []string{"artifact", "kernel"}, "cannot be attributed", "only the artifact changed"},
+			"multiple", []string{"artifact", "kernel"}, "cannot be attributed", "only the shipped program changed"},
 		{"neither recorded as changed", "aaa", "aaa", "5.15.0-186-generic", "5.15.0-186-generic",
-			"none_recorded", nil, "neither", "only the artifact changed"},
+			"none_recorded", nil, "neither", "only the shipped program changed"},
 		{"artifact identity missing", "", "bbb", "5.15.0-186-generic", "5.15.0-186-generic",
-			"unknown", nil, "cannot be determined", "only the artifact changed"},
+			"unknown", nil, "cannot be determined", "only the shipped program changed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
