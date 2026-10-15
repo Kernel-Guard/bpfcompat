@@ -10,5 +10,13 @@ profiles:
     required: false
   - id: rhcos-4.16-5.14
     required: false
+  # Not gating: lockdown is not enforced in this guest (observed "[none]").
+  # See docs/profile-claims.md.
   - id: ubuntu-22.04-5.15-lockdown
+    required: false
+  # The required target. RunVerdict only gates on required targets, so a
+  # matrix without one reports COMPATIBLE for any artifact. This is plain
+  # Ubuntu 22.04 / 5.15 on a sha256-pinned image with observed identity; it
+  # is not a hardened or cloud-native posture, and none is claimed here.
+  - id: ubuntu-22.04-5.15
     required: true

@@ -42,7 +42,13 @@ while IFS= read -r -d '' path; do
   elif [[ "$id" == "amazon-linux-2-4.14" ]]; then
     notrunnable+="${row}	ssh	cataloged; not bootable on current SSH/cloud-init executor"$'\n'
   elif has_source_url "$path"; then
-    runnable+="${row}	ssh	auto-downloads vendor cloud image on first run"$'\n'
+    note="auto-downloads vendor cloud image on first run"
+    # A lockdown-named profile must not read as lockdown coverage: no executor
+    # path enforces lockdown and the guest reports "[none]" (profile-claims.md).
+    if [[ "$id" == *-lockdown* ]]; then
+      note+="; kernel lockdown NOT enforced (guest observed [none]) — plain 22.04/5.15 coverage, see profile-claims.md"
+    fi
+    runnable+="${row}	ssh	${note}"$'\n'
   else
     manual+="${row}	ssh	no source_url configured — operator supplies the image (see make import-required-images)"$'\n'
   fi
@@ -72,7 +78,9 @@ render_table() {
   echo "the profile and executor, independent of whether an image is cached on any"
   echo "particular machine. For tiering rationale see"
   echo "[profile-catalog.md](profile-catalog.md); for how images are fetched and"
-  echo "pinned see [image-pipeline.md](image-pipeline.md)."
+  echo "pinned see [image-pipeline.md](image-pipeline.md). Runnable is not the"
+  echo "same as verified: which profiles have an observed identity, and which may"
+  echo "gate a release, is in [profile-claims.md](profile-claims.md)."
   echo
   echo "| Category | Count | Meaning |"
   echo "|---|---|---|"

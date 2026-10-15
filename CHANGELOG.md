@@ -7,6 +7,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Changed
+- The `ubuntu-22.04-5.15-lockdown` profiles no longer advertise kernel
+  lockdown, which their guests do not run with.
+  - The image is the stock jammy cloud image and x86_64 guests boot legacy
+    BIOS. Booted guests report `/sys/kernel/security/lockdown` as
+    `[none] integrity confidentiality` (5.15.0-185 and 5.15.0-189).
+  - `version` is now `22.04` (was `22.04-lockdown`) in the base profile and
+    both sweep children. The ids are unchanged.
+  - The profile is `required: false` in `expanded-2026` and
+    `tier3-cloud-native`. Ubuntu 22.04 / 5.15 stays gated in both by the
+    pinned `ubuntu-22.04-5.15`, which `tier3-cloud-native` now lists as its
+    required target. What no longer gates is the floating `jammy/current`
+    image the lockdown profile boots (5.15.0-185 on 2026-10-15, against
+    5.15.0-186 on the pinned image).
+  - **Regenerate any diff baseline that includes these profiles.** Because
+    `version` changed, the first `bpfcompat diff` against an older baseline
+    is `INCONCLUSIVE` ("the obligation changed"), and exits 1 where the
+    target is required on either side.
+  - The support matrix marks these profiles "kernel lockdown NOT enforced".
+  - Catalog tests keep a lockdown claim out of `version` and out of any
+    hand-maintained matrix's required set, reading `required` with the
+    runner's default (omitted means required). They also fail if a
+    hand-maintained matrix has no required target. `RunVerdict` gates only
+    on required targets, so such a matrix reports COMPATIBLE for any
+    artifact. The pre-existing opt-in `rhcos` and `rhcos-arm64` matrices
+    are allowlisted.
+  - New `docs/profile-claims.md` compares claimed with observed identity for
+    the commonly used matrices and proposes Gating, Reference and
+    Experimental profile classes.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
