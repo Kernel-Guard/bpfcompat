@@ -44,6 +44,16 @@ This preserves VM isolation as the normal operational path while keeping host ex
 - Signing supports local key mode and external signer mode (`BPFCOMPAT_SIGNING_MODE=external-cmd`) for KMS/HSM-backed integrations.
 - Hostile artifact checks are exercised by `scripts/hostile-artifact-suite.sh` with archived VM evidence under `evidence/hostile-suite/<timestamp>/`.
 
+### Known limitations of artifact-history verification
+
+`bpfcompat history verify` checks each record's hash, its `prev_record_sha256` link to the previous record, and its Ed25519 signature against the trusted keyring. Read a clean result with these limits in mind:
+
+- **The trust root lives in the workdir.** Trusted keys are the union of `<workdir>/keys/artifact-registry-signing-key.pub`, `<workdir>/keys/trusted-signing-keys.pub`, the file named by `BPFCOMPAT_TRUSTED_SIGNING_KEYS_PATH`, and `BPFCOMPAT_TRUSTED_SIGNING_PUBLIC_KEYS`. In local signing mode, a missing private key causes a new key pair to be generated and its public key written to the workdir keyring. Anyone who can write the workdir can therefore produce records that verify. Verification is tamper evidence against parties without workdir write access, not against a workdir writer. Restrict workdir ownership and permissions, and do not restore it from untrusted caches or CI artifacts.
+- **Rollback and truncation are not detected.** Verification checks the records that are present and their backward links; there is no pinned head. Removing the newest records leaves a history that still verifies. Where this matters, compare the expected latest `record_sha256` or record count out of band.
+- **Records are not bound to a tenant or project.** The signed record fields carry no tenant or project identity. Do not share a signing key across projects or registries.
+
+These limitations are tracked for a future release.
+
 ## Non-goals for MVP
 
 - This model does not claim full sandbox-hardening.

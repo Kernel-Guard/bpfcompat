@@ -67,6 +67,11 @@ jobs:
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Hosted compatibility-gate scope regression
+        # The required hosted gate skips the VM run when its path classifier
+        # says a PR is not compatibility-relevant; pkg/ and scripts/ changes
+        # used to slip through. Pins scripts/hosted-gate-required.sh.
+        run: bash scripts/hosted-gate-required_test.sh
       - name: Action diff-mode regression
         # baseline-report / candidate-report policy, path safety, stale-output
         # and checksum handling, against the real `bpfcompat diff` (#141).
@@ -86,6 +91,12 @@ jobs:
           bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
+      - name: One-command installer regression
+        # scripts/install.sh is what README consumers pipe into sh. Runs it
+        # against a local fake release (no network): signatures bound to the
+        # requested tag, fail-closed verification, truncated streams, custom
+        # install dirs and tag validation.
+        run: bash scripts/install_test.sh
       - name: Release-state fail-closed regression
         run: bash scripts/check-release-state_test.sh
       - name: Release metadata/channel regression
@@ -278,6 +289,12 @@ jobs:
       # exercise the Go side so the CI gate stays portable.
       - name: go build
         run: go build ./...
+      - name: Env reference in sync with the catalog
+        # docs/env-reference.md is generated from internal/envref and says
+        # "do not edit by hand"; the Makefile comment said CI enforced this,
+        # but no workflow ran it, so a hand edit (or a missed catalog entry)
+        # could ship. Fails if regenerating the doc changes the committed file.
+        run: make env-docs-check
       - name: Prove the compiling toolchain
         # go.mod only states a minimum; this asserts the stdlib actually
         # linked into the CLI comes from the pinned toolchain.
