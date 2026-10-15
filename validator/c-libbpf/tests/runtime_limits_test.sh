@@ -224,6 +224,29 @@ set -e
 check "bpftool absent from PATH: reported unavailable, not probed" \
   '.capabilities.bpftool_available == false and .capabilities.bpftool_probe_ok == false' "$work/nobpftool.json"
 
+# A bpftool in the current directory must never run (the validator runs as
+# root): empty PATH entries and relative entries are not searched.
+mkdir -p "$work/cwd/bin" "$work/cwd-logs"
+marker="$work/cwd-bpftool-ran"
+# Absolute touch: the PATH under test has no usable system directories.
+printf '#!/bin/sh\n%s %s\necho "{}"\n' "$(command -v touch)" "$marker" >"$work/cwd/bpftool"
+cp "$work/cwd/bpftool" "$work/cwd/bin/bpftool"
+chmod +x "$work/cwd/bpftool" "$work/cwd/bin/bpftool"
+for p in "/nonexistent:" ":/nonexistent" "/nonexistent::/nonexistent" "bin" "." "./bin:/nonexistent"; do
+  rm -f "$marker"
+  set +e
+  (cd "$work/cwd" && PATH="$p" "$work/validator" --artifact "$work/progs1.bpf.o" --out "$work/cwd.json" \
+    --log-dir "$work/cwd-logs" --attach-mode disabled >/dev/null 2>&1)
+  set -e
+  if [[ -e "$marker" ]]; then
+    flunk "PATH='$p': bpftool from the current directory was executed"
+  else
+    pass "PATH='$p': bpftool from the current directory not executed"
+  fi
+  check "PATH='$p': relative/empty PATH entry not treated as bpftool location" \
+    '.capabilities.bpftool_available == false' "$work/cwd.json"
+done
+
 long="$work/long"
 for ((i = 0; i < 6; i++)); do long="$long/$(printf 'x%.0s' {1..200})"; done
 mkdir -p "$long"

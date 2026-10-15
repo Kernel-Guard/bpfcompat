@@ -1007,30 +1007,38 @@ static void detect_artifact_btf_sections(struct validator_result *res) {
     close(fd);
 }
 
-/* PATH lookup the way execvp() resolves `name` (no shell involved). */
-static bool executable_in_path(const char *name) {
+/* Resolve `name` to an absolute path of a regular executable file using only
+ * ABSOLUTE PATH entries. Empty entries (which execvp and the shell treat as
+ * the current directory) and relative entries ("bin", ".") are skipped: the
+ * validator usually runs as root, so a binary planted in the working
+ * directory must never be executed. The caller execs the returned path with
+ * execv, so no further PATH search happens. Returns false if not found. */
+static bool find_executable_in_path(const char *name, char *out, size_t out_size) {
     const char *path = getenv("PATH");
     if (!path || !path[0]) {
         path = "/bin:/usr/bin";
     }
-    char candidate[LOG_PATH_MAX];
     const char *cursor = path;
     for (;;) {
         const char *colon = strchr(cursor, ':');
         size_t len = colon ? (size_t)(colon - cursor) : strlen(cursor);
-        /* An empty PATH entry means the current directory. */
-        int n = len == 0 ? snprintf(candidate, sizeof(candidate), "%s", name)
-                         : snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)len, cursor, name);
-        struct stat st;
-        if (n > 0 && (size_t)n < sizeof(candidate) && stat(candidate, &st) == 0 &&
-            S_ISREG(st.st_mode) && access(candidate, X_OK) == 0) {
-            return true;
+        if (len > 0 && cursor[0] == '/') {
+            int n = snprintf(out, out_size, "%.*s/%s", (int)len, cursor, name);
+            struct stat st;
+            if (n > 0 && (size_t)n < out_size && stat(out, &st) == 0 &&
+                S_ISREG(st.st_mode) && access(out, X_OK) == 0) {
+                return true;
+            }
         }
         if (!colon) {
-            return false;
+            break;
         }
         cursor = colon + 1;
     }
+    if (out_size > 0) {
+        out[0] = '\0';
+    }
+    return false;
 }
 
 static void run_bpftool_feature_probe(struct validator_result *res) {
@@ -1041,7 +1049,8 @@ static void run_bpftool_feature_probe(struct validator_result *res) {
         return;
     }
 
-    if (!executable_in_path("bpftool")) {
+    char bpftool_path[LOG_PATH_MAX];
+    if (!find_executable_in_path("bpftool", bpftool_path, sizeof(bpftool_path))) {
         res->bpftool_available = false;
         return;
     }
@@ -1082,7 +1091,8 @@ static void run_bpftool_feature_probe(struct validator_result *res) {
             (void)dup2(null_fd, STDERR_FILENO);
         }
         char *const argv[] = {"bpftool", "feature", "probe", "-j", "kernel", NULL};
-        execvp(argv[0], argv);
+        /* execv, not execvp: run exactly the resolved absolute path. */
+        execv(bpftool_path, argv);
         _exit(127);
     }
     close(out_fd);
