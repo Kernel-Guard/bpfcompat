@@ -55,6 +55,9 @@ This document defines the maintained profile matrices used for compatibility cam
    - `ubuntu-22.04-5.15-lockdown` (**lockdown not enforced**: stock jammy image,
      legacy-BIOS boot, guest reports `[none]`; non-gating, see
      [`profile-claims.md`](profile-claims.md))
+   - `ubuntu-22.04-5.15` (the matrix's required target: plain Ubuntu 22.04 / 5.15
+     on a pinned image, so the matrix verdict is never a vacuous pass; it
+     claims no hardened posture)
 4. Multi-architecture foundation:
    - `ubuntu-22.04-arm64-5.15` (`aarch64`, requires ARM64-capable runner)
 5. Latest distro-kernel sweep:

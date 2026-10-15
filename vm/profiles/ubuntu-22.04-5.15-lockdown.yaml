@@ -1,12 +1,14 @@
-# Kernel lockdown is NOT enforced by this profile. The image is the stock
-# Ubuntu 22.04 cloud image (byte-identical to the plain ubuntu-22.04-5.15
-# lineage), the x86_64 executor boots it with legacy BIOS (no UEFI, no Secure
-# Boot), and nothing adds lockdown= to the kernel command line. Observed on
-# 2026-10-15: /sys/kernel/security/lockdown reads "[none] integrity
-# confidentiality" (kernels 5.15.0-185 and 5.15.0-189). The id is kept so
-# matrices, baselines and history stay stable; results from this profile are
-# plain Ubuntu 22.04 / 5.15 results, not lockdown results. See
-# docs/profile-claims.md.
+# Kernel lockdown is NOT enforced by this profile. The image is the stock,
+# unpinned Ubuntu 22.04 jammy/current cloud image, the x86_64 executor boots
+# it with legacy BIOS (no UEFI, no Secure Boot), and nothing adds lockdown= to
+# the kernel command line. Observed on 2026-10-15:
+# /sys/kernel/security/lockdown reads "[none] integrity confidentiality"
+# (kernels 5.15.0-185 and 5.15.0-189). Results from this profile are plain
+# Ubuntu 22.04 / 5.15 results, not lockdown results. The id is kept so matrix
+# references and kernel baselines still resolve, but version changed from
+# "22.04-lockdown" to "22.04": a `bpfcompat diff` against a baseline recorded
+# before that change is INCONCLUSIVE (the obligation changed) until the
+# baseline is regenerated. See docs/profile-claims.md.
 id: ubuntu-22.04-5.15-lockdown
 distro: ubuntu
 version: "22.04"

@@ -27,6 +27,8 @@ through `version: "22.04-lockdown"`. Nothing in the repository establishes it:
   Makefile target customises it. The cached `vm/cache/ubuntu-22.04-lockdown.qcow2`
   on the operator host is **byte-identical** to `vm/cache/ubuntu-22.04.qcow2`
   (both sha256 `7cd6b514bcc6c43180270f7817efecf140297edd0768351fddfbed9858bd21b7`).
+  That is the floating `jammy/current` download, **not** the image the pinned
+  `ubuntu-22.04-5.15` profile boots (`release-20260722`, sha256 `757908b2…`).
 - **Boot.** On x86_64 the executor starts QEMU with no firmware arguments,
   i.e. legacy SeaBIOS. Only aarch64 gets UEFI firmware (`internal/vm/qemu.go`).
   With no UEFI there is no Secure Boot, and Ubuntu's kernel only enables
@@ -60,31 +62,61 @@ behaves under lockdown: `integrity` blocks `bpf_probe_write_user`, and
 ### Correction made here
 
 The smallest honest correction, without renaming ids (renaming would break
-matrices, `vm/kernel-baselines.yaml`, freshness derivation and history):
+matrix references, `vm/kernel-baselines.yaml` and freshness derivation):
 
 - `version` is now the distribution release, `"22.04"`, in the base profile
   and both sweep children (the same value `bpfcompat kernel-sweep` would
   regenerate from the base). The base profile carries a comment stating that
   lockdown is not enforced.
 - `matrices/expanded-2026.yaml` and `matrices/tier3-cloud-native.yaml` mark the
-  profile `required: false`.
+  profile `required: false`. `tier3-cloud-native` gains the pinned
+  `ubuntu-22.04-5.15` as its required target. See the coverage consequence
+  below for why it needs one.
 - The generated support matrix annotates every `*-lockdown*` profile as
   "kernel lockdown NOT enforced".
-- `internal/vm/catalog_posture_test.go` fails if a profile's `version`
-  advertises lockdown, or if a hand-maintained matrix requires a
-  lockdown-named profile. Generated `kernel-sweep-*` matrices are exempt: they
-  are a per-release freshness lane and are regenerated, not edited.
+- `internal/vm/catalog_posture_test.go` fails in three cases:
+  - a profile's `version` advertises lockdown;
+  - a hand-maintained matrix requires a lockdown-named profile. `required`
+    is read with the runner's semantics, so an omitted `required` counts as
+    required;
+  - a hand-maintained matrix has no required target at all.
+
+  Generated `kernel-sweep-*` matrices are exempt, because they are a
+  per-release freshness lane and are regenerated, not edited. The
+  pre-existing opt-in `rhcos.yaml` and `rhcos-arm64.yaml` (all
+  `required: false`) are allowlisted for the zero-required rule. They share
+  the false-green property described below and are flagged for follow-up.
+
+**Diff baselines.** `version` is part of the obligation `bpfcompat diff`
+compares. A baseline recorded before this change makes the first diff
+`INCONCLUSIVE` ("the obligation changed: … distro version 22.04-lockdown …
+22.04"). That diff exits 1 where the target is required on either side,
+including the required-to-optional transition in `expanded-2026`. It fails
+safe and never reports green. **Regenerate baselines for any lane that
+includes these profiles.**
 
 **Coverage consequence.**
 
-- *expanded-2026:* no loss. The required `ubuntu-22.04-5.15` target already
-  covers Ubuntu 22.04 on the 5.15 GA kernel with a sha256-pinned image. The
-  lockdown profile was an unpinned duplicate of it.
-- *tier3-cloud-native:* the matrix now has **no required target**, so its run
-  verdict is informational (`RunVerdict` only considers required targets).
-  That is accurate: no profile in it establishes a cloud-native or hardened
-  posture today. The other five are immutable or manual images that the
-  current executor cannot run, or that need images the operator must supply.
+- *expanded-2026:* Ubuntu 22.04 / 5.15 stays gated by the required, pinned
+  `ubuntu-22.04-5.15`. The lockdown profile is **not** a duplicate of it,
+  though. It floats `jammy/current` with no sha256, and on 2026-10-15 it
+  booted `5.15.0-185-generic` where the pinned image boots
+  `5.15.0-186-generic`. What stops gating is that floating image and the
+  kernel it happens to ship. Same distribution and series; a different,
+  unpinned image.
+- *tier3-cloud-native:* `schema.RunVerdict` only considers required targets.
+  With zero required targets it returns `COMPATIBLE`, exit 0, "All required
+  profiles passed", even when every target is `INCOMPATIBLE`. An independent
+  review reproduced this on a real VM. Dropping the only required entry would
+  have turned this shipped matrix into a false green. The pinned
+  `ubuntu-22.04-5.15` is therefore its required target.
+  - It gates Ubuntu 22.04 / 5.15 on a pinned image with observed identity.
+    That is the same thing the lockdown entry actually gated, minus the
+    floating image.
+  - It claims no hardened or cloud-native posture. None of this matrix's
+    profiles establishes one on the current executor: the other five are
+    immutable or manual images that the executor cannot run, or that the
+    operator must supply.
 - *No frozen qualification input lists any lockdown profile*, so release,
   canary and campaign coverage is unchanged (see the list below).
 
@@ -118,7 +150,7 @@ report predates `observed_os_id`.
 
 | Profile | In matrices | Claimed distro / version / family | Observed os-release | Observed kernel | Evidence | Image |
 |---|---|---|---|---|---|---|
-| ubuntu-22.04-5.15 | dev-one\*, mvp\*, expanded-2026\* | ubuntu 22.04 / 5.15 | ubuntu 22.04 | 5.15.0-186-generic | H (release gate, canary), L | pinned `757908b2…` |
+| ubuntu-22.04-5.15 | dev-one\*, mvp\*, expanded-2026\*, tier3-cloud-native\* | ubuntu 22.04 / 5.15 | ubuntu 22.04 | 5.15.0-186-generic | H (release gate, canary), L | pinned `757908b2…` |
 | ubuntu-18.04-4.15 | mvp\*, expanded-2026\* | ubuntu 18.04 / 4.15 | ubuntu 18.04 | 4.15.0-212-generic | L, B | unpinned URL |
 | ubuntu-20.04-5.4 | mvp\*, expanded-2026\*, quick | ubuntu 20.04 / 5.4 | ubuntu 20.04 | 5.4.0-216-generic | L, H (kernel only), B | unpinned URL |
 | ubuntu-22.04-minimal-5.15 | mvp, expanded-2026 | ubuntu 22.04 / 5.15 | ubuntu 22.04 | 5.15.0-1104-kvm | L, B | unpinned URL |
