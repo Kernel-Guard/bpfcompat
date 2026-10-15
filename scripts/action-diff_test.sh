@@ -390,6 +390,41 @@ chmod +x "$nogate"
 run_case diff-nogate INPUT_BASELINE_REPORT="$A" INPUT_CANDIDATE_REPORT=reports/c-same.json INPUT_REQUIRE_GATE=true BPFCOMPAT_BIN="$nogate"
 expect diff-nogate 1 NO_NEW_REGRESSIONS
 
+# Overnight review B1: a gated baseline against a diagnostic candidate (the
+# same profile, optional in the candidate) must never satisfy require-gate,
+# even with fail-on-incomplete=false. The diff gate is enforced only when a
+# profile is required in BOTH reports.
+report "$ws/reports/b1-base.json" aaa "$(target ub22 COMPATIBLE true)"
+report "$ws/reports/b1-cand.json" bbb "$(target ub22 INCOMPATIBLE false)"
+b1_inputs=(binary="$bin" baseline-report=reports/b1-base.json candidate-report=reports/b1-cand.json fail-on-incomplete=false)
+run_step b1-default 0 "${b1_inputs[@]}"
+if [[ "$rc" -eq 0 && "$(output gate)" == none && "$(output baseline-gate)" == enforced && "$(output candidate-gate)" == none ]]; then
+  ok "b1: diagnostic candidate gives diff-gate none (baseline-gate enforced, candidate-gate none)"
+else
+  bad "b1: rc=$rc gate='$(output gate)' baseline-gate='$(output baseline-gate)' candidate-gate='$(output candidate-gate)'"
+fi
+run_step b1-require 0 "${b1_inputs[@]}" require-gate=true
+[[ "$rc" -eq 1 ]] && ok "b1: require-gate fails a diagnostic candidate even with fail-on-incomplete=false" || bad "b1: require-gate passed a diagnostic candidate (rc=$rc)"
+
+# An explicitly empty require-gate (e.g. forwarded from an unset
+# workflow_dispatch input) means the default, false, in every mode.
+for mode in test cmd suite; do
+  declare -n in_ref="${mode}_inputs"
+  run_step "$mode-empty" 0 "${in_ref[@]}" require-gate=
+  if [[ "$rc" -eq 0 ]] && ! has_flag && cmp -s "$argv_file" "$work/$mode-default.keep"; then ok "$mode: empty require-gate is the default"; else bad "$mode: empty require-gate rc=$rc"; fi
+  unset -n in_ref
+done
+run_step diff-empty 0 "${diff_inputs[@]}" require-gate=
+expect diff-empty 0 NO_NEW_REGRESSIONS
+
+# An invalid value is never echoed into a workflow command: a newline in it
+# could otherwise start a second ::command:: line.
+evil=$'yes\n::warning::injected'
+run_step test-evil 0 "${test_inputs[@]}" require-gate="$evil"
+if [[ "$rc" -eq 1 ]] && ! grep -q '^::warning::injected' "$work/test-evil.log"; then ok "test: an invalid require-gate value is not echoed"; else bad "test: invalid value echoed or accepted (rc=$rc)"; fi
+run_step diff-evil 0 "${diff_inputs[@]}" require-gate="$evil"
+if [[ "$rc" -eq 1 ]] && ! grep -q '^::warning::injected' "$work/diff-evil.log"; then ok "diff: an invalid require-gate value is not echoed"; else bad "diff: invalid value echoed or accepted (rc=$rc)"; fi
+
 # The new input is opt-in and reaches the shell only through env.
 inline_gate="$(grep -nE '\$\{\{ *inputs\.require-gate' "$ACTION" | grep -vE '^[0-9]+: +INPUT_REQUIRE_GATE: \$\{\{ inputs\.require-gate \}\}$' || true)"
 [[ -z "$inline_gate" ]] && ok "action.yml: require-gate reaches the shell only through env" || bad "action.yml interpolates require-gate inline: $inline_gate"

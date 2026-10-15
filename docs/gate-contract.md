@@ -62,8 +62,16 @@ page defines how the two are told apart.
     exit 0, **even when an optional target went COMPATIBLE → INCOMPATIBLE**.
     That default is unchanged.
   - The diff now says what kind of comparison it was:
-    - `summary.gate` is `enforced` when at least one cell is required, `none`
-      when none is;
+    - `summary.gate` is `enforced` **only when at least one profile is
+      required in both reports**, that is, a baseline obligation that the
+      candidate also evaluated as required. Otherwise it is `none`.
+      - A diagnostic candidate (no required target) never makes a gated
+        diff, whatever the baseline says. Neither does a diagnostic
+        baseline, or two reports that are each gated but on different
+        profiles.
+      - The diff's result and default exit code still count cells required
+        on either side, unchanged. Only the gate signal uses the both-sides
+        rule.
     - `summary.baseline_gate` and `summary.candidate_gate` give each input
       report's gate, derived from its targets;
     - a gate-`none` diff carries the note *"no required comparison:
@@ -71,8 +79,9 @@ page defines how the two are told apart.
     - the Markdown shows `Gate: none — no required comparison: diagnostic
       diff, not a gate` and `Report gates: baseline … -> candidate …` up
       front.
-  - **`bpfcompat diff --require-gate`** (opt-in) makes a gate-`none` diff
-    exit **1** instead of 0. A required regression still exits 2.
+  - **`bpfcompat diff --require-gate`** (opt-in): a diff whose gate is not
+    `enforced` exits **1**, unless it already exits 2. A proven required
+    regression is never masked.
   - `diff` refuses a report whose `summary.gate` contradicts its own targets,
     or holds an unknown value. That diff is `INCONCLUSIVE` with exit 1, the
     same handling as `summary.verdict` and `summary.complete`.
@@ -89,9 +98,11 @@ page defines how the two are told apart.
   run error, cancellation) is `unknown`. A case whose report has no targets
   is `none`.
 - **In aggregate:** `summary.gate` is
-  - `enforced` only when **every** case is enforced,
-  - `none` when **no** case is,
-  - `partial` when some are, and `unknown` for an empty case list.
+  - `enforced` only when **every** case is enforced;
+  - `partial` when some cases are;
+  - `unknown` when no case is and at least one case has no gate evidence
+    (no report), or the case list is empty;
+  - `none` when every case is a diagnostic case.
 
   `unknown` never counts as enforced, so missing evidence cannot make a suite
   look gated.
@@ -107,9 +118,21 @@ page defines how the two are told apart.
     `status: error`, `exit_code: 1`, with an `error` saying why. The suite
     then exits 1.
   - A case that already failed keeps its exit code. A gated case is
-    untouched, including a required failure at exit 2. With the suite's
-    existing precedence, a suite that has both a diagnostic case and a
-    required failure exits 1.
+    untouched, including a required failure at exit 2.
+- **Suite exit precedence: existing behaviour, and a known divergence.**
+  - `bpfcompat suite` has always rolled cases up with exit 1 (tool error)
+    outranking exit 2 (compatibility failure) (`updateSuiteStatus`,
+    unchanged here).
+  - So under `--require-gate`, a suite with both a diagnostic case (now 1)
+    and a required INCOMPATIBLE case (2) exits **1**. The same holds today
+    for any infrastructure error next to an INCOMPATIBLE case.
+  - That differs from the run-level rule (`schema.RunVerdict`), where a
+    proven incompatibility outranks an inability to establish. A consumer
+    keying on exit 2 loses that signal at suite level.
+  - It is never a pass. The step fails, and the INCOMPATIBLE case keeps
+    `status: fail` / `exit_code: 2` in the suite JSON and Markdown.
+  - Aligning suite precedence with the run-level rule is a separate,
+    future-targeted change.
 
 ### GitHub Action (`require-gate` input)
 
@@ -119,19 +142,30 @@ page defines how the two are told apart.
   consumer-canary source and latest-kernel ones, were replayed through the
   action's run step from main and from this change. They produced identical
   argv, exit codes and outputs. The only difference is the additive
-  `diff-gate` output in diff mode.
-- **Validation:** the value must be exactly `true` or `false`. It reaches the
-  shell only through the step environment (`INPUT_REQUIRE_GATE`), never by
-  inline interpolation, and anything else fails the step before the CLI runs.
+  `diff-gate`, `diff-baseline-gate` and `diff-candidate-gate` outputs in diff
+  mode.
+- **Validation:**
+  - The value must be `true` or `false`. Empty means the default, `false`,
+    in every mode, as with the action's other boolean inputs (for example an
+    unset `workflow_dispatch` input forwarded as `''`).
+  - It reaches the shell only through the step environment
+    (`INPUT_REQUIRE_GATE`), never by inline interpolation.
+  - Anything else fails the step before the CLI runs. The error does **not**
+    echo the value, because a newline in it could start a second workflow
+    command. The diff-mode boolean inputs (`fail-on-*`) no longer echo the
+    value either.
 - **test and command mode:** `true` adds `--require-gate` to `bpfcompat
   test`, and the step's exit is the CLI's.
 - **suite mode:** `true` adds `--require-gate` to `bpfcompat suite`
   (per-case semantics above).
 - **diff mode** (`scripts/action-diff.sh`):
-  - `true` fails the policy unless the diff JSON's `summary.gate` is
-    `enforced`. An absent field, as from an older binary, is no gate
-    evidence and fails.
-  - The new `diff-gate` output carries the gate.
+  - `true` fails the policy unless the diff JSON's `summary.gate`,
+    `summary.baseline_gate` and `summary.candidate_gate` are all
+    `enforced`.
+  - This holds even with `fail-on-incomplete: false`. A gated baseline
+    compared with a diagnostic candidate fails, as does an absent field (as
+    from an older binary), which is no gate evidence.
+  - New outputs: `diff-gate`, `diff-baseline-gate`, `diff-candidate-gate`.
 
 A CI consumer that wants a gate should do one of the following:
 
@@ -196,6 +230,5 @@ requires the profile.
 
 - `--require-gate` is checked after the run, so diagnostic targets still boot
   and their reports are kept.
-- With suite `--require-gate`, the suite's existing precedence reports exit 1
-  rather than 2 when a diagnostic case and a required failure coexist. The
-  required failure is still visible in its case (`exit_code: 2`).
+- Suite exit precedence (1 over 2) is existing behaviour and diverges from
+  the run-level rule; see "Suite exit precedence" above.

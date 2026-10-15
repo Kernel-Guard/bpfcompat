@@ -16,8 +16,10 @@ import (
 // report has no evidence of a gate: GateUnknown.
 //
 // In aggregate, Summary.Gate is "enforced" only when every case is enforced,
-// "none" when no case is, and GatePartial otherwise. Unknown never counts as
-// enforced, so missing evidence cannot make a suite look gated.
+// GatePartial when some are, GateUnknown when none are and at least one case
+// has no gate evidence, and "none" when every case is a diagnostic case.
+// Unknown never counts as enforced, so missing evidence cannot make a suite
+// look gated.
 //
 // Default exit codes are unchanged. With RunOptions.RequireGate, every case
 // must evaluate a gate: a case whose gate is not "enforced" exits 1, which the
@@ -50,19 +52,25 @@ func aggregateGate(cases []CaseSummary) string {
 	if len(cases) == 0 {
 		return GateUnknown
 	}
-	enforced := 0
+	enforced, unknown := 0, 0
 	for i := range cases {
-		if cases[i].Gate == schema.GateEnforced {
+		switch cases[i].Gate {
+		case schema.GateEnforced:
 			enforced++
+		case schema.GateNone:
+		default:
+			unknown++
 		}
 	}
-	switch enforced {
-	case len(cases):
+	switch {
+	case enforced == len(cases):
 		return schema.GateEnforced
-	case 0:
-		return schema.GateNone
-	default:
+	case enforced > 0:
 		return GatePartial
+	case unknown > 0:
+		return GateUnknown
+	default:
+		return schema.GateNone
 	}
 }
 
@@ -79,6 +87,6 @@ func writeSuiteGate(b *strings.Builder, gate string) {
 	case GatePartial:
 		b.WriteString("- Gate: `partial` — some cases have no required target (Gate `none` below): those cases are diagnostic, not a compatibility gate\n")
 	default:
-		fmt.Fprintf(b, "- Gate: `%s` — no gate evidence (no case report)\n", markdownCell(gate))
+		fmt.Fprintf(b, "- Gate: `%s` — no case evaluated a gate, and at least one case produced no report (no gate evidence)\n", markdownCell(gate))
 	}
 }

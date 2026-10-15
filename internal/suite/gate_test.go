@@ -188,3 +188,15 @@ func TestSuiteMissingCaseReportNeverCountsAsGate(t *testing.T) {
 		t.Fatalf("empty-target case under --require-gate: exit %d gate %q", s.ExitCode, s.Gate)
 	}
 }
+
+// No case enforced and at least one case without a report: the suite has
+// missing evidence, which is "unknown", not a clean "none".
+func TestSuiteAggregateUnknownWhenEvidenceIsMissing(t *testing.T) {
+	cases := map[string]gateCase{
+		"diag":   {exit: runner.ExitSuccess, targets: []schema.Target{optTarget(schema.VerdictCompatible)}},
+		"broken": {err: errors.New("artifact missing")},
+	}
+	if s := runGateSuite(t, false, []string{"diag", "broken"}, cases); s.Gate != GateUnknown {
+		t.Fatalf("aggregate gate = %q, want %q", s.Gate, GateUnknown)
+	}
+}

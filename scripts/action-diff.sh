@@ -63,7 +63,9 @@ bool_input() { # <name> <value> <default>
   local v="${2:-$3}"
   case "$v" in
     true | false) printf '%s' "$v" ;;
-    *) invalid "input $1 must be true or false (got '$v')" ;;
+    # The value is not echoed: it is caller-controlled, and a newline in it
+    # could start a second workflow command.
+    *) invalid "input $1 must be true or false" ;;
   esac
 }
 
@@ -177,9 +179,12 @@ regressions="$(jq -r .summary.new_required_regressions "$diff_json")"
 inconclusive="$(jq -r .summary.inconclusive_required "$diff_json")"
 coverage_removed="$(jq -r .summary.coverage_removed_required "$diff_json")"
 incomplete=$((inconclusive + coverage_removed))
-# summary.gate is "enforced" only when the diff compared at least one required
-# cell. An absent field (an older binary) is no gate evidence, never a gate.
+# summary.gate is "enforced" only when at least one profile is required in
+# both reports; baseline_gate/candidate_gate are each report's own gate. An
+# absent field (an older binary) is no gate evidence, never a gate.
 gate="$(jq -r '.summary.gate // ""' "$diff_json")"
+baseline_gate="$(jq -r '.summary.baseline_gate // ""' "$diff_json")"
+candidate_gate="$(jq -r '.summary.candidate_gate // ""' "$diff_json")"
 
 policy_failed=false
 reasons=()
@@ -191,9 +196,9 @@ if [[ "$fail_on_incomplete" == true && "$incomplete" -gt 0 ]]; then
   policy_failed=true
   reasons+=("$incomplete required comparison(s) could not be established and fail-on-incomplete is true")
 fi
-if [[ "$require_gate" == true && "$gate" != enforced ]]; then
+if [[ "$require_gate" == true ]] && [[ "$gate" != enforced || "$baseline_gate" != enforced || "$candidate_gate" != enforced ]]; then
   policy_failed=true
-  reasons+=("no required comparison (gate '${gate:-absent}'): diagnostic diff, not a gate, and require-gate is true")
+  reasons+=("no gated comparison (gate '${gate:-absent}', baseline '${baseline_gate:-absent}', candidate '${candidate_gate:-absent}'): diagnostic diff, not a gate, and require-gate is true")
 fi
 
 set_output result "$result"
@@ -203,6 +208,8 @@ set_output coverage-removed-required "$coverage_removed"
 set_output diff-json "$diff_json"
 set_output diff-markdown "$diff_md"
 set_output gate "$gate"
+set_output baseline-gate "$baseline_gate"
+set_output candidate-gate "$candidate_gate"
 
 {
   echo
@@ -217,7 +224,7 @@ set_output gate "$gate"
   echo '`INCONCLUSIVE` means a required comparison could not be established (infrastructure error, missing result, or a different kernel); it is not a claim about the candidate.'
   echo
   if [[ "$require_gate" == true ]]; then
-    echo "require-gate: \`true\` — gate \`${gate:-absent}\` (a diff with no required cell is diagnostic, not a gate, and fails this policy)."
+    echo "require-gate: \`true\` — gate \`${gate:-absent}\`, baseline \`${baseline_gate:-absent}\`, candidate \`${candidate_gate:-absent}\` (unless a profile is required in both reports, the diff is diagnostic, not a gate, and fails this policy)."
     echo
   fi
   if [[ -f "$diff_md" ]]; then

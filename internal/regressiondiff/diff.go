@@ -148,9 +148,9 @@ type Summary struct {
 	// flag, so an incomplete input cannot be read as a full comparison.
 	BaselineComplete  *bool `json:"baseline_complete,omitempty"`
 	CandidateComplete *bool `json:"candidate_complete,omitempty"`
-	// Gate is "none" when no cell is required: Result cannot then report a
-	// regression, so it is a diagnostic diff, not a gate (see gate.go).
-	// BaselineGate/CandidateGate are each input's report gate.
+	// Gate is "enforced" only when at least one profile is required in both
+	// reports; otherwise it is a diagnostic diff, not a gate (see gate.go).
+	// BaselineGate/CandidateGate are each input's own report gate.
 	Gate          string `json:"gate,omitempty"`
 	BaselineGate  string `json:"baseline_gate,omitempty"`
 	CandidateGate string `json:"candidate_gate,omitempty"`

@@ -20,24 +20,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     run exit 1.
   - `bpfcompat diff` refuses a `summary.gate` that contradicts the report's
     own targets.
-  - `bpfcompat diff` now states when no cell is required: it adds
-    `summary.gate`, `baseline_gate` and `candidate_gate`, a "diagnostic
-    diff, not a gate" note, and a Markdown header. Such a diff still exits 0
-    (`NO_NEW_REGRESSIONS`) by default, even when an optional target
-    regressed. `diff --require-gate` makes it exit 1.
+  - `bpfcompat diff` now states whether it compared a gated obligation. It
+    adds `summary.gate`, which is `enforced` only when at least one profile
+    is required in both reports, so a diagnostic candidate or baseline is
+    never a gate. It also adds `baseline_gate`, `candidate_gate`, a
+    "diagnostic diff, not a gate" note and a Markdown header.
+  - Result and default exit are unchanged: an optional regression still
+    gives `NO_NEW_REGRESSIONS`, exit 0. `diff --require-gate` exits 1 for a
+    non-enforced diff, keeping exit 2 for a proven regression.
   - The Action job summary of a run with no required target is titled
     "Compatibility Run (diagnostic, no gate)", with the Gate line ahead of
     Status.
   - The `--markdown` test report prints the gate.
   - `bpfcompat suite` records `cases[].gate` and an aggregate
-    `summary.gate` (`enforced` | `none` | `partial` | `unknown`) and shows
-    them in its Markdown. Opt-in `suite --require-gate` fails (exit 1) every
+    `summary.gate` (`enforced` | `partial` | `unknown` | `none`; `unknown`
+    when no case is enforced and some case has no report) and shows them in
+    its Markdown. Opt-in `suite --require-gate` fails (exit 1) every
     case that evaluated no gate. Default suite exit codes are unchanged.
-  - New opt-in `require-gate` Action input (default `false`, strict
-    boolean, passed only through the environment). It reaches `test`,
-    `test-command` and `suite` as `--require-gate`. In diff mode it fails
-    the policy unless the diff's `summary.gate` is `enforced`; a missing
-    gate field is not a gate. Adds a `diff-gate` output.
+  - New opt-in `require-gate` Action input: default `false`, empty means
+    `false`, a strict boolean passed only through the environment, and an
+    invalid value is never echoed. It reaches `test`, `test-command` and
+    `suite` as `--require-gate`.
+  - In diff mode the input fails the policy unless the diff gate and both
+    report gates are `enforced`, even with `fail-on-incomplete: false`. A
+    missing gate field is not a gate. Adds `diff-gate`,
+    `diff-baseline-gate` and `diff-candidate-gate` outputs.
+  - The diff-mode `fail-on-*` errors no longer echo the raw value.
   - See `docs/gate-contract.md`.
 
 ## [0.4.0-rc.4] - 2026-10-14
