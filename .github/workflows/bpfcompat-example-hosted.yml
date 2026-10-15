@@ -38,14 +38,16 @@ jobs:
           if [[ "$EVENT_NAME" != "pull_request" ]]; then
             required=true
           else
-            while IFS= read -r path; do
-              case "$path" in
-                cmd/*|internal/*|validator/*|examples/*|matrices/*|suites/*|vm/*|vendor/*|action.yml|Makefile|go.mod|go.sum|go.work|go.work.sum|.github/workflows/bpfcompat-example-hosted.yml)
-                  required=true
-                  break
-                  ;;
-              esac
-            done < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA")
+            # Path classification lives in a script so that
+            # scripts/hosted-gate-required_test.sh (run by ci.yml) tests
+            # exactly the rule this required check applies.
+            git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-paths"
+            decision="$(bash scripts/hosted-gate-required.sh < "$RUNNER_TEMP/changed-paths")"
+            case "$decision" in
+              required=true) required=true ;;
+              required=false) required=false ;;
+              *) echo "::error::unexpected classifier output: $decision"; exit 1 ;;
+            esac
           fi
           echo "required=$required" >> "$GITHUB_OUTPUT"
           if [[ "$required" == "true" ]]; then

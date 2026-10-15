@@ -67,6 +67,11 @@ jobs:
         # action.yml and asserts its classification, so the v0.3.2 regression
         # (OCI refs rejected as missing local files) cannot silently return.
         run: bash scripts/action-artifact-ref-detection_test.sh
+      - name: Hosted compatibility-gate scope regression
+        # The required hosted gate skips the VM run when its path classifier
+        # says a PR is not compatibility-relevant; pkg/ and scripts/ changes
+        # used to slip through. Pins scripts/hosted-gate-required.sh.
+        run: bash scripts/hosted-gate-required_test.sh
       - name: Action diff-mode regression
         # baseline-report / candidate-report policy, path safety, stale-output
         # and checksum handling, against the real `bpfcompat diff` (#141).
