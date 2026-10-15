@@ -53,6 +53,28 @@ verify_hash() {
     fail "SHA-256 mismatch for $(basename "$path")"
 }
 
+# iso_epoch <timestamp> <what>: strict UTC RFC 3339 (YYYY-MM-DDTHH:MM:SSZ) to
+# epoch seconds; `date -d` alone accepts far looser input.
+iso_epoch() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+    fail "$2 is not a UTC timestamp: $1"
+  date -u -d "$1" +%s 2>/dev/null || fail "$2 is not a valid timestamp: $1"
+}
+
+# md_field <file> <label>: the first backticked value on the single line that
+# starts "- <label>: `" in a workflow-written Markdown note. A missing or
+# repeated label fails closed.
+md_field() {
+  awk -v prefix="- $2: \`" '
+    index($0, prefix) == 1 {
+      n++
+      rest = substr($0, length(prefix) + 1)
+      value = substr(rest, 1, index(rest, "`") - 1)
+    }
+    END { if (n == 1 && value != "") print value; else exit 1 }
+  ' "$1" || fail "$(basename "$1") must contain exactly one \"- $2: \`...\`\" line"
+}
+
 jq -e '
   .schema_version == "v0.1" and
   (.release_version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and
@@ -303,10 +325,29 @@ for profile in \
     [.targets[] | select(.profile_id == $profile and .status == "pass")] | length == 1
   ' "$falco_report" >/dev/null || fail "Falco report is missing passing profile ${profile}"
 done
+# The manifest's start time is the report's own run.started_at, not a free
+# value, and -- like every campaign -- the run must postdate the candidate.
+# workflow_run_id and commit_sha cannot be cross-checked offline (the report
+# does not record them) and stay operator-asserted.
+falco_report_started_at="$(jq -r '.run.started_at // ""' "$falco_report")"
+[[ "$(jq -r '.falco.started_at' "$input")" == "$falco_report_started_at" ]] ||
+  fail "Falco started_at does not match the report's run.started_at (${falco_report_started_at:-missing})"
+falco_started_epoch="$(iso_epoch "$falco_report_started_at" "Falco report run.started_at")"
+[[ "$falco_started_epoch" -gt "$candidate_generated_epoch" ]] ||
+  fail "Falco run started before release candidate ${candidate_tag} was built"
+# Written policy does not say the Falco run must execute the candidate's own
+# bpfcompat (the upstream lane pins a released version). Record whether its
+# report names the candidate validator instead of enforcing it.
+falco_validator_sha="$(jq -r '.validator.sha256 // ""' "$falco_report")"
+falco_candidate_bound=false
+if [[ -n "$falco_validator_sha" && "$falco_validator_sha" == "$candidate_validator_sha" ]]; then
+  falco_candidate_bound=true
+fi
 
 : >"$tmp/canary_rows"
 : >"$tmp/canaries.ndjson"
 : >"$tmp/canary_run_ids"
+previous_canary_epoch=0
 while IFS= read -r canary; do
   milestone="$(jq -r '.milestone' <<<"$canary")"
   evidence_rel="$(jq -r '.evidence' <<<"$canary")"
@@ -351,6 +392,59 @@ while IFS= read -r canary; do
 
   canary_run_id="$(jq '.workflow_run_id' "$canary_evidence")"
   canary_completed_at="$(jq -r '.completed_at' "$canary_evidence")"
+
+  # Observation windows. The canary plan job admits T+24h only 20-30 whole
+  # hours, and T+72h only 68-78 whole hours, after CANDIDATE_PUBLISHED_AT.
+  # Publication time is not part of the attested candidate evidence, but it
+  # cannot precede generated_at, so generated_at + 0/20/68h is a floor every
+  # authentic observation meets. Upper bounds are left to the plan job.
+  case "$milestone" in
+    manual) floor_hours=0 ;;
+    t-plus-24h) floor_hours=20 ;;
+    t-plus-72h) floor_hours=68 ;;
+  esac
+  canary_completed_epoch="$(iso_epoch "$canary_completed_at" "RC canary ${milestone} completed_at")"
+  [[ "$canary_completed_epoch" -ge $((candidate_generated_epoch + floor_hours * 3600)) ]] ||
+    fail "RC canary ${milestone} completed before ${floor_hours}h after release candidate ${candidate_tag} was built"
+  [[ "$canary_completed_epoch" -gt "$previous_canary_epoch" ]] ||
+    fail "RC canaries must complete in manual, T+24h, T+72h order"
+  previous_canary_epoch="$canary_completed_epoch"
+
+  # Components: each is an artifact of this exact canary run (the workflow
+  # downloads rc*-canary-component-<check>-<run id>), every check is
+  # covered, and each check's own record -- shipped in the same artifact --
+  # hashes to the manifest value and names the candidate.
+  jq -e --arg run "$canary_run_id" '
+    ([.components[].path] | length == (unique | length)) and
+    ([.components[].path |
+      test("^evidence/components/[a-z0-9.-]*canary-component-(clean-install|source-build|published-action|container|external-consumers)-" + $run + "/[^.][^/]*(/[^.][^/]*)*$")
+    ] | all)
+  ' "$canary_evidence" >/dev/null ||
+    fail "RC canary ${milestone} components are not artifacts of run ${canary_run_id}"
+  canary_dir_rel="$(dirname "$evidence_rel")"
+  for check in clean-install source-build published-action container external-consumers; do
+    component_rel="$(jq -r --arg run "$canary_run_id" --arg check "$check" '
+      [.components[] | select(.path | test("canary-component-" + $check + "-" + $run + "/(.*/)?" + $check + "\\.json$"))]
+      | if length == 1 then .[0].path else empty end
+    ' "$canary_evidence")"
+    [[ -n "$component_rel" ]] ||
+      fail "RC canary ${milestone} must record exactly one ${check}.json component"
+    component="$(evidence_path "${canary_dir_rel}/${component_rel#evidence/}")"
+    verify_hash "$component" "$(jq -r --arg p "$component_rel" '.components[] | select(.path == $p) | .sha256' "$canary_evidence")"
+    jq -e \
+      --arg check "$check" \
+      --arg version "$candidate_tag" \
+      --arg commit "$candidate_commit" \
+      --arg digest "$candidate_digest" \
+      --argjson external "$(jq '.external_consumer_run_id' "$canary_evidence")" '
+        .check == $check and .status == "pass" and
+        .version == $version and .commit == $commit and
+        (if $check == "container" then .digest == $digest else true end) and
+        (if $check == "external-consumers" then .workflow_run_id == $external else true end)
+      ' "$component" >/dev/null ||
+      fail "RC canary ${milestone} ${check} component does not record a pass of ${candidate_tag}"
+  done
+
   printf '%s\n' "$canary_run_id" >>"$tmp/canary_run_ids"
   printf "| %s | \`%s\` | %s |\n" \
     "$milestone" "$canary_run_id" "$canary_completed_at" >>"$tmp/canary_rows"
@@ -359,10 +453,13 @@ while IFS= read -r canary; do
     --argjson workflow_run_id "$canary_run_id" \
     --arg completed_at "$canary_completed_at" \
     --arg evidence_sha256 "$canary_sha" \
+    --argjson minutes "$(((canary_completed_epoch - candidate_generated_epoch) / 60))" \
     '{
       milestone: $milestone,
       workflow_run_id: $workflow_run_id,
       completed_at: $completed_at,
+      minutes_after_candidate_generated: $minutes,
+      components_verified: true,
       evidence_sha256: $evidence_sha256
     }' >>"$tmp/canaries.ndjson"
 done < <(jq -c '.canaries[]' "$input")
@@ -374,12 +471,57 @@ rollback="$(evidence_path "$(jq -r '.rollback.evidence' "$input")")"
 verify_hash "$rollback" "$(jq -r '.rollback.evidence_sha256' "$input")"
 grep -Fq '[bpfcompat-rollback-drill:v1]' "$rollback" ||
   fail "rollback evidence is missing its completion marker"
+# Bind the drill to this candidate through the fields rollback-drill.yml
+# writes: the alias is the dedicated rollback-drill-<candidate tag> alias,
+# the drilled digest is the candidate image digest, the alias ended on the
+# known-good digest, and the drill ran after the candidate was built.
+candidate_repository="${candidate_image%@*}"
+rollback_alias="$(md_field "$rollback" "Drill alias")"
+rollback_candidate_digest="$(md_field "$rollback" "Candidate digest")"
+rollback_known_good="$(md_field "$rollback" "Known-good digest")"
+rollback_final="$(md_field "$rollback" "Final digest")"
+rollback_run_id="$(md_field "$rollback" "Workflow run")"
+rollback_completed_at="$(md_field "$rollback" "Completed")"
+[[ "$rollback_alias" == "${candidate_repository}:rollback-drill-${candidate_tag}" ]] ||
+  fail "rollback drill alias ${rollback_alias} is not ${candidate_repository}:rollback-drill-${candidate_tag}"
+[[ "$rollback_candidate_digest" == "$candidate_digest" ]] ||
+  fail "rollback drill exercised ${rollback_candidate_digest}, not candidate ${candidate_tag} image ${candidate_digest}"
+[[ "$rollback_known_good" =~ ^sha256:[0-9a-f]{64}$ &&
+   "$rollback_known_good" != "$candidate_digest" &&
+   "$rollback_final" == "$rollback_known_good" ]] ||
+  fail "rollback drill did not end on a distinct known-good digest"
+[[ "$rollback_run_id" =~ ^[1-9][0-9]*$ ]] ||
+  fail "rollback drill workflow run is not a run ID: ${rollback_run_id}"
+rollback_completed_epoch="$(iso_epoch "$rollback_completed_at" "rollback drill completion")"
+[[ "$rollback_completed_epoch" -gt "$candidate_generated_epoch" ]] ||
+  fail "rollback drill completed before release candidate ${candidate_tag} was built"
+
 incident="$(evidence_path "$(jq -r '.incident.evidence' "$input")")"
 verify_hash "$incident" "$(jq -r '.incident.evidence_sha256' "$input")"
 grep -Fq '[bpfcompat-promotion-incident:v1]' "$incident" ||
   fail "incident evidence is missing its fail-closed completion marker"
+# The incident must name the rejected promote-release run. Written policy does
+# not require the drill to target the current candidate, so a fail-closed
+# drill against an earlier candidate stays acceptable; whether it names this
+# candidate is recorded as incident.candidate_bound.
+grep -Fq 'promote-release' "$incident" ||
+  fail "incident evidence does not name the promote-release workflow"
+incident_run_id="$(
+  grep -oE 'https://github\.com/Kernel-Guard/bpfcompat/actions/runs/[1-9][0-9]*' "$incident" |
+    head -n 1 | awk -F/ '{print $NF}' || true
+)"
+[[ -n "$incident_run_id" ]] ||
+  fail "incident evidence does not link the rejected promote-release run (https://github.com/Kernel-Guard/bpfcompat/actions/runs/<id>)"
+incident_candidate_bound=false
+if grep -qE "(^|[^[:alnum:].-])${candidate_tag//./\\.}([^[:alnum:]]|$)" "$incident"; then
+  incident_candidate_bound=true
+fi
+
 operator_evidence="$(evidence_path "$(jq -r '.operator.evidence' "$input")")"
 verify_hash "$operator_evidence" "$(jq -r '.operator.evidence_sha256' "$input")"
+# The confirmation must name the exact attested candidate evidence it covers.
+grep -Fq "$candidate_evidence_sha" "$operator_evidence" ||
+  fail "operator evidence does not name candidate evidence SHA-256 ${candidate_evidence_sha}"
 operator="$(jq -r '.operator.login' "$input")"
 approval_mode="$(jq -r '.operator.approval_mode' "$input")"
 metadata_operator="$(
@@ -430,11 +572,16 @@ mkdir -p "$(dirname "$output_json")"
   echo "## Required External Evidence"
   echo
   echo "- Falco expanded vendor-kernel matrix: PASS"
+  echo "  - Report run \`$(jq -r '.run.id' "$falco_report")\` started ${falco_report_started_at}, after the candidate was built"
+  echo "  - Ran the candidate's validator: ${falco_candidate_bound} (not required by policy; workflow run identity is operator-asserted)"
   echo "- Attested release candidate: PASS"
   echo "- RC manual, T+24h, and T+72h canaries: PASS"
   echo "- Rollback drill: PASS"
+  echo "  - Run \`${rollback_run_id}\` drilled \`${rollback_alias}\` to candidate digest \`${rollback_candidate_digest}\`"
   echo "- Fail-closed promotion incident: PASS"
+  echo "  - Rejected promote-release run \`${incident_run_id}\`; names ${candidate_tag}: ${incident_candidate_bound}"
   echo "- Deliberate solo-maintainer promotion confirmation: PASS"
+  echo "  - Confirmation names candidate evidence \`${candidate_evidence_sha}\`"
   echo
   echo "Runtime loading, agent, API, registry, SaaS, Firecracker, and virtme-ng are excluded."
 } >"$output"
@@ -478,6 +625,16 @@ jq -n \
   --arg operator "$operator" \
   --arg approval_mode "$approval_mode" \
   --arg operator_sha "$operator_sha" \
+  --arg falco_report_run_id "$(jq -r '.run.id // ""' "$falco_report")" \
+  --arg falco_validator_sha "$falco_validator_sha" \
+  --argjson falco_candidate_bound "$falco_candidate_bound" \
+  --arg rollback_alias "$rollback_alias" \
+  --arg rollback_candidate_digest "$rollback_candidate_digest" \
+  --arg rollback_known_good "$rollback_known_good" \
+  --argjson rollback_run_id "$rollback_run_id" \
+  --arg rollback_completed_at "$rollback_completed_at" \
+  --argjson incident_run_id "$incident_run_id" \
+  --argjson incident_candidate_bound "$incident_candidate_bound" \
   '{
     schema_version: $schema_version,
     campaign_binding: "candidate-bound-v2",
@@ -499,6 +656,11 @@ jq -n \
       commit_sha: $falco_commit,
       started_at: $falco_started_at,
       report_sha256: $falco_sha,
+      report_run_id: $falco_report_run_id,
+      run_identity: "operator-asserted",
+      started_after_candidate: true,
+      validator_sha256: (if $falco_validator_sha == "" then null else $falco_validator_sha end),
+      candidate_bound: $falco_candidate_bound,
       required_profiles: [
         "ubuntu-22.04-5.15",
         "debian-12-6.1",
@@ -516,16 +678,25 @@ jq -n \
     canaries: $canaries,
     rollback: {
       completed: true,
+      workflow_run_id: $rollback_run_id,
+      completed_at: $rollback_completed_at,
+      alias: $rollback_alias,
+      known_good_digest: $rollback_known_good,
+      candidate_digest: $rollback_candidate_digest,
+      candidate_bound: true,
       evidence_sha256: $rollback_sha
     },
     incident: {
       completed: true,
+      promotion_run_id: $incident_run_id,
+      candidate_bound: $incident_candidate_bound,
       evidence_sha256: $incident_sha
     },
     operator: {
       login: $operator,
       approval_mode: $approval_mode,
       confirmed: true,
+      candidate_evidence_sha256: $candidate_sha,
       evidence_sha256: $operator_sha
     },
     excluded_surfaces: [

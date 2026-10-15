@@ -106,9 +106,65 @@ for index in 0 1 2 3; do
     '. + [{metadata: $metadata, report: $report}]' <<<"$campaigns")"
 done
 
-printf '%s\n' '[bpfcompat-rollback-drill:v1] completed' >"$tmp/rollback/evidence.md"
-printf '%s\n' '[bpfcompat-promotion-incident:v1] invalid promotion failed closed' >"$tmp/incident/evidence.md"
-printf '%s\n' '[bpfcompat-solo-promotion:v1] ErenAri confirmed exact evidence' >"$tmp/operator/evidence.md"
+CANDIDATE_DIGEST="sha256:$(printf 'b%.0s' {1..64})"
+KNOWN_GOOD_DIGEST="sha256:$(printf 'd%.0s' {1..64})"
+# write_rollback_note <candidate digest> <alias tag> <final digest> <completed>:
+# the exact evidence.md layout written by .github/workflows/rollback-drill.yml.
+write_rollback_note() {
+  cat >"$tmp/rollback/evidence.md" <<NOTE
+# bpfcompat Release-Promotion Rollback Drill
+
+[bpfcompat-rollback-drill:v1]
+
+- Operator: \`ErenAri\`
+- Workflow run: \`5000\`
+- Completed: \`$4\`
+- Drill alias: \`ghcr.io/kernel-guard/bpfcompat:rollback-drill-$2\`
+- Known-good digest: \`${KNOWN_GOOD_DIGEST}\`
+- Candidate digest: \`$1\`
+- Final digest: \`$3\`
+- Promotion elapsed: \`2222 ms\`
+- Recovery elapsed: \`3327 ms\`
+- Signature verification: PASS
+- SLSA v1 provenance verification: PASS
+- Embedded version verification: PASS
+- Protected \`latest\` alias unchanged: \`${KNOWN_GOOD_DIGEST}\`
+NOTE
+}
+write_rollback_note "$CANDIDATE_DIGEST" v0.4.0-rc.1 "$KNOWN_GOOD_DIGEST" 2026-07-30T16:00:00Z
+cat >"$tmp/incident/evidence.md" <<'NOTE'
+# fail-closed promotion incident drill (candidate v0.4.0-rc.1)
+
+[bpfcompat-promotion-incident:v1]
+
+- Workflow: `promote-release.yml` dispatched on `refs/tags/v0.4.0-rc.1`
+- Rejected run: https://github.com/Kernel-Guard/bpfcompat/actions/runs/6000
+- Deliberate fault: wrong confirmation text; the promotion failed closed.
+NOTE
+printf '%s\n' "[bpfcompat-solo-promotion:v1] ErenAri confirmed exact evidence; candidate evidence ${CANDIDATE_SHA}" \
+  >"$tmp/operator/evidence.md"
+
+# write_canary_components <canary dir> <run id> <external run id>: the five
+# per-check component records the canary workflow downloads into
+# evidence/components/rc*-canary-component-<check>-<run id>/; prints the
+# manifest's components array.
+write_canary_components() {
+  local dir="$1" run="$2" external="$3" components='[]' check file
+  for check in clean-install source-build published-action container external-consumers; do
+    file="components/rc1-canary-component-${check}-${run}/${check}.json"
+    [[ "$check" == published-action ]] &&
+      file="components/rc1-canary-component-${check}-${run}/evidence/${check}.json"
+    mkdir -p "$dir/$(dirname "$file")"
+    jq -n --arg check "$check" --arg digest "$CANDIDATE_DIGEST" --argjson external "$external" '
+      {check: $check, status: "pass", version: "v0.4.0-rc.1", commit: ("c" * 40)} +
+      (if $check == "container" then {digest: $digest} else {} end) +
+      (if $check == "external-consumers" then {workflow_run_id: $external} else {} end)
+    ' >"$dir/$file"
+    components="$(jq --arg sha "$(sha256sum "$dir/$file" | awk '{print $1}')" --arg path "evidence/$file" \
+      '. + [{sha256: $sha, path: $path}]' <<<"$components")"
+  done
+  printf '%s\n' "$components"
+}
 
 canaries='[]'
 for index in 0 1 2; do
@@ -134,7 +190,8 @@ for index in 0 1 2; do
     --argjson workflow_run_id "$((3000 + index))" \
     --argjson external_consumer_run_id "$((4000 + index))" \
     --arg completed_at "$(date -u -d "2026-07-30 15:05:34 UTC +$((index * (index + 1) / 2)) days" +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg image_digest "sha256:$(printf 'b%.0s' {1..64})" \
+    --arg image_digest "$CANDIDATE_DIGEST" \
+    --argjson components "$(write_canary_components "$dir" "$((3000 + index))" "$((4000 + index))")" \
     '{
       schema_version: "v0.1",
       marker: "[bpfcompat-rc-canary:v1]",
@@ -154,10 +211,7 @@ for index in 0 1 2; do
         container: "pass",
         external_consumers: "pass"
       },
-      components: [{
-        sha256: ("a" * 64),
-        path: "evidence/component.json"
-      }]
+      components: $components
     }' >"$dir/release-candidate-canary.json"
   canaries="$(jq \
     --arg milestone "$milestone" \
@@ -230,8 +284,15 @@ jq -e '
   .incident.completed == true and
   .operator.login == "ErenAri" and
   .operator.approval_mode == "solo-maintainer" and
-  .operator.confirmed == true
-' "$tmp/readiness.json" >/dev/null
+  .operator.confirmed == true and
+  .falco.started_at == "2026-08-03T06:00:00Z" and .falco.candidate_bound == true and
+  .falco.run_identity == "operator-asserted" and
+  .rollback.candidate_bound == true and .rollback.workflow_run_id == 5000 and
+  .incident.candidate_bound == true and .incident.promotion_run_id == 6000 and
+  ([.canaries[].components_verified] | all) and
+  ([.canaries[].minutes_after_candidate_generated] == [65, 1505, 4385])
+' "$tmp/readiness.json" >/dev/null || {
+  echo "[production-readiness-test] readiness output does not record the evidence bindings" >&2; exit 1; }
 
 jq '.campaigns[3] = .campaigns[2]' "$tmp/input.json" >"$tmp/bad-duplicate.json"
 if BPFCOMPAT_SKIP_READINESS_ATTESTATION=1 \
@@ -392,6 +453,110 @@ done
 expect_refused "campaigns that predate the candidate" "$tmp/bad-late-candidate.json" "started before release candidate"
 for i in 0 1 2 3; do restore_campaign "$i"; done
 mv "$tmp/candidate.keep" "$candidate"
+
+# --- Non-campaign evidence binding (fail closed) -------------------------------
+# rehash <file> <manifest jq path> <out manifest>: a manifest that pins the
+# current bytes of <file>, as an operator assembling the directory would.
+rehash() {
+  jq --arg sha "$(sha256sum "$1" | awk '{print $1}')" "$2 = \$sha" "$tmp/input.json" >"$3"
+}
+keep() { cp "$1" "$1.keep"; }
+restore() { mv "$1.keep" "$1"; }
+
+# Falco: started_at is the report's own run.started_at, after the candidate.
+jq '.falco.started_at = "2020-01-01T00:00:00Z" | .falco.workflow_run_id = 1' \
+  "$tmp/input.json" >"$tmp/bad-falco-start.json"
+expect_refused "a Falco start time that is not the report's" "$tmp/bad-falco-start.json" \
+  "Falco started_at does not match the report's run.started_at"
+keep "$falco_report"
+jq '.run.started_at = "2026-07-30T13:59:59Z"' "$falco_report.keep" >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-early.json"
+jq '.falco.started_at = "2026-07-30T13:59:59Z"' "$tmp/bad-falco-early.json" >"$tmp/bad-falco-early2.json"
+expect_refused "a Falco run that predates the candidate" "$tmp/bad-falco-early2.json" \
+  "Falco run started before release candidate"
+jq 'del(.run.started_at)' "$falco_report.keep" >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-nostart.json"
+expect_refused "a Falco report without a run start" "$tmp/bad-falco-nostart.json" \
+  "Falco started_at does not match the report's run.started_at"
+restore "$falco_report"
+
+# Rollback: alias, drilled digest and recovery are this candidate's.
+rollback_note="$tmp/rollback/evidence.md"
+keep "$rollback_note"
+write_rollback_note "sha256:$(printf '4%.0s' {1..64})" v0.4.0-rc.1 "$KNOWN_GOOD_DIGEST" 2026-07-30T16:00:00Z
+rehash "$rollback_note" .rollback.evidence_sha256 "$tmp/bad-rollback.json"
+expect_refused "a rollback drill of another image digest" "$tmp/bad-rollback.json" "rollback drill exercised"
+write_rollback_note "$CANDIDATE_DIGEST" v0.3.8-rc.2 "$KNOWN_GOOD_DIGEST" 2026-07-30T16:00:00Z
+rehash "$rollback_note" .rollback.evidence_sha256 "$tmp/bad-rollback.json"
+expect_refused "a rollback drill on another candidate's alias" "$tmp/bad-rollback.json" "rollback drill alias"
+write_rollback_note "$CANDIDATE_DIGEST" v0.4.0-rc.1 "$CANDIDATE_DIGEST" 2026-07-30T16:00:00Z
+rehash "$rollback_note" .rollback.evidence_sha256 "$tmp/bad-rollback.json"
+expect_refused "a rollback drill that never recovered" "$tmp/bad-rollback.json" "did not end on a distinct known-good digest"
+write_rollback_note "$CANDIDATE_DIGEST" v0.4.0-rc.1 "$KNOWN_GOOD_DIGEST" 2026-07-30T13:00:00Z
+rehash "$rollback_note" .rollback.evidence_sha256 "$tmp/bad-rollback.json"
+expect_refused "a rollback drill that predates the candidate" "$tmp/bad-rollback.json" "rollback drill completed before"
+printf '%s\n' '[bpfcompat-rollback-drill:v1]' >"$rollback_note"
+rehash "$rollback_note" .rollback.evidence_sha256 "$tmp/bad-rollback.json"
+expect_refused "a marker-only rollback note" "$tmp/bad-rollback.json" "must contain exactly one"
+restore "$rollback_note"
+
+# Incident: names the rejected promote-release run; another candidate's
+# fail-closed drill stays acceptable but is recorded as not candidate-bound.
+incident_note="$tmp/incident/evidence.md"
+keep "$incident_note"
+printf '%s\n' '[bpfcompat-promotion-incident:v1]' >"$incident_note"
+rehash "$incident_note" .incident.evidence_sha256 "$tmp/bad-incident-bare.json"
+expect_refused "a marker-only incident note" "$tmp/bad-incident-bare.json" "does not name the promote-release workflow"
+printf '%s\n' '[bpfcompat-promotion-incident:v1] promote-release failed closed' >"$incident_note"
+rehash "$incident_note" .incident.evidence_sha256 "$tmp/bad-incident-norun.json"
+expect_refused "an incident note without the rejected run" "$tmp/bad-incident-norun.json" "does not link the rejected promote-release run"
+sed 's/v0\.4\.0-rc\.1/v0.3.8-rc.2/g' "$incident_note.keep" >"$incident_note"
+rehash "$incident_note" .incident.evidence_sha256 "$tmp/other-incident.json"
+BPFCOMPAT_SKIP_READINESS_ATTESTATION=1 "$script" "$tmp/other-incident.json" "$tmp/other-incident-out.md" >/dev/null
+jq -e '.incident.candidate_bound == false and .incident.promotion_run_id == 6000' "$tmp/other-incident-out.json" >/dev/null || {
+  echo "[production-readiness-test] an earlier candidate's incident is not recorded as candidate_bound=false" >&2; exit 1; }
+echo "[production-readiness-test] accepted and recorded: an earlier candidate's fail-closed incident (candidate_bound=false)"
+restore "$incident_note"
+
+# Canaries: observation floors, order, and run-bound component records.
+canary1="$tmp/canary-1/release-candidate-canary.json"
+canary2="$tmp/canary-2/release-candidate-canary.json"
+keep "$canary1"
+jq '.completed_at = "2020-01-01T00:00:00Z"' "$canary1.keep" >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-canary-time.json"
+expect_refused "a T+24h canary before the candidate existed" "$tmp/bad-canary-time.json" "RC canary t-plus-24h completed before 20h"
+jq '.completed_at = "2026-07-31T09:59:59Z"' "$canary1.keep" >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-canary-time.json"
+expect_refused "a T+24h canary under 20h after the candidate" "$tmp/bad-canary-time.json" "RC canary t-plus-24h completed before 20h"
+jq '.completed_at = "2026-08-03T00:00:00Z"' "$canary1.keep" >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-canary-time.json"
+expect_refused "canaries out of milestone order" "$tmp/bad-canary-time.json" "must complete in manual, T+24h, T+72h order"
+jq '.components[0].path |= sub("-3001/"; "-9999/")' "$canary1.keep" >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-canary-component.json"
+expect_refused "a canary component from another run" "$tmp/bad-canary-component.json" "are not artifacts of run 3001"
+jq 'del(.components[] | select(.path | endswith("/external-consumers.json")))' "$canary1.keep" >"$canary1"
+rehash "$canary1" '.canaries[1].evidence_sha256' "$tmp/bad-canary-component.json"
+expect_refused "a canary missing its external-consumers record" "$tmp/bad-canary-component.json" "must record exactly one external-consumers.json"
+restore "$canary1"
+container_component="$(find "$tmp/canary-2/components" -name container.json)"
+keep "$container_component"
+jq '.digest = ("sha256:" + ("4" * 64))' "$container_component.keep" >"$container_component"
+expect_refused "a canary component whose bytes changed" "$tmp/input.json" "SHA-256 mismatch for container.json"
+keep "$canary2"
+jq --arg sha "$(sha256sum "$container_component" | awk '{print $1}')" \
+  '(.components[] | select(.path | endswith("/container.json")) | .sha256) = $sha' "$canary2.keep" >"$canary2"
+rehash "$canary2" '.canaries[2].evidence_sha256' "$tmp/bad-canary-container.json"
+expect_refused "a canary container check of another image" "$tmp/bad-canary-container.json" "container component does not record a pass of v0.4.0-rc.1"
+restore "$canary2"
+restore "$container_component"
+
+# Operator: the confirmation names the exact candidate evidence.
+operator_note="$tmp/operator/evidence.md"
+keep "$operator_note"
+printf '%s\n' '[bpfcompat-solo-promotion:v1] ErenAri confirmed exact evidence' >"$operator_note"
+rehash "$operator_note" .operator.evidence_sha256 "$tmp/bad-operator.json"
+expect_refused "an operator confirmation not bound to the candidate evidence" "$tmp/bad-operator.json" "operator evidence does not name candidate evidence SHA-256"
+restore "$operator_note"
 
 # --- Attestation path, without the test bypass ---------------------------------
 # gh stub: every verification is logged; campaign attestations report the
