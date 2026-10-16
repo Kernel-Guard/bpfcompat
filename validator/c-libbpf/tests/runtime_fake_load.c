@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-/* Test-only link shim for runtime_limits_test.sh: linked with -Wl,--wrap=...
+/* Test-only link shim for the validator host tests: linked with -Wl,--wrap=...
  * so every kernel-facing libbpf entry point the validator calls resolves here
  * and never reaches bpf(2). Nothing is loaded into the host kernel.
  *
