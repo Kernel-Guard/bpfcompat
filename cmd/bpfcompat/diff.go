@@ -43,6 +43,11 @@ func runDiff(args []string) int {
 		}
 		return regressiondiff.ExitInconclusive
 	}
+	// A usage error establishes no comparison: exit 1 like any other
+	// inability to compare, never a verdict on the candidate.
+	if rejectPositionalArgs(fs) {
+		return regressiondiff.ExitInconclusive
+	}
 
 	if strings.TrimSpace(*baseline) == "" || strings.TrimSpace(*candidate) == "" {
 		fmt.Fprintln(os.Stderr, "diff requires --baseline and --candidate")
