@@ -67,8 +67,14 @@ with one `Result` per profile plus the raw on-disk report.
 
 ## Options
 
-- `WithMode(LoadOnly | LoadAttach)` — `LoadOnly` (default) runs the verifier
-  only; `LoadAttach` also attaches to hooks (more invasive).
+- `WithMode(LoadOnly | LoadAttach | LoadAttachRequired)`:
+  - `LoadOnly` (default) runs the verifier only.
+  - `LoadAttach` also attaches to hooks, best effort (more invasive).
+  - `LoadAttachRequired` makes attach part of the contract, exactly like the
+    CLI's required attach mode (see below).
+- `WithRequiredPrograms(names...)` — under `LoadAttachRequired`, programs that
+  must be attached (the library equivalent of a manifest's
+  `attach.required`).
 - `WithFeatureProbe(bool)` — off by default; enables the full kernel-capability
   census (slower).
 - `WithValidator(path)` — pin a validator binary instead of the embedded one.
@@ -86,7 +92,71 @@ public API or the `Result` shape — that change would not be breaking.
 
 ## Result
 
-`Result` carries `Loadable` (the gate), `Kernel` (release/arch/BTF), `Load`
-(status/errno/verifier-log tail), `Attach`, `Capabilities`, a machine-readable
-`Classification` (branch on `Code`, don't parse `Reason`), and `RawJSON` for the
-full underlying document. `Result.OK()` == `Loadable`.
+`Result` carries:
+
+- `Loadable`: the load gate.
+- `Kernel`: release, arch, BTF.
+- `Load`: status, errno, verifier-log tail.
+- `Attach`, `Capabilities`.
+- `Classification`: machine-readable. Branch on `Code`; don't parse `Reason`.
+- `RawJSON`: the full underlying document.
+
+`Result.OK()` == `Loadable`.
+
+### Attach evidence and verdict (same as the CLI)
+
+The validator document is evaluated by the same code the matrix runner uses
+(`internal/runner.EvaluateValidatorResult`). The host-load path and `Validate`
+therefore report what the CLI reports for the same evidence:
+
+- `Status` / `Verdict` / `FailedStage`. `Status` is "pass", "fail",
+  "unsupported" or "infra_error"; `Verdict` is COMPATIBLE, INCOMPATIBLE,
+  UNSUPPORTED or INFRA_ERROR. `Compatible()` is true only for COMPATIBLE.
+  On the matrix path, `Status`/`Verdict` are the target's recorded values
+  about the kernel that actually ran. A target that booted another kernel
+  series than requested can read COMPATIBLE while `Compatible()` is false,
+  because `Compatible()` additionally requires the requested environment.
+- `Attach.Accounting`:
+  - `v1`: counts and per-program records add up.
+  - `unavailable`: an older validator.
+  - `inconsistent`: the accounting contradicted itself and was discarded.
+- `Attach.Coverage`: complete, partial, none, empty, not_evaluated or
+  unavailable. It is computed from scope and attempts, never from successes.
+- The scope counts, `Attach.EffectiveMode` and `Attach.RecordsTruncated`.
+- `Attach.Programs`: per program, the `Outcome`, plus `Errno`, `Detail`,
+  `ReasonClass` and `Attribution: errno_only` for a failure. The errno
+  family is evidence, not a diagnosed cause.
+- `Notes`. On the host-load path these are the CLI's load, attach and
+  classification notes for the same evidence: a subset of the CLI's notes,
+  without the capability, map-fixup or per-program load notes. Example:
+  `attach not fully exercised: 1/2 selected programs attached, 1 not
+  exercised (xdp x1)`.
+
+`OK()` stays the load gate only. Use `Compatible()` for the attach contract
+(and, on the matrix path, for the requested environment). Under
+`LoadAttachRequired`, `OK()` can be true while `Compatible()` is false: the
+object loaded, but the attach contract was not established.
+
+Unprivileged library use is classified exactly like the CLI. A
+`CAPABILITY_FAILURE` (INCOMPATIBLE) may reflect missing `CAP_BPF` or
+`CAP_SYS_ADMIN` on the calling process rather than the kernel. The CLI always
+runs as root inside a VM.
+
+| Evidence | Status / Classification |
+|---|---|
+| every selected program attached | pass (COMPATIBLE) |
+| a selected program failed to attach | fail, `ATTACH_FAILED` (low confidence, raw errno); `UNSUPPORTED_ATTACH_TYPE` only when every failure is EOPNOTSUPP |
+| a selected program the validator cannot attach (XDP, LSM, tc, …) | unsupported, `ATTACH_NOT_EXERCISED` |
+| no program selected | unsupported, `ATTACH_SCOPE_EMPTY` |
+| a `WithRequiredPrograms` name not attached | unsupported, `ATTACH_NOT_EXERCISED` |
+| validator without accounting | infra_error, `ATTACH_ACCOUNTING_UNAVAILABLE` |
+| contradictory accounting | infra_error, `ATTACH_ACCOUNTING_INCONSISTENT` |
+
+`Validate` (matrix) takes required attach from the manifest (`attach.required`)
+like the CLI. It returns `ErrRequiredModeNeedsManifest` for
+`Mode: LoadAttachRequired` rather than silently running best effort.
+
+These fields are additive. `OK()`, `Loadable` and the existing `Attach` counts
+keep their meaning. `Classification` is now also set for loadable objects when
+a required-mode attach contract was not established; that can only happen
+with the new `LoadAttachRequired` mode.

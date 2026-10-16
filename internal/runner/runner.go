@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/artifact"
-	"github.com/kernel-guard/bpfcompat/internal/classifier"
 	"github.com/kernel-guard/bpfcompat/internal/manifest"
 	"github.com/kernel-guard/bpfcompat/internal/matrix"
 	"github.com/kernel-guard/bpfcompat/internal/registry"
@@ -716,166 +715,28 @@ func executeTarget(
 	if note, mismatched := environmentMismatchNote(target.Environment); mismatched {
 		target.Notes = append(target.Notes, note)
 	}
-	target.Validation = &schema.Validation{
-		LoadStatus:      vr.Load.Status,
-		LoadErrorCode:   vr.Load.ErrorCode,
-		LoadError:       vr.Load.Error,
-		AttachMode:      vr.Attach.Mode,
-		AttachStatus:    vr.Attach.Status,
-		AttachAttempted: vr.Attach.Attempted,
-		AttachPassed:    vr.Attach.Passed,
-		AttachFailed:    vr.Attach.Failed,
-	}
-	acc := accountAttach(vr, attachMode)
-	applyAttachAccounting(target.Validation, acc, vr.Load.Status == "pass")
-	if acc.state == schema.AttachAccountingInconsistent {
-		target.Notes = append(target.Notes, "attach accounting discarded: "+acc.problem)
-	}
+	// The verdict for this evidence comes from evaluateValidator, the one
+	// evaluation the pkg/bpfcompat library shares; only the notes around it
+	// (functional notes sit between its accounting and verdict notes) and the
+	// return values are this frontend's.
+	ev := evaluateValidator(vr, attachMode, tuning.requiredAttachPrograms)
+	target.Validation = &ev.Validation
+	target.Notes = append(target.Notes, ev.accountingNotes...)
 	target.Functional = functionalFromValidator(vr)
 	target.Notes = append(target.Notes, functionalNotes(vr)...)
+	target.Notes = append(target.Notes, ev.verdictNotes...)
 
-	switch {
-	case vr.Load.Status == "pass" && vr.Status == "pass":
-		target.Status = "pass"
-		target.FailedStage = ""
-		if vr.Attach.Attempted > 0 {
-			target.Notes = append(target.Notes, fmt.Sprintf(
-				"attach status: %s (mode=%s attempted=%d passed=%d failed=%d)",
-				vr.Attach.Status,
-				vr.Attach.Mode,
-				vr.Attach.Attempted,
-				vr.Attach.Passed,
-				vr.Attach.Failed,
-			))
-		}
-		if note := attachCoverageNote(acc, target.Validation.AttachCoverage); note != "" {
-			target.Notes = append(target.Notes, note)
-		}
-		// Required attach is a claim about every selected program. Loading
-		// the object and attaching some of it does not establish it.
-		if attachMode == "required" {
-			if code, reason := requiredAttachGap(acc, tuning.requiredAttachPrograms); code != "" {
-				target.FailedStage = "attach"
-				target.ClassificationCode = code
-				target.ClassificationConfidence = "high"
-				target.ClassificationReason = reason
-				target.Notes = append(target.Notes, fmt.Sprintf("classification: %s (%s)", code, "high"))
-				if code == codeAttachAccountingUnavailable || code == codeAttachAccountingInconsistent {
-					target.Status = "infra_error"
-					target.InfraError = reason
-					return target, true, false
-				}
-				target.Status = "unsupported"
-				return target, false, false
-			}
-		}
-		return target, false, false
-	case vr.Load.Status == "fail" && loadHitFDLimit(vr.Load.ErrorCode):
-		// Every loaded program and link holds a file descriptor; running out
-		// of them is the validator process's limit in the guest, not a fact
-		// about the artifact. The load evidence above is kept.
-		target.Status = "infra_error"
-		target.FailedStage = "infra"
-		target.InfraError = fmt.Sprintf("the validator process ran out of file descriptors while loading (code=%d %s): a limit of the validator's environment in the guest, not a property of the artifact", vr.Load.ErrorCode, vr.Load.Error)
-		target.Notes = append(target.Notes, "validator load error: "+target.InfraError)
-		return target, true, false
-	case vr.Load.Status == "fail":
-		target.Status = "fail"
-		target.FailedStage = "load"
-		target.Notes = append(target.Notes, fmt.Sprintf("validator load error: code=%d message=%s", vr.Load.ErrorCode, vr.Load.Error))
-		if vr.Attach.Attempted > 0 || vr.Attach.Status != "" {
-			target.Notes = append(target.Notes, fmt.Sprintf(
-				"attach status: %s (mode=%s attempted=%d passed=%d failed=%d)",
-				vr.Attach.Status,
-				vr.Attach.Mode,
-				vr.Attach.Attempted,
-				vr.Attach.Passed,
-				vr.Attach.Failed,
-			))
-		}
-		cl := classifier.Classify(classifier.Input{
-			LoadStatus:         vr.Load.Status,
-			LoadErrorCode:      vr.Load.ErrorCode,
-			LoadError:          vr.Load.Error,
-			AttachStatus:       vr.Attach.Status,
-			AttachMode:         vr.Attach.Mode,
-			KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
-			ArtifactHasBTF:     vr.BTF.ArtifactHasBTF,
-			ArtifactHasBTFExt:  vr.BTF.ArtifactHasBTFExt,
-			LibbpfLog:          vr.Logs.Libbpf,
-			KernelRelease:      vr.Host.Release,
-			ProgramSections:    discoveredProgramSections(vr),
-			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
-			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
-		})
-		target.ClassificationCode = cl.Code
-		target.ClassificationConfidence = cl.Confidence
-		target.ClassificationReason = cl.Reason
-		target.Notes = append(target.Notes, fmt.Sprintf("classification: %s (%s)", cl.Code, cl.Confidence))
-		if cl.Remediation != "" {
-			target.Notes = append(target.Notes, "remediation: "+cl.Remediation)
-		}
-		return target, false, matrixProfile.RequiredBool()
-	case vr.Status == "fail":
-		target.Status = "fail"
-		if vr.Functional.Status == "fail" {
-			target.FailedStage = "functional"
-			target.ClassificationCode = "FUNCTIONAL_TEST_FAILURE"
-			target.ClassificationConfidence = "high"
-			target.ClassificationReason = functionalFailureReason(vr)
-			target.Notes = append(target.Notes,
-				fmt.Sprintf("classification: %s (%s)", target.ClassificationCode, target.ClassificationConfidence),
-				"remediation: inspect the functional test command output and ship or fix the project-specific integration test assets.",
-			)
-			return target, false, matrixProfile.RequiredBool()
-		}
-		if vr.Attach.Status == "fail" {
-			target.FailedStage = "attach"
-		} else {
-			target.FailedStage = "validation"
-		}
-		target.Notes = append(target.Notes, "validator reported failure after load phase")
-		if vr.Attach.Attempted > 0 || vr.Attach.Status != "" {
-			target.Notes = append(target.Notes, fmt.Sprintf(
-				"attach status: %s (mode=%s attempted=%d passed=%d failed=%d)",
-				vr.Attach.Status,
-				vr.Attach.Mode,
-				vr.Attach.Attempted,
-				vr.Attach.Passed,
-				vr.Attach.Failed,
-			))
-		}
-		cl := classifier.Classify(classifier.Input{
-			LoadStatus:         vr.Load.Status,
-			LoadErrorCode:      vr.Load.ErrorCode,
-			LoadError:          vr.Load.Error,
-			AttachStatus:       vr.Attach.Status,
-			AttachMode:         vr.Attach.Mode,
-			KernelBTFAvailable: vr.BTF.KernelBTFAvailable,
-			ArtifactHasBTF:     vr.BTF.ArtifactHasBTF,
-			ArtifactHasBTFExt:  vr.BTF.ArtifactHasBTFExt,
-			LibbpfLog:          vr.Logs.Libbpf,
-			KernelRelease:      vr.Host.Release,
-			ProgramSections:    discoveredProgramSections(vr),
-			TracingProbeStatus: vr.Capabilities.ProgramTypes.Tracing.Status,
-			TracingProbeError:  vr.Capabilities.ProgramTypes.Tracing.ErrorCode,
-			AttachFailures:     attachFailuresForClassifier(acc, vr),
-			AttachFailedTotal:  vr.Attach.Failed,
-		})
-		target.ClassificationCode = cl.Code
-		target.ClassificationConfidence = cl.Confidence
-		target.ClassificationReason = cl.Reason
-		target.Notes = append(target.Notes, fmt.Sprintf("classification: %s (%s)", cl.Code, cl.Confidence))
-		if cl.Remediation != "" {
-			target.Notes = append(target.Notes, "remediation: "+cl.Remediation)
-		}
-		return target, false, matrixProfile.RequiredBool()
-	default:
-		target.Status = "infra_error"
-		target.FailedStage = "infra"
-		target.InfraError = fmt.Sprintf("unrecognized validator status load=%q status=%q", vr.Load.Status, vr.Status)
+	target.Status = ev.Status
+	target.FailedStage = ev.FailedStage
+	target.ClassificationCode = ev.ClassificationCode
+	target.ClassificationConfidence = ev.ClassificationConfidence
+	target.ClassificationReason = ev.ClassificationReason
+	if ev.Status == "infra_error" {
+		// Otherwise the executor's own InfraError message is kept.
+		target.InfraError = ev.InfraError
 		return target, true, false
 	}
+	return target, false, ev.Status == "fail" && matrixProfile.RequiredBool()
 }
 
 // loadHitFDLimit reports a load error code of EMFILE or ENFILE (Linux errno

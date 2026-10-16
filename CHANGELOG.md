@@ -7,6 +7,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added — library attach parity (stacked on attach truth)
+- `pkg/bpfcompat` reports the same attach evidence and verdict as the CLI.
+  - The host-load (`ValidateBeforeLoad` / `ValidateBytes`) and matrix
+    (`Validate`) results now carry `Status`, `Verdict`, `FailedStage` and
+    `Notes`, plus attach accounting: `Attach.Accounting`, `Attach.Coverage`,
+    the scope counts, and per-program `Attach.Programs` with outcome, errno,
+    errno family and `errno_only` attribution.
+  - A new `LoadAttachRequired` mode and a `WithRequiredPrograms` option give
+    the library the CLI's required-attach gaps: `ATTACH_NOT_EXERCISED`,
+    `ATTACH_SCOPE_EMPTY` and `ATTACH_ACCOUNTING_*`, plus `ATTACH_FAILED`.
+  - `Compatible()` reports the whole requested contract.
+  - The CLI's per-target path (`executeTarget`) and the library compute
+    the verdict for validator evidence in one place,
+    `internal/runner.evaluateValidator`; the library reaches it through
+    `EvaluateValidatorResult`. There is no mirrored copy to drift. A golden
+    fixture pins the CLI's target bytes for every evidence branch, and the
+    library replays it through both of its frontends.
+  - All additions are additive. `Validate` returns
+    `ErrRequiredModeNeedsManifest` for `LoadAttachRequired`.
+
+### Changed — library classification values (same types, CLI-consistent values)
+- **Load failures are classified with the CLI's full input.** The library
+  passes the classifier the validator's tracing-probe evidence, as the CLI
+  does. A load failure can therefore get a more specific code than before.
+  For example, an fentry program on a kernel without tracing support, with
+  `WithFeatureProbe(true)`, is now `UNSUPPORTED_PROGRAM_TYPE` (high) instead
+  of `UNKNOWN` (low).
+- **`Classification` may now be set on a loadable result.**
+  - Before, it was set only when the load failed.
+  - It is now set whenever the CLI would classify the target: a required
+    attach contract that was not established (`ATTACH_NOT_EXERCISED`,
+    `ATTACH_SCOPE_EMPTY`, `ATTACH_ACCOUNTING_*`), a proven attach failure in
+    required mode (`ATTACH_FAILED`), or a validator failure after load.
+  - Callers that read "Code non-empty" as "load failed" should use `OK()` for
+    the load gate.
+- **Matrix path: `Compatible()` also requires the requested environment.** A
+  target that booted another kernel series or distribution than its profile
+  is not `Compatible()`, matching the CLI's INFRA_ERROR run verdict. Its own
+  `Verdict` field is unchanged.
+
 ### Changed — verdict semantics (v0.5; changes validator bytes)
 - **Required attach means every selected program attached.** With
   `attach.required` in the manifest, a target whose object also carries

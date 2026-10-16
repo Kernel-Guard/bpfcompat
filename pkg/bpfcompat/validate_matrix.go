@@ -3,12 +3,19 @@ package bpfcompat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/runner"
 	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
+
+// ErrRequiredModeNeedsManifest is returned by Validate for
+// Mode == LoadAttachRequired: the matrix engine takes required attach from the
+// manifest (programs marked attach.required), and running it in best-effort
+// mode instead would silently weaken the contract.
+var ErrRequiredModeNeedsManifest = errors.New("bpfcompat: Validate does not take LoadAttachRequired; use Mode LoadAttach with a Manifest that marks programs attach.required")
 
 // Config drives the full matrix engine via Validate: one or more kernel
 // profiles, each booted in a disposable VM. This is the same engine the CLI and
@@ -67,6 +74,9 @@ func (c Config) validationMode() string {
 // non-zero number of failed targets is reported in Report.Summary, not as a Go
 // error — err is non-nil only when the run could not be executed.
 func Validate(ctx context.Context, cfg Config) (Report, error) {
+	if cfg.Mode == LoadAttachRequired {
+		return Report{}, ErrRequiredModeNeedsManifest
+	}
 	rcfg := runner.Config{
 		ArtifactPath:   cfg.Artifact,
 		ValidationMode: cfg.validationMode(),
@@ -126,7 +136,14 @@ func reportFromSchema(runDir string, rep schema.ReportV01) Report {
 
 func resultFromTarget(t schema.Target) Result {
 	r := Result{
-		Profile: t.ProfileID,
+		Profile:     t.ProfileID,
+		Status:      t.Status,
+		Verdict:     t.Verdict,
+		FailedStage: t.FailedStage,
+		Notes:       t.Notes,
+		// The run-level rule: a target that ran another kernel series or
+		// distribution than requested does not establish the requested one.
+		environmentNotEstablished: !schema.EstablishedRequestedEnvironment(&t),
 		Kernel: KernelInfo{
 			BTF: t.BTF != nil && t.BTF.KernelBTFAvailable,
 		},
@@ -147,13 +164,7 @@ func resultFromTarget(t schema.Target) Result {
 	if v := t.Validation; v != nil {
 		r.Loadable = v.LoadStatus == "pass"
 		r.Load = LoadResult{Status: v.LoadStatus, Errno: v.LoadErrorCode, LogTail: v.LoadError}
-		r.Attach = AttachResult{
-			Mode:      v.AttachMode,
-			Status:    v.AttachStatus,
-			Attempted: v.AttachAttempted,
-			Passed:    v.AttachPassed,
-			Failed:    v.AttachFailed,
-		}
+		r.Attach = attachFromValidation(v)
 	} else {
 		// No validation block (e.g. infra failure before load) — fall back to
 		// the target's overall status.

@@ -16,7 +16,7 @@ func TestParseResult_LoadPass(t *testing.T) {
 		"btf":{"kernel_btf_available":true,"artifact_has_btf":true},
 		"capabilities":{"map_types":{"ringbuf":{"status":"supported"}},"program_types":{"kprobe":{"status":"supported"}}}
 	}`)
-	r, err := parseResult(doc)
+	r, err := parseResult(doc, newConfig())
 	if err != nil {
 		t.Fatalf("parseResult: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestParseResult_LoadFail_Classified(t *testing.T) {
 		"logs":{"libbpf":"libbpf: prog 'x': failed to resolve CO-RE relocation"},
 		"discovery":{"programs":[{"section":"kprobe/x"}]}
 	}`)
-	r, err := parseResult(doc)
+	r, err := parseResult(doc, newConfig())
 	if err != nil {
 		t.Fatalf("parseResult: %v", err)
 	}

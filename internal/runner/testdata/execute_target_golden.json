@@ -1,0 +1,5406 @@
+[
+  {
+    "name": "required all attached [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)"
+      ]
+    }
+  },
+  {
+    "name": "required all attached [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)"
+      ]
+    }
+  },
+  {
+    "name": "required mixed object [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "partial",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but 1 of 2 selected programs are of a kind the validator cannot attach (xdp x1), so they were loaded but never attached; 1 attached.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)",
+        "attach not fully exercised: 1/2 selected programs attached, 1 not exercised (xdp x1)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "required mixed object [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "partial",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but 1 of 2 selected programs are of a kind the validator cannot attach (xdp x1), so they were loaded but never attached; 1 attached.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)",
+        "attach not fully exercised: 1/2 selected programs attached, 1 not exercised (xdp x1)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "best-effort mixed object [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "partial",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=best-effort attempted=1 passed=1 failed=0)",
+        "attach not fully exercised: 1/2 selected programs attached, 1 not exercised (xdp x1)"
+      ]
+    }
+  },
+  {
+    "name": "best-effort mixed object [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "partial",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=best-effort attempted=1 passed=1 failed=0)",
+        "attach not fully exercised: 1/2 selected programs attached, 1 not exercised (xdp x1)"
+      ]
+    }
+  },
+  {
+    "name": "required unsupported only [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 0,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "none",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but 1 of 1 selected programs are of a kind the validator cannot attach (xdp x1), so they were loaded but never attached; 0 attached.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach not fully exercised: 0/1 selected programs attached, 1 not exercised (xdp x1)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "required unsupported only [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 0,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "none",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but 1 of 1 selected programs are of a kind the validator cannot attach (xdp x1), so they were loaded but never attached; 0 attached.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach not fully exercised: 0/1 selected programs attached, 1 not exercised (xdp x1)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "required empty scope [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 0,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 1,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 0,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_selected",
+            "attach_status": "skipped",
+            "autoload": false,
+            "load_status": "pass",
+            "name": "tp_off",
+            "section": "tracepoint/x/y"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "empty",
+        "attach_program_count": 1,
+        "attach_not_selected": 1,
+        "attach_programs": [
+          {
+            "name": "tp_off",
+            "section": "tracepoint/x/y",
+            "selected": false,
+            "outcome": "not_selected"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_SCOPE_EMPTY",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but the object selects no programs to load and attach.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "classification: ATTACH_SCOPE_EMPTY (high)"
+      ]
+    }
+  },
+  {
+    "name": "required empty scope [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 0,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 1,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 0,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_selected",
+            "attach_status": "skipped",
+            "autoload": false,
+            "load_status": "pass",
+            "name": "tp_off",
+            "section": "tracepoint/x/y"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "empty",
+        "attach_program_count": 1,
+        "attach_not_selected": 1,
+        "attach_programs": [
+          {
+            "name": "tp_off",
+            "section": "tracepoint/x/y",
+            "selected": false,
+            "outcome": "not_selected"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_SCOPE_EMPTY",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but the object selects no programs to load and attach.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "classification: ATTACH_SCOPE_EMPTY (high)"
+      ]
+    }
+  },
+  {
+    "name": "required proven failure [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 1,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "fail"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": -2,
+            "attach_error": "No such file or directory",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "fail",
+        "attach_attempted": 2,
+        "attach_passed": 1,
+        "attach_failed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist",
+            "selected": true,
+            "outcome": "failed",
+            "operation": "bpf_program__attach",
+            "errno": -2,
+            "detail": "No such file or directory",
+            "reason_class": "ERRNO_ENOENT",
+            "attribution": "errno_only"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_FAILED",
+      "classification_confidence": "low",
+      "classification_reason": "Attach failed after load succeeded; the errno alone does not establish the cause: program \"kp_x\" (kprobe/does_not_exist): errno -2 \"No such file or directory\"",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator reported failure after load phase",
+        "attach status: fail (mode=required attempted=2 passed=1 failed=1)",
+        "classification: ATTACH_FAILED (low)",
+        "remediation: Inspect the per-program attach errno and the libbpf log in the report for the failing attach point."
+      ]
+    }
+  },
+  {
+    "name": "required proven failure [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 1,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "fail"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": -2,
+            "attach_error": "No such file or directory",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "fail",
+        "attach_attempted": 2,
+        "attach_passed": 1,
+        "attach_failed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist",
+            "selected": true,
+            "outcome": "failed",
+            "operation": "bpf_program__attach",
+            "errno": -2,
+            "detail": "No such file or directory",
+            "reason_class": "ERRNO_ENOENT",
+            "attribution": "errno_only"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_FAILED",
+      "classification_confidence": "low",
+      "classification_reason": "Attach failed after load succeeded; the errno alone does not establish the cause: program \"kp_x\" (kprobe/does_not_exist): errno -2 \"No such file or directory\"",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator reported failure after load phase",
+        "attach status: fail (mode=required attempted=2 passed=1 failed=1)",
+        "classification: ATTACH_FAILED (low)",
+        "remediation: Inspect the per-program attach errno and the libbpf log in the report for the failing attach point."
+      ]
+    }
+  },
+  {
+    "name": "best-effort proven failure [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "best-effort",
+        "failed": 1,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "warn"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": -2,
+            "attach_error": "No such file or directory",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "warn",
+        "attach_attempted": 2,
+        "attach_passed": 1,
+        "attach_failed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist",
+            "selected": true,
+            "outcome": "failed",
+            "operation": "bpf_program__attach",
+            "errno": -2,
+            "detail": "No such file or directory",
+            "reason_class": "ERRNO_ENOENT",
+            "attribution": "errno_only"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: warn (mode=best-effort attempted=2 passed=1 failed=1)",
+        "attach not fully attached: 1/2 selected programs attached, 1 failed (kp_x)"
+      ]
+    }
+  },
+  {
+    "name": "best-effort proven failure [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "best-effort",
+        "failed": 1,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "warn"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": -2,
+            "attach_error": "No such file or directory",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "warn",
+        "attach_attempted": 2,
+        "attach_passed": 1,
+        "attach_failed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "kp_x",
+            "section": "kprobe/does_not_exist",
+            "selected": true,
+            "outcome": "failed",
+            "operation": "bpf_program__attach",
+            "errno": -2,
+            "detail": "No such file or directory",
+            "reason_class": "ERRNO_ENOENT",
+            "attribution": "errno_only"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: warn (mode=best-effort attempted=2 passed=1 failed=1)",
+        "attach not fully attached: 1/2 selected programs attached, 1 failed (kp_x)"
+      ]
+    }
+  },
+  {
+    "name": "required accounting unavailable (old validator) [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "attempted": 1,
+        "failed": 0,
+        "mode": "required",
+        "passed": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_status": "pass",
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "unavailable",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_ACCOUNTING_UNAVAILABLE",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but this validator does not account for which programs it attached, so complete attach coverage cannot be established.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "Attach is required, but this validator does not account for which programs it attached, so complete attach coverage cannot be established.",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)",
+        "classification: ATTACH_ACCOUNTING_UNAVAILABLE (high)"
+      ]
+    }
+  },
+  {
+    "name": "required accounting unavailable (old validator) [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "attempted": 1,
+        "failed": 0,
+        "mode": "required",
+        "passed": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_status": "pass",
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "unavailable",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_ACCOUNTING_UNAVAILABLE",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but this validator does not account for which programs it attached, so complete attach coverage cannot be established.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "Attach is required, but this validator does not account for which programs it attached, so complete attach coverage cannot be established.",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)",
+        "classification: ATTACH_ACCOUNTING_UNAVAILABLE (high)"
+      ]
+    }
+  },
+  {
+    "name": "required contradictory accounting [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_error": "",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_ACCOUNTING_INCONSISTENT",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: per-program attached=1 disagrees with passed=2",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)",
+        "classification: ATTACH_ACCOUNTING_INCONSISTENT (high)"
+      ]
+    }
+  },
+  {
+    "name": "required contradictory accounting [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_error": "",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_ACCOUNTING_INCONSISTENT",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: per-program attached=1 disagrees with passed=2",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)",
+        "classification: ATTACH_ACCOUNTING_INCONSISTENT (high)"
+      ]
+    }
+  },
+  {
+    "name": "required missing manifest program [required]",
+    "attach_mode": "required",
+    "required_programs": [
+      "tp_a",
+      "tp_zz"
+    ],
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but manifest program(s) tp_zz were not attached: not selected for load, not present in the object, or beyond the validator's per-program records.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "required missing manifest program [optional]",
+    "attach_mode": "required",
+    "required_programs": [
+      "tp_a",
+      "tp_zz"
+    ],
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but manifest program(s) tp_zz were not attached: not selected for load, not present in the object, or beyond the validator's per-program records.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "load failure [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNKNOWN",
+      "classification_confidence": "low",
+      "classification_reason": "Load failed but no known classification pattern matched.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=required attempted=0 passed=0 failed=0)",
+        "classification: UNKNOWN (low)",
+        "remediation: Inspect libbpf and verifier logs to derive a profile-specific remediation."
+      ]
+    }
+  },
+  {
+    "name": "load failure [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNKNOWN",
+      "classification_confidence": "low",
+      "classification_reason": "Load failed but no known classification pattern matched.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=required attempted=0 passed=0 failed=0)",
+        "classification: UNKNOWN (low)",
+        "remediation: Inspect libbpf and verifier logs to derive a profile-specific remediation."
+      ]
+    }
+  },
+  {
+    "name": "load only [required]",
+    "attach_mode": "disabled",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "disabled",
+        "failed": 0,
+        "mode": "disabled",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "disabled",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "disabled",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes"
+      ]
+    }
+  },
+  {
+    "name": "load only [optional]",
+    "attach_mode": "disabled",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "disabled",
+        "failed": 0,
+        "mode": "disabled",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "disabled",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "disabled",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes"
+      ]
+    }
+  },
+  {
+    "name": "functional test failure [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "error": "expected event not seen",
+            "exit_code": 3,
+            "name": "smoke",
+            "required": true,
+            "status": "fail"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "name": "smoke",
+            "required": true,
+            "status": "fail",
+            "expected_exit_code": 0,
+            "exit_code": 3,
+            "error": "expected event not seen"
+          }
+        ]
+      },
+      "failed_stage": "functional",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "FUNCTIONAL_TEST_FAILURE",
+      "classification_confidence": "high",
+      "classification_reason": "Required functional test \"smoke\" failed: expected event not seen",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "functional status: fail",
+        "functional test \"smoke\" failed: expected event not seen",
+        "classification: FUNCTIONAL_TEST_FAILURE (high)",
+        "remediation: inspect the functional test command output and ship or fix the project-specific integration test assets."
+      ]
+    }
+  },
+  {
+    "name": "functional test failure [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "error": "expected event not seen",
+            "exit_code": 3,
+            "name": "smoke",
+            "required": true,
+            "status": "fail"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "name": "smoke",
+            "required": true,
+            "status": "fail",
+            "expected_exit_code": 0,
+            "exit_code": 3,
+            "error": "expected event not seen"
+          }
+        ]
+      },
+      "failed_stage": "functional",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "FUNCTIONAL_TEST_FAILURE",
+      "classification_confidence": "high",
+      "classification_reason": "Required functional test \"smoke\" failed: expected event not seen",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "functional status: fail",
+        "functional test \"smoke\" failed: expected event not seen",
+        "classification: FUNCTIONAL_TEST_FAILURE (high)",
+        "remediation: inspect the functional test command output and ship or fix the project-specific integration test assets."
+      ]
+    }
+  },
+  {
+    "name": "load failure with feature probe (fentry, tracing unsupported) [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "capabilities": {
+        "program_types": {
+          "tracing": {
+            "error_code": -22,
+            "status": "unsupported"
+          }
+        }
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "fe",
+            "section": "fentry/do_unlinkat"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "logs": {
+        "libbpf": "libbpf: prog 'fe': BPF program load failed: Invalid argument"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "best-effort",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "fe",
+            "section": "fentry/do_unlinkat",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNSUPPORTED_PROGRAM_TYPE",
+      "classification_confidence": "high",
+      "classification_reason": "Kernel capability probes report tracing program support as \"unsupported\" while section \"fentry/do_unlinkat\" is present.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "capability prog.tracing: unsupported (code=-22 err=)",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=best-effort attempted=0 passed=0 failed=0)",
+        "classification: UNSUPPORTED_PROGRAM_TYPE (high)",
+        "remediation: Use a fallback artifact that avoids fentry/fexit/fmod_ret program sections on this profile."
+      ]
+    }
+  },
+  {
+    "name": "load failure with feature probe (fentry, tracing unsupported) [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "capabilities": {
+        "program_types": {
+          "tracing": {
+            "error_code": -22,
+            "status": "unsupported"
+          }
+        }
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "fe",
+            "section": "fentry/do_unlinkat"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "logs": {
+        "libbpf": "libbpf: prog 'fe': BPF program load failed: Invalid argument"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "best-effort",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "fe",
+            "section": "fentry/do_unlinkat",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNSUPPORTED_PROGRAM_TYPE",
+      "classification_confidence": "high",
+      "classification_reason": "Kernel capability probes report tracing program support as \"unsupported\" while section \"fentry/do_unlinkat\" is present.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "capability prog.tracing: unsupported (code=-22 err=)",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=best-effort attempted=0 passed=0 failed=0)",
+        "classification: UNSUPPORTED_PROGRAM_TYPE (high)",
+        "remediation: Use a fallback artifact that avoids fentry/fexit/fmod_ret program sections on this profile."
+      ]
+    }
+  },
+  {
+    "name": "load failure EMFILE (fd limit) [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Too many open files",
+        "error_code": -24,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -24,
+        "load_error": "Too many open files",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "the validator process ran out of file descriptors while loading (code=-24 Too many open files): a limit of the validator's environment in the guest, not a property of the artifact",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: the validator process ran out of file descriptors while loading (code=-24 Too many open files): a limit of the validator's environment in the guest, not a property of the artifact"
+      ]
+    }
+  },
+  {
+    "name": "load failure EMFILE (fd limit) [optional]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Too many open files",
+        "error_code": -24,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -24,
+        "load_error": "Too many open files",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "the validator process ran out of file descriptors while loading (code=-24 Too many open files): a limit of the validator's environment in the guest, not a property of the artifact",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: the validator process ran out of file descriptors while loading (code=-24 Too many open files): a limit of the validator's environment in the guest, not a property of the artifact"
+      ]
+    }
+  },
+  {
+    "name": "load failure ENFILE (fd limit) [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Too many open files in system",
+        "error_code": -23,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -23,
+        "load_error": "Too many open files in system",
+        "attach_mode": "best-effort",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "the validator process ran out of file descriptors while loading (code=-23 Too many open files in system): a limit of the validator's environment in the guest, not a property of the artifact",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: the validator process ran out of file descriptors while loading (code=-23 Too many open files in system): a limit of the validator's environment in the guest, not a property of the artifact"
+      ]
+    }
+  },
+  {
+    "name": "load failure ENFILE (fd limit) [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Too many open files in system",
+        "error_code": -23,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -23,
+        "load_error": "Too many open files in system",
+        "attach_mode": "best-effort",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "the validator process ran out of file descriptors while loading (code=-23 Too many open files in system): a limit of the validator's environment in the guest, not a property of the artifact",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: the validator process ran out of file descriptors while loading (code=-23 Too many open files in system): a limit of the validator's environment in the guest, not a property of the artifact"
+      ]
+    }
+  },
+  {
+    "name": "unrecognized validator status [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "status": "maybe"
+      },
+      "schema_version": "v0.1",
+      "status": "exploded"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "maybe",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "unrecognized validator status load=\"maybe\" status=\"exploded\"",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: attempted=1 although the attach phase did not run"
+      ]
+    }
+  },
+  {
+    "name": "unrecognized validator status [optional]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "status": "maybe"
+      },
+      "schema_version": "v0.1",
+      "status": "exploded"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": false,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "maybe",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "unrecognized validator status load=\"maybe\" status=\"exploded\"",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: attempted=1 although the attach phase did not run"
+      ]
+    }
+  },
+  {
+    "name": "wrong kernel and distro [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "4.18",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": false,
+        "requested_distro": "rhel",
+        "requested_distro_version": "8",
+        "observed_os_id": "ol",
+        "observed_os_version_id": "9.4",
+        "distro_match": false
+      },
+      "profile": {
+        "distro": "rhel",
+        "version": "8",
+        "kernel_family": "4.18",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "rhel",
+        "version": "8",
+        "kernel_family": "4.18",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "environment mismatch: profile requests kernel family 4.18 but the guest booted 5.15.0-100-generic; this target does not support a claim about the requested kernel series; environment mismatch: profile requests distribution rhel 8 but the guest reports os-release ol 9.4; this target does not support a claim about the requested distribution",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)"
+      ]
+    }
+  },
+  {
+    "name": "wrong kernel, load failure [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "4.18",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": false,
+        "requested_distro": "rhel",
+        "requested_distro_version": "8"
+      },
+      "profile": {
+        "distro": "rhel",
+        "version": "8",
+        "kernel_family": "4.18",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "rhel",
+        "version": "8",
+        "kernel_family": "4.18",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNKNOWN",
+      "classification_confidence": "low",
+      "classification_reason": "Load failed but no known classification pattern matched.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "environment mismatch: profile requests kernel family 4.18 but the guest booted 5.15.0-100-generic; this target does not support a claim about the requested kernel series",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=required attempted=0 passed=0 failed=0)",
+        "classification: UNKNOWN (low)",
+        "remediation: Inspect libbpf and verifier logs to derive a profile-specific remediation."
+      ]
+    }
+  },
+  {
+    "name": "required all attached [executor notes]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "complete",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 2,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "executor: transient warning",
+      "notes": [
+        "executor: guest booted",
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)"
+      ]
+    }
+  },
+  {
+    "name": "required mixed object [executor notes]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 1,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attachable_by_validator",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "xdp_pass",
+            "section": "xdp"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "unsupported",
+      "verdict": "UNSUPPORTED",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "partial",
+        "attach_program_count": 2,
+        "attach_selected": 2,
+        "attach_attachable": 1,
+        "attach_not_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          },
+          {
+            "name": "xdp_pass",
+            "section": "xdp",
+            "selected": true,
+            "outcome": "not_attachable_by_validator"
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_NOT_EXERCISED",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but 1 of 2 selected programs are of a kind the validator cannot attach (xdp x1), so they were loaded but never attached; 1 attached.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "executor: transient warning",
+      "notes": [
+        "executor: guest booted",
+        "bpftool unavailable; used custom capability probes",
+        "attach status: pass (mode=required attempted=1 passed=1 failed=0)",
+        "attach not fully exercised: 1/2 selected programs attached, 1 not exercised (xdp x1)",
+        "classification: ATTACH_NOT_EXERCISED (high)"
+      ]
+    }
+  },
+  {
+    "name": "load failure [executor notes]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 0,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 0,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "skipped"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_outcome": "not_attempted",
+            "attach_status": "skipped",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "Invalid argument",
+        "error_code": -22,
+        "status": "fail"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "fail",
+        "load_error_code": -22,
+        "load_error": "Invalid argument",
+        "attach_mode": "required",
+        "attach_status": "skipped",
+        "attach_accounting": "v1",
+        "attach_effective_mode": "required",
+        "attach_coverage": "not_evaluated",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "not_attempted"
+          }
+        ]
+      },
+      "failed_stage": "load",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "UNKNOWN",
+      "classification_confidence": "low",
+      "classification_reason": "Load failed but no known classification pattern matched.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "executor: transient warning",
+      "notes": [
+        "executor: guest booted",
+        "bpftool unavailable; used custom capability probes",
+        "validator load error: code=-22 message=Invalid argument",
+        "attach status: skipped (mode=required attempted=0 passed=0 failed=0)",
+        "classification: UNKNOWN (low)",
+        "remediation: Inspect libbpf and verifier logs to derive a profile-specific remediation."
+      ]
+    }
+  },
+  {
+    "name": "functional test failure [executor notes]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "error": "expected event not seen",
+            "exit_code": 3,
+            "name": "smoke",
+            "required": true,
+            "status": "fail"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "functional": {
+        "status": "fail",
+        "tests": [
+          {
+            "name": "smoke",
+            "required": true,
+            "status": "fail",
+            "expected_exit_code": 0,
+            "exit_code": 3,
+            "error": "expected event not seen"
+          }
+        ]
+      },
+      "failed_stage": "functional",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "FUNCTIONAL_TEST_FAILURE",
+      "classification_confidence": "high",
+      "classification_reason": "Required functional test \"smoke\" failed: expected event not seen",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "executor: transient warning",
+      "notes": [
+        "executor: guest booted",
+        "bpftool unavailable; used custom capability probes",
+        "functional status: fail",
+        "functional test \"smoke\" failed: expected event not seen",
+        "classification: FUNCTIONAL_TEST_FAILURE (high)",
+        "remediation: inspect the functional test command output and ship or fix the project-specific integration test assets."
+      ]
+    }
+  },
+  {
+    "name": "unrecognized validator status [executor notes]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "status": "maybe"
+      },
+      "schema_version": "v0.1",
+      "status": "exploded"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "maybe",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "failed_stage": "infra",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "unrecognized validator status load=\"maybe\" status=\"exploded\"",
+      "notes": [
+        "executor: guest booted",
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: attempted=1 although the attach phase did not run"
+      ]
+    }
+  },
+  {
+    "name": "functional test pass [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "functional": {
+        "status": "pass",
+        "tests": [
+          {
+            "exit_code": 0,
+            "name": "smoke",
+            "required": true,
+            "status": "pass"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": false,
+    "required_compat_failed": false,
+    "run_verdict": "COMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "pass",
+      "verdict": "COMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "functional": {
+        "status": "pass",
+        "tests": [
+          {
+            "name": "smoke",
+            "required": true,
+            "status": "pass",
+            "expected_exit_code": 0,
+            "exit_code": 0
+          }
+        ]
+      },
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "functional status: pass",
+        "functional test \"smoke\" passed",
+        "attach status: pass (mode=best-effort attempted=1 passed=1 failed=0)"
+      ]
+    }
+  },
+  {
+    "name": "contradictory accounting with functional pass [required]",
+    "attach_mode": "required",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 2,
+        "attempted": 2,
+        "effective_mode": "required",
+        "failed": 0,
+        "mode": "required",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 2,
+        "program_count": 2,
+        "records": 2,
+        "selected": 2,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          },
+          {
+            "attach_errno": 0,
+            "attach_error": "",
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "failed",
+            "attach_status": "fail",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_b",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "functional": {
+        "status": "pass",
+        "tests": [
+          {
+            "exit_code": 0,
+            "name": "smoke",
+            "required": true,
+            "status": "pass"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "pass"
+    },
+    "infra_error": true,
+    "required_compat_failed": false,
+    "run_verdict": "INFRA_ERROR",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "infra_error",
+      "verdict": "INFRA_ERROR",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "required",
+        "attach_status": "pass",
+        "attach_attempted": 2,
+        "attach_passed": 2,
+        "attach_accounting": "inconsistent",
+        "attach_coverage": "unavailable"
+      },
+      "functional": {
+        "status": "pass",
+        "tests": [
+          {
+            "name": "smoke",
+            "required": true,
+            "status": "pass",
+            "expected_exit_code": 0,
+            "exit_code": 0
+          }
+        ]
+      },
+      "failed_stage": "attach",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "ATTACH_ACCOUNTING_INCONSISTENT",
+      "classification_confidence": "high",
+      "classification_reason": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "infra_error": "Attach is required, but the validator's attach accounting is inconsistent (per-program attached=1 disagrees with passed=2), so it was discarded.",
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "attach accounting discarded: per-program attached=1 disagrees with passed=2",
+        "functional status: pass",
+        "functional test \"smoke\" passed",
+        "attach status: pass (mode=required attempted=2 passed=2 failed=0)",
+        "classification: ATTACH_ACCOUNTING_INCONSISTENT (high)"
+      ]
+    }
+  },
+  {
+    "name": "failure after load, no attach or functional failure [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "failed_stage": "validation",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "NONE",
+      "classification_confidence": "high",
+      "classification_reason": "No compatibility failure detected.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator reported failure after load phase",
+        "attach status: pass (mode=best-effort attempted=1 passed=1 failed=0)",
+        "classification: NONE (high)"
+      ]
+    }
+  }
+]

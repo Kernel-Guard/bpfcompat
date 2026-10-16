@@ -29,7 +29,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/kernel-guard/bpfcompat/internal/classifier"
+	"github.com/kernel-guard/bpfcompat/internal/runner"
+	"github.com/kernel-guard/bpfcompat/pkg/schema"
 )
 
 // ErrHostLoadNotEnabled is returned by ValidateBeforeLoad / ValidateBytes when
@@ -44,22 +45,66 @@ const (
 	// LoadOnly runs the verifier only — no attach. Fastest and least invasive;
 	// the right choice for a pre-load gate. This is the default.
 	LoadOnly Mode = iota
-	// LoadAttach also attaches each program to its hook. More invasive and
-	// requires the hook to exist on the running kernel.
+	// LoadAttach also attaches each program to its hook (best effort). More
+	// invasive and requires the hook to exist on the running kernel. A program
+	// that fails to attach is recorded but does not fail the result.
 	LoadAttach
+	// LoadAttachRequired attaches like LoadAttach, but the attach is part of
+	// the contract, exactly as the CLI's required attach mode: every selected
+	// program must be attached. A proven attach failure is Status "fail"
+	// (ATTACH_FAILED); a selected program the validator cannot attach, or no
+	// selected program at all, is "unsupported" (ATTACH_NOT_EXERCISED,
+	// ATTACH_SCOPE_EMPTY); attach accounting that is missing (an older
+	// validator) or contradictory is "infra_error"
+	// (ATTACH_ACCOUNTING_UNAVAILABLE / _INCONSISTENT). Check Status or
+	// Compatible(), not just OK().
+	LoadAttachRequired
 )
 
 func (m Mode) attachFlag() string {
-	if m == LoadAttach {
+	switch m {
+	case LoadAttach:
 		return "best-effort"
+	case LoadAttachRequired:
+		return "required"
+	default:
+		return "disabled"
 	}
-	return "disabled"
 }
 
 // Result is the outcome of validating one object against one kernel.
 type Result struct {
 	// Loadable is the gate: did the object pass the verifier?
 	Loadable bool
+
+	// Status is the verdict the bpfcompat CLI reaches for the same validator
+	// evidence: "pass", "fail", "unsupported" or "infra_error". It differs
+	// from Loadable when the requested attach contract was not established
+	// (LoadAttachRequired). Verdict is the matching schema verdict
+	// (COMPATIBLE, INCOMPATIBLE, UNSUPPORTED, INFRA_ERROR); FailedStage is
+	// "load", "attach", "validation", "infra" or empty.
+	//
+	// On the matrix path, Status and Verdict are the target's recorded values
+	// and describe the kernel the guest actually ran. A target that booted
+	// another kernel series or distribution than its profile requested can
+	// still read COMPATIBLE here; the CLI run treats it as INFRA_ERROR.
+	// Compatible() additionally requires the requested environment, so gate
+	// on Compatible(), not on Verdict == COMPATIBLE.
+	Status      string
+	Verdict     string
+	FailedStage string
+	// Notes: on the host-load path, the load/attach/classification notes the
+	// CLI records for this evidence (a subset of the CLI's notes: no
+	// capability, map-fixup or per-program load notes), e.g. "attach not
+	// fully exercised: 1/2 selected programs attached, ...". On the matrix
+	// path, the target's notes as reported.
+	Notes []string
+
+	// environmentNotEstablished is set on the matrix path when the guest
+	// booted another kernel series or distribution than the profile requested
+	// (schema.EstablishedRequestedEnvironment). The target's own Verdict is
+	// kept, but the requested contract was not established.
+	environmentNotEstablished bool
 
 	// Profile is the matrix profile id this result is for. Empty for
 	// ValidateBeforeLoad (the target is simply the local kernel).
@@ -76,8 +121,20 @@ type Result struct {
 	RawJSON []byte
 }
 
-// OK reports whether the object is safe to load on this kernel.
+// OK reports whether the object is safe to load on this kernel: the verifier
+// accepted it. It says nothing about attach; see Compatible.
 func (r Result) OK() bool { return r.Loadable }
+
+// Compatible reports whether the whole requested contract was established:
+// the object loaded and, when an attach mode was requested, the attach
+// requirements held (Verdict COMPATIBLE). On the matrix path it also requires
+// that the guest ran the requested environment: a target that booted another
+// kernel series is not Compatible even when its own Verdict is COMPATIBLE
+// (the CLI run is INFRA_ERROR). With LoadAttachRequired this is the check to
+// use.
+func (r Result) Compatible() bool {
+	return r.Verdict == schema.VerdictCompatible && !r.environmentNotEstablished
+}
 
 // KernelInfo identifies the kernel the object was validated against.
 type KernelInfo struct {
@@ -93,14 +150,40 @@ type LoadResult struct {
 	LogTail string // tail of the verifier message on failure
 }
 
-// AttachResult is the attach outcome (only meaningful in LoadAttach mode).
+// AttachResult is the attach outcome (only meaningful in the LoadAttach modes).
 type AttachResult struct {
 	Mode      string
 	Status    string
 	Attempted int
 	Passed    int
 	Failed    int
+
+	// Accounting says whether the fields below can be trusted: "v1" (the
+	// validator accounted for every program and the counts add up),
+	// "unavailable" (an older validator without accounting) or "inconsistent"
+	// (the accounting contradicted itself and was discarded; see Notes). Only
+	// with "v1" are the scope counts and Programs populated.
+	Accounting string
+	// Coverage is how much of the selected scope the attach phase exercised,
+	// computed from scope and attempts, never from successes: "complete",
+	// "partial", "none", "empty", "not_evaluated" or "unavailable".
+	Coverage         string
+	EffectiveMode    string
+	ProgramCount     int
+	Selected         int
+	NotSelected      int
+	Attachable       int
+	NotAttachable    int
+	RecordsTruncated bool
+	// Programs is the per-program accounting: outcome ("attached", "failed",
+	// "not_attachable_by_validator", "not_selected", "not_attempted"), and for
+	// a failure the raw errno, detail, errno family (ReasonClass) and
+	// Attribution "errno_only" (the errno family, not a diagnosed cause).
+	Programs []AttachProgram
 }
+
+// AttachProgram is one program's attach accounting (the report schema type).
+type AttachProgram = schema.AttachProgram
 
 // Capabilities is what the kernel actually supports, as probed at validate
 // time. Values are the validator's probe verdicts ("supported",
@@ -121,9 +204,10 @@ type Classification struct {
 
 // config is built up by Options.
 type config struct {
-	mode         Mode
-	probeFeats   bool
-	validatorBin string // override; empty => embedded (hostload build only)
+	mode             Mode
+	probeFeats       bool
+	validatorBin     string   // override; empty => embedded (hostload build only)
+	requiredPrograms []string // LoadAttachRequired: programs that must attach
 }
 
 // Option configures a validation call.
@@ -136,6 +220,16 @@ func WithMode(m Mode) Option { return func(c *config) { c.mode = m } }
 // bpftool when present). Off by default — a pre-load gate only needs the load
 // verdict, not a capability map.
 func WithFeatureProbe(on bool) Option { return func(c *config) { c.probeFeats = on } }
+
+// WithRequiredPrograms names programs that must be attached under
+// LoadAttachRequired (the library equivalent of a manifest's
+// attach.required). A named program that was not attached -- not selected,
+// absent from the object, or beyond the validator's per-program records --
+// makes the result "unsupported" (ATTACH_NOT_EXERCISED). Ignored in other
+// modes.
+func WithRequiredPrograms(names ...string) Option {
+	return func(c *config) { c.requiredPrograms = append(c.requiredPrograms, names...) }
+}
 
 // WithValidator pins the validator binary path instead of using the embedded
 // one. Useful for tests and for callers shipping their own validator.
@@ -165,7 +259,7 @@ func validateWith(ctx context.Context, prov validatorProvider, artifactPath stri
 	if err != nil {
 		return Result{}, err
 	}
-	return parseResult(data)
+	return parseResult(data, c)
 }
 
 // execProvider runs an external validator binary (the embedded static validator
@@ -207,29 +301,16 @@ func (p execProvider) run(ctx context.Context, artifactPath string, c config) ([
 	return data, nil
 }
 
-// validatorDoc is the subset of the validator's result schema we map from.
+// validatorDoc is the subset of the validator's result schema the library
+// maps directly. Load/attach evidence and the verdict come from
+// runner.EvaluateValidatorResult, the same evaluation the CLI applies.
 type validatorDoc struct {
-	Status string `json:"status"`
-	Host   struct {
+	Host struct {
 		Release string `json:"release"`
 		Machine string `json:"machine"`
 	} `json:"host"`
-	Load struct {
-		Status    string `json:"status"`
-		ErrorCode int    `json:"error_code"`
-		Error     string `json:"error"`
-	} `json:"load"`
-	Attach struct {
-		Mode      string `json:"mode"`
-		Status    string `json:"status"`
-		Attempted int    `json:"attempted"`
-		Passed    int    `json:"passed"`
-		Failed    int    `json:"failed"`
-	} `json:"attach"`
 	BTF struct {
 		KernelBTFAvailable bool `json:"kernel_btf_available"`
-		ArtifactHasBTF     bool `json:"artifact_has_btf"`
-		ArtifactHasBTFExt  bool `json:"artifact_has_btf_ext"`
 	} `json:"btf"`
 	Capabilities struct {
 		MapTypes     map[string]probe `json:"map_types"`
@@ -238,71 +319,79 @@ type validatorDoc struct {
 	Logs struct {
 		Libbpf string `json:"libbpf"`
 	} `json:"logs"`
-	Discovery struct {
-		Programs []struct {
-			Section string `json:"section"`
-		} `json:"programs"`
-	} `json:"discovery"`
 }
 
 type probe struct {
 	Status string `json:"status"`
 }
 
-func parseResult(data []byte) (Result, error) {
+func parseResult(data []byte, c config) (Result, error) {
 	var d validatorDoc
 	if err := json.Unmarshal(data, &d); err != nil {
 		return Result{}, fmt.Errorf("parse validator result: %w", err)
 	}
+	var required []string
+	if c.mode == LoadAttachRequired {
+		required = c.requiredPrograms
+	}
+	ev, err := runner.EvaluateValidatorResult(data, c.mode.attachFlag(), required)
+	if err != nil {
+		return Result{}, err
+	}
+	v := ev.Validation
 
 	res := Result{
-		Loadable: d.Load.Status == "pass",
+		Loadable:    v.LoadStatus == "pass",
+		Status:      ev.Status,
+		Verdict:     ev.Verdict,
+		FailedStage: ev.FailedStage,
+		Notes:       ev.Notes,
 		Kernel: KernelInfo{
 			Release: d.Host.Release,
 			Arch:    d.Host.Machine,
 			BTF:     d.BTF.KernelBTFAvailable,
 		},
 		Load: LoadResult{
-			Status:  d.Load.Status,
-			Errno:   d.Load.ErrorCode,
-			LogTail: tailOf(d.Logs.Libbpf, d.Load.Error),
+			Status:  v.LoadStatus,
+			Errno:   v.LoadErrorCode,
+			LogTail: tailOf(d.Logs.Libbpf, v.LoadError),
 		},
-		Attach: AttachResult{
-			Mode:      d.Attach.Mode,
-			Status:    d.Attach.Status,
-			Attempted: d.Attach.Attempted,
-			Passed:    d.Attach.Passed,
-			Failed:    d.Attach.Failed,
-		},
+		Attach: attachFromValidation(&v),
 		Capabilities: Capabilities{
 			MapTypes:     flattenProbes(d.Capabilities.MapTypes),
 			ProgramTypes: flattenProbes(d.Capabilities.ProgramTypes),
 			BTF:          d.BTF.KernelBTFAvailable,
 		},
+		Classification: Classification{
+			Code:       ev.ClassificationCode,
+			Confidence: ev.ClassificationConfidence,
+			Reason:     ev.ClassificationReason,
+		},
 		RawJSON: data,
 	}
-
-	if !res.Loadable {
-		sections := make([]string, 0, len(d.Discovery.Programs))
-		for _, p := range d.Discovery.Programs {
-			sections = append(sections, p.Section)
-		}
-		cl := classifier.Classify(classifier.Input{
-			LoadStatus:         d.Load.Status,
-			LoadErrorCode:      d.Load.ErrorCode,
-			LoadError:          d.Load.Error,
-			AttachStatus:       d.Attach.Status,
-			AttachMode:         d.Attach.Mode,
-			KernelBTFAvailable: d.BTF.KernelBTFAvailable,
-			ArtifactHasBTF:     d.BTF.ArtifactHasBTF,
-			ArtifactHasBTFExt:  d.BTF.ArtifactHasBTFExt,
-			LibbpfLog:          d.Logs.Libbpf,
-			KernelRelease:      d.Host.Release,
-			ProgramSections:    sections,
-		})
-		res.Classification = Classification{Code: cl.Code, Confidence: cl.Confidence, Reason: cl.Reason}
-	}
 	return res, nil
+}
+
+// attachFromValidation maps the report schema's attach evidence; the host-load
+// and matrix paths share it so they cannot disagree on a field.
+func attachFromValidation(v *schema.Validation) AttachResult {
+	return AttachResult{
+		Mode:             v.AttachMode,
+		Status:           v.AttachStatus,
+		Attempted:        v.AttachAttempted,
+		Passed:           v.AttachPassed,
+		Failed:           v.AttachFailed,
+		Accounting:       v.AttachAccounting,
+		Coverage:         v.AttachCoverage,
+		EffectiveMode:    v.AttachEffectiveMode,
+		ProgramCount:     v.AttachProgramCount,
+		Selected:         v.AttachSelected,
+		NotSelected:      v.AttachNotSelected,
+		Attachable:       v.AttachAttachable,
+		NotAttachable:    v.AttachNotAttachable,
+		RecordsTruncated: v.AttachRecordsTruncated,
+		Programs:         v.AttachPrograms,
+	}
 }
 
 func flattenProbes(m map[string]probe) map[string]string {
