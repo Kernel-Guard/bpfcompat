@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,9 @@ var (
 	executeProfileFn          = vm.ExecuteProfile
 	executeVirtmeNGProfile    = vm.ExecuteVirtmeNGProfile
 	executeFirecrackerProfile = vm.ExecuteFirecrackerProfile
+	// extractOCIFn is the OCI loader seam; tests replace it to prove a path
+	// never reaches the registry pull.
+	extractOCIFn = artifact.ExtractEBPFFromOCI
 )
 
 func emitProgress(progress ProgressReporter, update ProgressUpdate) {
@@ -122,12 +126,17 @@ func ExecuteBootstrap(ctx context.Context, cfg Config) (RunResult, error) {
 				return RunResult{}, fmt.Errorf("create OCI extract dir: %w", err)
 			}
 			defer os.RemoveAll(ociDir)
-			extracted, digest, err := artifact.ExtractEBPFFromOCI(ctx, artifactPath, ociDir)
+			extracted, digest, err := extractOCIFn(ctx, artifactPath, ociDir)
 			if err != nil {
 				return RunResult{}, fmt.Errorf("load OCI gadget %q: %w", artifactPath, err)
 			}
 			artifactSourceDigest = digest
 			artifactPath = extracted
+		} else if _, statErr := os.Stat(artifactPath); errors.Is(statErr, os.ErrNotExist) {
+			if hint := artifact.DockerHubHint(artifactPath); hint != "" {
+				return RunResult{}, fmt.Errorf("artifact %q: no such file (for a Docker Hub image use %s)", artifactPath, hint)
+			}
+			return RunResult{}, fmt.Errorf("artifact %q: no such file", artifactPath)
 		}
 
 		meta, err = artifact.Inspect(artifactPath)
