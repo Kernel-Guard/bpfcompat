@@ -3,7 +3,9 @@ package bpfcompat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/runner"
@@ -34,10 +36,18 @@ type Config struct {
 	// ValidateBeforeLoad (hostload build) for host-local validation.
 	Runner string
 
+	// Concurrency is the number of profiles run in parallel; 0 means 1.
+	// Timeout bounds each profile run; 0 means 10 minutes. Negative values
+	// are rejected.
 	Concurrency int
 	Timeout     time.Duration
 
-	// WorkDir is the run workspace root; empty uses the engine default.
+	// WorkDir is the run workspace root; run artifacts land under
+	// <WorkDir>/runs/<id> (Report.RunDir). A caller-supplied WorkDir is never
+	// removed by this package. If empty, Validate creates a private temp
+	// directory (os.MkdirTemp, prefix "bpfcompat-run-"): it is removed when
+	// Validate returns an error, and on success it is returned as
+	// Report.TempWorkDir for the caller to remove with Report.Cleanup.
 	WorkDir string
 }
 
@@ -48,6 +58,25 @@ type Report struct {
 	Results []Result
 	RunDir  string
 	Raw     schema.ReportV01
+
+	// TempWorkDir is the private workspace root Validate created because
+	// Config.WorkDir was empty. RunDir lives inside it. It is NOT removed
+	// automatically (the run artifacts under RunDir are part of the result);
+	// the caller owns it and should call Cleanup once done with RunDir. Empty
+	// when the caller supplied Config.WorkDir — that directory is never
+	// removed by this package.
+	TempWorkDir string
+}
+
+// Cleanup removes TempWorkDir, the private workspace Validate created when
+// Config.WorkDir was empty, including everything under RunDir. It is a no-op
+// when TempWorkDir is empty (caller-supplied WorkDir) and safe to call more
+// than once.
+func (r Report) Cleanup() error {
+	if r.TempWorkDir == "" {
+		return nil
+	}
+	return os.RemoveAll(r.TempWorkDir)
 }
 
 // Summary is the overall verdict across all profiles.
@@ -63,9 +92,15 @@ func (c Config) validationMode() string {
 	return runner.ValidationModeLoadOnly
 }
 
+// executeBootstrapFn is the matrix engine entry point; a seam so tests can
+// exercise Validate's workspace handling without booting VMs.
+var executeBootstrapFn = runner.ExecuteBootstrap
+
 // Validate runs the full matrix engine and returns the aggregated Report. A
 // non-zero number of failed targets is reported in Report.Summary, not as a Go
-// error — err is non-nil only when the run could not be executed.
+// error — err is non-nil only when the run could not be executed. cfg is
+// checked with the same rules as the CLI before anything is written to disk;
+// a rejected config returns an error prefixed "bpfcompat: invalid config: ".
 func Validate(ctx context.Context, cfg Config) (Report, error) {
 	rcfg := runner.Config{
 		ArtifactPath:   cfg.Artifact,
@@ -81,11 +116,30 @@ func Validate(ctx context.Context, cfg Config) (Report, error) {
 	if rcfg.Timeout == 0 {
 		rcfg.Timeout = 10 * time.Minute
 	}
+	if rcfg.Concurrency == 0 {
+		rcfg.Concurrency = 1
+	}
+	// Apply the same checks the CLI applies, before any temp state is created.
+	// WorkDir and OutPath are filled in by Validate below when empty, so check
+	// with stand-ins for those two only.
+	vcfg := rcfg
+	if vcfg.WorkDir == "" {
+		vcfg.WorkDir = os.TempDir()
+	}
+	vcfg.OutPath = filepath.Join(os.TempDir(), "bpfcompat-report.json")
+	if err := vcfg.Validate(); err != nil {
+		return Report{}, fmt.Errorf("bpfcompat: invalid config: %w", err)
+	}
+	// tempWorkDir is the private workspace this call creates, if any. Nothing
+	// outside Validate knows its path until it is returned in the Report, so
+	// every error path below must remove it.
+	var tempWorkDir string
 	if rcfg.WorkDir == "" {
 		dir, err := os.MkdirTemp("", "bpfcompat-run-")
 		if err != nil {
 			return Report{}, err
 		}
+		tempWorkDir = dir
 		rcfg.WorkDir = dir
 	}
 	// The engine writes a report.json to OutPath; the same document is returned
@@ -95,20 +149,32 @@ func Validate(ctx context.Context, cfg Config) (Report, error) {
 	if rcfg.OutPath == "" {
 		f, err := os.CreateTemp("", "bpfcompat-report-*.json")
 		if err != nil {
+			removeTempWorkDir(tempWorkDir)
 			return Report{}, err
 		}
 		tmpReport = f.Name()
 		_ = f.Close()
 		rcfg.OutPath = tmpReport
 	}
-	res, err := runner.ExecuteBootstrap(ctx, rcfg)
+	res, err := executeBootstrapFn(ctx, rcfg)
 	if tmpReport != "" {
 		os.Remove(tmpReport)
 	}
 	if err != nil {
+		removeTempWorkDir(tempWorkDir)
 		return Report{}, err
 	}
-	return reportFromSchema(res.RunDir, res.Report), nil
+	rep := reportFromSchema(res.RunDir, res.Report)
+	rep.TempWorkDir = tempWorkDir
+	return rep, nil
+}
+
+// removeTempWorkDir best-effort removes a workspace Validate created itself.
+// It never touches a caller-supplied WorkDir (dir is empty in that case).
+func removeTempWorkDir(dir string) {
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
 }
 
 func reportFromSchema(runDir string, rep schema.ReportV01) Report {
