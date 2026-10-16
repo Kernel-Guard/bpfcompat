@@ -165,6 +165,15 @@ func Validate(m Manifest) error {
 		if hasLineBreak(test.ExpectStdoutContains) || hasLineBreak(test.ExpectStderrContains) {
 			return fmt.Errorf("functional_tests[%d] expectations must be single-line", i)
 		}
+		// The C validator keeps each expectation in a 256-byte buffer and
+		// would silently truncate a longer one. Measure what the plan
+		// writer emits (it trims surrounding whitespace).
+		if len(strings.TrimSpace(test.ExpectStdoutContains)) > maxFunctionalExpectationBytes {
+			return fmt.Errorf("functional_tests[%d].expect_stdout_contains is too long (max %d bytes)", i, maxFunctionalExpectationBytes)
+		}
+		if len(strings.TrimSpace(test.ExpectStderrContains)) > maxFunctionalExpectationBytes {
+			return fmt.Errorf("functional_tests[%d].expect_stderr_contains is too long (max %d bytes)", i, maxFunctionalExpectationBytes)
+		}
 
 		if strings.TrimSpace(test.Timeout) != "" {
 			timeout, err := time.ParseDuration(test.Timeout)
@@ -185,6 +194,11 @@ func Validate(m Manifest) error {
 
 	return nil
 }
+
+// maxFunctionalExpectationBytes matches the C validator's
+// functional_test.expect_{stdout,stderr}_contains buffers (256 bytes
+// including the NUL terminator).
+const maxFunctionalExpectationBytes = 255
 
 func hasLineBreak(value string) bool {
 	return strings.ContainsAny(value, "\r\n")

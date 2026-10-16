@@ -186,6 +186,7 @@ struct validator_result {
     int functional_test_count;
     struct functional_test functional_tests[MAX_ITEMS];
     char functional_status[16];
+    bool functional_plan_invalid; /* plan rejected; run nothing from it */
     bool load_ok;
     int load_errno;
     char load_error[256];
@@ -329,15 +330,21 @@ static int add_map_fixup(struct options *opts, const char *spec, bool inner_ring
         return 0;
     }
 
-    if (strcmp(value, "cpus") != 0) {
-        char *end = NULL;
-        unsigned long entries = strtoul(value, &end, 10);
-        if (!end || *end != '\0' || entries == 0 || entries > 0xffffffffUL) {
-            fprintf(stderr, "invalid map max entries (want positive integer or \"cpus\"): %s\n", spec);
-            return -1;
-        }
+    if (strcmp(value, "cpus") == 0) {
+        snprintf(fx->max_entries, sizeof(fx->max_entries), "cpus");
+        return 0;
     }
-    snprintf(fx->max_entries, sizeof(fx->max_entries), "%s", value);
+    char *end = NULL;
+    unsigned long entries = strtoul(value, &end, 10);
+    if (!end || *end != '\0' || entries == 0 || entries > 0xffffffffUL) {
+        fprintf(stderr, "invalid map max entries (want positive integer or \"cpus\"): %s\n", spec);
+        return -1;
+    }
+    /* Store the parsed number, not the caller's text: the field holds at
+     * most 15 characters, so a value with leading zeros (accepted above and
+     * by the Go manifest validator) would otherwise be silently truncated
+     * to a different number. */
+    snprintf(fx->max_entries, sizeof(fx->max_entries), "%lu", entries);
     return 0;
 }
 
@@ -650,11 +657,69 @@ static int libbpf_log_callback(enum libbpf_print_level level, const char *fmt, v
     return n;
 }
 
+/* Length of the well-formed UTF-8 sequence starting at p (RFC 3629: no
+ * overlong forms, no UTF-16 surrogates, nothing above U+10FFFF), or 0 if
+ * the bytes at p do not start one. Never reads past a NUL terminator
+ * because NUL is not a continuation byte and the checks stop at the first
+ * failing byte. */
+static size_t utf8_sequence_len(const unsigned char *p) {
+    unsigned char c = p[0];
+    if (c < 0x80) {
+        return 1;
+    }
+    size_t len;
+    unsigned char lo = 0x80, hi = 0xbf; /* valid range of the 2nd byte */
+    if (c >= 0xc2 && c <= 0xdf) {
+        len = 2;
+    } else if (c >= 0xe0 && c <= 0xef) {
+        len = 3;
+        if (c == 0xe0) {
+            lo = 0xa0; /* overlong */
+        } else if (c == 0xed) {
+            hi = 0x9f; /* UTF-16 surrogates */
+        }
+    } else if (c >= 0xf0 && c <= 0xf4) {
+        len = 4;
+        if (c == 0xf0) {
+            lo = 0x90; /* overlong */
+        } else if (c == 0xf4) {
+            hi = 0x8f; /* above U+10FFFF */
+        }
+    } else {
+        return 0; /* continuation byte, 0xc0/0xc1, 0xf5..0xff */
+    }
+    if (p[1] < lo || p[1] > hi) {
+        return 0;
+    }
+    for (size_t i = 2; i < len; i++) {
+        if (p[i] < 0x80 || p[i] > 0xbf) {
+            return 0;
+        }
+    }
+    return len;
+}
+
+/* Emit value as JSON string content. Values come from the artifact (ELF
+ * program/section/map names) and from libbpf/kernel/command output tails,
+ * none of which is guaranteed to be UTF-8, while RFC 8259 requires UTF-8:
+ * each byte that does not start a well-formed sequence becomes U+FFFD (one
+ * per byte, matching Go's decoder) and valid multi-byte UTF-8 is copied
+ * unchanged. */
 static void escape_json_string(FILE *f, const char *value) {
     if (!value) {
         return;
     }
     for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p >= 0x80) {
+            size_t len = utf8_sequence_len(p);
+            if (len == 0) {
+                fputs("\\ufffd", f);
+            } else {
+                fwrite(p, 1, len, f);
+                p += len - 1;
+            }
+            continue;
+        }
         switch (*p) {
         case '"':
             fputs("\\\"", f);
@@ -1090,49 +1155,82 @@ static void set_functional_field(struct functional_test *test, const char *key, 
     }
 }
 
+/* Reject the whole plan: drop any tests parsed so far, report a single
+ * failing "functional-plan" entry carrying the reason, and make
+ * run_functional_tests leave that verdict alone (nothing from a rejected
+ * plan is executed). */
+static void fail_functional_plan(struct validator_result *res, const char *error) {
+    fprintf(stderr, "functional plan rejected: %s\n", error);
+    res->functional_plan_invalid = true;
+    res->functional_test_count = 0;
+    snprintf(res->functional_status, sizeof(res->functional_status), "fail");
+    struct functional_test *test = &res->functional_tests[res->functional_test_count++];
+    init_functional_test(test);
+    snprintf(test->name, sizeof(test->name), "functional-plan");
+    snprintf(test->status, sizeof(test->status), "fail");
+    snprintf(test->error, sizeof(test->error), "%s", error);
+}
+
+/* fgets wrapper for the plan parser: returns 1 for a complete line, 0 at
+ * EOF, -1 when the line does not fit in buf. Without this check fgets
+ * would hand back the rest of an overlong line as the next "line", which
+ * the parser would then read as a fresh key=value. A final line without
+ * a trailing newline is complete. */
+static int read_plan_line(char *buf, int size, FILE *f) {
+    if (!fgets(buf, size, f)) {
+        return 0;
+    }
+    if (!strchr(buf, '\n')) {
+        int c = fgetc(f);
+        if (c != EOF) {
+            return -1;
+        }
+    }
+    return 1;
+}
+
 static void load_functional_plan(struct validator_result *res) {
     snprintf(res->functional_status, sizeof(res->functional_status), "skipped");
     if (!res->opts.functional_plan || !res->opts.functional_plan[0]) {
         return;
     }
 
+    char error[256];
     FILE *f = fopen(res->opts.functional_plan, "r");
     if (!f) {
-        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
-        if (res->functional_test_count < MAX_ITEMS) {
-            struct functional_test *test = &res->functional_tests[res->functional_test_count++];
-            init_functional_test(test);
-            snprintf(test->name, sizeof(test->name), "functional-plan");
-            snprintf(test->status, sizeof(test->status), "fail");
-            snprintf(test->error, sizeof(test->error), "open functional plan failed: %s", strerror(errno));
-        }
+        snprintf(error, sizeof(error), "open functional plan failed: %s", strerror(errno));
+        fail_functional_plan(res, error);
         return;
     }
 
     char line[2048];
+    int line_no = 1;
     bool in_test = false;
     struct functional_test current;
     init_functional_test(&current);
 
-    if (!fgets(line, sizeof(line), f)) {
+    int rc = read_plan_line(line, (int)sizeof(line), f);
+    if (rc == 0) {
         fclose(f);
         return;
     }
     trim_line_end(line);
-    if (strcmp(line, "functional_plan.v0.1") != 0) {
+    if (rc < 0 || strcmp(line, "functional_plan.v0.1") != 0) {
         fclose(f);
-        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
-        if (res->functional_test_count < MAX_ITEMS) {
-            struct functional_test *test = &res->functional_tests[res->functional_test_count++];
-            init_functional_test(test);
-            snprintf(test->name, sizeof(test->name), "functional-plan");
-            snprintf(test->status, sizeof(test->status), "fail");
-            snprintf(test->error, sizeof(test->error), "unsupported functional plan version");
-        }
+        fail_functional_plan(res, "unsupported functional plan version");
         return;
     }
 
-    while (fgets(line, sizeof(line), f)) {
+    while ((rc = read_plan_line(line, (int)sizeof(line), f)) != 0) {
+        line_no++;
+        if (rc < 0) {
+            fclose(f);
+            snprintf(error, sizeof(error),
+                     "functional plan line %d is too long (max %zu bytes); plan not run",
+                     line_no, sizeof(line) - 2);
+            fail_functional_plan(res, error);
+            return;
+        }
         trim_line_end(line);
         if (strcmp(line, "BEGIN") == 0) {
             init_functional_test(&current);
@@ -1380,6 +1478,10 @@ static void run_functional_command(struct functional_test *test) {
 }
 
 static void run_functional_tests(struct validator_result *res) {
+    if (res->functional_plan_invalid) {
+        snprintf(res->functional_status, sizeof(res->functional_status), "fail");
+        return;
+    }
     if (res->functional_test_count == 0) {
         snprintf(res->functional_status, sizeof(res->functional_status), "skipped");
         return;
