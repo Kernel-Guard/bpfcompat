@@ -193,12 +193,26 @@ Generate the profiles and matrix from the crawler inventory:
 ./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4
 ./bin/bpfcompat test --artifact app.bpf.o \
   --matrix matrices/kernel-sweep-ubuntu-22.04-5.15.yaml \
-  --out reports/sweep.json --timeout 20m
+  --out reports/sweep.json
 ```
 
 This writes `vm/profiles/<base>-k<release>.yaml` per release (newest
 first) plus `matrices/kernel-sweep-<base>.yaml`. Targets need generous
-timeouts: the package download and reboot add minutes per kernel.
+timeouts: the package download and reboot add minutes per kernel, so each
+matrix entry carries `timeout: 20m` (`--target-timeout`).
+
+Matrix `timeout:` semantics (any matrix, not just sweeps):
+
+- The value must be a Go duration greater than zero (`20m`, `90s`);
+  anything else (`banana`, `0s`, `20`) is rejected when the matrix loads.
+- `bpfcompat test` / `test-command` **without** `--timeout`: each target
+  uses its profile's `timeout:` when set, else the 180s default.
+- **With** an explicit `--timeout`: that value applies to every target and
+  matrix `timeout:` fields are ignored. The GitHub Action always passes
+  `--timeout` (input default `180s`), so Action and CI lanes behave
+  exactly as their `timeout:` input says.
+- The API server, `bpfcompat suite` and `pkg/bpfcompat` always use their own
+  configured timeout.
 
 The crawler mapping (distro key, target flavor, release prefix, and the
 `release_contains` that separates `el9` from `el10`) is read from

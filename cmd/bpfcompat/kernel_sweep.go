@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/freshness"
+	"github.com/kernel-guard/bpfcompat/internal/matrix"
 	"github.com/kernel-guard/bpfcompat/internal/runner"
 	"github.com/kernel-guard/bpfcompat/internal/vm"
 	"gopkg.in/yaml.v3"
@@ -57,6 +58,10 @@ func runKernelSweep(args []string) int {
 	}
 	if *count < 1 {
 		fmt.Fprintln(os.Stderr, "--count must be >= 1")
+		return runner.ExitToolError
+	}
+	if _, err := matrix.ParseProfileTimeout(*targetTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid --target-timeout %q: %v\n", *targetTimeout, err)
 		return runner.ExitToolError
 	}
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,7 +20,40 @@ type Matrix struct {
 type MatrixProfile struct {
 	ID       string `yaml:"id"`
 	Required *bool  `yaml:"required,omitempty"`
-	Timeout  string `yaml:"timeout,omitempty"`
+	// Timeout is an optional per-target timeout (Go duration, e.g. "20m"),
+	// validated at load time. `bpfcompat test` / `test-command` apply it only
+	// when --timeout is NOT given on the command line: an explicit --timeout
+	// always wins. Callers that set their own timeout (the GitHub Action,
+	// which always passes --timeout, the API server, suites, pkg/bpfcompat)
+	// ignore it. See runner.Config.MatrixProfileTimeouts.
+	Timeout string `yaml:"timeout,omitempty"`
+}
+
+// ParseProfileTimeout parses a matrix `timeout:` value: a Go duration
+// (time.ParseDuration) greater than zero.
+func ParseProfileTimeout(raw string) (time.Duration, error) {
+	d, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("must be a duration such as 20m: %w", err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("must be > 0 (got %s)", d)
+	}
+	return d, nil
+}
+
+// TimeoutDuration returns the profile's timeout and true when one is set.
+// Validate rejects invalid values, so for a loaded matrix a set timeout is
+// always valid; an invalid one reports (0, false) defensively.
+func (p MatrixProfile) TimeoutDuration() (time.Duration, bool) {
+	if p.Timeout == "" {
+		return 0, false
+	}
+	d, err := ParseProfileTimeout(p.Timeout)
+	if err != nil {
+		return 0, false
+	}
+	return d, true
 }
 
 func (p MatrixProfile) RequiredBool() bool {

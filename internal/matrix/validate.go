@@ -27,6 +27,11 @@ func Validate(m Matrix) error {
 			return fmt.Errorf("duplicate profile id %q in matrix", profileID)
 		}
 		seen[profileID] = struct{}{}
+		if profile.Timeout != "" {
+			if _, err := ParseProfileTimeout(profile.Timeout); err != nil {
+				return fmt.Errorf("profiles[%d].timeout %q (profile %q) %w", idx, profile.Timeout, profileID, err)
+			}
+		}
 	}
 	return nil
 }

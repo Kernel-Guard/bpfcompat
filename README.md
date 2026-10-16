@@ -586,8 +586,11 @@ inside the guest and reboots into them before validating:
 ```bash
 ./bin/bpfcompat kernel-sweep --profile ubuntu-22.04-5.15 --count 4
 ./bin/bpfcompat test --artifact app.bpf.o \
-  --matrix matrices/kernel-sweep-ubuntu-22.04-5.15.yaml --timeout 20m ...
+  --matrix matrices/kernel-sweep-ubuntu-22.04-5.15.yaml ...
 ```
+
+The generated matrix sets `timeout: 20m` per target; it applies when
+`--timeout` is omitted (an explicit `--timeout` always wins).
 
 `bpfcompat kernel-freshness` compares each profile's last-validated kernel
 against what its distro currently ships and flags stale evidence (run

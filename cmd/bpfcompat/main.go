@@ -186,7 +186,7 @@ func runTest(args []string) int {
 	fs.StringVar(&cfg.Runner, "runner", runner.RunnerVM, "Execution runner backend (vm|virtme-ng|firecracker|host)")
 	fs.IntVar(&cfg.Concurrency, "concurrency", 2, "Maximum concurrent VM jobs")
 
-	timeoutText := fs.String("timeout", "180s", "Per-target timeout duration")
+	timeoutText := fs.String("timeout", "180s", targetTimeoutUsage)
 	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
 
 	fs.Usage = func() {
@@ -206,16 +206,37 @@ func runTest(args []string) int {
 		return runner.ExitToolError
 	}
 
-	timeout, err := time.ParseDuration(*timeoutText)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid --timeout value %q: %v\n", *timeoutText, err)
+	if err := applyTargetTimeoutFlag(fs, *timeoutText, &cfg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return runner.ExitToolError
 	}
-	cfg.Timeout = timeout
 	cfg.KeepVMOnFailure = *keepVMOnFailure
 	cfg.UnsafeAllowHostRunner = unsafeAllowHostRunner
 
 	return executeTestConfig(cfg)
+}
+
+const targetTimeoutUsage = "Per-target timeout duration. When given explicitly it applies to every target; when omitted, a matrix profile's \"timeout:\" field is used for that target and 180s otherwise"
+
+// applyTargetTimeoutFlag parses --timeout into cfg.Timeout and decides whether
+// matrix profile `timeout:` fields apply. They apply only when --timeout was
+// not set on the command line, so an explicit --timeout (which every CI lane,
+// the GitHub Action and the repo's scripts pass) keeps its exact meaning:
+// one budget for every target.
+func applyTargetTimeoutFlag(fs *flag.FlagSet, timeoutText string, cfg *runner.Config) error {
+	timeout, err := time.ParseDuration(timeoutText)
+	if err != nil {
+		return fmt.Errorf("invalid --timeout value %q: %w", timeoutText, err)
+	}
+	explicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "timeout" {
+			explicit = true
+		}
+	})
+	cfg.Timeout = timeout
+	cfg.MatrixProfileTimeouts = !explicit
+	return nil
 }
 
 // runTestCommand is command/binary validation as an explicit verb: provide your
@@ -241,7 +262,7 @@ func runTestCommand(args []string) int {
 	fs.StringVar(&cfg.MarkdownPath, "markdown", "", "Path to Markdown report output (optional)")
 	fs.StringVar(&cfg.WorkDir, "workdir", ".bpfcompat", "Working directory root")
 	fs.IntVar(&cfg.Concurrency, "concurrency", 2, "Maximum concurrent VM jobs")
-	timeoutText := fs.String("timeout", "180s", "Per-target timeout duration")
+	timeoutText := fs.String("timeout", "180s", targetTimeoutUsage)
 	keepVMOnFailure := fs.Bool("keep-vm-on-failure", false, "Keep VM overlays/logs on failure")
 
 	fs.Usage = func() {
@@ -264,12 +285,10 @@ func runTestCommand(args []string) int {
 		return runner.ExitToolError
 	}
 
-	timeout, err := time.ParseDuration(*timeoutText)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid --timeout value %q: %v\n", *timeoutText, err)
+	if err := applyTargetTimeoutFlag(fs, *timeoutText, &cfg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return runner.ExitToolError
 	}
-	cfg.Timeout = timeout
 	cfg.KeepVMOnFailure = *keepVMOnFailure
 	cfg.Runner = runner.RunnerVM
 

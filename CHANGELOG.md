@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+- Matrix profile `timeout:` is now honoured (targeted at v0.4.1). It was
+  accepted but ignored, so local `kernel-sweep` runs without `--timeout`
+  hit the 180s default during kernel install + reboot. `bpfcompat test` /
+  `test-command` now use a profile's `timeout:` only when `--timeout` is not
+  given; an explicit `--timeout` (always passed by the GitHub Action and CI)
+  still applies to every target unchanged. Invalid values (`banana`, `0s`)
+  are rejected at matrix load, and `kernel-sweep --target-timeout` is
+  validated.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added

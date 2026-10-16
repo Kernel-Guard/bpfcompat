@@ -603,7 +603,15 @@ func executeTarget(
 		}
 	}
 
-	targetCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	targetTimeout := cfg.Timeout
+	if cfg.MatrixProfileTimeouts {
+		if d, ok := matrixProfile.TimeoutDuration(); ok {
+			targetTimeout = d
+			target.Notes = append(target.Notes, fmt.Sprintf("per-target timeout: %s (matrix profile timeout; no explicit --timeout)", d))
+		}
+	}
+
+	targetCtx, cancel := context.WithTimeout(ctx, targetTimeout)
 	execResult := executor(targetCtx, vm.ExecutionRequest{
 		Profile:            profile,
 		RunDir:             runDir,
@@ -616,7 +624,7 @@ func executeTarget(
 		ProbeCompanions:    tuning.probeCompanions,
 		ValidatorBinary:    validatorBinPath,
 		AttachMode:         attachMode,
-		Timeout:            cfg.Timeout,
+		Timeout:            targetTimeout,
 		KeepVMOnFailure:    cfg.KeepVMOnFailure,
 		Command:            cfg.Command,
 		CommandBinary:      commandBinaryAbs,
@@ -638,7 +646,7 @@ func executeTarget(
 	target.ValidatorResult = execResult.ValidatorResultPath
 	target.ValidatorExit = execResult.ValidatorExitCode
 	target.InfraError = execResult.InfraError
-	target.Notes = execResult.Notes
+	target.Notes = append(target.Notes, execResult.Notes...)
 
 	if execResult.Status == "infra_error" {
 		target.FailedStage = "infra"
