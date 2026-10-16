@@ -2,8 +2,9 @@
 
 Instructions for Claude Code and other coding agents working in this repository.
 [CONTRIBUTING.md](CONTRIBUTING.md) still applies in full. For agent-run sessions,
-[docs/engineering/orchestration.md](docs/engineering/orchestration.md) is
-binding, as are the subagent definitions in `.claude/agents/`. This file adds
+[docs/engineering/orchestration.md](docs/engineering/orchestration.md) and the
+subagent definitions in `.claude/agents/` are binding for the sessions they
+define. This file adds
 the rules that keep evidence honest; it does not replace them.
 
 ## What bpfcompat is
@@ -85,12 +86,14 @@ Run the ones covering files you touch. Behaviour changes need tests and a
   Never default a missing field to a pass, relabel an `INFRA_ERROR`, or
   manufacture a result. Missing evidence is written as missing.
 
-## Verdict logic has one implementation
+## Verdict logic must have one implementation
 
 The CLI (`internal/runner`) and the library (`pkg/bpfcompat`) must reach the
-same verdict from the same validator evidence. Shared evaluation code belongs in
-`internal/runner`. `pkg/bpfcompat` may import it, but `internal/runner` must
-never import `pkg/bpfcompat`. Do not copy a switch statement into the other
+same verdict from the same validator evidence. Shared evaluation belongs in
+`pkg/schema` (verdict roll-up), `internal/classifier` (classification) or
+`internal/runner`. `pkg/bpfcompat` may import these, but `internal/runner` must
+never import `pkg/bpfcompat`. The host-load path (`ValidateBeforeLoad`) still
+derives its outcome separately; a change there must not widen that gap. Do not copy a switch statement into the other
 frontend. When you add a new outcome (for example a new errno mapped to
 `INFRA_ERROR`), add a parity fixture that runs both paths.
 
@@ -101,19 +104,19 @@ frontend. When you add a new outcome (for example a new errno mapped to
   record which PR owns which files.
 - Use one git worktree or clone per workstream and one branch per agent. Never
   let two agents edit the same worktree or push the same branch. Keep the
-  concurrency bounded: at most one local VM job per workstream, and never the
-  same kernel suite twice.
+  concurrency bounded: one local VM job at a time on a host, and never the same
+  kernel suite in two worktrees.
 - Integrate before claiming a combined result: merge the branches locally, run
   the full checks on the merge, and review cross-PR interactions. Unit tests on
   each branch alone have missed real divergence before.
 - Review and approve exact commit SHAs. CI that ran on another commit is not
-  evidence for the current head. Any push, rebase or base change voids earlier
-  approvals and results.
+  evidence for the current head. A push or rebase, or a base move that changes
+  the effective diff, voids earlier approvals and results.
 - Stacked PRs (whose base is not `main`) do not run every workflow; CodeQL, for
   example, runs only against `main`. List the checks that actually ran on the
   head; do not assume full coverage.
-- Cache isolation: never symlink writable cache metadata (`vm/cache/*.sha256`,
-  locks, run directories) from another checkout. Copy it, or use a private cache
+- Cache isolation: never symlink writable cache metadata (`vm/cache/*.sha256`
+  sidecars, lock files, run directories) from another checkout. Copy it, or use a private cache
   directory. Image bytes may be shared only read-only.
 
 ## Honesty and release policy
