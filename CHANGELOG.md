@@ -47,6 +47,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     cleaned up.
   - Target notes now say whether the recorded `base image sha256` was
     verified against a pinned `image.sha256` or is unverified provenance.
+  - The `.sha256` sidecar is replaced, never written through a symlink.
+    Before, a checkout whose cache linked to another checkout's sidecars
+    rewrote those files with its own paths.
 - VM image downloads are now staged next to the cached image instead of in
   the run directory.
   - Before, a run directory and image cache on different filesystems (for

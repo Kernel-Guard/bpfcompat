@@ -116,3 +116,61 @@ func TestEnsureImageAvailablePinMismatchLeavesNoPartialImage(t *testing.T) {
 		t.Fatalf("cache dir must hold only the lock file after a pin mismatch, got %v", names)
 	}
 }
+
+// A scratch checkout that links its cache entries to another checkout's cache
+// must not rewrite that checkout's files. Writing the sidecar through a
+// symlink once replaced another checkout's sidecars with paths into a
+// temporary clone. The sidecar is replaced in place; its link target is
+// left byte-for-byte unchanged.
+func TestChecksumSidecarSymlinkIsReplacedNotFollowed(t *testing.T) {
+	other := t.TempDir()
+	otherImage := filepath.Join(other, "demo.qcow2")
+	if err := os.WriteFile(otherImage, []byte(testImageBytes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	otherSidecar := otherImage + ".sha256"
+	original := "0000  " + otherImage + "\n"
+	if err := os.WriteFile(otherSidecar, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	scratch := t.TempDir()
+	image := filepath.Join(scratch, "demo.qcow2")
+	if err := os.Symlink(otherImage, image); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(otherSidecar, image+".sha256"); err != nil {
+		t.Fatal(err)
+	}
+
+	sum, err := ensureImageChecksum(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(testImageBytes))
+	if want := hex.EncodeToString(digest[:]); sum != want {
+		t.Fatalf("checksum = %s, want %s", sum, want)
+	}
+
+	got, err := os.ReadFile(otherSidecar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("link target rewritten through the symlink: %q", got)
+	}
+	fi, err := os.Lstat(image + ".sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.Mode().IsRegular() {
+		t.Fatalf("scratch sidecar mode = %v, want a regular file replacing the link", fi.Mode())
+	}
+	local, err := os.ReadFile(image + ".sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sum + "  " + image + "\n"; string(local) != want {
+		t.Fatalf("scratch sidecar = %q, want %q", local, want)
+	}
+}
