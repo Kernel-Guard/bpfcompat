@@ -4,8 +4,8 @@ Instructions for Claude Code and other coding agents working in this repository.
 [CONTRIBUTING.md](CONTRIBUTING.md) still applies in full. For agent-run sessions,
 [docs/engineering/orchestration.md](docs/engineering/orchestration.md) and the
 subagent definitions in `.claude/agents/` are binding for the sessions they
-define. This file adds
-the rules that keep evidence honest; it does not replace them.
+define. This file adds the rules that keep evidence honest; it does not
+replace them.
 
 ## What bpfcompat is
 
@@ -93,9 +93,10 @@ same verdict from the same validator evidence. Shared evaluation belongs in
 `pkg/schema` (verdict roll-up), `internal/classifier` (classification) or
 `internal/runner`. `pkg/bpfcompat` may import these, but `internal/runner` must
 never import `pkg/bpfcompat`. The host-load path (`ValidateBeforeLoad`) still
-derives its outcome separately; a change there must not widen that gap. Do not copy a switch statement into the other
-frontend. When you add a new outcome (for example a new errno mapped to
-`INFRA_ERROR`), add a parity fixture that runs both paths.
+derives its outcome separately; a change there must not widen that gap. Do
+not copy a switch statement into the other frontend. When you add a new outcome
+(for example a new errno mapped to `INFRA_ERROR`), add a parity fixture that
+runs both paths.
 
 ## Working in parallel
 
@@ -116,8 +117,8 @@ frontend. When you add a new outcome (for example a new errno mapped to
   example, runs only against `main`. List the checks that actually ran on the
   head; do not assume full coverage.
 - Cache isolation: never symlink writable cache metadata (`vm/cache/*.sha256`
-  sidecars, lock files, run directories) from another checkout. Copy it, or use a private cache
-  directory. Image bytes may be shared only read-only.
+  sidecars, lock files, run directories) from another checkout. Copy it, or
+  use a private cache directory. Image bytes may be shared only read-only.
 
 ## Honesty and release policy
 
