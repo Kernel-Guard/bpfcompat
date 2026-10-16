@@ -119,9 +119,10 @@ func attachEvidenceNotes(notes []string) []string {
 	return out
 }
 
-// TestEvaluateValidatorResultMatchesExecuteTarget is the parity guard: for
-// every fixture, the exported evaluation must reach exactly the target the
-// matrix runner builds from the same validator document.
+// TestEvaluateValidatorResultMatchesExecuteTarget: executeTarget and
+// EvaluateValidatorResult share evaluateValidator, so this guards the CLI's
+// fold of that evaluation into the target (status, stage, classification,
+// infra reason, validation block, note order) rather than a second copy.
 func TestEvaluateValidatorResultMatchesExecuteTarget(t *testing.T) {
 	for _, fx := range attachEvidenceFixtures() {
 		t.Run(fx.name, func(t *testing.T) {

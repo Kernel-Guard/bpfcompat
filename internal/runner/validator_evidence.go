@@ -12,13 +12,14 @@ import (
 // load and attach evidence, per-program attach accounting, coverage, and the
 // target status and classification the matrix engine derives from them.
 //
-// It exists so that callers that run the validator themselves (the
-// pkg/bpfcompat host-load library) reach the same verdict as the CLI from the
-// same document. It is built from the same helpers executeTarget uses
-// (accountAttach, applyAttachAccounting, requiredAttachGap,
-// attachCoverageNote, attachFailuresForClassifier, classifier.Classify);
-// validator_evidence_test.go checks it against executeTarget fixture by
-// fixture so the two cannot drift silently.
+// evaluateValidator is the single place that reading happens. executeTarget
+// (the CLI's per-target path) folds it into the report target, and the
+// pkg/bpfcompat host-load library exposes it through EvaluateValidatorResult,
+// so the two frontends cannot reach different verdicts for the same document.
+// What stays frontend-specific is everything around it: on the CLI side the VM
+// execution, environment evidence, capability/map-fixup/functional notes,
+// report assembly and exit code; on the library side its public Result and
+// error values.
 type ValidatorEvidence struct {
 	// Status is the target status: "pass", "fail", "unsupported" or
 	// "infra_error". Verdict is schema.VerdictForStatus(Status).
@@ -34,8 +35,14 @@ type ValidatorEvidence struct {
 	// Validation carries load/attach evidence, including attach_accounting,
 	// attach_coverage and the per-program attach records.
 	Validation schema.Validation
-	// Notes are the load/attach notes the runner would attach to the target.
+	// Notes are the load/attach notes the runner attaches to the target:
+	// accountingNotes followed by verdictNotes.
 	Notes []string
+
+	// The CLI records functional-test notes between the two groups, so it
+	// takes them separately.
+	accountingNotes []string
+	verdictNotes    []string
 }
 
 // EvaluateValidatorResult interprets a validator result document exactly as
@@ -67,10 +74,10 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 	acc := accountAttach(vr, attachMode)
 	applyAttachAccounting(&ev.Validation, acc, vr.Load.Status == "pass")
 	if acc.state == schema.AttachAccountingInconsistent {
-		ev.Notes = append(ev.Notes, "attach accounting discarded: "+acc.problem)
+		ev.accountingNotes = append(ev.accountingNotes, "attach accounting discarded: "+acc.problem)
 	}
 	attachStatusNote := func() {
-		ev.Notes = append(ev.Notes, fmt.Sprintf(
+		ev.verdictNotes = append(ev.verdictNotes, fmt.Sprintf(
 			"attach status: %s (mode=%s attempted=%d passed=%d failed=%d)",
 			vr.Attach.Status, vr.Attach.Mode, vr.Attach.Attempted, vr.Attach.Passed, vr.Attach.Failed))
 	}
@@ -96,9 +103,9 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 		}
 		cl := classifier.Classify(in)
 		ev.ClassificationCode, ev.ClassificationConfidence, ev.ClassificationReason = cl.Code, cl.Confidence, cl.Reason
-		ev.Notes = append(ev.Notes, fmt.Sprintf("classification: %s (%s)", cl.Code, cl.Confidence))
+		ev.verdictNotes = append(ev.verdictNotes, fmt.Sprintf("classification: %s (%s)", cl.Code, cl.Confidence))
 		if cl.Remediation != "" {
-			ev.Notes = append(ev.Notes, "remediation: "+cl.Remediation)
+			ev.verdictNotes = append(ev.verdictNotes, "remediation: "+cl.Remediation)
 		}
 	}
 
@@ -109,13 +116,15 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 			attachStatusNote()
 		}
 		if note := attachCoverageNote(acc, ev.Validation.AttachCoverage); note != "" {
-			ev.Notes = append(ev.Notes, note)
+			ev.verdictNotes = append(ev.verdictNotes, note)
 		}
+		// Required attach is a claim about every selected program. Loading
+		// the object and attaching some of it does not establish it.
 		if attachMode == "required" {
 			if code, reason := requiredAttachGap(acc, requiredPrograms); code != "" {
 				ev.FailedStage = "attach"
 				ev.ClassificationCode, ev.ClassificationConfidence, ev.ClassificationReason = code, "high", reason
-				ev.Notes = append(ev.Notes, fmt.Sprintf("classification: %s (%s)", code, "high"))
+				ev.verdictNotes = append(ev.verdictNotes, fmt.Sprintf("classification: %s (%s)", code, "high"))
 				if code == codeAttachAccountingUnavailable || code == codeAttachAccountingInconsistent {
 					ev.Status = "infra_error"
 					ev.InfraError = reason
@@ -125,16 +134,17 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 			}
 		}
 	case vr.Load.Status == "fail" && loadHitFDLimit(vr.Load.ErrorCode):
-		// Mirrors executeTarget (#259): running out of file descriptors is
-		// the validator process's limit, not a fact about the artifact.
+		// Every loaded program and link holds a file descriptor; running out
+		// of them is the validator process's limit in the guest, not a fact
+		// about the artifact (#259). The load evidence above is kept.
 		ev.Status = "infra_error"
 		ev.FailedStage = "infra"
 		ev.InfraError = fmt.Sprintf("the validator process ran out of file descriptors while loading (code=%d %s): a limit of the validator's environment in the guest, not a property of the artifact", vr.Load.ErrorCode, vr.Load.Error)
-		ev.Notes = append(ev.Notes, "validator load error: "+ev.InfraError)
+		ev.verdictNotes = append(ev.verdictNotes, "validator load error: "+ev.InfraError)
 	case vr.Load.Status == "fail":
 		ev.Status = "fail"
 		ev.FailedStage = "load"
-		ev.Notes = append(ev.Notes, fmt.Sprintf("validator load error: code=%d message=%s", vr.Load.ErrorCode, vr.Load.Error))
+		ev.verdictNotes = append(ev.verdictNotes, fmt.Sprintf("validator load error: code=%d message=%s", vr.Load.ErrorCode, vr.Load.Error))
 		if vr.Attach.Attempted > 0 || vr.Attach.Status != "" {
 			attachStatusNote()
 		}
@@ -145,7 +155,7 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 			ev.FailedStage = "functional"
 			ev.ClassificationCode, ev.ClassificationConfidence = "FUNCTIONAL_TEST_FAILURE", "high"
 			ev.ClassificationReason = functionalFailureReason(vr)
-			ev.Notes = append(ev.Notes,
+			ev.verdictNotes = append(ev.verdictNotes,
 				fmt.Sprintf("classification: %s (%s)", ev.ClassificationCode, ev.ClassificationConfidence),
 				"remediation: inspect the functional test command output and ship or fix the project-specific integration test assets.",
 			)
@@ -156,7 +166,7 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 		} else {
 			ev.FailedStage = "validation"
 		}
-		ev.Notes = append(ev.Notes, "validator reported failure after load phase")
+		ev.verdictNotes = append(ev.verdictNotes, "validator reported failure after load phase")
 		if vr.Attach.Attempted > 0 || vr.Attach.Status != "" {
 			attachStatusNote()
 		}
@@ -166,5 +176,6 @@ func evaluateValidator(vr validatorResult, attachMode string, requiredPrograms [
 		ev.FailedStage = "infra"
 		ev.InfraError = fmt.Sprintf("unrecognized validator status load=%q status=%q", vr.Load.Status, vr.Status)
 	}
+	ev.Notes = append(append([]string(nil), ev.accountingNotes...), ev.verdictNotes...)
 	return ev
 }

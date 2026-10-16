@@ -18,8 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     the library the CLI's required-attach gaps: `ATTACH_NOT_EXERCISED`,
     `ATTACH_SCOPE_EMPTY` and `ATTACH_ACCOUNTING_*`, plus `ATTACH_FAILED`.
   - `Compatible()` reports the whole requested contract.
-  - The evaluation is `internal/runner.EvaluateValidatorResult`, checked
-    fixture by fixture against the matrix runner.
+  - The CLI's per-target path (`executeTarget`) and the library compute
+    the verdict for validator evidence in one place,
+    `internal/runner.evaluateValidator`; the library reaches it through
+    `EvaluateValidatorResult`. There is no mirrored copy to drift. A golden
+    fixture pins the CLI's target bytes for every evidence branch, and the
+    library replays it through both of its frontends.
   - All additions are additive. `Validate` returns
     `ErrRequiredModeNeedsManifest` for `LoadAttachRequired`.
 
