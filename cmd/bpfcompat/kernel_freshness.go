@@ -123,7 +123,10 @@ func runKernelFreshnessUpdate(baselinesPath string, baselines freshness.Baseline
 		return runner.ExitToolError
 	}
 
-	updated, added := freshness.UpdateFromReport(&baselines, rep)
+	updated, added, skipped := freshness.UpdateFromReport(&baselines, rep)
+	for _, s := range skipped {
+		fmt.Printf("skipped %s: %s (observed %s)\n", s.Profile, s.Reason, s.Kernel)
+	}
 	if len(updated) == 0 && len(added) == 0 {
 		fmt.Println("baselines already match the report; nothing to update")
 		return runner.ExitSuccess
