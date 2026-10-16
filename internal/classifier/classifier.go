@@ -38,6 +38,10 @@ type Result struct {
 var libbpfMapCreateFailureRe = regexp.MustCompile(`(?mi)^\s*libbpf:\s+map\s+'([^']+)':\s+failed to create:\s+(.+?)\s*$`)
 var kernelVersionPrefixRe = regexp.MustCompile(`^\s*([0-9]+)\.([0-9]+)`)
 
+// verifierProcessedInsnsRe matches the verifier's closing statistics line,
+// which the kernel only writes once a program has gone through bpf_check().
+var verifierProcessedInsnsRe = regexp.MustCompile(`\bprocessed \d+ insns`)
+
 func Classify(in Input) Result {
 	lowerBlob := strings.ToLower(in.LibbpfLog + "\n" + in.LoadError)
 
@@ -143,26 +147,35 @@ func Classify(in Input) Result {
 		}
 	}
 
+	// Host-wide BPF restrictions stop bpf() before the verifier runs, so
+	// they keep the highest precedence among the permission-shaped failures.
+	if containsAny(lowerBlob, "lockdown", "unprivileged_bpf_disabled", "bpf is restricted") {
+		return policyDenied("high")
+	}
+
+	// A kernel verifier log in the capture means the program reached the
+	// verifier and was rejected there. The verifier commonly fails with
+	// EACCES, which the validator records as libbpf_strerror(-13) =
+	// "Permission denied", so this evidence must be weighed before the
+	// generic permission/capability strings below. It also precedes the
+	// security-module markers: an LSM/SELinux denial of bpf() happens before
+	// the verifier runs and leaves no verifier log.
+	if hasVerifierLog(lowerBlob) {
+		return verifierRejection()
+	}
+
+	// Explicit security-module denial markers only. A bare "lsm" substring is
+	// deliberately not one: it matches every BPF-LSM section name
+	// ("lsm/file_open") that libbpf echoes into its log.
 	if containsAny(lowerBlob,
-		"lockdown",
-		"kernel lockdown",
-		"unprivileged_bpf_disabled",
-		"bpf is restricted",
 		"denied by policy",
 		"security policy",
 		"apparmor",
 		"selinux",
-		"lsm") {
-		confidence := "medium"
-		if containsAny(lowerBlob, "lockdown", "unprivileged_bpf_disabled", "bpf is restricted") {
-			confidence = "high"
-		}
-		return Result{
-			Code:        "POLICY_DENIED",
-			Confidence:  confidence,
-			Reason:      "Kernel/runtime security policy blocked BPF load or attach for this target.",
-			Remediation: "Use an approved host policy profile for BPF on this kernel, or route this target to a fallback deployment path.",
-		}
+		"avc: denied",
+		"avc:  denied",
+		"lsm=") {
+		return policyDenied("medium")
 	}
 
 	if containsAny(lowerBlob,
@@ -177,18 +190,10 @@ func Classify(in Input) Result {
 		}
 	}
 
-	if containsAny(lowerBlob,
-		"invalid mem access",
-		"unbounded loop",
-		"back-edge",
-		"invalid stack",
-		"verifier") {
-		return Result{
-			Code:        "VERIFIER_REJECTION",
-			Confidence:  "medium",
-			Reason:      "Verifier rejected program for safety/typing/complexity reasons.",
-			Remediation: "Inspect verifier log and simplify/fix program logic for this profile.",
-		}
+	// Weak signal: the word "verifier" alone (e.g. a libbpf summary line)
+	// without an actual verifier log.
+	if containsAny(lowerBlob, "verifier") {
+		return verifierRejection()
 	}
 
 	if in.LoadStatus == "fail" {
@@ -206,6 +211,39 @@ func Classify(in Input) Result {
 		Reason:      "No compatibility failure detected.",
 		Remediation: "",
 	}
+}
+
+func policyDenied(confidence string) Result {
+	return Result{
+		Code:        "POLICY_DENIED",
+		Confidence:  confidence,
+		Reason:      "Kernel/runtime security policy blocked BPF load or attach for this target.",
+		Remediation: "Use an approved host policy profile for BPF on this kernel, or route this target to a fallback deployment path.",
+	}
+}
+
+func verifierRejection() Result {
+	return Result{
+		Code:        "VERIFIER_REJECTION",
+		Confidence:  "medium",
+		Reason:      "Verifier rejected program for safety/typing/complexity reasons.",
+		Remediation: "Inspect verifier log and simplify/fix program logic for this profile.",
+	}
+}
+
+// hasVerifierLog reports whether the lowercased capture carries a kernel
+// verifier log or a verifier-only diagnostic. libbpf frames the log as
+// "-- BEGIN PROG LOAD LOG --" (libbpf >= 0.7) or "-- BEGIN DUMP LOG ---"
+// (older releases), and the verifier closes it with "processed N insns".
+func hasVerifierLog(lowerBlob string) bool {
+	return containsAny(lowerBlob,
+		"begin prog load log",
+		"begin dump log",
+		"invalid mem access",
+		"unbounded loop",
+		"back-edge",
+		"invalid stack") ||
+		verifierProcessedInsnsRe.MatchString(lowerBlob)
 }
 
 func containsAny(blob string, patterns ...string) bool {
