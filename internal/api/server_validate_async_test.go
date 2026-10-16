@@ -134,6 +134,46 @@ func TestValidateAsyncJobLifecycle(t *testing.T) {
 	if got := final.ProfileStatuses[profileID]; got != "pass" {
 		t.Fatalf("expected profile %q to be pass, got %q", profileID, got)
 	}
+	if final.TotalProfiles != 1 || final.CompletedProfiles != 1 {
+		t.Fatalf("expected completed_profiles=1 of total_profiles=1 on a completed job, got %d/%d", final.CompletedProfiles, final.TotalProfiles)
+	}
+}
+
+// TestApplyRunnerProgressKeepsCompletedProfiles pins the progress counter
+// against the runner's real emission pattern: "Running profile" updates and
+// every post-target stage (write_report, persist_registry, completed) carry
+// no CompletedProfiles value, so their zero value must not reset the count.
+func TestApplyRunnerProgressKeepsCompletedProfiles(t *testing.T) {
+	s := &Server{cfg: Config{WorkDir: t.TempDir()}}
+	jobID := s.createValidateJob([]string{"p1", "p2"})
+
+	steps := []struct {
+		update runner.ProgressUpdate
+		want   int
+	}{
+		{runner.ProgressUpdate{Stage: runner.ProgressStageValidateTargets, TotalProfiles: 2, CompletedProfiles: 0}, 0},
+		{runner.ProgressUpdate{Stage: runner.ProgressStageValidateTargets, TotalProfiles: 2, ProfileID: "p1", ProfileStatus: "running"}, 0},
+		{runner.ProgressUpdate{Stage: runner.ProgressStageValidateTargets, TotalProfiles: 2, CompletedProfiles: 1, ProfileID: "p1", ProfileStatus: "fail"}, 1},
+		// With concurrency=1 the second profile only starts after the first completed.
+		{runner.ProgressUpdate{Stage: runner.ProgressStageValidateTargets, TotalProfiles: 2, ProfileID: "p2", ProfileStatus: "running"}, 1},
+		{runner.ProgressUpdate{Stage: runner.ProgressStageValidateTargets, TotalProfiles: 2, CompletedProfiles: 2, ProfileID: "p2", ProfileStatus: "infra_error"}, 2},
+		{runner.ProgressUpdate{Stage: runner.ProgressStageWriteReport, Message: "Writing reports"}, 2},
+		{runner.ProgressUpdate{Stage: runner.ProgressStagePersistRegistry, Message: "Persisting artifact history"}, 2},
+		{runner.ProgressUpdate{Stage: runner.ProgressStageCompleted, Message: "Validation completed"}, 2},
+	}
+	for i, step := range steps {
+		s.applyRunnerProgress(jobID, step.update)
+		got, ok := s.getValidateJob(jobID)
+		if !ok {
+			t.Fatalf("step %d: job %s missing", i, jobID)
+		}
+		if got.CompletedProfiles != step.want {
+			t.Fatalf("step %d (stage=%s profile=%s): completed_profiles=%d, want %d", i, step.update.Stage, step.update.ProfileID, got.CompletedProfiles, step.want)
+		}
+		if got.CompletedProfiles > got.TotalProfiles {
+			t.Fatalf("step %d: completed_profiles=%d exceeds total_profiles=%d", i, got.CompletedProfiles, got.TotalProfiles)
+		}
+	}
 }
 
 func TestValidateStatusEndpointErrors(t *testing.T) {
