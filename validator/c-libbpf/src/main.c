@@ -1698,7 +1698,11 @@ static bool map_type_needs_size(unsigned int t) {
     }
 }
 
-static void auto_size_maps(struct bpf_object *obj) {
+/* record=false for trial loads (variant probes, per-program isolated loads):
+ * they open throwaway objects and must size maps the same way, but only the
+ * whole-object load reports auto_sized_maps — otherwise every trial would add
+ * a duplicate entry. */
+static void auto_size_maps(struct bpf_object *obj, bool record) {
     struct bpf_map *map;
     bpf_object__for_each_map(map, obj) {
         if (bpf_map__max_entries(map) != 0) {
@@ -1711,7 +1715,7 @@ static void auto_size_maps(struct bpf_object *obj) {
         if (bpf_map__set_max_entries(map, AUTOSIZE_DEFAULT_MAX_ENTRIES) != 0) {
             continue;
         }
-        if (g_autosized_count < MAX_AUTOSIZED_MAPS) {
+        if (record && g_autosized_count < MAX_AUTOSIZED_MAPS) {
             struct autosized_map *a = &g_autosized[g_autosized_count++];
             snprintf(a->name, sizeof(a->name), "%s", bpf_map__name(map));
             a->map_type = t;
@@ -1800,15 +1804,25 @@ static void auto_type_programs(struct bpf_object *obj) {
  * first satisfying variant and disable the rest. Probing uses
  * BPF_PROG_TYPE_RAW_TRACEPOINT to match Falco's libpman; helper support is
  * not program-type-specific for the helpers this gates. */
+static int trial_probe_silent_print(enum libbpf_print_level level, const char *fmt,
+                                    va_list args) {
+    (void)level;
+    (void)fmt;
+    (void)args;
+    return 0;
+}
+
 /* Probe a variant the way Falco's iter_support_probing does: open a fresh
- * object, apply map fixups, disable every program except the probed one and
+ * object, apply map fixups and auto-size runtime-sized maps (as the
+ * whole-object load does), disable every program except the probed one and
  * the declared prog-array companions, and attempt a real load. */
-static bool trial_probe_variant(struct options *opts, const char *prog_name) {
+static bool trial_probe_variant_load(struct options *opts, const char *prog_name) {
     struct bpf_object *o = bpf_object__open_file(opts->artifact, NULL);
     if (!o) {
         return false;
     }
     apply_map_fixups(opts, o, false);
+    auto_size_maps(o, false);
 
     struct bpf_program *p;
     bpf_object__for_each_program(p, o) {
@@ -1833,6 +1847,17 @@ static bool trial_probe_variant(struct options *opts, const char *prog_name) {
     bpf_object__close(o);
     close_inner_map_fds();
     return err == 0;
+}
+
+/* The probe's verdict is only the bool it returns; its libbpf output is
+ * dropped. It runs while the main libbpf_log_callback is installed, and
+ * anything printed there would land in logs.libbpf ahead of the whole-object
+ * load and be classified as if the whole load had produced it. */
+static bool trial_probe_variant(struct options *opts, const char *prog_name) {
+    libbpf_print_fn_t prev = libbpf_set_print(trial_probe_silent_print);
+    bool ok = trial_probe_variant_load(opts, prog_name);
+    libbpf_set_print(prev);
+    return ok;
 }
 
 static void apply_prog_variants(struct options *opts, struct bpf_object *obj) {
@@ -1869,6 +1894,7 @@ static int trial_load_one_program(struct options *opts, int target_index) {
         return errno ? -errno : -EINVAL;
     }
     apply_map_fixups(opts, o, false);
+    auto_size_maps(o, false);
     struct bpf_program *p;
     int idx = 0;
     bpf_object__for_each_program(p, o) {
@@ -1982,7 +2008,7 @@ static void run_libbpf_load(struct validator_result *res) {
      * fixup fds — those are created after this and stay open through load. */
     apply_prog_variants(&res->opts, obj);
     apply_map_fixups(&res->opts, obj, true);
-    auto_size_maps(obj);
+    auto_size_maps(obj, true);
     apply_prog_type_overrides(&res->opts, obj);
     auto_type_programs(obj);
 
