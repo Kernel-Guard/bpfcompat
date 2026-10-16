@@ -107,7 +107,10 @@ bpfcompat admin revoke-token \
 1. Revoke the affected token / cert immediately.
 2. Force JWKS refresh if a JWT key is suspected: bump the JWKS endpoint
    and let the in-process cache miss; the cooldown defaults to 30s.
-3. Run `bpfcompat admin verify-chain` to confirm registry integrity.
+3. Run `bpfcompat admin verify-chain --workdir <server workdir>` to confirm
+   registry integrity. It exits 1 when the work directory does not exist; an
+   existing directory with no history yet exits 0 but notes that nothing was
+   verified.
 4. Run `bpfcompat admin audit-export --sign-key ...` for the affected
    window; ship to forensics.
 5. File against the disclosure address in `SECURITY.md`.

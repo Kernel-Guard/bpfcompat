@@ -279,6 +279,10 @@ func runTestCommand(args []string) int {
 // executeTestConfig validates a built test Config and runs it, printing the
 // summary. Shared by `test` and `test-command`.
 func executeTestConfig(cfg runner.Config) int {
+	if err := distinctOutputs(cfg.OutPath, cfg.MarkdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid arguments: %v\n", err)
+		return runner.ExitToolError
+	}
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid arguments: %v\n", err)
 		return runner.ExitToolError
@@ -561,6 +565,11 @@ func runCompare(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+
+	if err := distinctOutputs(*outPath, *markdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "compare failed: %v\n", err)
 		return runner.ExitToolError
 	}
 
@@ -878,6 +887,25 @@ func verifyRuntimeHistoryGate(
 	return &result, nil
 }
 
+// refuseOutOverFetchedArtifact refuses a --out JSON path that names the
+// artifact a runtime fetch is about to write, or the registered local source
+// it copies from: the JSON would replace the verified object. Checked before
+// anything is fetched.
+func refuseOutOverFetchedArtifact(outPath string, record registry.ArtifactVersionRecord, outDir string) error {
+	if strings.TrimSpace(outPath) == "" {
+		return nil
+	}
+	source, target, err := runtime.FetchPaths(record, outDir)
+	if err != nil {
+		// FetchArtifact reports the same error with its own context.
+		return nil
+	}
+	if err := refuseSameFile("--out", outPath, "the fetched artifact", target, "the result JSON would overwrite the fetched object"); err != nil {
+		return err
+	}
+	return refuseSameFile("--out", outPath, "the registered source artifact", source, "the result JSON would overwrite the registry's copy of the object")
+}
+
 func runRuntimeSelect(args []string) int {
 	fs := flag.NewFlagSet("runtime select", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -1066,6 +1094,11 @@ func runRuntimeFetch(args []string) int {
 		}
 	}
 
+	if err := refuseOutOverFetchedArtifact(*outPath, selectedRecord, *outDir); err != nil {
+		fmt.Fprintf(os.Stderr, "runtime: %v\n", err)
+		return runner.ExitToolError
+	}
+
 	historyVerification, err := verifyRuntimeHistoryGate(*workDir, selectedRecord, *requireVerifiedHistory)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "runtime history verification failed: %v\n", err)
@@ -1233,6 +1266,11 @@ func runRuntimeExecute(args []string) int {
 			fmt.Fprintf(os.Stderr, "resolve selected record: %v\n", err)
 			return runner.ExitToolError
 		}
+	}
+
+	if err := refuseOutOverFetchedArtifact(*outPath, selectedRecord, *outDir); err != nil {
+		fmt.Fprintf(os.Stderr, "runtime: %v\n", err)
+		return runner.ExitToolError
 	}
 
 	historyVerification, err := verifyRuntimeHistoryGate(*workDir, selectedRecord, *requireVerifiedHistory)
