@@ -1273,6 +1273,15 @@ func evaluateCommandTarget(
 		target.InfraError = execResult.InfraError
 		return target, true, false
 	}
+	// The observed guest kernel is what ties a command verdict to a kernel.
+	// Without it nothing was established about this target, whatever the
+	// command's exit code, so it is an infrastructure error, never a verdict.
+	if strings.TrimSpace(execResult.HostRelease) == "" {
+		target.Status = "infra_error"
+		target.FailedStage = "infra"
+		target.InfraError = "command mode: guest kernel release was not recorded; the command result cannot be attributed to a kernel"
+		return target, true, false
+	}
 
 	target.Host = &schema.TargetEnv{
 		Distro:       profile.Distro,

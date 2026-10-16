@@ -528,10 +528,19 @@ func runGuestCommand(ctx context.Context, req ExecutionRequest, target sshTarget
 		}
 	}
 
-	// Record the kernel the command ran against (best-effort; not fatal).
-	if release, err := sshOutput(ctx, target, "uname -r"); err == nil {
-		result.HostRelease = release
+	// Record the kernel the command is about to run against. The release is
+	// the identity of a command-mode result: without it the verdict cannot be
+	// tied to a kernel, so failing to record it is an infrastructure error and
+	// the user command is not started. The machine string stays best-effort.
+	release, err := sshOutput(ctx, target, "uname -r")
+	if err == nil && strings.TrimSpace(release) == "" {
+		err = fmt.Errorf("uname -r returned empty output")
 	}
+	if err != nil {
+		result.InfraError = fmt.Sprintf("record guest kernel release: %v", err)
+		return
+	}
+	result.HostRelease = release
 	if machine, err := sshOutput(ctx, target, "uname -m"); err == nil {
 		result.HostMachine = machine
 	}
@@ -997,13 +1006,26 @@ func machineArgsFor(arch string, kvm bool) []string {
 // kvmAvailable reports whether hardware-accelerated virtualization is usable on
 // this host. When /dev/kvm is missing (some CI runners), callers degrade to TCG
 // software emulation rather than failing the QEMU launch outright.
+//
+// A /dev/kvm that exists but cannot be opened read-write by this process (for
+// example the user is not in the kvm group) is not usable either: QEMU would
+// fail at -enable-kvm instead of falling back to TCG.
 func kvmAvailable() bool {
-	info, err := os.Stat("/dev/kvm")
+	info, err := os.Stat(kvmDevicePath)
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	f, err := os.OpenFile(kvmDevicePath, os.O_RDWR, 0)
 	if err != nil {
 		return false
 	}
-	return info.Mode()&os.ModeCharDevice != 0
+	_ = f.Close()
+	return true
 }
+
+// kvmDevicePath is the KVM device probed by kvmAvailable; a variable so tests
+// can point the probe at other device nodes.
+var kvmDevicePath = "/dev/kvm"
 
 func normalizeArch(arch string) string {
 	switch strings.ToLower(strings.TrimSpace(arch)) {
