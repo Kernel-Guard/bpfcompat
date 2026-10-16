@@ -12,12 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/registry"
@@ -474,7 +476,9 @@ func (s Store) AuthorizeToken(token, tenant, project string, write bool) (Princi
 			continue
 		}
 		matchedToken = true
-		if !matchScope(tenant, strings.TrimSpace(grant.Tenant)) {
+		// SECURITY: an empty grant tenant denies. Only an explicit "*" is a
+		// tenant wildcard; see matchGrantTenant.
+		if !matchGrantTenant(tenant, grant.Tenant) {
 			continue
 		}
 		if project == "" {
@@ -1088,7 +1092,35 @@ func (s Store) loadAuthConfig() (AuthConfig, error) {
 	if cfg.SchemaVersion == "" {
 		cfg.SchemaVersion = authSchemaVersion
 	}
+	warnEmptyTenantGrants(raw, cfg)
 	return cfg, nil
+}
+
+// emptyTenantGrantWarned remembers which tokens.json contents were already
+// warned about, so the per-request reload does not repeat the warning.
+var emptyTenantGrantWarned sync.Map
+
+// warnEmptyTenantGrants logs one warning per grant whose tenant is empty.
+// Such grants used to act as a cross-tenant wildcard and now authorize
+// nothing; the load itself still succeeds so the other grants keep working.
+// The token value is never logged.
+func warnEmptyTenantGrants(raw []byte, cfg AuthConfig) {
+	sum := sha256.Sum256(raw)
+	key := hex.EncodeToString(sum[:])
+	if _, done := emptyTenantGrantWarned.Load(key); done {
+		return
+	}
+	for i := range cfg.Tokens {
+		grant := &cfg.Tokens[i]
+		if strings.TrimSpace(grant.Tenant) != "" {
+			continue
+		}
+		slog.Warn("cloud registry token grant has an empty tenant and authorizes nothing; set an explicit tenant (or \"*\" for every tenant)",
+			"grant_index", i,
+			"subject", strings.TrimSpace(grant.Subject),
+		)
+	}
+	emptyTenantGrantWarned.Store(key, struct{}{})
 }
 
 func (s Store) projectRootDir(tenant, project string) string {
@@ -1233,12 +1265,20 @@ func dedupeSorted(values []string) []string {
 	return out
 }
 
-func matchScope(value, pattern string) bool {
+// matchGrantTenant reports whether a grant's tenant covers tenant. An empty
+// or blank grant tenant never matches: it previously behaved like "*", which
+// turned a grant that merely omitted "tenant" into a cross-tenant credential
+// that tenant-scoped revocation could not remove. Only an explicit "*" is a
+// wildcard.
+func matchGrantTenant(tenant, pattern string) bool {
 	pattern = strings.TrimSpace(pattern)
-	if pattern == "" || pattern == "*" {
+	if pattern == "" {
+		return false
+	}
+	if pattern == "*" {
 		return true
 	}
-	return value == pattern
+	return tenant == pattern
 }
 
 func matchProject(project string, patterns []string) bool {
