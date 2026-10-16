@@ -201,6 +201,11 @@ var catalog = []Var{
 		Description: "Allow unauthenticated calls to /api/v1/validate (also implies anonymous read of /api/v1/validate/status).",
 	},
 	{
+		Name: "BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE", Default: "false",
+		Category:    "Auth (API)",
+		Description: "Allow anonymous callers (ALLOW_ANONYMOUS_VALIDATE/WRITE) to upload C source, which is compiled with clang on the API host. Off by default: anonymous source uploads get 403 and must send a prebuilt .bpf.o. Compile errors never echo clang diagnostics to any client.",
+	},
+	{
 		Name: "BPFCOMPAT_API_ALLOW_ANONYMOUS_RUNTIME_DELIVERY", Default: "false",
 		Category:    "Auth (API)",
 		Description: "Allow unauthenticated /api/v1/runtime/select and /api/v1/runtime/fetch for public demos. Does not enable compare, registry writes, or runtime execute.",

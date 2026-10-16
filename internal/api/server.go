@@ -112,6 +112,11 @@ const (
 	envSourceCompileTimeout             = "BPFCOMPAT_API_SOURCE_COMPILE_TIMEOUT"
 	envSourceCompileAllowExtraFlags     = "BPFCOMPAT_API_SOURCE_COMPILE_ALLOW_EXTRA_FLAGS"
 	envAllowAnonymousRead               = "BPFCOMPAT_API_ALLOW_ANONYMOUS_READ"
+	// envAllowAnonymousSourceCompile is a separate opt-in on top of
+	// envAllowAnonymousValidate/envAllowAnonymousWrite: source uploads run
+	// clang on the API host itself (not in a guest VM), so anonymous callers
+	// may only use them when an operator explicitly accepts that exposure.
+	envAllowAnonymousSourceCompile = "BPFCOMPAT_API_ALLOW_ANONYMOUS_SOURCE_COMPILE"
 	// envGitHubMarketplaceWebhookSecret holds the shared secret configured on
 	// the GitHub Marketplace listing's webhook. Deliveries are authenticated by
 	// their HMAC-SHA256 signature against this secret; when unset the endpoint
@@ -2321,10 +2326,11 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, ok := requireWriteAuthorizationForAction(w, r, "validate"); !ok {
+	identity, ok := requireWriteAuthorizationForAction(w, r, "validate")
+	if !ok {
 		return
 	}
-	cfg, status, err := s.buildValidateRunnerConfig(r)
+	cfg, status, err := s.buildValidateRunnerConfig(r.Context(), r, identity)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
@@ -2349,7 +2355,8 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, ok := requireWriteAuthorizationForAction(w, r, "validate"); !ok {
+	identity, ok := requireWriteAuthorizationForAction(w, r, "validate")
+	if !ok {
 		return
 	}
 	// Refuse new long-running submissions once shutdown started. Returning
@@ -2361,7 +2368,7 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, status, err := s.buildValidateRunnerConfig(r)
+	cfg, status, err := s.buildValidateRunnerConfig(r.Context(), r, identity)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
@@ -2415,9 +2422,15 @@ func (s *Server) handleValidateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-func (s *Server) buildValidateRunnerConfig(r *http.Request) (runner.Config, int, error) {
+func (s *Server) buildValidateRunnerConfig(ctx context.Context, r *http.Request, identity writeAuthIdentity) (runner.Config, int, error) {
 	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
 		return runner.Config{}, http.StatusBadRequest, fmt.Errorf("parse multipart form: %w", err)
+	}
+	// Source uploads execute clang on the API host. Anonymous identities
+	// (demo/local-dev switches) may only reach that path with an explicit
+	// operator opt-in; check before any upload is written to disk.
+	if identity.AuthType == "anonymous" && requestCompilesSource(r) && !allowAnonymousSourceCompileEnabled() {
+		return runner.Config{}, http.StatusForbidden, errAnonymousSourceCompileDisabled
 	}
 
 	requestDir, err := s.newUploadDir()
@@ -2425,7 +2438,7 @@ func (s *Server) buildValidateRunnerConfig(r *http.Request) (runner.Config, int,
 		return runner.Config{}, http.StatusInternalServerError, err
 	}
 
-	artifactPath, err := extractArtifact(r, requestDir)
+	artifactPath, err := extractArtifact(ctx, r, requestDir, s.log())
 	if err != nil {
 		return runner.Config{}, http.StatusBadRequest, err
 	}
@@ -2964,7 +2977,30 @@ func discoverVMProfilePaths() ([]string, error) {
 	return nil, fmt.Errorf("discover vm profile files: none found in known paths")
 }
 
-func extractArtifact(r *http.Request, requestDir string) (string, error) {
+// errAnonymousSourceCompileDisabled is returned (HTTP 403) when an anonymous
+// caller uploads source while envAllowAnonymousSourceCompile is off.
+var errAnonymousSourceCompileDisabled = errors.New("source compilation is disabled for anonymous clients by server policy; upload a prebuilt .bpf.o artifact or authenticate")
+
+// requestCompilesSource reports whether extractArtifact would compile source
+// for this request. It mirrors extractArtifact's precedence: a prebuilt
+// artifact_file always wins over source_file/source_code.
+func requestCompilesSource(r *http.Request) bool {
+	if r.MultipartForm != nil {
+		if len(r.MultipartForm.File["artifact_file"]) > 0 {
+			return false
+		}
+		if len(r.MultipartForm.File["source_file"]) > 0 {
+			return true
+		}
+	}
+	return strings.TrimSpace(r.FormValue("source_code")) != ""
+}
+
+func allowAnonymousSourceCompileEnabled() bool {
+	return parseBoolEnv(envAllowAnonymousSourceCompile, false)
+}
+
+func extractArtifact(ctx context.Context, r *http.Request, requestDir string, logger *slog.Logger) (string, error) {
 	if file, header, err := r.FormFile("artifact_file"); err == nil {
 		defer file.Close()
 		path := filepath.Join(requestDir, sanitizeFileName(header.Filename, "uploaded-artifact.bpf.o"))
@@ -2981,7 +3017,7 @@ func extractArtifact(r *http.Request, requestDir string) (string, error) {
 		if err := writeUploadedFile(sourcePath, sourceFile); err != nil {
 			return "", err
 		}
-		return compileSourceFile(sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")))
+		return compileSourceFile(ctx, sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
 	}
 
 	if strings.TrimSpace(sourceText) != "" {
@@ -2989,7 +3025,7 @@ func extractArtifact(r *http.Request, requestDir string) (string, error) {
 		if err := os.WriteFile(sourcePath, []byte(sourceText), 0o644); err != nil {
 			return "", fmt.Errorf("write source text: %w", err)
 		}
-		return compileSourceFile(sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")))
+		return compileSourceFile(ctx, sourcePath, requestDir, strings.TrimSpace(r.FormValue("clang_flags")), logger)
 	}
 
 	return "", fmt.Errorf("provide artifact_file, source_file, or source_code")
@@ -3028,7 +3064,7 @@ func writeUploadedFile(path string, src multipart.File) error {
 	return nil
 }
 
-func compileSourceFile(sourcePath, requestDir, extraFlags string) (string, error) {
+func compileSourceFile(parent context.Context, sourcePath, requestDir, extraFlags string, logger *slog.Logger) (string, error) {
 	outPath := filepath.Join(requestDir, "compiled.bpf.o")
 	allowedExtraFlags, err := sanitizeExtraClangFlags(extraFlags)
 	if err != nil {
@@ -3048,22 +3084,119 @@ func compileSourceFile(sourcePath, requestDir, extraFlags string) (string, error
 		args = append(allowedExtraFlags, args...)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), sourceCompileTimeout())
+	// Derive from the request context so a client disconnect or server
+	// shutdown also stops clang; the compile timeout still applies on top.
+	ctx, cancel := context.WithTimeout(parent, sourceCompileTimeout())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "clang", args...)
+	cmd.Env = sourceCompileEnv()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return "", fmt.Errorf("clang compile timed out after %s", sourceCompileTimeout())
 		}
 		trimmed := strings.TrimSpace(string(output))
-		hint := compileFailureHint(trimmed)
-		if hint != "" {
-			return "", fmt.Errorf("clang compile failed: %v\n%s\nhint: %s", err, trimmed, hint)
+		// SECURITY: clang diagnostics quote the contents of every file they
+		// touch, including host files pulled in via #include "/abs/path",
+		// macro-computed includes, or __has_include probes. Never return
+		// them to API clients; keep the full text in the server log only.
+		if logger == nil {
+			logger = slog.Default()
 		}
-		return "", fmt.Errorf("clang compile failed: %v\n%s", err, trimmed)
+		// sourcePath embeds the client-chosen upload filename; strip line
+		// breaks before it reaches the log sink (CWE-117).
+		logger.Warn("source upload compile failed",
+			slog.String("source", sanitizeLogValue(sourcePath)),
+			slog.String("error", err.Error()),
+			slog.String("clang_output", truncateForLog(trimmed, maxCompileDiagnosticLogBytes)),
+		)
+		return "", errors.New(sourceCompileFailureMessage(sourcePath, trimmed))
 	}
 	return outPath, nil
+}
+
+// sourceCompileEnvPassthrough lists the only server environment variables
+// forwarded to clang: PATH (tool lookup), TMPDIR (temp files), and the
+// standard include-path variables so header search stays identical to an
+// inherited environment.
+var sourceCompileEnvPassthrough = []string{"PATH", "TMPDIR", "CPATH", "C_INCLUDE_PATH"}
+
+// sourceCompileEnv builds the minimal clang environment. SECURITY: the
+// server environment carries BPFCOMPAT_API_* keys and other secrets; clang
+// (and anything it reads, e.g. .incbin "/proc/self/environ") must never see
+// them, because a compiled object can surface bytes via report notes.
+func sourceCompileEnv() []string {
+	env := make([]string, 0, len(sourceCompileEnvPassthrough)+2)
+	for _, name := range sourceCompileEnvPassthrough {
+		if value, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+value)
+		}
+	}
+	return append(env, "LANG=C", "LC_ALL=C")
+}
+
+const (
+	maxCompileDiagnosticLogBytes  = 16 << 10
+	maxCompileDiagnosticLocations = 5
+)
+
+// sourceCompileFailureMessage builds the client-facing compile error. It
+// carries only line:column positions of error diagnostics located in the
+// uploaded source file itself (no excerpts, no other file names, no message
+// text) plus a fixed-text hint.
+func sourceCompileFailureMessage(sourcePath, output string) string {
+	locations := uploadedSourceErrorLocations(sourcePath, output, maxCompileDiagnosticLocations)
+	msg := "source compilation failed"
+	switch len(locations) {
+	case 0:
+	case 1:
+		msg += " at uploaded source line " + locations[0]
+	default:
+		msg += " at uploaded source lines " + strings.Join(locations, ", ")
+	}
+	if hint := compileFailureHint(output); hint != "" {
+		msg += "\nhint: " + hint
+	}
+	return msg
+}
+
+// uploadedSourceErrorLocations extracts "line:col" pairs from clang
+// diagnostics of the form "<sourcePath>:<line>:<col>: [fatal ]error: ...".
+// Diagnostics attributed to any other file (included headers, host files,
+// #line-renamed locations) are dropped.
+func uploadedSourceErrorLocations(sourcePath, output string, limit int) []string {
+	prefix := sourcePath + ":"
+	seen := make(map[string]struct{})
+	out := make([]string, 0, limit)
+	for _, line := range strings.Split(output, "\n") {
+		if len(out) >= limit {
+			break
+		}
+		rest, ok := strings.CutPrefix(line, prefix)
+		if !ok {
+			continue
+		}
+		m := clangDiagnosticLocationPattern.FindStringSubmatch(rest)
+		if m == nil {
+			continue
+		}
+		loc := m[1] + ":" + m[2]
+		if _, dup := seen[loc]; dup {
+			continue
+		}
+		seen[loc] = struct{}{}
+		out = append(out, loc)
+	}
+	return out
+}
+
+var clangDiagnosticLocationPattern = regexp.MustCompile(`^(\d{1,9}):(\d{1,9}): (?:fatal )?error: `)
+
+func truncateForLog(text string, maxBytes int) string {
+	if len(text) <= maxBytes {
+		return text
+	}
+	return text[:maxBytes] + "...[truncated]"
 }
 
 func sanitizeExtraClangFlags(extraFlags string) ([]string, error) {
@@ -3089,7 +3222,7 @@ func compileFailureHint(output string) string {
 	switch {
 	case strings.Contains(lower, "incomplete definition of type") ||
 		strings.Contains(lower, "unknown type name"):
-		return "the uploaded source references kernel types without required headers; provide vmlinux.h/include headers or upload a prebuilt .bpf.o artifact"
+		return "the uploaded source references kernel types without required headers; provide vmlinux.h or include headers, or upload a prebuilt .bpf.o artifact"
 	case strings.Contains(lower, "fatal error:") && strings.Contains(lower, "file not found"):
 		return "a required header is missing; bundle headers with the source flow or upload a prebuilt .bpf.o artifact"
 	default:
