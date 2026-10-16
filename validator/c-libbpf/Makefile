@@ -21,5 +21,19 @@ $(BIN): $(SRC)
 	mkdir -p $(OUT_DIR)
 	$(CC) $(CFLAGS) $(LIBBPF_CFLAGS) $(SRC) -o $(BIN) $(LIBBPF_LIBS)
 
+# Host-safe regression test for the per-program record and link tables
+# (records past the 64th program, the 1024-record bound, links kept until
+# after the functional tests). The validator is rebuilt against fake
+# kernel-facing libbpf entry points (tests/runtime_fake_load.c); nothing is
+# loaded into the kernel and no root is needed.
+# VALIDATOR_SANITIZE=1 builds it with ASan/UBSan.
+# Collected by `make test-host` (run in CI); each host test adds itself.
+.PHONY: test-host
+test-host: test-program-records
+
+.PHONY: test-program-records
+test-program-records:
+	bash tests/program_records_test.sh
+
 clean:
 	rm -rf $(OUT_DIR)

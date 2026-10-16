@@ -69,9 +69,10 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   (`ERRNO_ENOENT`, `ERRNO_EINVAL`, `ERRNO_EPERM_EACCES`, `ERRNO_EOPNOTSUPP`,
   `ERRNO_EBUSY_EEXIST`, `ERRNO_OTHER`, `ERRNO_UNKNOWN`), with
   `attribution: "errno_only"`. The name is the program's libbpf name, unique
-  within an object. At most 64 programs are recorded per target
-  (`attach_records_truncated` marks the rest); the counts always cover the
-  whole object. Beyond the records a program has no identity: it can be a
+  within an object. Every program is recorded, up to a hard bound of 1024
+  per target (validators before v0.5 recorded only the first 64). Above the
+  bound the records stop at 1024 and `attach_records_truncated` marks the
+  rest; the counts always cover the whole object. Beyond the records a program has no identity: it can be a
   different program on each side, swap state with another, or cross the
   record boundary when programs are added or removed earlier in the object,
   all with every count unchanged. So when either side's records are truncated,
@@ -79,9 +80,12 @@ with programs it cannot (LSM, XDP, tc, cgroup, …). Each target records:
   both sides attached (nothing could have changed state); otherwise the cell is
   `INCONCLUSIVE`, never `UNCHANGED_COMPATIBLE` or `FIXED`. A regression proven
   inside the records is still `NEW_REGRESSION`; a side whose attach phase did
-  not run makes no attach claim. Consequence: a >64-program object with any
-  program that is not attached (not attachable, not selected, or failed) cannot
-  pass the diff gate on identical evidence until every program is recorded.
+  not run makes no attach claim. Consequence: a report with truncated records
+  (an object above 1024 programs, or any report from a validator before v0.5
+  for an object above 64) with any program that is not attached (not
+  attachable, not selected, or failed) cannot pass the diff gate on identical
+  evidence. Regenerating such a baseline with a v0.5 validator removes this for
+  objects up to 1024 programs.
   When every program attached on both sides, the cell is comparable, but
   program removals and section changes among programs that are unrecorded on
   both sides are not visible in it (no attach regression can hide there). In the
@@ -104,7 +108,7 @@ With `attach.required` in the manifest, the target is COMPATIBLE only when
 | every selected program attached | `COMPATIBLE` | — |
 | any attempted program failed to attach | `INCOMPATIBLE` | `ATTACH_FAILED` (or `UNSUPPORTED_ATTACH_TYPE`, see below) |
 | some or all selected programs are of a kind the validator cannot attach, none failed | `UNSUPPORTED` | `ATTACH_NOT_EXERCISED` |
-| a manifest `attach.required` program was not attached (not selected, absent, or beyond the 64 per-program records) | `UNSUPPORTED` | `ATTACH_NOT_EXERCISED` |
+| a manifest `attach.required` program was not attached (not selected, absent, or beyond the per-program record bound) | `UNSUPPORTED` | `ATTACH_NOT_EXERCISED` |
 | no program selected | `UNSUPPORTED` | `ATTACH_SCOPE_EMPTY` |
 | validator without accounting, or accounting that does not add up, and no proven failure | `INFRA_ERROR` | `ATTACH_ACCOUNTING_UNAVAILABLE` / `_INCONSISTENT` |
 
