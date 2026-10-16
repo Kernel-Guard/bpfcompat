@@ -295,6 +295,16 @@ var catalog = []Var{
 		Description: "Expected SHA-256 of the validator binary. When set, mismatched binaries are refused before exec.",
 	},
 	{
+		Name: "BPFCOMPAT_PROFILE_DIR", Default: "",
+		Category:    "VM Runner",
+		Description: "Directory of <id>.yaml VM profiles that takes precedence over ./vm/profiles and the built-in catalog. When set it is authoritative: a profile missing there fails the target (naming the directory) instead of falling back. A relative image.local_path in these profiles resolves under BPFCOMPAT_CACHE_DIR, like a built-in profile; an absolute one is used as written.",
+	},
+	{
+		Name: "BPFCOMPAT_CACHE_DIR", Default: "$XDG_CACHE_HOME/bpfcompat (~/.cache/bpfcompat)",
+		Category:    "VM Runner",
+		Description: "Image cache root for built-in profiles and BPFCOMPAT_PROFILE_DIR profiles: a relative image.local_path such as vm/cache/debian-12.qcow2 is stored under this root. Point it at a source checkout to reuse its vm/cache. Profiles from ./vm/profiles keep resolving image paths against the working directory. Runs sharing the cache take a per-image lock while downloading, and a published image is never replaced.",
+	},
+	{
 		Name: "BPFCOMPAT_ENABLE_RHCOS", Default: "false",
 		Category:    "VM Runner",
 		Description: "Enable the RHEL CoreOS (rhcos) profile. RHCOS boots via the same Ignition path as Fedora CoreOS, but its image ships with an OpenShift release rather than a public URL. Stage the image with `make rhcos-image` and set this to 1/true once it is present; left off, rhcos stays unsupported so it is never claimed runnable without a real image.",

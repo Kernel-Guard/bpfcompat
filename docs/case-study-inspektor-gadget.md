@@ -14,7 +14,7 @@ its gadgets as OCI images. bpfcompat can pull a gadget by reference, extract the
 eBPF object, and validate it across kernels in one command:
 
 ```sh
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out trace_open.json
 ```
 
 - **No manifest, no matrix file.** `--quick` uses a built-in kernel set; the
@@ -109,8 +109,8 @@ counted.
 
 ```sh
 # any published gadget; --quick needs no matrix file, auto-size needs no manifest
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_exec:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out trace_open.json
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_exec:latest --quick --out trace_exec.json
 ```
 
 Artifacts are pulled from the public registry and validated as shipped; no source

@@ -67,6 +67,8 @@ func run(args []string) int {
 		return runVersion(args[1:])
 	case "env":
 		return runEnv(args[1:])
+	case "doctor":
+		return runDoctor(args[1:])
 	case "-h", "--help", "help":
 		printRootUsage()
 		return 0
@@ -283,6 +285,8 @@ func executeTestConfig(cfg runner.Config) int {
 		fmt.Fprintf(os.Stderr, "invalid arguments: %v\n", err)
 		return runner.ExitToolError
 	}
+
+	warnIfKVMUnusable(cfg, os.Stderr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -1461,6 +1465,7 @@ func printRootUsage() {
 	fmt.Println("  bpfcompat kernel-sweep --profile <id> [--count N] [--series <prefix>]")
 	fmt.Println("  bpfcompat version [--json]")
 	fmt.Println("  bpfcompat env [--markdown|--json]")
+	fmt.Println("  bpfcompat doctor [--matrix <file>] [--command-mode]")
 }
 
 func printProfileUsage() {

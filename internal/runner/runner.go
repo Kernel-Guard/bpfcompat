@@ -18,6 +18,7 @@ import (
 	"github.com/kernel-guard/bpfcompat/internal/classifier"
 	"github.com/kernel-guard/bpfcompat/internal/manifest"
 	"github.com/kernel-guard/bpfcompat/internal/matrix"
+	"github.com/kernel-guard/bpfcompat/internal/profilecatalog"
 	"github.com/kernel-guard/bpfcompat/internal/registry"
 	"github.com/kernel-guard/bpfcompat/internal/report"
 	"github.com/kernel-guard/bpfcompat/internal/vm"
@@ -31,6 +32,7 @@ type RunResult struct {
 }
 
 var (
+	resolveProfileFn          = profilecatalog.Resolve
 	loadProfileFn             = vm.LoadProfile
 	executeProfileFn          = vm.ExecuteProfile
 	executeVirtmeNGProfile    = vm.ExecuteVirtmeNGProfile
@@ -536,8 +538,17 @@ func executeTarget(
 		Required:  matrixProfile.RequiredBool(),
 	}
 
-	profilePath := filepath.Join("vm", "profiles", matrixProfile.ID+".yaml")
-	profilePathAbs, err := filepath.Abs(profilePath)
+	resolvedProfile, err := resolveProfileFn(matrixProfile.ID, runDir)
+	if err != nil {
+		target.Status = "infra_error"
+		target.FailedStage = "infra"
+		target.InfraError = fmt.Sprintf("load profile: %v", err)
+		return target, true, false
+	}
+	if note := resolvedProfile.Note(); note != "" {
+		target.Notes = append(target.Notes, note)
+	}
+	profilePathAbs, err := filepath.Abs(resolvedProfile.File)
 	if err != nil {
 		target.Status = "infra_error"
 		target.InfraError = fmt.Sprintf("resolve profile path: %v", err)
@@ -638,7 +649,7 @@ func executeTarget(
 	target.ValidatorResult = execResult.ValidatorResultPath
 	target.ValidatorExit = execResult.ValidatorExitCode
 	target.InfraError = execResult.InfraError
-	target.Notes = execResult.Notes
+	target.Notes = append(target.Notes, execResult.Notes...)
 
 	if execResult.Status == "infra_error" {
 		target.FailedStage = "infra"

@@ -58,12 +58,34 @@ rationale is in [`profile-catalog.md`](profile-catalog.md).
   testing different bytes. Use pinning with release-versioned URLs
   (for example `releases/22.04/release-20260601/...` instead of
   `current/`).
+- **Observed vs expected:** the `base image sha256: …` note is always the
+  observed digest of the bytes the run booted (provenance). It is followed by
+  a `base image digest:` note.
+  - `verified` means the bytes matched the profile's pin before boot.
+  - `not verified` means the profile pins nothing. bpfcompat never derives an
+    expected digest from a downloaded file, a sidecar, or another run's
+    download.
 
 ## Acquisition and caching
 
 Images download on first use into `vm/cache/` (never committed). Downloads
 honor run cancellation, use a 45-minute HTTP timeout, reject responses larger
-than 20 GiB, and remove partial output after any failure. Bulk prefetch targets:
+than 20 GiB, and remove partial output after any failure.
+
+The cache can be shared by concurrent runs. Built-in and
+`BPFCOMPAT_PROFILE_DIR` profiles all use `$BPFCOMPAT_CACHE_DIR`.
+
+- A downloader holds an exclusive `flock` on `<image>.lock` for the whole
+  transfer. It re-checks for the image under the lock and stages the bytes as
+  `<image>.<random>.download` in the same directory.
+- The pin, if any, is checked, then the file is renamed into place. The rename
+  is atomic and never replaces an existing image.
+- Waiting for another run's download counts against the waiting target's
+  timeout.
+- The kernel releases the lock when its holder dies. The next downloader
+  removes `.download` leftovers from a killed run.
+- `flock` is per host: a cache on a network filesystem shared between hosts is
+  not protected. Bulk prefetch targets:
 
 ```bash
 make vm-images                    # MVP matrix images

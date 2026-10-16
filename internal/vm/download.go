@@ -41,7 +41,8 @@ func ensureImageChecksum(imagePath string) (string, error) {
 		return "", err
 	}
 	content := fmt.Sprintf("%s  %s\n", sum, imagePath)
-	if err := os.WriteFile(sidecarPath, []byte(content), 0o600); err != nil {
+	// Atomic: concurrent runs may rewrite the sidecar of a shared image.
+	if err := writeFileAtomic(sidecarPath, []byte(content), 0o600); err != nil {
 		return "", fmt.Errorf("write checksum sidecar: %w", err)
 	}
 	return sum, nil

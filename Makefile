@@ -37,7 +37,8 @@ doctor:
 	@pkg-config --exists libbpf || (echo "missing libbpf-dev/pkg-config metadata" && exit 1)
 	@pkg-config --exists libelf || (echo "missing libelf-dev/pkg-config metadata" && exit 1)
 	@pkg-config --exists zlib || (echo "missing zlib-dev/pkg-config metadata" && exit 1)
-	@test -e /dev/kvm || (echo "missing /dev/kvm" && exit 1)
+	@test -e /dev/kvm || (echo "missing /dev/kvm (enable VT-x/AMD-V or nested virtualization; load kvm_intel/kvm_amd)" && exit 1)
+	@test -r /dev/kvm -a -w /dev/kvm || (echo "/dev/kvm is not read-write for $$(id -un) (add the user to the kvm group: sudo usermod -aG kvm $$(id -un), then log in again); without it QEMU falls back to slow TCG emulation" && exit 1)
 
 doctor-virtme: doctor
 	@command -v curl >/dev/null || (echo "missing curl" && exit 1)

@@ -23,8 +23,12 @@ Point it at a local `.bpf.o` or a **published gadget by OCI reference**, on your
 laptop or as a CI gate — `--quick` needs no matrix file:
 
 ```sh
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out report.json
 ```
+
+`--out` is required: it names the JSON report (add `--markdown report.md` for a
+readable copy). A KVM-capable Linux host with QEMU is needed; see
+[Install](#install) and [Prerequisites](#prerequisites).
 
 **Quickstart & trust model:** [docs/quickstart.md](docs/quickstart.md) — gate it in CI
 in ~10 minutes; self-hosted-first, your artifact never leaves your runner.
@@ -315,7 +319,7 @@ extracts the eBPF object, auto-sizes runtime-sized maps, and validates it across
 kernels with no manifest and no matrix file:
 
 ```sh
-bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick
+bpfcompat test --artifact ghcr.io/inspektor-gadget/gadget/trace_open:latest --quick --out trace_open.json
 ```
 
 Pulled straight from the registry, Inspektor Gadget's `trace_open`/`trace_exec`
@@ -360,8 +364,12 @@ the project's focus.
 The quickest path is the one-command installer. Prebuilt binaries, a source
 build, and `go install` are also available. Running `bpfcompat test` needs the
 guest-side validator (the installer and the prebuilt option set it up where the
-CLI discovers it) plus the kernel matrices in this repo, and a KVM-capable Linux
-host with `qemu-system-x86_64` for VM-backed runs.
+CLI discovers it) and a KVM-capable Linux host with QEMU and OpenSSH (see
+[Prerequisites](#prerequisites)). The standard VM profiles, including the
+`--quick` set, are compiled into the CLI, so `--quick` works from any
+directory; `--matrix` takes a matrix file path (download one from
+[`matrices/`](matrices/) or write your own). Run `bpfcompat doctor` after
+installing to check the host.
 
 **0. One-command install (quickest, Linux x86_64 / arm64).** Downloads the CLI
 and the static guest validator, verifies checksums plus either the release
@@ -455,6 +463,54 @@ default latest-release lookup.
 Verify provenance with
 `cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
+### Where profiles, images, and reports go
+
+- **Profiles** are looked up per matrix entry, first match wins:
+  1. `$BPFCOMPAT_PROFILE_DIR/<id>.yaml` when that variable is set. An explicit
+     directory is authoritative: a profile missing there fails the target
+     instead of falling back.
+  2. `./vm/profiles/<id>.yaml` in the working directory (a source checkout; the
+     GitHub Action runs from its own checkout). Used in place, as before.
+  3. The built-in catalog compiled into the binary (`vm/profiles` of the
+     release).
+
+  A profile found nowhere fails the target as an infra error that names every
+  location searched. Only a truly absent `<id>.yaml` moves lookup on: a
+  dangling symlink, a directory, or an unreadable entry is an error, never a
+  silent fallback to the built-in copy. Each target's `notes` record the
+  source used, the profile path, and its sha256. `bpfcompat doctor` shows the
+  same information before a run.
+- **Image paths.** A relative `image.local_path` resolves differently by
+  source:
+  - Profiles from `./vm/profiles` resolve it against the working directory,
+    i.e. the checkout root (`./vm/cache/...`), as before.
+  - Built-in profiles and `$BPFCOMPAT_PROFILE_DIR` profiles resolve it under
+    `$BPFCOMPAT_CACHE_DIR` (default `~/.cache/bpfcompat`, or
+    `$XDG_CACHE_HOME/bpfcompat`). The answer is the same from any directory,
+    and each image (a few hundred MB) downloads once per host.
+    `BPFCOMPAT_CACHE_DIR=<checkout>` reuses a checkout's `vm/cache`.
+  - An absolute path is used as written.
+
+  A rebased profile is copied into the run directory, at
+  `.bpfcompat/runs/<run-id>/profiles/<id>.yaml`; your file is never modified.
+- **Image downloads and digests.** A download takes a per-image lock in the
+  cache (`<image>.lock`). It is staged next to its final path and renamed into
+  place, so concurrent runs download an image once. The run directory and
+  cache may be on different filesystems, and no partial image ever appears
+  at the final path. A published image is never replaced; delete it to
+  refresh.
+  - Each target's notes record the observed `base image sha256: …` of the
+    bytes it booted. That is provenance.
+  - A `base image digest:` note says whether it was **verified** against the
+    profile's pinned `image.sha256` (a mismatch fails the run) or is **not
+    verified** because the profile pins none.
+  - The `<image>.sha256` sidecar is a copy for operators and is never trusted.
+  - `.download` leftovers from a killed run are removed by the next download
+    of that image.
+- **Reports**: `--out` is required and names the JSON report; `--markdown` is
+  optional. Both are written where you point them. Run state and evidence go
+  under `--workdir` (default `./.bpfcompat`), one fresh directory per run.
+
 ### What a run looks like
 
 Once installed, `bpfcompat test` boots each kernel in a disposable VM and reports
@@ -466,11 +522,27 @@ on 6.1 and 6.8:
 
 ## Prerequisites
 
-For the main QEMU path:
+To **run** an installed CLI on a fresh host (QEMU path), you need:
 
-- Linux host (a GitHub-hosted `ubuntu-latest` runner works; `/dev/kvm`
-  enables hardware acceleration, and bpfcompat falls back to TCG software
-  emulation when it is absent)
+- Linux with KVM that your user can open read-write. Add yourself to the `kvm`
+  group (`sudo usermod -aG kvm "$USER"`, then log in again). A GitHub-hosted
+  `ubuntu-latest` runner works. Without usable KVM, QEMU falls back to TCG
+  software emulation, which is much slower and may exceed `--timeout`.
+  `bpfcompat test` prints a warning when that happens.
+- Host packages:
+  - Debian/Ubuntu: `sudo apt-get install qemu-system-x86 qemu-utils openssh-client cloud-image-utils`
+  - Fedora: `sudo dnf install qemu-system-x86-core qemu-img openssh-clients cloud-utils`
+
+  `cloud-image-utils` / `cloud-utils` provides `cloud-localds`. Only the
+  RHEL-family, Amazon, Oracle, and SUSE profiles need it.
+- Check with `bpfcompat doctor`, or `bpfcompat doctor --matrix <file>` for a
+  specific matrix. It actually opens `/dev/kvm` and creates a VM, finds the
+  validator, and reports where each profile and image comes from. It exits
+  non-zero when something is missing.
+
+To **build** from source and run the full QEMU path:
+
+- Linux host with KVM as above
 - Go 1.26.9+ (the `go` directive in go.mod; older toolchains auto-switch)
 - `make`
 - `clang`

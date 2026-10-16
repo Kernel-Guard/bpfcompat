@@ -7,6 +7,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+- An installed CLI can now run `bpfcompat test --quick` from any directory.
+  - The standard VM profiles (`vm/profiles`) are compiled into the binary.
+  - Lookup order is `$BPFCOMPAT_PROFILE_DIR`, then `./vm/profiles`, then the
+    built-in catalog. An explicit directory has no fallback.
+  - A missing profile fails the target and names every location searched.
+    A dangling symlink, a directory, or another non-regular entry at
+    `./vm/profiles/<id>.yaml` is an error, not a fallback.
+  - Each target's notes record which source the profile came from, its path,
+    and its sha256.
+  - Built-in profiles cache their images under `$BPFCOMPAT_CACHE_DIR`
+    (default `~/.cache/bpfcompat`). So do `BPFCOMPAT_PROFILE_DIR` profiles
+    with a relative `image.local_path`. The exact profile used is saved under
+    the run directory.
+  - Checkout and GitHub Action runs still resolve `./vm/profiles` first, so
+    their behavior is unchanged.
+- `bpfcompat doctor` checks a host for VM-backed runs:
+  - host tools, with package names;
+  - real KVM usability: opens `/dev/kvm` read-write, checks the KVM API
+    version, and creates a VM;
+  - the static validator;
+  - where each profile and its image come from.
+
+### Changed
+- `bpfcompat test` / `test-command` now warn on stderr when KVM is not usable
+  and guests will fall back to slow TCG emulation. Acceleration and timeouts
+  are unchanged.
+- `make doctor` now requires `/dev/kvm` to be read-write for the current
+  user, not merely present.
+
+### Fixed
+- Concurrent runs sharing an image cache no longer download the same image
+  several times and replace it under each other.
+  - Before, a run could record the digest of an image that another run then
+    replaced.
+  - Downloads now take a per-image lock and publish atomically. A published
+    image is never replaced, and `.download` leftovers from a killed run are
+    cleaned up.
+  - Target notes now say whether the recorded `base image sha256` was
+    verified against a pinned `image.sha256` or is unverified provenance.
+  - The `.sha256` sidecar is replaced, never written through a symlink.
+    Before, a checkout whose cache linked to another checkout's sidecars
+    rewrote those files with its own paths.
+- VM image downloads are now staged next to the cached image instead of in
+  the run directory.
+  - Before, a run directory and image cache on different filesystems (for
+    example a tmpfs `--workdir`) failed with `invalid cross-device link`
+    after the full download, and the temp file was left behind.
+- The README and Inspektor Gadget case-study quickstart commands now include
+  the required `--out`. Without it they exited with
+  `--out is required`.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
