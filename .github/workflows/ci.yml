@@ -259,6 +259,27 @@ jobs:
         if: github.event_name != 'pull_request' && steps.push-diff-base.outputs.has_parent != 'true'
         run: echo "Skipping diff lint because this checkout has no parent commit."
 
+  validator-host-tests:
+    name: Validator host tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the validator toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang llvm libbpf-dev libelf-dev zlib1g-dev pkg-config jq
+      # Host-safe regression tests for the C validator: it is rebuilt against
+      # fake kernel-facing libbpf entry points, so nothing is loaded into the
+      # runner's kernel and no root is needed. `test-host` collects every such
+      # test in validator/c-libbpf/Makefile.
+      - name: Validator host tests
+        run: make -C validator/c-libbpf test-host
+      - name: Validator host tests (ASan/UBSan)
+        run: VALIDATOR_SANITIZE=1 make -C validator/c-libbpf test-host
+
   vuln:
     name: govulncheck
     runs-on: ubuntu-latest

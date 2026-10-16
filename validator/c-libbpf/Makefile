@@ -27,6 +27,10 @@ $(BIN): $(SRC)
 # kernel-facing libbpf entry points (tests/runtime_fake_load.c); nothing is
 # loaded into the kernel and no root is needed.
 # VALIDATOR_SANITIZE=1 builds it with ASan/UBSan.
+# Collected by `make test-host` (run in CI); each host test adds itself.
+.PHONY: test-host
+test-host: test-program-records
+
 .PHONY: test-program-records
 test-program-records:
 	bash tests/program_records_test.sh
