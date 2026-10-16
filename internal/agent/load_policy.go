@@ -42,6 +42,11 @@ type LoadPolicyRule struct {
 	KernelMin              string   `json:"kernel_min,omitempty" yaml:"kernel_min,omitempty"`
 	KernelMax              string   `json:"kernel_max,omitempty" yaml:"kernel_max,omitempty"`
 	RequireVerifiedHistory *bool    `json:"require_verified_history,omitempty" yaml:"require_verified_history,omitempty"`
+	// ExpectHeadSHA256 and MinRecords pin the verified history head and
+	// length (SIGN-3): the rule only matches when the chain head equals the
+	// pinned hash and holds at least MinRecords records. Empty/0 = unpinned.
+	ExpectHeadSHA256 string `json:"expect_head_sha256,omitempty" yaml:"expect_head_sha256,omitempty"`
+	MinRecords       int    `json:"min_records,omitempty" yaml:"min_records,omitempty"`
 }
 
 type LoadPolicyContext struct {
@@ -53,7 +58,11 @@ type LoadPolicyContext struct {
 	SelectedRecord  registry.ArtifactVersionRecord
 	HostProbe       *runtime.HostCapabilities
 	HistoryVerified bool
-	Manifest        *manifest.Manifest
+	// HistoryHeadSHA256 and HistoryRecords describe the verified history
+	// chain (head record hash and record count); empty/0 when not verified.
+	HistoryHeadSHA256 string
+	HistoryRecords    int
+	Manifest          *manifest.Manifest
 }
 
 type LoadPolicyDecision struct {
@@ -139,6 +148,16 @@ func (p *LoadPolicy) NormalizeAndValidate() error {
 				return fmt.Errorf("agent load policy rule %q invalid kernel_max %q: %w", rule.Name, rule.KernelMax, err)
 			}
 		}
+		if strings.TrimSpace(rule.ExpectHeadSHA256) != "" {
+			head, err := registry.NormalizeHistoryHeadSHA256(rule.ExpectHeadSHA256)
+			if err != nil {
+				return fmt.Errorf("agent load policy rule %q invalid expect_head_sha256: %w", rule.Name, err)
+			}
+			rule.ExpectHeadSHA256 = head
+		}
+		if rule.MinRecords < 0 {
+			return fmt.Errorf("agent load policy rule %q min_records must be >= 0", rule.Name)
+		}
 	}
 	return nil
 }
@@ -206,6 +225,14 @@ func loadRuleMatches(rule LoadPolicyRule, ctx LoadPolicyContext) bool {
 	}
 	if rule.RequireVerifiedHistory != nil && *rule.RequireVerifiedHistory != ctx.HistoryVerified {
 		return false
+	}
+	if rule.ExpectHeadSHA256 != "" || rule.MinRecords > 0 {
+		if !ctx.HistoryVerified || ctx.HistoryRecords < rule.MinRecords {
+			return false
+		}
+		if rule.ExpectHeadSHA256 != "" && strings.ToLower(strings.TrimSpace(ctx.HistoryHeadSHA256)) != rule.ExpectHeadSHA256 {
+			return false
+		}
 	}
 	if len(rule.Profiles) > 0 && !matchAnyPattern(loadPolicyProfileCandidates(ctx), rule.Profiles) {
 		return false

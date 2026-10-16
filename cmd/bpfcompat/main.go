@@ -450,8 +450,11 @@ func runHistoryVerify(args []string) int {
 	fs.SetOutput(os.Stderr)
 	workDir := fs.String("workdir", ".bpfcompat", "Working directory root")
 	asJSON := fs.Bool("json", false, "Print JSON output")
+	expectHead := fs.String("expect-head", "", "Fail unless the chain head (record_sha256 of the last record) equals this 64-hex SHA-256; keep the pinned value outside the workdir to detect deletion of the newest records")
+	minRecords := fs.Int("min-records", 0, "Fail if the history holds fewer than N records (detects truncation; 0 = no check)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage:\n  bpfcompat history verify [flags]\n\n")
+		fmt.Fprintf(fs.Output(), "The chain check is backward-only: deleting the newest records still verifies\nunless --expect-head and/or --min-records pin the last known head and length.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -459,6 +462,16 @@ func runHistoryVerify(args []string) int {
 			return 0
 		}
 		return runner.ExitToolError
+	}
+	if *minRecords < 0 {
+		fmt.Fprintf(os.Stderr, "history verify: --min-records must be >= 0\n")
+		return runner.ExitToolError
+	}
+	if strings.TrimSpace(*expectHead) != "" {
+		if _, err := registry.NormalizeHistoryHeadSHA256(*expectHead); err != nil {
+			fmt.Fprintf(os.Stderr, "history verify: invalid --expect-head: %v\n", err)
+			return runner.ExitToolError
+		}
 	}
 
 	verification, err := registry.VerifyArtifactVersionHistory(*workDir)
@@ -472,22 +485,35 @@ func runHistoryVerify(args []string) int {
 			failed++
 		}
 	}
+	records, head := registry.ArtifactHistoryHead(verification)
+	headErr := registry.CheckArtifactHistoryHead(verification, *expectHead, *minRecords)
 
 	if *asJSON {
+		// The --json array shape is kept for existing consumers (jq length);
+		// the head and record count are reported on stderr.
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(verification); err != nil {
 			fmt.Fprintf(os.Stderr, "encode history verification JSON: %v\n", err)
 			return runner.ExitToolError
 		}
+		fmt.Fprintf(os.Stderr, "history verify: head_sha256=%s records=%d\n", head, records)
 		if failed > 0 {
 			fmt.Fprintf(os.Stderr, "history verify: %d/%d records failed verification\n", failed, len(verification))
+			return runner.ExitToolError
+		}
+		if headErr != nil {
+			fmt.Fprintf(os.Stderr, "history verify: %v\n", headErr)
 			return runner.ExitToolError
 		}
 		return runner.ExitSuccess
 	} else {
 		if len(verification) == 0 {
 			fmt.Println("No artifact history records found.")
+			if headErr != nil {
+				fmt.Fprintf(os.Stderr, "history verify: %v\n", headErr)
+				return runner.ExitToolError
+			}
 			return runner.ExitSuccess
 		}
 		fmt.Println("Artifact History Verification:")
@@ -507,7 +533,11 @@ func runHistoryVerify(args []string) int {
 		fmt.Fprintf(os.Stderr, "history verify: %d/%d records failed verification\n", failed, len(verification))
 		return runner.ExitToolError
 	}
-	fmt.Printf("history verify: all %d records passed\n", len(verification))
+	if headErr != nil {
+		fmt.Fprintf(os.Stderr, "history verify: %v\n", headErr)
+		return runner.ExitToolError
+	}
+	fmt.Printf("history verify: all %d records passed (head_sha256=%s records=%d)\n", len(verification), head, records)
 	return runner.ExitSuccess
 }
 

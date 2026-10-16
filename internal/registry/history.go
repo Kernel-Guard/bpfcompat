@@ -200,6 +200,66 @@ func VerifyArtifactVersionHistory(workDir string) ([]ArtifactVersionVerification
 	return out, nil
 }
 
+// ArtifactHistoryHead returns the number of verified rows and the chain head:
+// the record_sha256 of the last record (recomputed from its canonical
+// payload; on a verified chain it equals the stored record_sha256).
+//
+// The chain check above is backward-only, so deleting the newest records
+// still verifies. Callers that pin the head (or a minimum record count)
+// outside the registry workdir can detect that rollback with
+// CheckArtifactHistoryHead.
+func ArtifactHistoryHead(rows []ArtifactVersionVerification) (records int, headSHA256 string) {
+	if len(rows) == 0 {
+		return 0, ""
+	}
+	last := rows[len(rows)-1]
+	head := strings.TrimSpace(last.ComputedSHA256)
+	if head == "" {
+		head = strings.TrimSpace(last.RecordSHA256)
+	}
+	return len(rows), head
+}
+
+// NormalizeHistoryHeadSHA256 validates a pinned head hash (64 hex digits,
+// case-insensitive) and returns it lower-cased.
+func NormalizeHistoryHeadSHA256(value string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if len(v) != sha256.Size*2 {
+		return "", fmt.Errorf("expected head sha256 must be 64 hex characters, got %d", len(v))
+	}
+	if _, err := hex.DecodeString(v); err != nil {
+		return "", fmt.Errorf("expected head sha256 must be hex: %w", err)
+	}
+	return v, nil
+}
+
+// CheckArtifactHistoryHead enforces optional rollback pins on a verified
+// history: expectHead (empty = not pinned) must equal the chain head and the
+// chain must hold at least minRecords records (0 = not pinned).
+func CheckArtifactHistoryHead(rows []ArtifactVersionVerification, expectHead string, minRecords int) error {
+	if minRecords < 0 {
+		return fmt.Errorf("min records must be >= 0, got %d", minRecords)
+	}
+	records, head := ArtifactHistoryHead(rows)
+	if records < minRecords {
+		return fmt.Errorf("history has %d records, expected at least %d (newest records may have been deleted)", records, minRecords)
+	}
+	if strings.TrimSpace(expectHead) == "" {
+		return nil
+	}
+	want, err := NormalizeHistoryHeadSHA256(expectHead)
+	if err != nil {
+		return err
+	}
+	if head != want {
+		if head == "" {
+			head = "<none>"
+		}
+		return fmt.Errorf("history head mismatch: head_sha256=%s, expected %s (history rolled back or forked)", head, want)
+	}
+	return nil
+}
+
 func BackfillArtifactVersionProvenance(workDir string) (int, error) {
 	indexPath := filepath.Join(filepath.Clean(workDir), "registry", "artifact_versions.jsonl")
 	records, err := readArtifactVersionRecords(indexPath)

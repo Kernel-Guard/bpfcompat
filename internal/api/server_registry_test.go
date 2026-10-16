@@ -248,6 +248,29 @@ func TestRegistryHistoryVerifyActionScopeGate(t *testing.T) {
 	if verifyRecAllowed.Code != http.StatusOK {
 		t.Fatalf("expected 200 for valid registry history verify scope, got %d body=%s", verifyRecAllowed.Code, verifyRecAllowed.Body.String())
 	}
+
+	// SIGN-3 option A: the response summary reports the chain head and the
+	// record count so callers can pin them outside the registry workdir.
+	var verifyBody struct {
+		Verification []struct {
+			RecordSHA256 string `json:"record_sha256"`
+		} `json:"verification"`
+		Summary struct {
+			Total      int    `json:"total"`
+			Failed     int    `json:"failed"`
+			Records    int    `json:"records"`
+			HeadSHA256 string `json:"head_sha256"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(verifyRecAllowed.Body.Bytes(), &verifyBody); err != nil {
+		t.Fatalf("decode verify body: %v body=%s", err, verifyRecAllowed.Body.String())
+	}
+	if len(verifyBody.Verification) != 1 || verifyBody.Summary.Records != 1 || verifyBody.Summary.Total != 1 {
+		t.Fatalf("unexpected verify summary: %+v", verifyBody)
+	}
+	if len(verifyBody.Summary.HeadSHA256) != 64 || verifyBody.Summary.HeadSHA256 != verifyBody.Verification[0].RecordSHA256 {
+		t.Fatalf("head_sha256 %q does not match last record_sha256 %q", verifyBody.Summary.HeadSHA256, verifyBody.Verification[0].RecordSHA256)
+	}
 }
 
 func TestRegistryRequireIdentityDeniedWhenMissingIdentityToken(t *testing.T) {

@@ -1333,19 +1333,25 @@ func evaluateAgentLocalLoadPolicy(
 		policyManifest = &loaded
 	}
 	historyVerified := false
+	historyHead := ""
+	historyRecords := 0
 	if decision.HistoryVerification != nil {
 		historyVerified = decision.HistoryVerification.Verified
+		historyHead = decision.HistoryVerification.HeadSHA256
+		historyRecords = decision.HistoryVerification.Records
 	}
 	ctx := agent.LoadPolicyContext{
-		AgentID:         decision.AgentID,
-		Tenant:          decision.Tenant,
-		Project:         decision.Project,
-		ArtifactName:    firstNonEmpty(decision.SelectedArtifact.Name, decision.ArtifactName, selectedRecord.ArtifactName),
-		TargetProfileID: decision.TargetProfile,
-		SelectedRecord:  selectedRecord,
-		HostProbe:       &hostProbe,
-		HistoryVerified: historyVerified,
-		Manifest:        policyManifest,
+		AgentID:           decision.AgentID,
+		Tenant:            decision.Tenant,
+		Project:           decision.Project,
+		ArtifactName:      firstNonEmpty(decision.SelectedArtifact.Name, decision.ArtifactName, selectedRecord.ArtifactName),
+		TargetProfileID:   decision.TargetProfile,
+		SelectedRecord:    selectedRecord,
+		HostProbe:         &hostProbe,
+		HistoryVerified:   historyVerified,
+		HistoryHeadSHA256: historyHead,
+		HistoryRecords:    historyRecords,
+		Manifest:          policyManifest,
 	}
 	return agent.EvaluateLoadPolicy(policy, ctx), nil
 }
