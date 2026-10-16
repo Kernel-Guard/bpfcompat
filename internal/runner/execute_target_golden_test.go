@@ -30,16 +30,18 @@ type executeTargetGoldenCase struct {
 
 func executeTargetGoldenCases() []executeTargetGoldenCase {
 	ubuntu := vm.Profile{Distro: "ubuntu", Version: "22.04", KernelFamily: "5.15", Arch: "x86_64"}
-	var cases []executeTargetGoldenCase
-	for _, fx := range attachEvidenceFixtures() {
+	fixtures := attachEvidenceFixtures()
+	cases := make([]executeTargetGoldenCase, 0, 2*len(fixtures)+10)
+	for i := range fixtures {
+		fx := fixtures[i]
 		cases = append(cases,
 			executeTargetGoldenCase{name: fx.name + " [required]", fx: fx, required: true, profile: ubuntu},
 			executeTargetGoldenCase{name: fx.name + " [optional]", fx: fx, required: false, profile: ubuntu},
 		)
 	}
 	byName := map[string]attachFixture{}
-	for _, fx := range attachEvidenceFixtures() {
-		byName[fx.name] = fx
+	for i := range fixtures {
+		byName[fixtures[i].name] = fixtures[i]
 	}
 	// The guest booted another kernel series and another distribution than
 	// the profile requests: the environment block and mismatch note, and the
@@ -139,9 +141,10 @@ func runExecuteTargetGolden(t *testing.T, c executeTargetGoldenCase) executeTarg
 //
 //	go test ./internal/runner -run TestExecuteTargetGolden -update-execute-target-golden
 func TestExecuteTargetGolden(t *testing.T) {
-	var entries []executeTargetGoldenEntry
-	for _, c := range executeTargetGoldenCases() {
-		entries = append(entries, runExecuteTargetGolden(t, c))
+	cases := executeTargetGoldenCases()
+	entries := make([]executeTargetGoldenEntry, 0, len(cases))
+	for i := range cases {
+		entries = append(entries, runExecuteTargetGolden(t, cases[i]))
 	}
 	got, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
