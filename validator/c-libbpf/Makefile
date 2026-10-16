@@ -24,7 +24,7 @@ $(BIN): $(SRC)
 clean:
 	rm -rf $(OUT_DIR)
 
-# Host-safe regression test for functional-test timeouts, per-program limits,
+# Host-safe regression test for functional-test timeouts, the functional-plan cap,
 # --log-dir handling and result.json write errors. The validator is rebuilt
 # against fake kernel-facing libbpf entry points (tests/runtime_fake_load.c);
 # nothing is loaded into the kernel and no root is needed.

@@ -187,10 +187,7 @@ struct validator_result {
     bool tracepoint_events_available;
     int map_count;
     int program_count;
-    /* One entry per program in the object (program_count entries), sized at
-     * discovery: no fixed cap, so every program is reported, trial-loaded
-     * and kept attached. */
-    struct discovered_program *programs;
+    struct discovered_program programs[MAX_ITEMS];
     int functional_test_count;
     struct functional_test functional_tests[MAX_ITEMS];
     char functional_status[16];
@@ -203,9 +200,7 @@ struct validator_result {
     int attach_failed;
     char libbpf_log[LIBBPF_LOG_CAPACITY];
     size_t libbpf_log_len;
-    /* Every successful attach, held until the functional tests are done
-     * (program_count slots). */
-    struct bpf_link **links;
+    struct bpf_link *links[MAX_ITEMS];
     int link_count;
     /* Plan entries beyond MAX_ITEMS that were not run; any makes the
      * functional verdict fail and is reported as functional.truncated. */
@@ -1585,25 +1580,8 @@ static void discover_programs_and_maps(struct validator_result *res, struct bpf_
     struct bpf_program *prog;
     struct bpf_map *map;
 
-    /* Size the per-program tables to the object. A fixed 64-entry table
-     * used to drop programs past the 64th from discovery and per-program
-     * trial loads, and destroy their links right after attach while
-     * attach still reported them as passed. */
-    int total = 0;
     bpf_object__for_each_program(prog, obj) {
-        total++;
-    }
-    if (total > 0) {
-        res->programs = calloc((size_t)total, sizeof(*res->programs));
-        res->links = calloc((size_t)total, sizeof(*res->links));
-        if (!res->programs || !res->links) {
-            fprintf(stderr, "out of memory allocating tables for %d programs\n", total);
-            exit(1);
-        }
-    }
-
-    bpf_object__for_each_program(prog, obj) {
-        if (res->program_count < total) {
+        if (res->program_count < MAX_ITEMS) {
             const char *name = bpf_program__name(prog);
             const char *section = bpf_program__section_name(prog);
             snprintf(res->programs[res->program_count].name,
@@ -1671,7 +1649,7 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
     struct bpf_program *prog;
     int program_index = 0;
     bpf_object__for_each_program(prog, obj) {
-        bool track = program_index < res->program_count;
+        bool track = program_index < MAX_ITEMS;
         const char *section = bpf_program__section_name(prog);
 
         if (!is_auto_attach_candidate(section)) {
@@ -1707,22 +1685,10 @@ static void run_attach_attempts(struct validator_result *res, struct bpf_object 
                          sizeof(res->programs[program_index].attach_status),
                          "pass");
             }
-            /* links has a slot per program, so every link stays alive until
-             * destroy_links() after the functional tests. */
-            if (res->link_count < res->program_count) {
+            if (res->link_count < MAX_ITEMS) {
                 res->links[res->link_count++] = link;
             } else {
                 (void)bpf_link__destroy(link);
-                res->attach_passed--;
-                res->attach_failed++;
-                if (track) {
-                    snprintf(res->programs[program_index].attach_status,
-                             sizeof(res->programs[program_index].attach_status),
-                             "fail");
-                    snprintf(res->programs[program_index].attach_error,
-                             sizeof(res->programs[program_index].attach_error),
-                             "link could not be retained");
-                }
             }
         }
 
@@ -2108,7 +2074,7 @@ static void probe_per_program_loads(struct validator_result *res) {
     if (!res->opts.probe_features) {
         return;
     }
-    int max_items = res->program_count;
+    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
     for (int i = 0; i < max_items; i++) {
         g_trial_log_len = 0;
         g_trial_log[0] = '\0';
@@ -2449,7 +2415,7 @@ static int write_result_json(const struct validator_result *res) {
     fprintf(f, "    \"program_count\": %d,\n", res->program_count);
     fprintf(f, "    \"map_count\": %d,\n", res->map_count);
     fprintf(f, "    \"programs\": [\n");
-    int max_items = res->program_count;
+    int max_items = res->program_count < MAX_ITEMS ? res->program_count : MAX_ITEMS;
     for (int i = 0; i < max_items; i++) {
         fprintf(f, "      {\"name\":\"");
         escape_json_string(f, res->programs[i].name);
@@ -2543,13 +2509,9 @@ int main(int argc, char **argv) {
     load_functional_plan(&res);
     run_libbpf_load(&res);
     write_libbpf_log_file(&res);
-    int write_rc = write_result_json(&res);
-    bool passed = str_eq(overall_status(&res), "pass");
-    free(res.programs);
-    free(res.links);
-    if (write_rc != 0) {
+    if (write_result_json(&res) != 0) {
         return 1;
     }
 
-    return passed ? 0 : 2;
+    return str_eq(overall_status(&res), "pass") ? 0 : 2;
 }

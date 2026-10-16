@@ -4,9 +4,9 @@
 #    descendants holding stdout/stderr open (foreground grandchild,
 #    pipeline, background job, process escaped into its own session), and
 #    background stragglers must not outlive the test;
-#  - objects with more than 64 programs must be reported, trial-loaded and
-#    kept attached in full; functional tests beyond the plan cap must be
-#    reported, not silently dropped;
+#  - functional tests beyond the plan cap must be reported, not silently
+#    dropped (per-program records and links past the 64th program are
+#    covered by tests/program_records_test.sh on the attach-records branch);
 #  - --log-dir must never be interpreted by a shell and must not be
 #    silently truncated;
 #  - a result.json that cannot be written completely must make the
@@ -51,7 +51,7 @@ if [[ "${VALIDATOR_SANITIZE:-0}" == "1" ]]; then
   san=(-g "-fsanitize=address,undefined" -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
 fi
 
-# Fixtures: one auto-attachable program, and 70 of them (> the old 64 cap).
+# Fixture: one auto-attachable program.
 gen_fixture() { # count, out.c
   {
     echo '#include <linux/bpf.h>'
@@ -64,11 +64,9 @@ gen_fixture() { # count, out.c
   } >"$2"
 }
 BPF_ARCH_INCLUDE="${BPF_ARCH_INCLUDE:-/usr/include/$("$CC" -print-multiarch 2>/dev/null || echo x86_64-linux-gnu)}"
-for n in 1 70; do
-  gen_fixture "$n" "$work/progs$n.bpf.c"
-  "$CLANG" -O2 -target bpf -I"$BPF_ARCH_INCLUDE" "${libbpf_cflags[@]}" \
-    -c "$work/progs$n.bpf.c" -o "$work/progs$n.bpf.o"
-done
+gen_fixture 1 "$work/progs1.bpf.c"
+"$CLANG" -O2 -target bpf -I"$BPF_ARCH_INCLUDE" "${libbpf_cflags[@]}" \
+  -c "$work/progs1.bpf.c" -o "$work/progs1.bpf.o"
 
 wraps="-Wl,--wrap=bpf_object__load,--wrap=bpf_map_create,--wrap=bpf_prog_load,--wrap=libbpf_probe_bpf_helper,--wrap=bpf_program__attach,--wrap=bpf_link__destroy"
 # shellcheck disable=SC2086
@@ -152,33 +150,7 @@ check "ok: exit code and both output tails kept" \
   '.status == "pass" and (.functional.tests[0] | .status == "pass" and .exit_code == 3 and .timed_out == false and (.stdout_tail | contains("started")) and (.stderr_tail | contains("oops")))' \
   "$work/fn-ok.json"
 
-# --- VAL-3: no silent 64-item caps ---------------------------------------
-links="$work/links.log"
-: >"$links"
-plan "$work/many.plan" links-alive "echo destroyed=\$(grep -c destroy $links)" 10 0 "destroyed=0"
-set +e
-FAKE_LINK_LOG="$links" "$work/validator" --artifact "$work/progs70.bpf.o" --out "$work/many.json" \
-  --probe-features true --functional-plan "$work/many.plan" >/dev/null 2>"$work/many.stderr"
-rc=$?
-set -e
-expect_rc 0 "70 programs"
-check "70 programs: discovery lists every program" \
-  '.discovery.program_count == 70 and (.discovery.programs | length) == 70' "$work/many.json"
-check "70 programs: every program has a per-program trial load result" \
-  '[.discovery.programs[] | select(.load_status == "pass")] | length == 70' "$work/many.json"
-check "70 programs: every program reports attach pass" \
-  '.attach.status == "pass" and .attach.passed == 70 and ([.discovery.programs[] | select(.attach_status == "pass")] | length == 70)' \
-  "$work/many.json"
-check "70 programs: no link destroyed before the functional test ran" \
-  '.functional.status == "pass" and (.functional.tests[0].stdout_tail | contains("destroyed=0"))' "$work/many.json"
-destroyed=$(grep -c destroy "$links" || true)
-attached=$(grep -c attach "$links" || true)
-if [[ "$attached" == 70 && "$destroyed" == 70 ]]; then
-  pass "70 programs: 70 links attached, all 70 destroyed after the run"
-else
-  flunk "70 programs: attached=$attached destroyed=$destroyed (want 70/70)"
-fi
-
+# --- VAL-3: no silent functional-plan cap ------------------------------
 # Functional tests beyond the plan cap must be reported, not dropped.
 {
   echo functional_plan.v0.1
