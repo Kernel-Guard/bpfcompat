@@ -275,10 +275,18 @@ jobs:
       # fake kernel-facing libbpf entry points, so nothing is loaded into the
       # runner's kernel and no root is needed. `test-host` collects every such
       # test in validator/c-libbpf/Makefile.
+      # `test-host` has no recipe of its own, so with no prerequisites it would
+      # succeed having run nothing; require at least one test to report PASS.
       - name: Validator host tests
-        run: make -C validator/c-libbpf test-host
+        run: |
+          set -euo pipefail
+          make -C validator/c-libbpf test-host | tee "$RUNNER_TEMP/host-tests.log"
+          grep -q '_test: PASS$' "$RUNNER_TEMP/host-tests.log"
       - name: Validator host tests (ASan/UBSan)
-        run: VALIDATOR_SANITIZE=1 make -C validator/c-libbpf test-host
+        run: |
+          set -euo pipefail
+          VALIDATOR_SANITIZE=1 make -C validator/c-libbpf test-host | tee "$RUNNER_TEMP/host-tests-san.log"
+          grep -q '_test: PASS$' "$RUNNER_TEMP/host-tests-san.log"
 
   vuln:
     name: govulncheck
