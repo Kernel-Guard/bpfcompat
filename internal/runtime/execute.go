@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kernel-guard/bpfcompat/internal/classifier"
@@ -22,7 +23,15 @@ import (
 const executeSchemaVersion = "runtime_execute.v0.1"
 
 type ExecuteRequest struct {
-	ArtifactPath        string
+	ArtifactPath string
+	// ArtifactRoot is the staging directory the caller fetched the
+	// artifact into (its --out-dir / server fetch dir). It is required:
+	// ArtifactPath must resolve inside it and is opened relative to it.
+	ArtifactRoot string
+	// ExpectedSHA256 is the verified digest of the artifact (from the
+	// verified registry record / fetch). It is required: the bytes the
+	// validator loads are re-hashed against it immediately before exec.
+	ExpectedSHA256      string
 	ManifestPath        string
 	AttachMode          string
 	ProbeFeatures       bool
@@ -41,6 +50,8 @@ type ExecuteResult struct {
 	DurationMs          int64                   `json:"duration_ms"`
 	Status              string                  `json:"status"`
 	ArtifactPath        string                  `json:"artifact_path"`
+	ExpectedSHA256      string                  `json:"expected_sha256,omitempty"`
+	ArtifactSHA256      string                  `json:"artifact_sha256,omitempty"`
 	ManifestPath        string                  `json:"manifest_path,omitempty"`
 	AttachMode          string                  `json:"attach_mode"`
 	ProbeFeatures       bool                    `json:"probe_features"`
@@ -128,6 +139,11 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 		return ExecuteResult{}, errors.New("host execution is disabled; set allow_host_load=true to proceed")
 	}
 
+	expectedSHA256, err := normalizeExpectedArtifactSHA256(req.ExpectedSHA256)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+
 	started := time.Now().UTC()
 
 	artifactPath, err := resolveExistingPath(req.ArtifactPath, "artifact")
@@ -155,6 +171,22 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 		return ExecuteResult{}, err
 	}
 
+	// SECURITY: never hand the validator (often run as root) the staging
+	// path itself. It may live in a shared, group/other-writable --out-dir
+	// where another local user can swap or symlink the object after
+	// FetchArtifact verified it. Copy the bytes through a no-follow fd into
+	// a fresh private 0700 directory, verify the digest of exactly the
+	// bytes written, and exec on that copy.
+	artifactRoot, artifactRel, err := containArtifactPath(req.ArtifactRoot, artifactPath)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	privateDir, privateArtifactPath, err := stageVerifiedExecCopy(artifactRoot, artifactRel, expectedSHA256)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	defer func() { _ = os.RemoveAll(privateDir) }()
+
 	runID, err := randomHex(3)
 	if err != nil {
 		return ExecuteResult{}, fmt.Errorf("generate runtime run id: %w", err)
@@ -174,7 +206,7 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 
 	commandName := validatorPath
 	commandArgs := []string{
-		"--artifact", artifactPath,
+		"--artifact", privateArtifactPath,
 		"--out", validatorResultPath,
 		"--log-dir", logDir,
 		"--attach-mode", attachMode,
@@ -226,6 +258,8 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 		StartedAt:           started.Format(time.RFC3339),
 		FinishedAt:          time.Now().UTC().Format(time.RFC3339),
 		ArtifactPath:        artifactPath,
+		ExpectedSHA256:      expectedSHA256,
+		ArtifactSHA256:      expectedSHA256,
 		ManifestPath:        manifestPath,
 		AttachMode:          attachMode,
 		ProbeFeatures:       probeFeatures,
@@ -311,6 +345,129 @@ func ExecuteArtifactOnHost(ctx context.Context, req ExecuteRequest) (ExecuteResu
 	}
 
 	return out, nil
+}
+
+// VerifiedSHA256 is the digest a fetched artifact was verified against: the
+// record's expected sha256 when present (FetchArtifact enforces equality),
+// otherwise the digest computed at fetch time. Host execution re-checks the
+// bytes it hands the validator against this value.
+func (f FetchResult) VerifiedSHA256() string {
+	if expected := strings.TrimSpace(f.ExpectedSHA256); expected != "" {
+		return expected
+	}
+	return strings.TrimSpace(f.ActualSHA256)
+}
+
+func normalizeExpectedArtifactSHA256(raw string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if v == "" {
+		return "", errors.New("expected artifact sha256 is required for host execution")
+	}
+	if len(v) != sha256.Size*2 {
+		return "", fmt.Errorf("expected artifact sha256 %q is not a sha256 hex digest", raw)
+	}
+	if _, err := hex.DecodeString(v); err != nil {
+		return "", fmt.Errorf("expected artifact sha256 %q is not a sha256 hex digest", raw)
+	}
+	return v, nil
+}
+
+// privateExecArtifactName is the fixed file name of the private copy the
+// validator loads; it never derives from caller- or registry-supplied input.
+const privateExecArtifactName = "artifact.bpf.o"
+
+// containArtifactPath requires artifactPath to resolve strictly inside
+// root and returns the absolute root plus the local relative path. The
+// relative path comes from filepath.Rel and is checked with
+// filepath.IsLocal, so it cannot contain ".." or be absolute.
+func containArtifactPath(root, artifactPath string) (string, string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", "", errors.New("artifact root (the fetch staging directory) is required for host execution")
+	}
+	rootAbs, err := filepath.Abs(filepath.Clean(strings.TrimSpace(root)))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve artifact root: %w", err)
+	}
+	pathAbs, err := filepath.Abs(filepath.Clean(artifactPath))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve artifact path: %w", err)
+	}
+	rel, err := filepath.Rel(rootAbs, pathAbs)
+	if err != nil || rel == "." {
+		return "", "", fmt.Errorf("artifact path %s is outside the artifact root %s", pathAbs, rootAbs)
+	}
+	// Kept as its own statement so the IsLocal guard plainly dominates the
+	// use of rel (CodeQL go/path-injection recognises filepath.IsLocal).
+	if !filepath.IsLocal(rel) {
+		return "", "", fmt.Errorf("artifact path %s is outside the artifact root %s", pathAbs, rootAbs)
+	}
+	return rootAbs, rel, nil
+}
+
+// stageVerifiedExecCopy opens rel inside root (os.Root: no component may
+// escape root, and a final symlink is refused), copies it into a new
+// private 0700 directory and checks the sha256 of exactly the bytes
+// written against expectedSHA256. On success the caller owns the returned
+// directory and must remove it; on any error it has already been removed.
+func stageVerifiedExecCopy(root, rel, expectedSHA256 string) (string, string, error) {
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return "", "", fmt.Errorf("open artifact root: %w", err)
+	}
+	defer rootFS.Close()
+	// O_NONBLOCK keeps a FIFO swapped in for the artifact from blocking the
+	// open forever; it is refused by the regular-file check below and has
+	// no effect on reads from a regular file.
+	src, err := rootFS.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("open artifact for pre-execute verification (symlinks and paths escaping the root are refused): %w", err)
+	}
+	defer src.Close()
+	sourcePath := filepath.Join(root, rel)
+	info, err := src.Stat()
+	if err != nil {
+		return "", "", fmt.Errorf("stat artifact for pre-execute verification: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", fmt.Errorf("artifact %s is not a regular file", sourcePath)
+	}
+
+	dir, err := os.MkdirTemp("", "bpfcompat-exec-")
+	if err != nil {
+		return "", "", fmt.Errorf("create private execute directory: %w", err)
+	}
+	privatePath, err := copyAndVerifyIntoPrivateDir(src, info.Size(), dir, expectedSHA256, sourcePath)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return "", "", err
+	}
+	return dir, privatePath, nil
+}
+
+func copyAndVerifyIntoPrivateDir(src *os.File, size int64, dir, expectedSHA256, sourcePath string) (string, error) {
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("restrict private execute directory: %w", err)
+	}
+	privatePath := filepath.Join(dir, privateExecArtifactName)
+	dst, err := os.OpenFile(privatePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create private artifact copy: %w", err)
+	}
+	h := sha256.New()
+	// Bound the copy to the size seen at open; a file that grows afterwards
+	// fails the digest check instead of filling the temp filesystem.
+	_, copyErr := io.Copy(io.MultiWriter(dst, h), io.LimitReader(src, size+1))
+	closeErr := dst.Close()
+	if copyErr != nil {
+		return "", fmt.Errorf("copy artifact to private execute directory: %w", copyErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close private artifact copy: %w", closeErr)
+	}
+	if actual := hex.EncodeToString(h.Sum(nil)); actual != expectedSHA256 {
+		return "", fmt.Errorf("artifact sha256 mismatch before host execute: expected=%s got=%s path=%s", expectedSHA256, actual, sourcePath)
+	}
+	return privatePath, nil
 }
 
 func resolveExistingPath(pathText, label string) (string, error) {
