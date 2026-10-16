@@ -509,4 +509,9 @@ var catalog = []Var{
 		Category:    "Signing",
 		Description: "Path to a keyring file (one trusted key per line).",
 	},
+	{
+		Name: "BPFCOMPAT_TRUST_WORKDIR_KEYS", Default: "false",
+		Category:    "Signing",
+		Description: "Artifact-history trust anchor escape hatch. When BPFCOMPAT_TRUSTED_SIGNING_KEYS_PATH or BPFCOMPAT_TRUSTED_SIGNING_PUBLIC_KEYS is set, key files inside the workdir (keys/artifact-registry-signing-key.pub, keys/trusted-signing-keys.pub) are ignored for verification; set true to trust them as well. With no env anchor, workdir keys are trusted (trust-on-first-use, tamper evidence only) and serve/agent log a warning.",
+	},
 }
