@@ -5284,5 +5284,123 @@
         "classification: ATTACH_ACCOUNTING_INCONSISTENT (high)"
       ]
     }
+  },
+  {
+    "name": "failure after load, no attach or functional failure [required]",
+    "attach_mode": "best-effort",
+    "validator_document": {
+      "attach": {
+        "accounting": "v1",
+        "attachable": 1,
+        "attempted": 1,
+        "effective_mode": "best-effort",
+        "failed": 0,
+        "mode": "best-effort",
+        "not_attachable": 0,
+        "not_selected": 0,
+        "passed": 1,
+        "program_count": 1,
+        "records": 1,
+        "selected": 1,
+        "status": "pass"
+      },
+      "discovery": {
+        "programs": [
+          {
+            "attach_errno": 0,
+            "attach_operation": "bpf_program__attach",
+            "attach_outcome": "attached",
+            "attach_status": "pass",
+            "autoload": true,
+            "load_status": "pass",
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid"
+          }
+        ]
+      },
+      "host": {
+        "machine": "x86_64",
+        "release": "5.15.0-100-generic"
+      },
+      "load": {
+        "error": "",
+        "error_code": 0,
+        "status": "pass"
+      },
+      "schema_version": "v0.1",
+      "status": "fail"
+    },
+    "infra_error": false,
+    "required_compat_failed": true,
+    "run_verdict": "INCOMPATIBLE",
+    "target": {
+      "profile_id": "golden-profile",
+      "required": true,
+      "status": "fail",
+      "verdict": "INCOMPATIBLE",
+      "environment": {
+        "requested_kernel_family": "5.15",
+        "observed_kernel": "5.15.0-100-generic",
+        "kernel_family_match": true,
+        "requested_distro": "ubuntu",
+        "requested_distro_version": "22.04"
+      },
+      "profile": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "arch": "x86_64"
+      },
+      "host": {
+        "distro": "ubuntu",
+        "version": "22.04",
+        "kernel_family": "5.15",
+        "kernel": "5.15.0-100-generic",
+        "arch": "x86_64"
+      },
+      "validation": {
+        "load_status": "pass",
+        "attach_mode": "best-effort",
+        "attach_status": "pass",
+        "attach_attempted": 1,
+        "attach_passed": 1,
+        "attach_accounting": "v1",
+        "attach_effective_mode": "best-effort",
+        "attach_coverage": "complete",
+        "attach_program_count": 1,
+        "attach_selected": 1,
+        "attach_attachable": 1,
+        "attach_programs": [
+          {
+            "name": "tp_a",
+            "section": "tracepoint/syscalls/sys_enter_getpid",
+            "selected": true,
+            "outcome": "attached",
+            "operation": "bpf_program__attach"
+          }
+        ]
+      },
+      "failed_stage": "validation",
+      "btf": {
+        "kernel_btf_available": false,
+        "artifact_has_btf": false,
+        "artifact_has_btf_ext": false
+      },
+      "classification_code": "NONE",
+      "classification_confidence": "high",
+      "classification_reason": "No compatibility failure detected.",
+      "started_at": "2026-10-16T12:00:00Z",
+      "finished_at": "2026-10-16T12:00:01Z",
+      "duration_ms": 1500,
+      "vm_run_dir": "/run/vm",
+      "validator_result": "$RUN/result.json",
+      "validator_exit": 0,
+      "notes": [
+        "bpftool unavailable; used custom capability probes",
+        "validator reported failure after load phase",
+        "attach status: pass (mode=best-effort attempted=1 passed=1 failed=0)",
+        "classification: NONE (high)"
+      ]
+    }
   }
 ]

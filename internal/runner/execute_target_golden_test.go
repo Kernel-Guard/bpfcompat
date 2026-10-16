@@ -80,6 +80,13 @@ func executeTargetGoldenCases() []executeTargetGoldenCase {
 				m["functional"] = map[string]any{"status": "pass", "tests": []map[string]any{
 					{"name": "smoke", "required": true, "status": "pass", "exit_code": 0}}}
 			}},
+	}, executeTargetGoldenCase{
+		// The validator failed after a passing load with neither attach nor
+		// a functional test failing: failed stage "validation".
+		name: "failure after load, no attach or functional failure [required]", required: true, profile: ubuntu,
+		fx: attachFixture{"failure after load, no attach or functional failure", "best-effort", nil, fakeAttach{mode: "best-effort", accounting: true, programCount: 1, records: 1,
+			selected: 1, attachable: 1, attempted: 1, passed: 1, status: "pass", programs: tracingProgs("attached")},
+			func(m map[string]any) { m["status"] = "fail" }},
 	})
 	return cases
 }
@@ -181,6 +188,9 @@ func TestExecuteTargetGolden(t *testing.T) {
 		}
 		if len(w) != len(entries) {
 			t.Errorf("golden has %d entries, got %d", len(w), len(entries))
+		}
+		if !t.Failed() {
+			t.Errorf("golden bytes differ from %s although every entry compares equal (formatting or trailing data)", path)
 		}
 	}
 }
