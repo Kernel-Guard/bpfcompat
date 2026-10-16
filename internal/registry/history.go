@@ -651,6 +651,16 @@ func keyIDFromPublicKey(publicKey ed25519.PublicKey) string {
 	return hex.EncodeToString(sum[:6])
 }
 
+// ArtifactRecordCanonicalSHA256 returns the canonical record hash that
+// VerifyArtifactVersionHistory reports as ComputedSHA256 for a history row.
+// It covers every field of the record except the signature metadata and
+// record_sha256 itself, so equality with a verified row's ComputedSHA256
+// binds a caller-held record to exactly the signed content.
+func ArtifactRecordCanonicalSHA256(record ArtifactVersionRecord) (string, error) {
+	_, hash, err := artifactRecordCanonicalPayloadAndHash(record)
+	return hash, err
+}
+
 func artifactRecordCanonicalPayloadAndHash(record ArtifactVersionRecord) ([]byte, string, error) {
 	canonical := record
 	canonical.RecordSHA256 = ""
