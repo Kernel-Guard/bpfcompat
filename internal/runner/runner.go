@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/kernel-guard/bpfcompat/internal/artifact"
 	"github.com/kernel-guard/bpfcompat/internal/classifier"
@@ -964,13 +965,13 @@ func perProgramLoadNotes(vr validatorResult) []string {
 			continue
 		}
 
-		name := strings.TrimSpace(program.Name)
+		name := elfNameForNote(program.Name)
 		if name == "" {
 			name = "<unnamed>"
 		}
 
 		note := fmt.Sprintf("program load failure: name=%s", name)
-		if section := strings.TrimSpace(program.Section); section != "" {
+		if section := elfNameForNote(program.Section); section != "" {
 			note += fmt.Sprintf(" section=%s", section)
 		}
 		if program.LoadErrno != 0 {
@@ -988,6 +989,20 @@ func perProgramLoadNotes(vr validatorResult) []string {
 	}
 
 	return notes
+}
+
+// elfNameForNote prepares an ELF program or section name for a one-line
+// target note. Those names are arbitrary bytes chosen by the artifact author
+// (anything but NUL), so control characters, including newlines and ESC, are
+// replaced with spaces before the name reaches notes and, through them, the
+// Markdown report and terminal output.
+func elfNameForNote(name string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, name))
 }
 
 func compactSingleLineTail(text string, maxChars int) string {

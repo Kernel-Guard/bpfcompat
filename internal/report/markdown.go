@@ -24,11 +24,11 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 
 	var b strings.Builder
 	b.WriteString("# bpfcompat Compatibility Report\n\n")
-	b.WriteString(fmt.Sprintf("- Run ID: `%s`\n", report.Run.ID))
-	b.WriteString(fmt.Sprintf("- Started At: `%s`\n", report.Run.StartedAt))
-	b.WriteString(fmt.Sprintf("- Status: `%s`\n", report.Summary.Status))
+	fmt.Fprintf(&b, "- Run ID: %s\n", markdownCode(report.Run.ID))
+	fmt.Fprintf(&b, "- Started At: %s\n", markdownCode(report.Run.StartedAt))
+	fmt.Fprintf(&b, "- Status: %s\n", markdownCode(report.Summary.Status))
 	if report.Summary.Verdict != "" {
-		b.WriteString(fmt.Sprintf("- Verdict: `%s`\n", report.Summary.Verdict))
+		fmt.Fprintf(&b, "- Verdict: %s\n", markdownCode(report.Summary.Verdict))
 	}
 	// Incomplete coverage has to be visible in the rendered report too: a
 	// COMPATIBLE verdict over a matrix where some target never answered is a
@@ -36,28 +36,28 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 	if report.Summary.Complete != nil && !*report.Summary.Complete {
 		b.WriteString("- Coverage: `incomplete` (at least one target produced no compatibility answer)\n")
 	}
-	b.WriteString(fmt.Sprintf("- Artifact: `%s`\n", report.Artifact.Path))
+	fmt.Fprintf(&b, "- Artifact: %s\n", markdownCode(report.Artifact.Path))
 	if report.Artifact.Source != "" {
-		b.WriteString(fmt.Sprintf("- Artifact Source: `%s`\n", report.Artifact.Source))
+		fmt.Fprintf(&b, "- Artifact Source: %s\n", markdownCode(report.Artifact.Source))
 	}
 	if report.Artifact.SourceDigest != "" {
-		b.WriteString(fmt.Sprintf("- Artifact Source Digest: `%s`\n", report.Artifact.SourceDigest))
+		fmt.Fprintf(&b, "- Artifact Source Digest: %s\n", markdownCode(report.Artifact.SourceDigest))
 	}
-	b.WriteString(fmt.Sprintf("- Artifact SHA-256: `%s`\n", report.Artifact.SHA256))
+	fmt.Fprintf(&b, "- Artifact SHA-256: %s\n", markdownCode(report.Artifact.SHA256))
 	if report.Validator != nil {
-		b.WriteString(fmt.Sprintf("- Validator: `%s`\n", report.Validator.BaseName))
-		b.WriteString(fmt.Sprintf("- Validator SHA-256: `%s`\n", report.Validator.SHA256))
+		fmt.Fprintf(&b, "- Validator: %s\n", markdownCode(report.Validator.BaseName))
+		fmt.Fprintf(&b, "- Validator SHA-256: %s\n", markdownCode(report.Validator.SHA256))
 	}
 	if report.Command != nil {
-		b.WriteString(fmt.Sprintf("- Command invocation SHA-256: `%s`\n", report.Command.InvocationSHA256))
+		fmt.Fprintf(&b, "- Command invocation SHA-256: %s\n", markdownCode(report.Command.InvocationSHA256))
 		b.WriteString(fmt.Sprintf("- Command expected exit code: `%d`\n", report.Command.ExpectedExitCode))
 		if report.Command.Binary != nil {
-			b.WriteString(fmt.Sprintf("- Command binary: `%s`\n", report.Command.Binary.BaseName))
-			b.WriteString(fmt.Sprintf("- Command binary SHA-256: `%s`\n", report.Command.Binary.SHA256))
+			fmt.Fprintf(&b, "- Command binary: %s\n", markdownCode(report.Command.Binary.BaseName))
+			fmt.Fprintf(&b, "- Command binary SHA-256: %s\n", markdownCode(report.Command.Binary.SHA256))
 		}
 	}
-	b.WriteString(fmt.Sprintf("- Matrix: `%s`\n", report.Matrix.Path))
-	b.WriteString(fmt.Sprintf("- Profiles: `%s`\n", strings.Join(report.Matrix.Profiles, ", ")))
+	fmt.Fprintf(&b, "- Matrix: %s\n", markdownCode(report.Matrix.Path))
+	fmt.Fprintf(&b, "- Profiles: %s\n", markdownCode(strings.Join(report.Matrix.Profiles, ", ")))
 
 	if len(report.Targets) > 0 {
 		b.WriteString("\n## Targets\n\n")
@@ -76,77 +76,77 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 			if target.Host != nil && target.Host.Kernel != "" {
 				hostKernel = target.Host.Kernel
 			}
-			b.WriteString(fmt.Sprintf("| %s | `%s` | `%s` | `%s` | `%s` | `%t` | `%s` | `%s` | `%s` | `%s` | `%s` |\n",
-				escapePipes(friendlyProfile(target.ProfileID)),
-				escapePipes(formatTargetEnv(target.Profile)),
-				escapePipes(hostKernel),
-				target.Status,
-				escapePipes(target.FailedStage),
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | `%t` | %s | %s | %s | %s | %s |\n",
+				friendlyProfile(target.ProfileID, markdownTableCode),
+				markdownTableCode(formatTargetEnv(target.Profile)),
+				markdownTableCode(hostKernel),
+				markdownTableCode(target.Status),
+				markdownTableCode(target.FailedStage),
 				target.Required,
-				escapePipes(btfStatus),
-				escapePipes(formatFunctionalStatus(target.Functional)),
-				escapePipes(target.ClassificationCode),
-				escapePipes(target.ClassificationConfidence),
-				escapePipes(target.InfraError),
-			))
+				markdownTableCode(btfStatus),
+				markdownTableCode(formatFunctionalStatus(target.Functional)),
+				markdownTableCode(target.ClassificationCode),
+				markdownTableCode(target.ClassificationConfidence),
+				markdownTableCode(target.InfraError),
+			)
 		}
 
 		b.WriteString("\n## Target Details\n\n")
 		for _, target := range report.Targets {
-			b.WriteString(fmt.Sprintf("### %s\n\n", friendlyProfile(target.ProfileID)))
-			b.WriteString(fmt.Sprintf("- Status: `%s`\n", target.Status))
+			fmt.Fprintf(&b, "### %s\n\n", friendlyProfile(target.ProfileID, markdownCode))
+			fmt.Fprintf(&b, "- Status: %s\n", markdownCode(target.Status))
 			if target.Profile != nil {
-				b.WriteString(fmt.Sprintf("- Profile Env: `%s`\n", formatTargetEnv(target.Profile)))
+				fmt.Fprintf(&b, "- Profile Env: %s\n", markdownCode(formatTargetEnv(target.Profile)))
 			}
 			if target.Host != nil {
-				b.WriteString(fmt.Sprintf("- Host Env: `%s`\n", formatTargetEnv(target.Host)))
+				fmt.Fprintf(&b, "- Host Env: %s\n", markdownCode(formatTargetEnv(target.Host)))
 			}
 			if target.FailedStage != "" {
-				b.WriteString(fmt.Sprintf("- Failed Stage: `%s`\n", target.FailedStage))
+				fmt.Fprintf(&b, "- Failed Stage: %s\n", markdownCode(target.FailedStage))
 			}
 			if target.Validation != nil {
-				b.WriteString(fmt.Sprintf("- Load: `%s` (code=%d)\n", target.Validation.LoadStatus, target.Validation.LoadErrorCode))
-				b.WriteString(fmt.Sprintf("- Attach: `%s` (mode=%s attempted=%d passed=%d failed=%d)\n",
-					target.Validation.AttachStatus,
-					target.Validation.AttachMode,
+				fmt.Fprintf(&b, "- Load: %s (code=%d)\n", markdownCode(target.Validation.LoadStatus), target.Validation.LoadErrorCode)
+				fmt.Fprintf(&b, "- Attach: %s (mode=%s attempted=%d passed=%d failed=%d)\n",
+					markdownCode(target.Validation.AttachStatus),
+					markdownInline(target.Validation.AttachMode),
 					target.Validation.AttachAttempted,
 					target.Validation.AttachPassed,
 					target.Validation.AttachFailed,
-				))
+				)
 			}
 			if target.Functional != nil {
-				b.WriteString(fmt.Sprintf("- Functional: `%s`\n", target.Functional.Status))
+				fmt.Fprintf(&b, "- Functional: %s\n", markdownCode(target.Functional.Status))
 				for i := range target.Functional.Tests {
 					test := &target.Functional.Tests[i]
-					b.WriteString(fmt.Sprintf("  - `%s`: `%s` exit=%d expected=%d timeout=%ds required=%t\n",
-						escapePipes(test.Name),
-						escapePipes(test.Status),
+					fmt.Fprintf(&b, "  - %s: %s exit=%d expected=%d timeout=%ds required=%t\n",
+						markdownCode(test.Name),
+						markdownCode(test.Status),
 						test.ExitCode,
 						test.ExpectedExitCode,
 						test.TimeoutSeconds,
 						test.Required,
-					))
+					)
 					if test.Error != "" {
-						b.WriteString(fmt.Sprintf("    - Error: %s\n", test.Error))
+						fmt.Fprintf(&b, "    - Error: %s\n", markdownInline(test.Error))
 					}
 				}
 			}
 			if target.ClassificationCode != "" {
-				b.WriteString(fmt.Sprintf("- Classification: `%s` (`%s`)\n", target.ClassificationCode, target.ClassificationConfidence))
+				fmt.Fprintf(&b, "- Classification: %s (%s)\n", markdownCode(target.ClassificationCode), markdownCode(target.ClassificationConfidence))
 			}
 			if target.ClassificationReason != "" {
-				b.WriteString(fmt.Sprintf("- Reason: %s\n", target.ClassificationReason))
+				fmt.Fprintf(&b, "- Reason: %s\n", markdownInline(target.ClassificationReason))
 			}
 			if target.ValidatorResult != "" {
-				b.WriteString(fmt.Sprintf("- Validator Result: `%s`\n", target.ValidatorResult))
+				fmt.Fprintf(&b, "- Validator Result: %s\n", markdownCode(target.ValidatorResult))
 			}
 			if target.SerialLog != "" {
-				b.WriteString(fmt.Sprintf("- Serial Log: `%s`\n", target.SerialLog))
+				fmt.Fprintf(&b, "- Serial Log: %s\n", markdownCode(target.SerialLog))
 			}
 			if len(target.Notes) > 0 {
 				b.WriteString("- Notes:\n")
 				for _, note := range target.Notes {
-					b.WriteString(fmt.Sprintf("  - %s\n", note))
+					fmt.Fprintf(&b, "  - %s\n", markdownInline(note))
 				}
 			}
 			b.WriteString("\n")
@@ -157,7 +157,7 @@ func WriteMarkdown(outPath string, report schema.ReportV01) error {
 		b.WriteString("- None\n")
 	} else {
 		for _, note := range report.Summary.Notes {
-			b.WriteString(fmt.Sprintf("- %s\n", note))
+			fmt.Fprintf(&b, "- %s\n", markdownInline(note))
 		}
 	}
 
@@ -171,14 +171,10 @@ func formatFunctionalStatus(functional *schema.Functional) string {
 	return functional.Status
 }
 
-func escapePipes(s string) string {
-	if s == "" {
-		return ""
-	}
-	return strings.ReplaceAll(s, "|", "\\|")
-}
-
-func friendlyProfile(id string) string {
+// friendlyProfile names a profile for a heading or table cell. Known profile
+// IDs get a fixed label; any other ID is rendered with code, which is
+// markdownCode or markdownTableCode depending on where it lands.
+func friendlyProfile(id string, code func(string) string) string {
 	switch id {
 	case "ubuntu-18.04-4.15":
 		return "Ubuntu 18.04 (4.15) [`ubuntu-18.04-4.15`]"
@@ -189,7 +185,7 @@ func friendlyProfile(id string) string {
 	case "debian-12-6.1":
 		return "Debian 12 (6.1) [`debian-12-6.1`]"
 	default:
-		return "`" + id + "`"
+		return code(id)
 	}
 }
 
