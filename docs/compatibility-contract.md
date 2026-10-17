@@ -273,10 +273,15 @@ Known limitations of the supported path:
   references; a short digest reference (`name@sha256:…`) is still pulled from
   Docker Hub.
 - **Action `artifact` input.** The Action decides "remote" before looking at
-  the workspace: an input containing `://` or `@sha256:`, or whose first
-  component is `localhost` or contains `.` or `:` and is followed by `/`, is
-  passed through as a remote reference even when a file of that name exists in
-  the workspace. Prefix workspace files with `./` (for example
+  the workspace. An input that contains `://` or `@sha256:`, that is
+  `localhost` or starts with `localhost:` or `localhost/`, or whose first
+  component contains `.` or `:` and is followed by `/`, is passed to the CLI
+  unchanged even when a file of that name exists in the workspace. The CLI
+  runs from the Action's own checkout, so such a path is not looked up in the
+  workspace. Dot-directories are caught by this rule too: `.output/minimal.bpf.o`
+  (the libbpf-bootstrap layout) fails with "no such file", and
+  `.output/minimal.o` is read as an image on registry host `.output`. Prefix
+  workspace files with `./` (for example `./.output/minimal.bpf.o` or
   `./out.v2/prog.o`).
 - **Untrusted names in reports.** Program, map and section names, and libbpf or
   verifier log text, come from the artifact. The Markdown report and the Action
