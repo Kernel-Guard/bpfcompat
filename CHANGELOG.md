@@ -7,9 +7,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Security
+- The GitHub Action no longer pastes inputs into its `run:` scripts. Every
+  input reaches the scripts through `env:` and is read as quoted data, so a
+  value containing quotes, `$(...)`, backticks or newlines can no longer run as
+  shell code in the calling job. A CI guard
+  (`scripts/check-action-input-interpolation.sh`) and an end-to-end injection
+  test keep it that way.
+  - Values containing `$VAR`, backticks or `\` used to be expanded by bash as
+    a side effect; they are now passed literally.
+
 ### Fixed
+- A release-pinned GitHub Action now runs the validator it downloaded and
+  verified, by path and pinned digest. Before, a validator installed in
+  `/usr/local/libexec` or `/usr/libexec` on a self-hosted runner (for example
+  by an earlier `install.sh`) was selected instead of the attested one. A
+  workflow that sets `BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256`
+  keeps its own settings unchanged, with a warning. Every fallback to a source
+  build while pinned to a release is now a `::warning::` annotation; such a run
+  still uses the CLI's normal validator search order.
+- Command mode requires the guest kernel release. If `uname -r` fails or
+  prints nothing, the command is not started and the target is
+  `INFRA_ERROR`; before, the target could be `COMPATIBLE` or `INCOMPATIBLE`
+  with no record of which kernel ran, and a required target could pass.
 - A missing local `--artifact` path is no longer treated as a registry
-  reference.
+  reference, unless it reads like one: a relative path without a `./`, `../`,
+  `/` or `~` prefix whose first component contains `.` or `:` (or is
+  `localhost`), or that contains `@sha256:`, and that does not end in
+  `.bpf.o`.
   - Before, any non-existent path that happened to parse as an image reference
     (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was pulled from
     Docker Hub. That leaked the local path and failed with a registry error.

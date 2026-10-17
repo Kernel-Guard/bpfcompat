@@ -46,6 +46,17 @@ A static libbpf validator loads the object and optionally attaches it.
 Provenance: `validator.basename`, `validator.sha256`, `validator.size_bytes` —
 the same staged bytes are reused for every target in the run.
 
+When the GitHub Action is pinned to a release (a tag, or a commit that maps to
+one) and the prebuilt assets verify, the run uses that attested validator,
+selected by path and pinned digest: a validator installed elsewhere on the
+runner is not used, and other bytes fail closed. A workflow that sets
+`BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256` itself keeps its own
+settings, with a warning, and every fallback to a source build while pinned to
+a release is a `::warning::` annotation. Neither of those runs is pinned to the
+qualified release validator (on a source-build fallback a validator installed
+under `/usr/local/libexec` or `/usr/libexec` is still searched first); compare
+`validator.sha256` with the release `SHA256SUMS` when it matters.
+
 ### The project's own loader (command mode)
 
 The mode that matters for real adoption. Falco's maintainers made the point
@@ -64,6 +75,11 @@ Provenance:
 | `targets[].functional.tests[0].command` | the invocation as run |
 | `targets[].functional.tests[0].exit_code` | what the loader actually returned |
 | `targets[].functional.tests[0].{stdout_tail,stderr_tail}` | bounded diagnostic output |
+
+A command-mode target is tied to a kernel by the guest kernel release recorded
+before the command starts. If that release cannot be read (or is empty), the
+command is not started and the target is `INFRA_ERROR`, never `COMPATIBLE` or
+`INCOMPATIBLE`; a required target then fails the run closed.
 
 Only the invocation bpfcompat was given is recorded. Guest environment contents
 are not captured, and output is truncated to tails. Do not put secrets in the
@@ -242,3 +258,27 @@ What a `COMPATIBLE` verdict does **not** claim:
   command mode is for.
 - Attach and behaviour coverage depend on `validation_mode`; `load_only` proves
   loading, not attaching.
+
+Known limitations of the supported path:
+
+- **Artifact paths.** A missing path that starts with `/`, `./`, `../` or `~`,
+  or that ends in `.bpf.o`, is never pulled from a registry. A missing
+  relative path without such a prefix is still read as a registry reference
+  when its first component looks like a registry host (contains `.` or `:`, or
+  is `localhost`) or when it contains `@sha256:`, whatever its suffix:
+  `out.v2/prog.o`, `build.d/x.elf` and `localhost/prog.o` are pulled, as the
+  Action's own `artifact` rule does. Spell local files with `./` or an
+  absolute path. Docker Hub images need an explicit `docker.io/` host.
+- **Untrusted names in reports.** Program, map and section names, and libbpf or
+  verifier log text, come from the artifact. The Markdown report and the Action
+  job summary do not escape all of them, so treat rendered names as untrusted
+  text.
+- **Classification codes.** `classification_code` and its confidence are
+  derived from log text that artifact-controlled names can influence. Verdicts,
+  exit codes and gates do not depend on them; do not base a security or
+  authorization decision on the code alone.
+- **Action binary.** An executable at the `binary` input path in the calling
+  workspace (default `./bin/bpfcompat`) is used in preference to the verified
+  prebuilt CLI.
+- **Shared hosts.** Guests are reached over SSH on a loopback port without
+  host-key pinning. Run VM jobs on single-tenant runners.
