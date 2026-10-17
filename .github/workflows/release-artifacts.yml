@@ -82,6 +82,7 @@ jobs:
           bash scripts/verify-promotion-inputs_test.sh
           bash scripts/production-readiness-report_test.sh
           bash scripts/verify-release-assets_test.sh
+          bash scripts/check-release-gate-reports_test.sh
           go vet ./...
           go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
           bash scripts/check-coverage.sh coverage.out 50.0
@@ -312,18 +313,12 @@ jobs:
           rc=$?
           set -e
           test "$rc" -eq 2
-          jq -e '.summary.status == "pass"' reports/release-positive.json >/dev/null
-          jq -e '.summary.status == "fail"' reports/release-negative.json >/dev/null
-          jq -e '.targets | all(.status != "infra_error")' \
-            reports/release-positive.json reports/release-negative.json >/dev/null
-          jq -e --arg validator "$BPFCOMPAT_VALIDATOR_SHA256" \
-            '.validator.sha256 == $validator' \
-            reports/release-positive.json reports/release-negative.json >/dev/null
-          jq -e '.. | objects | select(.classification_code? == "UNKNOWN")' \
-            reports/release-negative.json >/dev/null
-          jq -e --arg digest "757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812" \
-            'all(.targets[]; any(.notes[]?; contains($digest)))' \
-            reports/release-positive.json reports/release-negative.json >/dev/null
+          # One jq invocation per report per assertion: `jq -e` only reports
+          # the last output, so a multi-file call masks the first report.
+          bash scripts/check-release-gate-reports.sh \
+            reports/release-positive.json reports/release-negative.json \
+            "$BPFCOMPAT_VALIDATOR_SHA256" \
+            757908b2fd6d5b1431bb45070fc1f56cbf017d4025568d292ece37d9cc75e812
       - name: Upload release-gate evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -88,6 +88,7 @@ for required_control in \
   "Verify candidate attestations" \
   "Candidate VM positive + classified negative" \
   "Candidate ARM64 CLI native smoke" \
+  "bash scripts/check-release-gate-reports.sh" \
   "Stage production readiness evidence" \
   "Stage draft release"; do
   grep -Fq "$required_control" "$release_workflow" ||
