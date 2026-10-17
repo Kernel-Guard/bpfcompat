@@ -34,10 +34,15 @@ defaults = {k: str(v.get("default", "")) for k, v in action["inputs"].items()}
 step = next(s for s in action["runs"]["steps"] if s.get("id") == "run")
 
 EXPR = re.compile(r"\$\{\{\s*inputs\.([A-Za-z0-9_-]+)\s*\}\}")
+# Outputs of the prebuilt step render empty here: these cases model a run with
+# no resolved prebuilt binaries (scripts/action-validator-pin_test.sh covers
+# the resolved path).
+STEP_OUTPUT = re.compile(r"\$\{\{\s*steps\.prebuilt\.outputs\.[A-Za-z0-9_-]+\s*\}\}")
 
 
 def render(text, inputs):
     out = EXPR.sub(lambda m: inputs.get(m.group(1), ""), text)
+    out = STEP_OUTPUT.sub("", out)
     if "${{" in out:
         raise SystemExit(f"unrenderable expression left in: {out!r}")
     return out

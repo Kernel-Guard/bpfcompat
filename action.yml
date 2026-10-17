@@ -76,7 +76,7 @@ inputs:
     required: false
     default: "true"
   prebuilt:
-    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-checked and verified against GitHub build attestations; runners without gh build from source.
+    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-checked and verified against GitHub build attestations, and the run then uses that verified validator by path and pinned digest (a workflow that sets BPFCOMPAT_VALIDATOR_BIN or BPFCOMPAT_VALIDATOR_SHA256 keeps its own settings, with a warning). Runners without gh build from source; while pinned to a release, every fallback to a source build is reported as a warning because the run then does not use the attested release validator.
     required: false
     default: "auto"
   binary:
@@ -169,12 +169,23 @@ runs:
             ref="$resolved_tag"
           fi
         fi
+        if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+          # A commit pin that could not be mapped to a release (no matching
+          # tag, API error, rate limit, or no jq). The commit may still be a
+          # release, so say what the source build below means for this run.
+          echo "::warning::Could not map commit ${ref} to a bpfcompat release tag; building from source. This run does not use the attested release binaries or validator."
+          exit 0
+        fi
         if [[ ! "$ref" =~ ^v[0-9] ]]; then
           echo "Action not pinned to a release tag (ref: ${ref:-none}); building from source."
           exit 0
         fi
+        # From here the action is pinned to a release: any fallback to a
+        # source build replaces the attested release binaries and validator
+        # with ones built from the runner's own toolchain and libbpf, so it is
+        # annotated as a warning rather than logged as a routine line.
         if [[ "$(uname -m)" != "x86_64" ]]; then
-          echo "No prebuilt binaries for $(uname -m); building from source."
+          echo "::warning::No prebuilt binaries for $(uname -m); building from source. This run does not use the attested ${ref} binaries or validator."
           exit 0
         fi
 
@@ -184,12 +195,12 @@ runs:
         for asset in bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64 SHA256SUMS; do
           if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 \
             -o "$tmp/$asset" "$base/$asset"; then
-            echo "Release asset $asset not available for ${ref}; building from source."
+            echo "::warning::Release asset $asset not available for ${ref}; building from source. This run does not use the attested ${ref} binaries or validator."
             exit 0
           fi
         done
         if ! command -v gh >/dev/null 2>&1 || ! gh attestation --help >/dev/null 2>&1; then
-          echo "GitHub CLI attestation verification is unavailable; building from the pinned Action source instead of using unverifiable prebuilt binaries."
+          echo "::warning::GitHub CLI attestation verification is unavailable; building from the pinned Action source instead of using unverifiable prebuilt binaries. This run does not use the attested ${ref} validator."
           exit 0
         fi
         # A failed verification is a hard error, not a fallback: assets exist
@@ -202,6 +213,19 @@ runs:
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"
         install -m 0755 "$tmp/bpfcompat-linux-amd64" "$GITHUB_ACTION_PATH/bin/bpfcompat"
         install -m 0755 "$tmp/bpfcompat-validator-static-linux-amd64" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin/bpfcompat-validator"
+        # Hand the run step the validator just verified, by path and by the
+        # digest SHA256SUMS lists for it. Without this the CLI's search order
+        # (/usr/local/libexec, /usr/libexec, then this checkout) would run an
+        # older installed validator on a self-hosted runner instead.
+        validator_bin="$GITHUB_ACTION_PATH/validator/c-libbpf/bin/bpfcompat-validator"
+        validator_sha="$(awk '$2 == "bpfcompat-validator-static-linux-amd64" || $2 == "*bpfcompat-validator-static-linux-amd64" { print $1 }' "$tmp/SHA256SUMS")"
+        installed_sha="$(sha256sum "$validator_bin" | awk '{ print $1 }')"
+        if [[ ! "$validator_sha" =~ ^[0-9a-f]{64}$ || "$validator_sha" != "$installed_sha" ]]; then
+          echo "::error::Installed validator does not match its verified SHA256SUMS entry (${validator_sha:-missing} vs ${installed_sha})."
+          exit 1
+        fi
+        echo "validator-bin=$validator_bin" >> "$GITHUB_OUTPUT"
+        echo "validator-sha256=$validator_sha" >> "$GITHUB_OUTPUT"
         echo "resolved=true" >> "$GITHUB_OUTPUT"
         echo "Using prebuilt release binaries for ${ref}."
 
@@ -258,6 +282,9 @@ runs:
         INPUT_BINARY: ${{ inputs.binary }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
         INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        PREBUILT_RESOLVED: ${{ steps.prebuilt.outputs.resolved }}
+        PREBUILT_VALIDATOR_BIN: ${{ steps.prebuilt.outputs.validator-bin }}
+        PREBUILT_VALIDATOR_SHA256: ${{ steps.prebuilt.outputs.validator-sha256 }}
         INPUT_DISK_RESIZE: ${{ inputs.disk-resize }}
         INPUT_VALIDATION_MODE: ${{ inputs.validation-mode }}
         INPUT_KEEP_VM_ON_FAILURE: ${{ inputs.keep-vm-on-failure }}
@@ -266,6 +293,21 @@ runs:
 
         workspace="${GITHUB_WORKSPACE:-$PWD}"
         action_root="${GITHUB_ACTION_PATH:-$PWD}"
+
+        # Run the validator the prebuilt step downloaded and verified, by path
+        # and pinned digest; the CLI would otherwise prefer a validator already
+        # installed under /usr/local/libexec or /usr/libexec on the runner. A
+        # workflow that sets BPFCOMPAT_VALIDATOR_BIN or
+        # BPFCOMPAT_VALIDATOR_SHA256 itself keeps its own settings unchanged,
+        # and the run says that it is not pinned to the attested validator.
+        if [[ "${PREBUILT_RESOLVED:-}" == "true" ]]; then
+          if [[ -n "${BPFCOMPAT_VALIDATOR_BIN:-}${BPFCOMPAT_VALIDATOR_SHA256:-}" ]]; then
+            echo "::warning::BPFCOMPAT_VALIDATOR_BIN or BPFCOMPAT_VALIDATOR_SHA256 is set by the workflow; this run uses the workflow's validator settings, not the attested release validator the action verified."
+          else
+            export BPFCOMPAT_VALIDATOR_BIN="$PREBUILT_VALIDATOR_BIN"
+            export BPFCOMPAT_VALIDATOR_SHA256="$PREBUILT_VALIDATOR_SHA256"
+          fi
+        fi
 
         resolve_path() {
           local input="$1"

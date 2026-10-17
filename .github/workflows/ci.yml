@@ -85,6 +85,12 @@ jobs:
         run: |
           bash scripts/check-action-input-interpolation_test.sh
           bash scripts/action-input-injection_test.sh
+      - name: Action validator identity regression
+        # A release-pinned action must run the validator it downloaded and
+        # verified (by path and pinned digest), not one already installed in
+        # /usr/local/libexec or /usr/libexec; source-build fallbacks while
+        # pinned to a release are ::warning:: annotations.
+        run: bash scripts/action-validator-pin_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
       - name: Image prefetch reliability regression
