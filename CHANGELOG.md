@@ -7,6 +7,53 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Security
+- The GitHub Action no longer pastes inputs into its `run:` scripts. Every
+  input reaches the scripts through `env:` and is read as quoted data, so a
+  value containing quotes, `$(...)`, backticks or newlines can no longer run as
+  shell code in the calling job. A CI guard
+  (`scripts/check-action-input-interpolation.sh`) and an end-to-end injection
+  test keep it that way.
+  - Values containing `$VAR`, backticks or `\` used to be expanded by bash as
+    a side effect; they are now passed literally.
+
+### Fixed
+- A release-pinned GitHub Action now runs the validator it downloaded and
+  verified, by path and pinned digest. Before, a validator installed in
+  `/usr/local/libexec` or `/usr/libexec` on a self-hosted runner (for example
+  by an earlier `install.sh`) was selected instead of the attested one. A
+  workflow that sets `BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256`
+  keeps its own settings unchanged, with a warning. Every fallback to a source
+  build while pinned to a release is now a `::warning::` annotation; such a run
+  still uses the CLI's normal validator search order.
+- Command mode requires the guest kernel release. If `uname -r` fails or
+  prints nothing, the command is not started and the target is
+  `INFRA_ERROR`; before, the target could be `COMPATIBLE` or `INCOMPATIBLE`
+  with no record of which kernel ran, and a required target could pass.
+- A missing local `--artifact` path is no longer treated as a registry
+  reference, unless it reads like one: a relative path without a `./`, `../`,
+  `/` or `~` prefix that does not end in `.bpf.o` and that either has a
+  host-like first component (it contains `.` or `:`, or is `localhost`) or
+  contains `@sha256:`. A path with one of those prefixes is never pulled.
+  - Before, any non-existent path that happened to parse as an image reference
+    (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was pulled from
+    Docker Hub. That leaked the local path and failed with a registry error.
+  - It now fails locally with `artifact "<path>": no such file`. This covers
+    `test`, `test-command`, `suite`, the API and `pkg/bpfcompat.Validate`.
+  - The CLI now classifies remote refs like the Action's `artifact` input:
+    the first path component must be a registry host (contains `.` or `:`, or
+    is `localhost`), or the ref must pin an `@sha256:` digest.
+  - The Action treats an `artifact` input that looks remote (see
+    `docs/compatibility-contract.md`, including dot-directories such as
+    `.output/`) as remote even when a workspace file of that name exists;
+    prefix workspace files with `./`.
+
+### Changed
+- **Breaking:** implicit Docker Hub short refs in tag form, such as
+  `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
+  `docker.io/org/name:tag`; the "no such file" error suggests that spelling.
+  Digest-pinned short refs (`org/name@sha256:…`) are still pulled.
+
 ## [0.4.0-rc.4] - 2026-10-14
 
 ### Added
