@@ -32,9 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   with no record of which kernel ran, and a required target could pass.
 - A missing local `--artifact` path is no longer treated as a registry
   reference, unless it reads like one: a relative path without a `./`, `../`,
-  `/` or `~` prefix whose first component contains `.` or `:` (or is
-  `localhost`), or that contains `@sha256:`, and that does not end in
-  `.bpf.o`.
+  `/` or `~` prefix that does not end in `.bpf.o` and that either has a
+  host-like first component (it contains `.` or `:`, or is `localhost`) or
+  contains `@sha256:`. A path with one of those prefixes is never pulled.
   - Before, any non-existent path that happened to parse as an image reference
     (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was pulled from
     Docker Hub. That leaked the local path and failed with a registry error.
