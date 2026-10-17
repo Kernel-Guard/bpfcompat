@@ -24,7 +24,7 @@ env:
 jobs:
   build-and-sign:
     name: Build candidate, SBOM, sign
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       actions: read
@@ -127,15 +127,19 @@ jobs:
         run: |
           bash scripts/check-binary-toolchain.sh "go${GO_VERSION}" \
             dist/bpfcompat-linux-amd64 dist/bpfcompat-linux-arm64
-      - name: Build static validator
+      - name: Build static validator from pinned inputs
+        # The validator statically links distro libbpf/libelf/zlib/zstd/glibc.
+        # Build it in the digest-pinned builder with the exact packages in
+        # validator/build-inputs.lock, never with whatever the runner image
+        # ships; the script proves the linked libbpf and compiler from the
+        # binary and enforces the lock's recorded byte-for-byte reproduction.
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libbpf-dev libelf-dev libzstd-dev zlib1g-dev
-          make validator-static
-          cp validator/c-libbpf/bin/bpfcompat-validator \
-            dist/bpfcompat-validator-static-linux-amd64
+          bash scripts/build-validator-pinned.sh \
+            dist/bpfcompat-validator-static-linux-amd64 \
+            dist/validator-build-inputs.json
+          jq -e --arg sha "$(sha256sum dist/bpfcompat-validator-static-linux-amd64 | awk '{print $1}')" \
+            '.sha256 == $sha' dist/validator-build-inputs.json >/dev/null
       - name: Stage production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         env:
@@ -164,6 +168,25 @@ jobs:
           ' --argjson c "$(jq -c '.candidate' "${source_base}.json")" "${source_base}.json" >/dev/null
           cp "${source_base}.json" dist/production-readiness.json
           cp "${source_base}.md" dist/production-readiness.md
+      - name: Require the qualified release candidate's validator
+        # The four campaigns qualified the RC's validator bytes. A stable
+        # validator with any other sha256 is unqualified: refuse to stage it.
+        if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate_tag="$(jq -r '.candidate.tag' dist/production-readiness.json)"
+          candidate_evidence="$(jq -r '.candidate.evidence_sha256' dist/production-readiness.json)"
+          mkdir -p candidate-validator
+          gh release download "$candidate_tag" -R "$GITHUB_REPOSITORY" \
+            -D candidate-validator \
+            -p SHA256SUMS -p release-candidate-evidence.json
+          bash scripts/check-validator-matches-candidate.sh \
+            dist/bpfcompat-validator-static-linux-amd64 \
+            candidate-validator/SHA256SUMS \
+            candidate-validator/release-candidate-evidence.json \
+            "$candidate_evidence"
       - name: Compute checksums
         run: |
           set -euo pipefail
@@ -184,6 +207,9 @@ jobs:
           format: cyclonedx-json
           output-file: dist/bpfcompat.sbom.cdx.json
       - name: Attest candidate provenance
+        # validator-build-inputs.json records the validator's pinned build
+        # inputs. It is attested and kept in the run artifact; it is a build
+        # record, not a release asset, and not in SHA256SUMS.
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -191,6 +217,7 @@ jobs:
             dist/bpfcompat-linux-amd64
             dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
+            dist/validator-build-inputs.json
       - name: Attest production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
@@ -236,7 +263,7 @@ jobs:
     name: Candidate VM positive + classified negative
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build-and-sign
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -371,7 +398,7 @@ jobs:
     name: Build, verify, sign candidate image
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-and-sign, candidate-vm-gate, candidate-arm64-cli-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
       contents: read
@@ -434,7 +461,7 @@ jobs:
       - candidate-vm-gate
       - candidate-arm64-cli-gate
       - build-candidate-image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -511,7 +538,7 @@ jobs:
     name: Stage draft release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-and-sign, assemble-candidate-evidence]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

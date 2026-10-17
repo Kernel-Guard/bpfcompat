@@ -22,6 +22,8 @@ GitHub repository UI/API (they cannot be set from committed files).
 | Release-channel alias isolation | `scripts/promote-release.sh` | tag releases (`v*`) |
 | Protected-environment preflight | `scripts/check-production-environment.sh` | tag releases (`v*`) |
 | Exact-input manual publication | `.github/workflows/promote-release.yml` | explicit `workflow_dispatch` |
+| Pinned validator build inputs (digest-pinned builder, exact libbpf/libelf/zlib/zstd/glibc/GCC) | `validator/build-inputs.lock`, `scripts/build-validator-pinned.sh` | all release-artifacts builds |
+| Stable validator == qualified release-candidate validator | `scripts/check-validator-matches-candidate.sh` | stable tags (`vX.Y.Z`) |
 | Protected moving-alias rollback drill | `.github/workflows/rollback-drill.yml` | explicit `workflow_dispatch` from `main` |
 
 The tagged-release workflow builds candidate binaries once, tests those bytes
@@ -36,8 +38,60 @@ workflows refuse release processing unless that environment has no required
 reviewers, disables administrator bypass, and restricts deployments to `v*`
 tags. This is an explicit solo-maintainer posture, not independent review.
 
+The static validator links distro libbpf, libelf, zlib, zstd and glibc, so
+its bytes depend on those packages, not only on `validator/` sources. It is
+built in the digest-pinned builder image named in `validator/build-inputs.lock`
+with exactly the packages listed there, resolved from the lock's fixed
+snapshot.ubuntu.com timestamp; the build fails closed if any version
+is unavailable, proves the linked libbpf version and compiler from the binary,
+and must be byte-identical to the lock's recorded reproduction when the
+validator tree is unchanged. A stable tag additionally refuses any validator
+whose sha256 differs from its release candidate's, because the qualification
+campaigns ran exactly those bytes. Changing the lock means a new release
+candidate.
+
 Prereleases publish only their exact `X.Y.Z-rc.N` image tag. Stable aliases
 (`X.Y`, `latest`) are reachable only through the stable release channel.
+
+### Validator lock maintenance
+
+`validator/build-inputs.lock` pins exact package versions, several of them from
+the `noble-updates` pocket (e.g. `libc6-dev`, `zlib1g-dev`, `libelf-dev`,
+`binutils`, `gcc-13`). Ubuntu's archive keeps only the newest version in each
+pocket, so resolving them from the moving archive would fail at the next
+stable-release update (SRU) of any of them, and would let unpinned transitive
+packages (`linux-libc-dev` headers, `libisl23`/`libmpc3`/`libmpfr6`) drift.
+The lock therefore also names `apt_snapshot`, a fixed snapshot.ubuntu.com
+timestamp: the builder drops the image's archive sources and resolves every
+package from that snapshot of `noble`, `noble-updates` and `noble-security`.
+A future `apt_snapshot` is refused: snapshot.ubuntu.com answers it with the
+newest state so far, i.e. the moving archive.
+
+The builder image has no `ca-certificates`, so the runner's CA bundle
+(`/etc/ssl/certs/ca-certificates.crt`, or `BPFCOMPAT_SNAPSHOT_CA_BUNDLE`) is
+mounted read-only and apt verifies TLS to `snapshot.ubuntu.com` against it
+(`apt_tls: tls-verified-host-ca` in the build record). Without a bundle the
+build falls back to `apt_tls: signature-only`: TLS peer verification is off for
+`snapshot.ubuntu.com` only. In both modes apt verifies the snapshot's
+`InRelease` signature against the digest-pinned image's
+`ubuntu-archive-keyring` and every index and package hash; without TLS an
+attacker could at most replay another genuine Ubuntu-signed index, which the
+exact-version check or the recorded byte-identity check then refuses, and that
+is no weaker than the image's default plain-http archive sources. If the
+snapshot cannot provide a locked version, or any index cannot be fetched after
+three attempts, `scripts/build-validator-pinned.sh` fails closed.
+
+Eleven pinned builds against snapshot `20261014T154800Z` on 2026-10-15, in both
+TLS modes, reproduced the qualified v0.4.0-rc.4 validator (`e0e7fcf8...`)
+byte-for-byte, each in 21-97 seconds.
+
+To move to newer packages, choose a newer snapshot, update the `pkg=` versions
+and the `reproduces=` line from a pinned build, and cut a new release
+candidate: that changes the shipped validator.
+
+`dist/validator-build-inputs.json` is a build record: it is attested with the
+candidate provenance and kept in the workflow run artifact, but it is not a
+release asset and is not listed in `SHA256SUMS`.
 
 ### Verifying a signed release
 
