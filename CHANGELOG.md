@@ -43,11 +43,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   - The CLI now classifies remote refs like the Action's `artifact` input:
     the first path component must be a registry host (contains `.` or `:`, or
     is `localhost`), or the ref must pin an `@sha256:` digest.
+  - The Action treats an `artifact` input of that shape as remote even when a
+    workspace file of that name exists; prefix workspace files with `./`.
 
 ### Changed
-- **Breaking:** implicit Docker Hub short refs such as `org/name:tag` are no
-  longer pulled. Spell them with the host, e.g. `docker.io/org/name:tag`; the
-  "no such file" error suggests that spelling.
+- **Breaking:** implicit Docker Hub short refs in tag form, such as
+  `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
+  `docker.io/org/name:tag`; the "no such file" error suggests that spelling.
+  Digest-pinned short refs (`org/name@sha256:…`) are still pulled.
 
 ## [0.4.0-rc.4] - 2026-10-14
 

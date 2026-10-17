@@ -263,12 +263,21 @@ Known limitations of the supported path:
 
 - **Artifact paths.** A missing path that starts with `/`, `./`, `../` or `~`,
   or that ends in `.bpf.o`, is never pulled from a registry. A missing
-  relative path without such a prefix is still read as a registry reference
-  when its first component looks like a registry host (contains `.` or `:`, or
-  is `localhost`) or when it contains `@sha256:`, whatever its suffix:
-  `out.v2/prog.o`, `build.d/x.elf` and `localhost/prog.o` are pulled, as the
-  Action's own `artifact` rule does. Spell local files with `./` or an
-  absolute path. Docker Hub images need an explicit `docker.io/` host.
+  relative path without such a prefix may still be read as a registry
+  reference, whatever its suffix, when it contains `@sha256:` or when it has a
+  `/` and its first component looks like a registry host (contains `.` or `:`,
+  or is `localhost`); it is pulled only if it also parses as a valid image
+  reference. For example `out.v2/prog.o`, `build.d/x.elf` and
+  `localhost/prog.o` are pulled. Spell local files with `./` or an absolute
+  path. Docker Hub images need an explicit `docker.io/` host for tag
+  references; a short digest reference (`name@sha256:…`) is still pulled from
+  Docker Hub.
+- **Action `artifact` input.** The Action decides "remote" before looking at
+  the workspace: an input containing `://` or `@sha256:`, or whose first
+  component is `localhost` or contains `.` or `:` and is followed by `/`, is
+  passed through as a remote reference even when a file of that name exists in
+  the workspace. Prefix workspace files with `./` (for example
+  `./out.v2/prog.o`).
 - **Untrusted names in reports.** Program, map and section names, and libbpf or
   verifier log text, come from the artifact. The Markdown report and the Action
   job summary do not escape all of them, so treat rendered names as untrusted
