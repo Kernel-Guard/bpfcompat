@@ -21,6 +21,13 @@ fixture() {
   cp "$ROOT_DIR/scripts/check-doc-pins.sh" "$d/work/scripts/"
   printf 'stable_version: %s\nrelease_version: %s\nrelease_channel: %s\n' "$stable" "$stable" "$channel" >"$d/work/release.yaml"
   printf '# x\n```yaml\n      - %s\n```\n' "$pin" >"$d/work/README.md"
+  # The consumer canary's stable pin names the release the stable window keeps
+  # (CANARY, default v0.3.7); NO_CANARY leaves the file out.
+  if [[ -z "${NO_CANARY:-}" ]]; then
+    mkdir -p "$d/work/.github/workflows"
+    printf 'jobs:\n  s:\n    steps:\n      # bpfcompat-pin: stable\n      - uses: Kernel-Guard/bpfcompat@%s # %s\n' \
+      "$(printf 'a%.0s' {1..40})" "${CANARY:-v0.3.7}" >"$d/work/.github/workflows/consumer-canary.yml"
+  fi
   gitq -C "$d/work" add -A
   gitq -C "$d/work" commit -m base
   for t in "$@"; do gitq -C "$d/work" tag -a "$t" -m "$t"; done
@@ -101,6 +108,23 @@ expect pass "tag build: the new tag is HEAD, templates still on the previous sta
 fixture tplafter stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7 v0.4.0
 template v0.3.7
 expect fail "after the tag: templates must be repinned to the new release" "docs pin more than one bpfcompat version"
+
+fixture tplform stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7
+mkdir -p "$W/docs"; printf 'jobs:\n  t:\n    steps:\n      - uses: "Kernel-Guard/bpfcompat@v0.3.7"\n' >"$W/docs/stale.yml"
+expect fail "stable PR: a tag-form pin on the previous stable is not a SHA-pinned template" "docs pin more than one bpfcompat version"
+
+CANARY=v0.3.6 fixture tplcanary stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.7
+expect fail "stable PR: templates must stay on the release the canary pins" "docs pin more than one bpfcompat version"
+
+fixture tplbuildwrong stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.6
+tag_head v0.4.0
+expect fail "tag build: templates on another release than the canary's fail" "docs pin more than one bpfcompat version"
+
+NO_CANARY=1 fixture tplnocanary stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7
+template v0.3.7
+expect fail "stable PR: without a canary stable pin there is no window" "docs pin more than one bpfcompat version"
 
 fixture tplrc prerelease 0.3.7 'uses: Kernel-Guard/bpfcompat@v0.3.7' v0.3.6 v0.3.7
 template v0.3.6

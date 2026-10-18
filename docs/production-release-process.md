@@ -252,13 +252,14 @@ Publish no other stable release between the stable pull request's CI and the
 release below `X.Y.Z`, so one published in that window (a maintenance release,
 for example) fails the tag build. Re-run `make check-release-consistency` on
 the exact commit immediately before tagging, and tag the merge commit as soon
-as the pull request merges: from then until the tag exists, `main`'s docs name
-a release that is not out yet. In the stable pull request, the tag-form action
+as the pull request merges: from then until promotion, `main`'s docs name a
+release that is not published yet. In the stable pull request, the tag-form action
 references in `README.md` and `docs/` name `vX.Y.Z`, which
 `scripts/check-doc-pins.sh` accepts while that tag positively does not exist.
 The SHA-pinned integration templates in `docs/integrations/` cannot name it
-yet; they stay on the most recent earlier stable release during the stable
-pull request and the tag build.
+yet; during the stable pull request and the tag build they stay, pinned by
+SHA, on the release the consumer canary's `# bpfcompat-pin: stable` step names
+(the most recent published stable release before `X.Y.Z`).
 
 The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
 that does not exist yet or that names their own commit, so they keep the

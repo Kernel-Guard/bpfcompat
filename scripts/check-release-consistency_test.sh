@@ -54,7 +54,8 @@ EOF
 }
 
 BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/current.log"
-grep -Fq 'channel=prerelease' "$tmp/current.log"
+current_channel="$(awk -F': ' '$1 == "release_channel" {print $2; exit}' release.yaml)"
+grep -Fq "channel=${current_channel}" "$tmp/current.log"
 
 # The current stable release as a stable channel: docs and canary pins must
 # already agree with it (the stable PR changes stable_version, so this follows).

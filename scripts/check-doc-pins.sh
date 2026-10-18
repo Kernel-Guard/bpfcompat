@@ -29,9 +29,11 @@
 # The integration templates are pinned by commit SHA (docs/integrations), so
 # they cannot name vX.Y.Z until its tag exists. During the same stable window
 # -- the stable PR while vX.Y.Z is absent, and the vX.Y.Z tag build itself --
-# rule 3 allows exactly one other version beside v<stable_version>: the most
-# recent earlier stable release tag (vA.B.C < X.Y.Z). Every later commit is
-# strict again, so the templates are repinned once the tag exists.
+# rule 3 allows exactly one other version beside v<stable_version>, and only
+# as commit-SHA pins: the earlier release the consumer canary's stable pin
+# names (scripts/check-canary-pins.sh verifies that pin is the newest published
+# stable release before X.Y.Z). Every later commit is strict again, so the
+# templates are repinned with the canary once the tag exists.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -64,6 +66,7 @@ release_value() { awk -F': *' -v k="$1" '$1 == k { gsub(/["\r]/, "", $2); print 
 preparing=""
 [[ "$(release_value release_channel)" == stable ]] && preparing="v$(release_value stable_version)"
 prepared=""
+declare -A tag_form=()
 
 # version_lt A B: X.Y.Z version A sorts strictly before X.Y.Z version B.
 version_lt() {
@@ -80,18 +83,18 @@ version_lt() {
   return 1
 }
 
-# previous_stable <vX.Y.Z>: the newest vA.B.C tag on the remote below it, or
-# nothing when the remote cannot be listed.
-previous_stable() {
-  local tags tag newest=""
-  tags="$(git ls-remote --tags --refs origin 'refs/tags/v*' 2>/dev/null)" || return 0
-  while read -r _ tag; do
-    tag="${tag#refs/tags/}"
-    [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-    version_lt "${tag#v}" "${1#v}" || continue
-    if [[ -z "$newest" ]] || version_lt "${newest#v}" "${tag#v}"; then newest="$tag"; fi
-  done <<<"$tags"
-  printf '%s' "$newest"
+# canary_stable_version: the `# vA.B.C` comment on the action pin that follows
+# the `# bpfcompat-pin: stable` marker in the consumer canary, or nothing.
+canary_stable_version() {
+  awk '
+    /#[[:space:]]*bpfcompat-pin:[[:space:]]*stable[[:space:]]*$/ { want = 1; next }
+    want && /uses:[[:space:]]*Kernel-Guard\/bpfcompat@/ {
+      if (match($0, /#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/)) {
+        v = substr($0, RSTART, RLENGTH); sub(/^#[[:space:]]*/, "", v); sub(/[[:space:]]*$/, "", v); print v
+      }
+      exit
+    }
+  ' .github/workflows/consumer-canary.yml 2>/dev/null || true
 }
 
 # tag_absent <tag>: the remote answered and has no such tag (git ls-remote
@@ -134,6 +137,7 @@ while IFS= read -r hit; do
     fi
   elif [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     version="$ref"
+    tag_form["$version"]=1
     if [[ -z "$(tag_commit "$version")" ]]; then
       if [[ -n "$preparing" && "$version" == "$preparing" ]] && tag_absent "$version"; then
         prepared="$version"
@@ -162,7 +166,11 @@ window_previous=""
 if [[ -n "$preparing" && ${#versions[@]} -eq 2 && -n "${versions[$preparing]:-}" ]]; then
   head_commit="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
   if [[ -n "$prepared" ]] || [[ -n "$head_commit" && "$(tag_commit "$preparing")" == "$head_commit" ]]; then
-    window_previous="$(previous_stable "$preparing")"
+    candidate_previous="$(canary_stable_version)"
+    if [[ "$candidate_previous" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] &&
+      version_lt "${BASH_REMATCH[1]}" "${preparing#v}" && [[ -z "${tag_form[$candidate_previous]:-}" ]]; then
+      window_previous="$candidate_previous"
+    fi
   fi
 fi
 if (( ${#versions[@]} == 2 )) && [[ -n "$window_previous" && -n "${versions[$window_previous]:-}" ]]; then
