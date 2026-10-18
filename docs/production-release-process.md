@@ -228,17 +228,53 @@ test; production evidence must verify the candidate attestation online.
 
 After every operational gate passes, set both `stable_version` and
 `release_version` to `X.Y.Z`, set `release_channel` to `stable`, update stable
-documentation, and tag the checked merge commit. The operator checks the
-graduation report and draft assets, records
-`[bpfcompat-solo-promotion:v1]`, and dispatches the exact promotion inputs.
-Only this path may update the `X.Y` and `latest` image aliases or GitHub's
-latest release.
+documentation, and tag the checked merge commit. The operator's
+`[bpfcompat-solo-promotion:v1]` record is an input of the final readiness
+report, so it is written before that report is generated; the operator then
+checks the graduation report and draft assets and dispatches the exact
+promotion inputs as a separate decision. Only this path may update the `X.Y`
+and `latest` image aliases or GitHub's latest release.
+
+The order is: the operator's record, the final readiness report, the stable
+pull request, the tag, then promotion. Before tagging, also confirm these
+stable-only gates, which are easy to miss; the stable tag build refuses
+otherwise, and a `v*` tag cannot be reused:
+
+- `scripts/check-distribution-policy.sh --require-decided` passes, that is,
+  every decision listed in `blocks_stable` in `distribution/policy.json` is
+  recorded.
+- The stable commit's validator rebuilds to the graduated release candidate's
+  `bpfcompat-validator-static-linux-amd64` sha256
+  (`scripts/check-validator-matches-candidate.sh`).
+
+Publish no other stable release between the stable pull request's CI and the
+`vX.Y.Z` tag build: the stable pin may only name the newest published stable
+release below `X.Y.Z`, so one published in that window (a maintenance release,
+for example) fails the tag build. Re-run `make check-release-consistency` on
+the exact commit immediately before tagging, and tag the merge commit as soon
+as the pull request merges: from then until promotion, `main`'s docs name a
+release that is not published yet. In the stable pull request, the tag-form action
+references in `README.md` and `docs/` name `vX.Y.Z`, which
+`scripts/check-doc-pins.sh` accepts while that tag positively does not exist.
+The SHA-pinned integration templates in `docs/integrations/` cannot name it
+yet; during the stable pull request and the tag build they stay, pinned by
+SHA, on the release the consumer canary's `# bpfcompat-pin: stable` step names
+(the most recent published stable release before `X.Y.Z`).
+
+The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
+that does not exist yet or that names their own commit, so they keep the
+`# bpfcompat-pin: stable` step on the most recent published (non-draft,
+non-prerelease) stable release before `X.Y.Z`. `scripts/check-canary-pins.sh`
+accepts that pin only while `vX.Y.Z` is absent or resolves to the commit under
+check; a tag or GitHub release lookup it cannot complete fails the check.
 
 Once the new stable tag exists, repin the `# bpfcompat-pin: stable` step in
-`.github/workflows/consumer-canary.yml` to its commit SHA and update the
-`# vX.Y.Z` comment beside it. `scripts/check-canary-pins.sh` runs inside the
-release-consistency gate and fails the build until that is done, because a
-canary left on the previous release stops testing the path the documentation
-now sends every reader down. The `# bpfcompat-pin: candidate` step is not
-enforced while `release_channel` is `stable`; repin it with the next
-`X.Y.Z-rc.1`.
+`.github/workflows/consumer-canary.yml` and the SHA-pinned templates in
+`docs/integrations/` to its commit SHA, and update the `# vX.Y.Z` comments
+beside them. `scripts/check-canary-pins.sh` (inside the release-consistency
+gate) and `scripts/check-doc-pins.sh` fail every later commit until that is
+done,
+because a canary left on the previous release stops testing the path the
+documentation now sends every reader down. The `# bpfcompat-pin: candidate`
+step is not enforced while `release_channel` is `stable`; repin it with the
+next `X.Y.Z-rc.1`.

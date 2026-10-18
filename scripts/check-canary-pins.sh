@@ -23,7 +23,7 @@
 # documented consumer path has no canary at all, which is the gap this guard
 # exists to close, so it is a failure and not a skip.
 #
-# Preparing the next release candidate is the one state the strict rule
+# Preparing the next release candidate is one state the strict rule
 # cannot be met in: the commit that sets release_version to a new RC (and the
 # tag build of that very commit) cannot pin the canary to a tag that does not
 # exist yet, or to itself. While v<release_version> positively does not exist
@@ -32,7 +32,18 @@
 # (vX.Y.Z-rc.M, M < N) that is a published, non-draft GitHub prerelease and
 # whose tag resolves to the pinned full SHA. Any lookup or API failure fails
 # closed. Every later commit is strict again, so the canary must be repinned
-# to the new RC before anything else lands. The stable pin rule is unchanged.
+# to the new RC before anything else lands.
+#
+# The stable release is the same state for the stable pin: the PR that sets
+# stable_version to X.Y.Z (release_channel `stable`) and the vX.Y.Z tag build
+# cannot pin the canary to vX.Y.Z either. With release_channel `stable`, while
+# vX.Y.Z positively does not exist or resolves to the commit under check, the
+# stable pin may still name the most recent published stable release before
+# X.Y.Z -- the newest vA.B.C, A.B.C < X.Y.Z, that is a non-draft,
+# non-prerelease GitHub release -- whose tag resolves to the pinned full SHA.
+# Any lookup or API failure fails closed, and every later commit is strict
+# again: repin the stable step once the new stable tag exists. The prerelease
+# channel's stable pin is always strict.
 #
 # `candidate` is enforced only while release_channel is `prerelease`. In the
 # stable channel there is no active prerelease to graduate, release_version
@@ -201,8 +212,6 @@ check_pin() {
   echo "[canary-pins] ${channel} ${expected} ${sha}"
 }
 
-check_pin stable "v${stable_version}"
-
 # A release published as a non-draft GitHub prerelease. Any failure to ask
 # (no gh, no token, API error) is a failure, never a pass.
 canary_repo="Kernel-Guard/bpfcompat"
@@ -211,6 +220,111 @@ published_prerelease() {
   state="$(gh api "repos/${canary_repo}/releases/tags/$1" --jq '"\(.draft) \(.prerelease)"' 2>/dev/null)" || return 1
   [[ "$state" == "false true" ]]
 }
+
+# Every GitHub release, one "<tag> <draft> <prerelease>" line each. Any
+# failure to ask (no gh, no token, API error, a page that fails part-way) or
+# a line that is not in that shape is a failure, never a pass.
+release_states() {
+  local out line
+  out="$(gh api --paginate "repos/${canary_repo}/releases?per_page=100" \
+    --jq '.[] | "\(.tag_name) \(.draft) \(.prerelease)"' 2>/dev/null)" || return 1
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^[^[:space:]]+\ (true|false)\ (true|false)$ ]] || return 1
+  done <<<"$out"
+  printf '%s\n' "$out"
+}
+
+# version_lt A B: X.Y.Z version A sorts strictly before X.Y.Z version B.
+version_lt() {
+  local -a a b
+  local i
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
+  for i in 0 1 2; do
+    if (( 10#${a[i]} != 10#${b[i]} )); then
+      (( 10#${a[i]} < 10#${b[i]} ))
+      return
+    fi
+  done
+  return 1
+}
+
+# check_bootstrap_stable: while v<stable_version> is being prepared or built,
+# the canary may still pin the most recent published stable release before
+# it, provided that release's tag resolves to the pinned commit.
+check_bootstrap_stable() {
+  local sha="${pin_sha[stable]:-}" line="${pin_line[stable]:-}" version="${pin_version[stable]:-}"
+  if [[ -z "$sha" ]]; then
+    note_fail "${workflow} declares no '# bpfcompat-pin: stable' pin, so the stable consumer path has no canary"
+    return
+  fi
+  if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+    note_fail "${workflow}:${line} stable pin '${sha}' is not a full 40-character commit SHA"
+    return
+  fi
+  if [[ ! "$version" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    note_fail "${workflow}:${line} stable pin '${version:-<no comment>}' must be an earlier vX.Y.Z stable release while v${stable_version} is being prepared"
+    return
+  fi
+  if ! version_lt "${BASH_REMATCH[1]}" "$stable_version"; then
+    note_fail "${workflow}:${line} stable pin ${version} is not earlier than v${stable_version}"
+    return
+  fi
+  tag_lookup "$version"
+  if [[ "$LOOKUP_STATE" != found ]]; then
+    note_fail "${workflow}:${line} could not resolve ${version} (${LOOKUP_STATE}); failing closed"
+    return
+  fi
+  if [[ "$LOOKUP_SHA" != "$sha" ]]; then
+    note_fail "${workflow}:${line} stable pin is ${sha} but ${version} is ${LOOKUP_SHA}"
+    return
+  fi
+  local states tag draft prerelease newest=""
+  if ! states="$(release_states)"; then
+    note_fail "${workflow}:${line} could not list the GitHub releases to verify ${version} (no gh, no token, API error, or a malformed answer); failing closed"
+    return
+  fi
+  if ! grep -Fxq -- "${version} false false" <<<"$states"; then
+    note_fail "${workflow}:${line} ${version} is not a verified published stable release (draft, prerelease, or no GitHub release)"
+    return
+  fi
+  while read -r tag draft prerelease; do
+    [[ "$draft $prerelease" == "false false" && "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || continue
+    version_lt "${BASH_REMATCH[1]}" "$stable_version" || continue
+    if [[ -z "$newest" ]] || version_lt "${newest#v}" "${tag#v}"; then
+      newest="$tag"
+    fi
+  done <<<"$states"
+  if [[ "$newest" != "$version" ]]; then
+    note_fail "${workflow}:${line} stable pin ${version} is not the most recent published stable release before v${stable_version} (${newest} is)"
+    return
+  fi
+  echo "[canary-pins] stable bootstrap: v${stable_version} is being prepared; canary still pins published stable ${version} ${sha} (repin after the tag)"
+}
+
+if [[ "$release_channel" == stable && "$stable_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  tag_lookup "v${stable_version}"
+  case "$LOOKUP_STATE" in
+    absent)
+      # The new stable release is being prepared: its tag positively does not exist.
+      check_bootstrap_stable
+      ;;
+    found)
+      head_commit="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+      if [[ "$head_commit" =~ ^[0-9a-f]{40}$ && "$LOOKUP_SHA" == "$head_commit" ]]; then
+        # The tag build of the new stable release itself.
+        check_bootstrap_stable
+      else
+        check_pin stable "v${stable_version}"
+      fi
+      ;;
+    *)
+      note_fail "cannot determine whether v${stable_version} exists (remote unreachable or malformed answer); failing closed"
+      ;;
+  esac
+else
+  check_pin stable "v${stable_version}"
+fi
 
 # check_bootstrap_candidate <family> <rc-number>: while v<family>-rc.<n> is
 # being prepared or built, the canary may still pin an EARLIER rc of the SAME
