@@ -18,6 +18,13 @@
 # (docs/external-ci-proof.md) is history, not an instruction, and is left alone.
 # `@main` and `@latest` are deliberate and exempt, as is any line carrying an
 # explicit `doc-pins: allow` marker.
+#
+# The stable release pull request is the one state rule 2 cannot be met in:
+# the release-consistency gate requires its docs to name vX.Y.Z, and that tag
+# is created only after the PR merges. So while release.yaml says
+# release_channel `stable`, a tag-form pin on exactly v<stable_version> is
+# accepted when the remote positively has no such tag; an unreachable remote
+# still fails. Commit-SHA pins never get this exemption.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -43,6 +50,20 @@ tag_commit() {
     sha="$(git ls-remote --tags origin "refs/tags/${tag}^{}" 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
   fi
   printf '%s' "$sha"
+}
+
+# The release the stable PR is preparing, or nothing outside the stable channel.
+release_value() { awk -F': *' -v k="$1" '$1 == k { gsub(/["\r]/, "", $2); print $2 }' release.yaml; }
+preparing=""
+[[ "$(release_value release_channel)" == stable ]] && preparing="v$(release_value stable_version)"
+prepared=""
+
+# tag_absent <tag>: the remote answered and has no such tag (git ls-remote
+# --exit-code returns 2); a remote that cannot be queried is not "absent".
+tag_absent() {
+  local rc=0
+  git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1 || rc=$?
+  [[ $rc -eq 2 ]]
 }
 
 while IFS= read -r hit; do
@@ -78,8 +99,12 @@ while IFS= read -r hit; do
   elif [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     version="$ref"
     if [[ -z "$(tag_commit "$version")" ]]; then
-      note_fail "$file:$line pins $version, which is not a released tag"
-      continue
+      if [[ -n "$preparing" && "$version" == "$preparing" ]] && tag_absent "$version"; then
+        prepared="$version"
+      else
+        note_fail "$file:$line pins $version, which is not a released tag"
+        continue
+      fi
     fi
   else
     note_fail "$file:$line pins '$ref', which is neither a release tag nor a commit SHA"
@@ -107,4 +132,8 @@ if (( fail )); then
   exit 1
 fi
 
-echo "[doc-pins] ok: every documented action pin resolves to ${!versions[*]}"
+if [[ -n "$prepared" ]]; then
+  echo "[doc-pins] ok: every documented action pin names ${prepared}, the stable release being prepared (its tag does not exist yet)"
+else
+  echo "[doc-pins] ok: every documented action pin resolves to ${!versions[*]}"
+fi

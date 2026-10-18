@@ -235,8 +235,10 @@ checks the graduation report and draft assets and dispatches the exact
 promotion inputs as a separate decision. Only this path may update the `X.Y`
 and `latest` image aliases or GitHub's latest release.
 
-Before tagging, confirm two stable-only gates, because the stable tag build
-refuses otherwise and a `v*` tag cannot be reused:
+The order is: the operator's record, the final readiness report, the stable
+pull request, the tag, then promotion. Before tagging, also confirm these
+stable-only gates, which are easy to miss; the stable tag build refuses
+otherwise, and a `v*` tag cannot be reused:
 
 - `scripts/check-distribution-policy.sh --require-decided` passes, that is,
   every decision listed in `blocks_stable` in `distribution/policy.json` is
@@ -244,6 +246,14 @@ refuses otherwise and a `v*` tag cannot be reused:
 - The stable commit's validator rebuilds to the graduated release candidate's
   `bpfcompat-validator-static-linux-amd64` sha256
   (`scripts/check-validator-matches-candidate.sh`).
+
+Publish no other stable release between the stable pull request's CI and the
+`vX.Y.Z` tag build: the stable pin may only name the newest published stable
+release below `X.Y.Z`, so one published in that window (a maintenance release,
+for example) fails the tag build. Re-run `make check-release-consistency` on
+the exact commit immediately before tagging. The stable pull request's docs may
+already name `vX.Y.Z`: `scripts/check-doc-pins.sh` accepts that one tag while
+it positively does not exist yet.
 
 The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
 that does not exist yet or that names their own commit, so they keep the
