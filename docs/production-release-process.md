@@ -234,11 +234,18 @@ graduation report and draft assets, records
 Only this path may update the `X.Y` and `latest` image aliases or GitHub's
 latest release.
 
+The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
+that does not exist yet or that names their own commit, so they keep the
+`# bpfcompat-pin: stable` step on the most recent published (non-draft,
+non-prerelease) stable release before `X.Y.Z`. `scripts/check-canary-pins.sh`
+accepts that pin only while `vX.Y.Z` is absent or resolves to the commit under
+check; a tag or GitHub release lookup it cannot complete fails the check.
+
 Once the new stable tag exists, repin the `# bpfcompat-pin: stable` step in
 `.github/workflows/consumer-canary.yml` to its commit SHA and update the
 `# vX.Y.Z` comment beside it. `scripts/check-canary-pins.sh` runs inside the
-release-consistency gate and fails the build until that is done, because a
-canary left on the previous release stops testing the path the documentation
-now sends every reader down. The `# bpfcompat-pin: candidate` step is not
-enforced while `release_channel` is `stable`; repin it with the next
-`X.Y.Z-rc.1`.
+release-consistency gate and fails every later commit until that is done,
+because a canary left on the previous release stops testing the path the
+documentation now sends every reader down. The `# bpfcompat-pin: candidate`
+step is not enforced while `release_channel` is `stable`; repin it with the
+next `X.Y.Z-rc.1`.
