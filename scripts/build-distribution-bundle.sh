@@ -114,7 +114,7 @@ cp "$native_dir/packages.tsv" "$native_dir/inputs.tsv" "$native_dir/members.tsv"
 cp -r "$native_dir/copyright" "$native_dir/common-licenses" "$L/native/"
 cp "$policy" "$L/distribution-policy.json"
 
-go_json="$(tail -n +2 "$go_dir/go/modules.tsv" | while IFS=$'\t' read -r mod ver sum bins files; do
+go_json="$(tail -n +2 "$go_dir/go/modules.tsv" | while IFS=$'\t' read -r mod ver _ bins files; do
   fj="$(tr ',' '\n' <<<"$files" | while IFS= read -r rel; do
     jq -n --arg p "go/modules/$mod/$rel" --arg s "$(sha256sum "$L/go/modules/$mod/$rel" | cut -d' ' -f1)" '{path: $p, sha256: $s}'
   done | jq -s .)"
@@ -218,7 +218,7 @@ fi
 if [[ -n "$sources_dir" ]]; then
   S="$stage/bpfcompat-validator-native-sources"
   mkdir -p "$S"
-  while read -r pkg name size sha url; do
+  while read -r pkg name _ sha _; do
     [[ -f "$sources_dir/$pkg/$name" ]] || die "source file $pkg/$name is missing from $sources_dir"
     [[ "$(sha256sum "$sources_dir/$pkg/$name" | cut -d' ' -f1)" == "$sha" ]] || die "$pkg/$name does not match native-sources.lock"
     mkdir -p "$S/$pkg"
