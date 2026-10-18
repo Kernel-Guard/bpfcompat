@@ -8,7 +8,8 @@
 # `gh release download` of two text files (SHA256SUMS and
 # release-candidate-evidence.json), and files in this checkout. It never dispatches or reruns a workflow, never writes to GitHub,
 # never executes a downloaded file and never writes operator evidence.
-# Active workflow pins and the canary's workflow env are parsed by a helper
+# Active workflow pins, the canary's workflow env and its schedule are parsed
+# by a helper
 # compiled from this checkout's Go sources and vendored YAML library into the
 # temporary directory (writing only Go's build cache). The build cannot
 # download modules or a toolchain: GOPROXY=off, GONOPROXY and GONOSUMDB set to
@@ -232,9 +233,21 @@ else
   ok_designations=0
   main_file .github/campaign-candidate.json "$tmp/cc.json"
   jq -e . "$tmp/cc.json" >/dev/null 2>&1 || abort "campaign-candidate.json on main is not JSON"
-  if [[ "$(jq -r .tag "$tmp/cc.json")" == "$tag" && "$(jq -r .commit_sha "$tmp/cc.json")" == "$commit" ]]; then
-    say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit"; ok_designations=$((ok_designations + 1))
-  else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
+  # The scheduled campaigns also bind the two digests recorded there, so they
+  # must be this release's SHA256SUMS and candidate evidence.
+  cc_problems=""
+  [[ "$(jq -r .tag "$tmp/cc.json")" == "$tag" && "$(jq -r .commit_sha "$tmp/cc.json")" == "$commit" ]] ||
+    cc_problems+="binds $(jq -r .tag "$tmp/cc.json") $(jq -r .commit_sha "$tmp/cc.json"); "
+  for pair in "checksums_sha256=$tmp/sums/SHA256SUMS" "candidate_evidence_sha256=$tmp/ev/release-candidate-evidence.json"; do
+    key="${pair%%=*}" file="${pair#*=}"
+    if [[ ! -f "$file" ]]; then cc_problems+="$key: the release has no ${file##*/} to compare; "
+    elif [[ "$(jq -r --arg k "$key" '.[$k] // empty' "$tmp/cc.json")" != "$(sha256sum "$file" | cut -d' ' -f1)" ]]; then
+      cc_problems+="$key is not this release's ${file##*/}; "
+    fi
+  done
+  if [[ -z "$cc_problems" ]]; then
+    say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit and this release's SHA256SUMS and candidate evidence digests"; ok_designations=$((ok_designations + 1))
+  else say PENDING "designated: campaign-candidate.json" "main differs: ${cc_problems}retarget after verification"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
   command -v go >/dev/null || abort "Go is required to parse active workflow pins"
   (cd "$ROOT" && GOWORK=off GOPROXY=off GONOPROXY=none.invalid GONOSUMDB=none.invalid go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) ||
@@ -267,10 +280,15 @@ else
   if [[ "$pin_result" != VERIFIED ]]; then
     problems+="published-action pin is not @${commit} "
   fi
+  # A timed canary counts only from a schedule run inside the plan job's
+  # windows, so the dated crons must fire inside both of them.
+  sched="$("$tmp/pincheck" schedule "$published_at" - "$tmp/rcc.yml" 2>"$tmp/sched.err")" ||
+    abort "workflow-pin parser failed: $(cat "$tmp/sched.err")"
+  [[ "$sched" == VERIFIED ]] || problems+="crons ($(sed -n 's/^rc-preflight pins: //p' "$tmp/sched.err" | tail -1)) "
   if grep -Eo 'rc[0-9]+-canary-component-|reports/rc[0-9]+-action' "$tmp/rcc.yml" | grep -vqE "^(rc${rcnum}-|reports/rc${rcnum}-)"; then
     problems+="other candidates' artifact/report names remain "
   fi
-  if [[ -z "$problems" ]]; then say VERIFIED "designated: release-candidate-canary" "tag, commit, digest $digest, published $published_at, rc${rcnum} names"; ok_designations=$((ok_designations + 1))
+  if [[ -z "$problems" ]]; then say VERIFIED "designated: release-candidate-canary" "tag, commit, digest $digest, published $published_at, rc${rcnum} names, crons inside both timed windows"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: release-candidate-canary" "main still differs: $problems"; fi
 
   pub="$(epoch "$published_at")"

@@ -1,5 +1,5 @@
-// Command rcpreflight checks active candidate Action pins and workflow-level
-// env bindings in workflow YAML.
+// Command rcpreflight checks active candidate Action pins, workflow-level env
+// bindings and the timed canary schedule in workflow YAML.
 // It reads local files only; the shell inventory builds it from vendored code.
 package main
 
@@ -9,7 +9,9 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,8 +26,8 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 // it prints nothing to stdout and returns 2, so the caller aborts instead of
 // reporting a status.
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 4 || (args[0] != "all" && args[0] != "candidate" && args[0] != "env") {
-		fmt.Fprintln(stderr, "usage: rcpreflight <all|candidate> <commit> <tag> <workflow>\n       rcpreflight env <name> <value> <workflow>")
+	if len(args) != 4 || (args[0] != "all" && args[0] != "candidate" && args[0] != "env" && args[0] != "schedule") {
+		fmt.Fprintln(stderr, "usage: rcpreflight <all|candidate> <commit> <tag> <workflow>\n       rcpreflight env <name> <value> <workflow>\n       rcpreflight schedule <published-at> - <workflow>")
 		return 2
 	}
 	// #nosec G304 G703 -- this local CLI intentionally reads the operator-supplied workflow path; it never writes it.
@@ -246,8 +248,161 @@ func needsGraph(needs map[string][]string, jobs map[string]bool) error {
 	return nil
 }
 
+// cronField is one field of a five-field cron line: the values it matches,
+// and whether it was "*" (which matters for the day-of-month/day-of-week
+// rule).
+type cronField struct {
+	match [60]bool
+	star  bool
+}
+
+var cronNames = map[string]int{
+	"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+	"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
+}
+
+// parseCronField accepts what GitHub documents for schedule crons: *, a
+// value, a range a-b, a step */n or a-b/n, comma lists, and JAN-DEC/SUN-SAT
+// names. Anything else is refused rather than guessed.
+func parseCronField(s string, lo, hi int) (cronField, error) {
+	var f cronField
+	f.star = s == "*"
+	value := func(v string) (int, error) {
+		if n, ok := cronNames[strings.ToLower(v)]; ok && hi <= 12 {
+			return n, nil
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < lo || n > hi {
+			return 0, fmt.Errorf("cron value %q outside %d-%d", v, lo, hi)
+		}
+		return n, nil
+	}
+	for _, part := range strings.Split(s, ",") {
+		base, stepText, hasStep := strings.Cut(part, "/")
+		step := 1
+		if hasStep {
+			n, err := strconv.Atoi(stepText)
+			if err != nil || n < 1 {
+				return f, fmt.Errorf("cron step %q", part)
+			}
+			step = n
+		}
+		first, last := lo, hi
+		switch a, b, isRange := strings.Cut(base, "-"); {
+		case base == "*":
+		case isRange:
+			var err error
+			if first, err = value(a); err != nil {
+				return f, err
+			}
+			if last, err = value(b); err != nil {
+				return f, err
+			}
+			if first > last {
+				return f, fmt.Errorf("cron range %q", part)
+			}
+		case hasStep:
+			return f, fmt.Errorf("cron step needs * or a range: %q", part)
+		default:
+			n, err := value(base)
+			if err != nil {
+				return f, err
+			}
+			first, last = n, n
+		}
+		for n := first; n <= last; n += step {
+			f.match[n] = true
+		}
+	}
+	return f, nil
+}
+
+type cronSpec [5]cronField
+
+func parseCron(line string) (cronSpec, error) {
+	var c cronSpec
+	fields := strings.Fields(line)
+	if len(fields) != 5 {
+		return c, fmt.Errorf("cron %q does not have 5 fields", line)
+	}
+	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+	for i, field := range fields {
+		f, err := parseCronField(field, bounds[i][0], bounds[i][1])
+		if err != nil {
+			return c, err
+		}
+		c[i] = f
+	}
+	if c[4].match[7] {
+		c[4].match[0] = true // 7 is Sunday too
+	}
+	return c, nil
+}
+
+// fires reports whether the cron fires at minute t (UTC). As in cron, when
+// both day of month and day of week are restricted either one may match.
+func (c *cronSpec) fires(t time.Time) bool {
+	if !c[0].match[t.Minute()] || !c[1].match[t.Hour()] || !c[3].match[int(t.Month())] {
+		return false
+	}
+	dom, dow := c[2].match[t.Day()], c[4].match[int(t.Weekday())]
+	if c[2].star || c[4].star {
+		return dom && dow
+	}
+	return dom || dow
+}
+
+// checkSchedule requires the workflow's on.schedule to fire inside each timed
+// canary window the plan job accepts: 20-30 and 68-78 whole hours after
+// publication, that is [T0+20h, T0+31h) and [T0+68h, T0+79h). A cron firing
+// at the window's start leaves no room for schedule delay; that margin is the
+// operator's choice and is not judged here.
+func checkSchedule(root *yaml.Node, published string) error {
+	t0, err := time.Parse(time.RFC3339, published)
+	if err != nil {
+		return fmt.Errorf("publication time %q: %w", published, err)
+	}
+	_, on := field(root, "on")
+	if on == nil {
+		return fmt.Errorf("no on.schedule list")
+	}
+	_, schedule := field(on, "schedule")
+	if schedule == nil || schedule.Kind != yaml.SequenceNode {
+		return fmt.Errorf("no on.schedule list")
+	}
+	var crons []cronSpec
+	for _, item := range schedule.Content {
+		_, line := field(item, "cron")
+		if line == nil || line.Kind != yaml.ScalarNode {
+			return fmt.Errorf("schedule entry without a cron string at line %d", item.Line)
+		}
+		c, err := parseCron(line.Value)
+		if err != nil {
+			return err
+		}
+		crons = append(crons, c)
+	}
+	for _, w := range [][2]int{{20, 31}, {68, 79}} {
+		start, end := t0.UTC().Add(time.Duration(w[0])*time.Hour), t0.UTC().Add(time.Duration(w[1])*time.Hour)
+		t := start.Truncate(time.Minute)
+		if t.Before(start) {
+			t = t.Add(time.Minute)
+		}
+		found := false
+		for ; t.Before(end) && !found; t = t.Add(time.Minute) {
+			for i := range crons {
+				found = found || crons[i].fires(t)
+			}
+		}
+		if !found {
+			return fmt.Errorf("no schedule cron fires in [T0+%dh, T0+%dh)", w[0], w[1])
+		}
+	}
+	return nil
+}
+
 func check(r io.Reader, mode, commit, tag string) error {
-	if mode != "all" && mode != "candidate" && mode != "env" {
+	if mode != "all" && mode != "candidate" && mode != "env" && mode != "schedule" {
 		return fmt.Errorf("unknown mode %q", mode)
 	}
 	d := yaml.NewDecoder(r)
@@ -268,6 +423,9 @@ func check(r io.Reader, mode, commit, tag string) error {
 	}
 	if err := keywordCase(doc.Content[0]); err != nil {
 		return err
+	}
+	if mode == "schedule" {
+		return checkSchedule(doc.Content[0], commit)
 	}
 	_, jobs := field(doc.Content[0], "jobs")
 	if jobs == nil || jobs.Kind != yaml.MappingNode {

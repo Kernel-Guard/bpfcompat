@@ -180,6 +180,53 @@ func TestWorkflowEnvBindings(t *testing.T) {
 	}
 }
 
+// The timed canaries count only from a schedule run whose plan job starts
+// 20-30 or 68-78 whole hours after publication, so the designated crons must
+// fire inside [T0+20h, T0+31h) and [T0+68h, T0+79h). T0 below is synthetic.
+func TestScheduleWindows(t *testing.T) {
+	t0 := "2026-11-02T10:00:00Z" // a Monday
+	wf := func(crons ...string) string {
+		s := "on:\n  workflow_dispatch:\n  schedule:\n"
+		for _, c := range crons {
+			s += "    - cron: \"" + c + "\"\n"
+		}
+		return s + "jobs:\n  plan:\n    steps:\n      - run: true\n"
+	}
+	tests := []struct {
+		name, text string
+		ok         bool
+	}{
+		{"precedent-offsets", wf("14 10 3 11 *", "14 10 5 11 *"), true},
+		{"window-starts", wf("0 6 3 11 *", "0 6 5 11 *"), true},
+		{"last-minutes", wf("59 16 3 11 *", "59 16 5 11 *"), true},
+		{"first-window-end-excluded", wf("0 17 3 11 *", "14 10 5 11 *"), false},
+		{"second-window-end-excluded", wf("14 10 3 11 *", "0 17 5 11 *"), false},
+		{"before-first-window", wf("59 5 3 11 *", "14 10 5 11 *"), false},
+		{"previous-candidate-crons", wf("44 17 15 10 *", "44 17 17 10 *"), false},
+		{"only-first", wf("14 10 3 11 *"), false},
+		{"every-five-minutes", wf("*/5 * * * *"), true},
+		{"names-and-ranges", wf("14 10 * NOV TUE", "14 10 * nov thu"), true},
+		{"dom-or-dow", wf("14 10 1 11 TUE", "14 10 1 11 THU"), true},
+		{"dow-seven-is-sunday", wf("14 10 * 11 7"), false},
+		{"list-and-step", wf("0,30 8-12/2 3,5 11 *"), true},
+		{"invalid-field", wf("14 10 3 11 *", "61 10 5 11 *"), false},
+		{"too-few-fields", wf("14 10 3 11"), false},
+		{"no-schedule", "on:\n  workflow_dispatch:\njobs:\n  plan:\n    steps:\n      - run: true\n", false},
+		{"cron-not-string", "on:\n  schedule:\n    - cron: [1]\njobs:\n  plan:\n    steps:\n      - run: true\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := check(strings.NewReader(tt.text), "schedule", t0, "-")
+			if (err == nil) != tt.ok {
+				t.Fatalf("check() = %v, want accepted=%v", err, tt.ok)
+			}
+		})
+	}
+	if err := check(strings.NewReader(wf("14 10 3 11 *", "14 10 5 11 *")), "schedule", "not-a-time", "-"); err == nil {
+		t.Fatal("an unparsable publication time was accepted")
+	}
+}
+
 func TestRunExitCodes(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	tag := "v0.4.0-rc.5"
@@ -203,6 +250,7 @@ func TestRunExitCodes(t *testing.T) {
 		{"usage", []string{"all", sha, tag}, 2, ""},
 		{"unknown-mode", []string{"some", sha, tag, good}, 2, ""},
 		{"env-mode", []string{"env", "CANDIDATE_TAG", tag, good}, 0, "PENDING\n"},
+		{"schedule-mode", []string{"schedule", "2026-11-02T10:00:00Z", "-", good}, 0, "PENDING\n"},
 		{"unreadable", []string{"all", sha, tag, dir + "/missing.yml"}, 2, ""},
 	}
 	for _, tt := range tests {

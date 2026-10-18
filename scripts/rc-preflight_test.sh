@@ -26,6 +26,7 @@ RCN="${TAG##*-rc.}"
 PUB="2026-11-02T10:00:00Z"
 PUB_EPOCH="$(date -u -d "$PUB" +%s)"
 at() { date -u -d "@$((PUB_EPOCH + $1 * 3600 + 600))" +%Y-%m-%dT%H:%M:%SZ; } # <hours> -> ISO, 10 min past the hour
+cron_at() { date -u -d "@$((PUB_EPOCH + $1))" '+%-M %-H %-d %-m *'; } # <seconds after T0> -> dated cron line
 DESIGNATED="$(date -u -d "@$((PUB_EPOCH + 300))" +%Y-%m-%dT%H:%M:%SZ)"            # designation merged 5 min after T0
 
 mkdir -p "$tmp/bin"
@@ -73,9 +74,9 @@ scenario() {
       printf '%064d  %s\n' 1 "$n"; done
     printf '%s  bpfcompat-validator-static-linux-amd64\n' "$VSHA"; } >"$F/SHA256SUMS"
   contents "$ROOT_DIR/distribution/policy.json" >"$F/policy.json"
-  jq -n --arg t "$TAG" --arg c "$C1" '{tag: $t, commit_sha: $c}' >"$F/cc-raw.json"; contents "$F/cc-raw.json" >"$F/cc.json"
   printf 'jobs:\n  test:\n    steps:\n      - name: x\n        # bpfcompat-pin: candidate\n        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C1" "$TAG" >"$F/consumer-raw.yml"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
-  printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    uses: Kernel-Guard/bpfcompat@%s # %s\n    out: reports/rc%s-action.json\n' \
+  printf 'on:\n  schedule:\n    - cron: "%s"\n    - cron: "%s"\nenv:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    uses: Kernel-Guard/bpfcompat@%s # %s\n    out: reports/rc%s-action.json\n' \
+    "$(cron_at $((24 * 3600 + 14 * 60)))" "$(cron_at $((72 * 3600 + 14 * 60)))" \
     "$TAG" "$C1" "$DIG" "$PUB" "$RCN" "$C1" "$TAG" "$RCN" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
   jq -n --arg i "ghcr.io/kernel-guard/bpfcompat@$DIG" '{image: $i}' >"$F/release-candidate-evidence.json"
   jq -n '[{sha: "e000000000000000000000000000000000000000", commit: {committer: {date: "2020-01-01T00:00:00Z"}}}]' >"$F/commits.json"
@@ -103,10 +104,22 @@ repos/*/commits?sha=main&path=*	200	commits.json
 repos/*/commits/*/pulls	200	pulls.json
 repos/*/actions/runs/*/jobs*	200	jobs.json
 EOF
+  bind_cc "$F"
 }
 route() { sed -i "1i $2" "$tmp/$1/routes"; } # prepend an overriding route
+# bind_cc <dir>: campaign-candidate.json binds the candidate and the digests
+# of the fixture's current SHA256SUMS and candidate evidence, unless the
+# scenario pinned its own (cc-fixed).
+bind_cc() {
+  [[ -e "$1/cc-fixed" ]] && return 0
+  jq -n --arg t "$TAG" --arg c "$C1" --arg s "$(sha256sum "$1/SHA256SUMS" | cut -d' ' -f1)" \
+    --arg e "$(sha256sum "$1/release-candidate-evidence.json" | cut -d' ' -f1)" \
+    '{tag: $t, commit_sha: $c, checksums_sha256: $s, candidate_evidence_sha256: $e}' >"$1/cc-raw.json"
+  contents "$1/cc-raw.json" >"$1/cc.json"
+}
 run() { # <scenario> <now-hours-after-publication> [args...]
   local s="$1" h="$2"; shift 2
+  bind_cc "$tmp/$s"
   : >"$tmp/gh.log"
   set +e
   PATH="$tmp/bin:$PATH" FIX="$tmp/$s" GH_LOG="$tmp/gh.log" BPFCOMPAT_PREFLIGHT_NOW=$((PUB_EPOCH + h * 3600)) \
@@ -212,6 +225,19 @@ contents "$tmp/runtext/rcc-raw.yml" >"$tmp/runtext/rcc.json"
 run runtext 200
 if line PENDING "designated: release-candidate-canary" && grep -q 'CANDIDATE_TAG=' "$tmp/out"; then ok "current values in run text do not hide a stale workflow env"
 else fail "run-text env (rc=$rc)"; show; fi
+scenario ccdigest; touch "$tmp/ccdigest/cc-fixed"
+jq --arg s "$(printf 'f%.0s' {1..64})" '.checksums_sha256 = $s' "$tmp/ccdigest/cc-raw.json" >"$tmp/x" && mv "$tmp/x" "$tmp/ccdigest/cc-raw.json"
+contents "$tmp/ccdigest/cc-raw.json" >"$tmp/ccdigest/cc.json"
+run ccdigest 200
+if line PENDING "designated: campaign-candidate.json" && grep -q "checksums_sha256 is not this release's SHA256SUMS" "$tmp/out" && line PENDING "canary manual"; then
+  ok "campaign pin naming another release's SHA256SUMS digest: not designated"
+else fail "stale campaign digest (rc=$rc)"; show; fi
+scenario stalecron
+sed -i 's/^    - cron: .*/    - cron: "44 17 15 10 *"/' "$tmp/stalecron/rcc-raw.yml"; contents "$tmp/stalecron/rcc-raw.yml" >"$tmp/stalecron/rcc.json"
+run stalecron 200
+if line PENDING "designated: release-candidate-canary" && grep -qF 'crons (no schedule cron fires in [T0+20h, T0+31h))' "$tmp/out"; then
+  ok "previous candidate's dated crons left in the canary: not designated"
+else fail "stale crons (rc=$rc)"; show; fi
 scenario prerun; LATE_DES="$(date -u -d "@$((PUB_EPOCH + 3 * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
 jq --arg d "$LATE_DES" '.[0].merged_at = $d' "$tmp/prerun/pulls.json" >"$tmp/x" && mv "$tmp/x" "$tmp/prerun/pulls.json"
 # The API filter is what excludes earlier runs: serve only what created>=designation would return.
