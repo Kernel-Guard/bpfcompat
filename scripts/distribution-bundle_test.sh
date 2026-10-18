@@ -223,6 +223,54 @@ if CC_LOG="$tmp/cc.log" PATH="$tmp/fakecc:$PATH" bash "$K/relink.sh" --here --ou
   grep -q -- "main.o -o " "$tmp/cc.log" && ok "relink.sh --here links main.o with the recorded command" || fail "relink.sh default link line"
 else fail "relink.sh --here failed"; fi
 
+# ---------------------------------------------------------------- workflow wiring
+wiring="$(python3 - "$ROOT_DIR" <<'PY2'
+import sys, yaml
+root = sys.argv[1]
+rel = yaml.safe_load(open(f"{root}/.github/workflows/release-artifacts.yml"))
+prom = yaml.safe_load(open(f"{root}/.github/workflows/promote-release.yml"))
+steps = rel["jobs"]["build-and-sign"]["steps"]
+names = [st.get("name", "") for st in steps]
+run = {st.get("name", ""): st.get("run", "") or "" for st in steps}
+withs = {st.get("name", ""): st.get("with", {}) or {} for st in steps}
+out = []
+def check(cond, msg): out.append(("ok " if cond else "FAIL ") + msg)
+asm = "Assemble third-party license bundle and relink kit"
+check(asm in names, "release build has the distribution assembly step")
+if asm in names:
+    i = names.index(asm)
+    check(names.index("Build static validator from pinned inputs") < i < names.index("Compute checksums") < names.index("Generate SBOM"),
+          "assembly runs after the pinned validator build and before checksums and SBOM")
+    a = run[asm]
+    check("check-distribution-policy.sh --require-decided" in a and '"$CHANNEL" == "stable"' in a,
+          "stable builds require every stable-blocking decision")
+    check("build-distribution-bundle.sh" in a and "collect-go-licenses.sh" in a, "assembly uses the bundle generators")
+    check("rm -rf dist-work" in a, "working records are removed before the SBOM scan")
+check("dist-work/validator-dist" in run.get("Build static validator from pinned inputs", ""),
+      "the pinned validator build emits the distribution record")
+cs = run.get("Compute checksums", "")
+for a in ("bpfcompat-third-party-licenses.tar.gz", "bpfcompat-validator-relink-kit-linux-amd64.tar.gz",
+          "validator-build-inputs.json", "bpfcompat-validator-link-inputs-linux-amd64.tar.gz",
+          "bpfcompat-validator-native-sources.tar"):
+    check(a in cs, f"SHA256SUMS covers {a}")
+subj = withs.get("Attest candidate provenance", {}).get("subject-path", "")
+check("dist/bpfcompat-third-party-licenses.tar.gz" in subj and "dist/bpfcompat-validator-*.tar*" in subj,
+      "distribution assets are provenance subjects")
+stage = rel["jobs"]["stage-draft-release"]["steps"]
+files = "".join((st.get("with") or {}).get("files", "") for st in stage)
+for a in ("dist/bpfcompat-third-party-licenses.tar.gz", "dist/bpfcompat-validator-*.tar*", "dist/validator-build-inputs.json"):
+    check(a in files, f"draft release uploads {a}")
+prun = "".join(st.get("run", "") or "" for job in prom["jobs"].values() for st in job.get("steps", []))
+for a in ("bpfcompat-third-party-licenses.tar.gz", "bpfcompat-validator-relink-kit-linux-amd64.tar.gz", "validator-build-inputs.json"):
+    check(a in prun, f"promotion verifies {a}")
+check("bpfcompat-validator-native-sources.tar" in prun, "promotion verifies optional assets that SHA256SUMS lists")
+print("\n".join(out))
+PY2
+)"
+while IFS= read -r line; do
+  case "$line" in ok\ *) ok "${line#ok }" ;; *) fail "${line#FAIL }" ;; esac
+done <<<"$wiring"
+
 if [[ "$failures" -gt 0 ]]; then
   echo "[distribution-test] ${failures} failure(s)" >&2
   exit 1

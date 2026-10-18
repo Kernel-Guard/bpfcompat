@@ -89,9 +89,40 @@ To move to newer packages, choose a newer snapshot, update the `pkg=` versions
 and the `reproduces=` line from a pinned build, and cut a new release
 candidate: that changes the shipped validator.
 
-`dist/validator-build-inputs.json` is a build record: it is attested with the
-candidate provenance and kept in the workflow run artifact, but it is not a
-release asset and is not listed in `SHA256SUMS`.
+`dist/validator-build-inputs.json` is the validator's build record. It is
+attested with the candidate provenance and, from the release that introduces the
+distribution bundle on, shipped as a release asset listed in `SHA256SUMS`, so it
+outlives the workflow run artifact's retention.
+
+### Third-party license bundle and relink kit
+
+The same build produces two more release assets, both listed in `SHA256SUMS`,
+attested, and reproducible byte for byte from the same inputs:
+
+- `bpfcompat-third-party-licenses.tar.gz`: the license, notice and patent texts
+  (verbatim) of every Go module linked into the shipped CLIs, taken from each
+  binary's own build information; the Go toolchain's `LICENSE` and `PATENTS`;
+  and, for the validator, the Debian copyright file of every package that owns
+  a link input or a header the compile read, with the full texts they refer to.
+  `INVENTORY.json` records versions, provenance and sha256 of each text, and
+  keeps observed facts, recorded decisions and open questions apart.
+- `bpfcompat-validator-relink-kit-linux-amd64.tar.gz`: the validator's `main.o`,
+  the Makefile recipe split into compile and link commands, the linker's member
+  trace and map, every link input and header with its owning package, the build
+  record and locks, the validator sources and `relink.sh`. The build refuses
+  unless relinking `main.o` reproduces the shipped validator byte for byte.
+
+`distribution/policy.json` records the open distribution decisions. Two of them
+add assets when decided: `bpfcompat-validator-link-inputs-linux-amd64.tar.gz`
+(the static archives and start files the validator was linked from) and
+`bpfcompat-validator-native-sources.tar` (the exact Ubuntu source packages in
+`distribution/native-sources.lock`, hash-verified). A stable build refuses while
+any decision listed in `blocks_stable` is undecided. None of this elects a
+license or states that any license condition is met.
+
+The installer and the GitHub Action install the license bundle when the
+release's `SHA256SUMS` lists it, and the container image carries the Go texts
+in `/usr/share/doc/bpfcompat/`.
 
 ### Verifying a signed release
 

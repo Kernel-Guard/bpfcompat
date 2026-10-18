@@ -156,7 +156,17 @@ jobs:
             bpfcompat-linux-amd64
             bpfcompat-linux-arm64
             bpfcompat-validator-static-linux-amd64
+            bpfcompat-third-party-licenses.tar.gz
+            bpfcompat-validator-relink-kit-linux-amd64.tar.gz
+            validator-build-inputs.json
           )
+          # Optional distribution assets: verified whenever the signed
+          # SHA256SUMS lists them, so a listed asset can never go missing.
+          for optional in bpfcompat-validator-link-inputs-linux-amd64.tar.gz bpfcompat-validator-native-sources.tar; do
+            if awk -v f="$optional" '$2 == f { found = 1 } END { exit !found }' candidate/run-assets/SHA256SUMS; then
+              assets+=("$optional")
+            fi
+          done
           if [[ "$channel" == "stable" ]]; then
             assets+=(production-readiness.json production-readiness.md)
           fi
