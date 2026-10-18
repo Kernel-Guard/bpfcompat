@@ -24,7 +24,7 @@ long-lived private key. The signer identity is the release workflow itself.
 Requires the GitHub CLI (`gh`) 2.68.0 or later: `--signer-workflow` was added
 in gh 2.51.0 and `--source-ref` in gh 2.68.0. An older gh stops without
 verifying anything, with `unknown flag` (before 2.68.0) or
-`unknown command "attestation"` (before 2.49.0); upgrade it, or use the cosign
+`unknown command "attestation"` (before 2.47.0); upgrade it, or use the cosign
 check in section 2. How strictly gh matches these values also depends on its
 version: gh 2.97.0 and 2.102.0 fixed published advisories in that matching
 (GHSA-mm27-mwq9-fr5g, GHSA-wjmr-j3rp-mh2g, GHSA-4mq3-hpgx-9cx8), so 2.102.0 or
