@@ -1,0 +1,63 @@
+{
+  "schema_version": "v1",
+  "note": "Recorded distribution decisions. A value of null with status \"undecided\" means nobody has decided; tooling must not treat it as any particular answer. Questions refer to the expert question list (Q1-Q17) kept with the release records. Changing a decision is a reviewed change to this file.",
+  "decisions": {
+    "libbpf_license_option": {
+      "status": "undecided",
+      "value": null,
+      "allowed": ["LGPL-2.1-only", "BSD-2-Clause"],
+      "questions": ["Q1"],
+      "effect": "Recorded in the license bundle inventory only. The bundle ships the upstream texts of both options either way."
+    },
+    "libelf_license_option": {
+      "status": "undecided",
+      "value": null,
+      "allowed": ["LGPL-3.0-or-later", "GPL-2.0-or-later"],
+      "questions": ["Q3"],
+      "effect": "Recorded in the license bundle inventory only."
+    },
+    "ship_link_inputs_asset": {
+      "status": "undecided",
+      "value": null,
+      "allowed": [true, false],
+      "questions": ["Q4", "Q5"],
+      "effect": "true: the release also carries bpfcompat-validator-link-inputs-linux-amd64.tar.gz (every static archive and start file the validator was linked from). The relink kit (main.o, commands, trace, map, build record) ships regardless."
+    },
+    "ship_native_sources_asset": {
+      "status": "undecided",
+      "value": null,
+      "allowed": [true, false],
+      "questions": ["Q4", "Q7"],
+      "effect": "true: the release also carries bpfcompat-validator-native-sources.tar (the exact Ubuntu source packages in distribution/native-sources.lock, hash-verified)."
+    },
+    "native_notice_scope": {
+      "status": "undecided",
+      "value": null,
+      "allowed": ["full-copyright-files", "linked-only"],
+      "questions": ["Q6"],
+      "effect": "None today: the bundle ships each owning package's complete Debian copyright file verbatim, plus the linker's exact member list."
+    },
+    "delivery_channels": {
+      "status": "undecided",
+      "value": null,
+      "allowed": ["all-channels", "release-asset-only"],
+      "questions": ["Q2", "Q10", "Q11", "Q12", "Q13"],
+      "effect": "None today: the bundle is delivered as a release asset, by install.sh, by the Action's prebuilt path and in the container image."
+    },
+    "prerelease_with_open_decisions": {
+      "status": "undecided",
+      "value": null,
+      "allowed": [true, false],
+      "questions": ["Q17"],
+      "effect": "Not enforced by tooling. A stable build refuses while any decision marked blocks_stable is undecided."
+    }
+  },
+  "blocks_stable": [
+    "libbpf_license_option",
+    "libelf_license_option",
+    "ship_link_inputs_asset",
+    "ship_native_sources_asset",
+    "native_notice_scope",
+    "delivery_channels"
+  ]
+}
