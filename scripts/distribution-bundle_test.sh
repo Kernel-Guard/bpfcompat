@@ -170,6 +170,15 @@ expect_fail "missing Go toolchain PATENTS" 'PATENTS is missing' bash "$R/scripts
   --native-dir "$tmp/n/dist" --validator "$tmp/n/validator" --build-inputs "$tmp/n/build-inputs.json" \
   --version v9 --commit c --out "$tmp/o-gomiss"
 
+rm -rf "$tmp/go-text" && cp -r "$tmp/go" "$tmp/go-text" && rm "$tmp/go-text/go/modules/github.com/beorn7/perks/LICENSE"
+expect_fail "inventoried Go license text deleted" 'go/modules/github.com/beorn7/perks/LICENSE is missing' \
+  bash "$R/scripts/build-distribution-bundle.sh" --go-dir "$tmp/go-text" \
+  --native-dir "$tmp/n/dist" --validator "$tmp/n/validator" --build-inputs "$tmp/n/build-inputs.json" \
+  --version v9 --commit c --out "$tmp/o-gotext"
+cp -r "$tmp/n" "$tmp/n-cl" && rm "$tmp/n-cl/dist/common-licenses/LGPL-2.1"
+(cd "$tmp/n-cl/dist" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum >SHA256SUMS)
+expect_fail "referenced common-licenses text missing" 'no common-licenses/LGPL-2.1' bundle "$R" "$tmp/n-cl" "$tmp/o-cl"
+
 # Optional assets.
 bundle "$R" "$tmp/n" "$tmp/out-li" --with-link-inputs >/dev/null &&
   tar -tzf "$tmp/out-li/bpfcompat-validator-link-inputs-linux-amd64.tar.gz" | grep -q 'usr/lib/libfoo.a' &&
@@ -209,18 +218,19 @@ K="$tmp/x/bpfcompat-validator-relink-kit"
 mkdir -p "$tmp/fakecc" "$tmp/mylibs"
 cat >"$tmp/fakecc/cc" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$CC_LOG"
+printf '[%s]' "$@" >>"$CC_LOG"; printf '\n' >>"$CC_LOG"
 out=""
 while [[ $# -gt 0 ]]; do [[ "$1" == -o ]] && out="$2"; shift; done
 printf 'linked\n' >"$out"
 EOF
 chmod +x "$tmp/fakecc/cc"
-CC_LOG="$tmp/cc.log" PATH="$tmp/fakecc:$PATH" bash "$K/relink.sh" --here --lib-dir "$tmp/mylibs" --out "$tmp/relinked" >/dev/null 2>&1 || true
-grep -q -- "main.o -L$tmp/mylibs -o " "$tmp/cc.log" && grep -q -- "-static -lfoo" "$tmp/cc.log" &&
+mkdir -p "$tmp/my libs"
+CC_LOG="$tmp/cc.log" PATH="$tmp/fakecc:$PATH" bash "$K/relink.sh" --here --lib-dir "$tmp/my libs" --out "$tmp/relinked" >/dev/null 2>&1 || true
+grep -qF -- "[main.o][-L$tmp/my libs][-o]" "$tmp/cc.log" && grep -qF -- "[-static][-lfoo]" "$tmp/cc.log" &&
   ok "relink.sh puts --lib-dir ahead of the recorded libraries" || fail "relink.sh link line: $(cat "$tmp/cc.log" 2>/dev/null)"
 : >"$tmp/cc.log"
 if CC_LOG="$tmp/cc.log" PATH="$tmp/fakecc:$PATH" bash "$K/relink.sh" --here --out "$tmp/relinked2" >/dev/null 2>&1; then
-  grep -q -- "main.o -o " "$tmp/cc.log" && ok "relink.sh --here links main.o with the recorded command" || fail "relink.sh default link line"
+  grep -qF -- "[main.o][-o]" "$tmp/cc.log" && ok "relink.sh --here links main.o with the recorded command" || fail "relink.sh default link line"
 else fail "relink.sh --here failed"; fi
 
 # ---------------------------------------------------------------- workflow wiring
@@ -246,6 +256,8 @@ if asm in names:
           "stable builds require every stable-blocking decision")
     check("build-distribution-bundle.sh" in a and "collect-go-licenses.sh" in a, "assembly uses the bundle generators")
     check("rm -rf dist-work" in a, "working records are removed before the SBOM scan")
+    check(all(l.strip().startswith(("ship_link_inputs=", "ship_native_sources=")) for l in a.splitlines() if "--ship " in l),
+          "policy lookups are assignments, so a failing lookup stops the step")
 check("dist-work/validator-dist" in run.get("Build static validator from pinned inputs", ""),
       "the pinned validator build emits the distribution record")
 cs = run.get("Compute checksums", "")

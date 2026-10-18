@@ -7,7 +7,8 @@
 # (`go version -m`), not from go.mod, so it is exactly what was linked. For
 # every dependency module the vendored copy (vendor/<module>) must exist at the
 # same version, and every license-like file under it (LICENSE*, LICENCE*,
-# COPYING*, NOTICE*, PATENTS*, AUTHORS*, CONTRIBUTORS*, at any depth, so nested
+# UNLICENSE*, COPYING*, COPYRIGHT*, LEGAL*, NOTICE*, PATENTS*, AUTHORS*,
+# CONTRIBUTORS*, at any depth, so nested
 # third-party code inside a module is covered) is copied verbatim. The Go
 # toolchain's own LICENSE and PATENTS come from GOROOT, and the toolchain must
 # be the one that built the binaries. bpfcompat's LICENSE and NOTICE are copied
@@ -31,7 +32,7 @@ shift
 die() { echo "collect-go-licenses: $*" >&2; exit 1; }
 command -v go >/dev/null || die "the go command is required"
 
-LICENSE_RE='^(licen[cs]e|copying|notice|patents|authors|contributors)([._-].*)?$'
+LICENSE_RE='^(licen[cs]e|unlicen[cs]e|copying|copyright|legal|notice|patents|authors|contributors)([._-].*)?$'
 
 [[ ! -e "$out" ]] || [[ -z "$(ls -A "$out")" ]] || die "$out must be empty or absent"
 mkdir -p "$out/bpfcompat" "$out/go/toolchain" "$out/go/modules"

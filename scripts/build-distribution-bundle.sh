@@ -87,6 +87,17 @@ mapfile -t cr_pkgs < <(tail -n +2 "$native_dir/packages.tsv" | cut -f1)
 for p in "${cr_pkgs[@]}"; do
   [[ -s "$native_dir/copyright/$p/copyright" ]] || die "no copyright file recorded for $p"
 done
+# Every text an inventory line names must exist: no entry is ever recorded
+# without its file.
+while IFS=$'\t' read -r mod _ _ _ files; do
+  while IFS= read -r rel; do
+    [[ -n "$rel" && -s "$go_dir/go/modules/$mod/$rel" ]] || die "Go license text go/modules/$mod/${rel:-<none>} is missing"
+  done < <(tr ',' '\n' <<<"$files")
+done < <(tail -n +2 "$go_dir/go/modules.tsv")
+while IFS= read -r ref; do
+  [[ -s "$native_dir/common-licenses/$(basename "$ref")" ]] ||
+    die "a copyright file references $ref, but the native record has no common-licenses/$(basename "$ref")"
+done < <(grep -rhoE '/usr/share/common-licenses/[A-Za-z0-9.+_-]*[A-Za-z0-9+_-]' "$native_dir/copyright" | LC_ALL=C sort -u || true)
 
 # ------------------------------------------------------------ helpers
 stage="$(mktemp -d)"

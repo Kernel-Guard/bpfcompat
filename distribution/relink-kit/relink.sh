@@ -41,7 +41,7 @@ link="$(sed -n '$p' "$KIT/build/commands.txt")"
 do_link() { # <workdir> <libdir or empty> <output>
   local wd="$1" ld="$2" o="$3" cmd
   cmd="${link/ main.o -o bpfcompat-validator.relinked / main.o -o $o }"
-  [[ -z "$ld" ]] || cmd="${cmd/ main.o / main.o -L$ld }"
+  [[ -z "$ld" ]] || cmd="${cmd/ main.o / main.o -L$(printf '%q' "$ld") }"
   (cd "$wd" && eval "$cmd")
 }
 

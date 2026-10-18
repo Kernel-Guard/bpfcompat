@@ -40,9 +40,10 @@ recorded command reproduces the shipped validator byte for byte.
 ```
 
 The pinned path needs docker and network access to `snapshot.ubuntu.com`. The
-static libraries themselves are not in this kit; they are installed from the
-locked packages (or, if the release carries it, taken from
-`bpfcompat-validator-link-inputs-linux-amd64.tar.gz`).
+static libraries themselves are not in this kit; `relink.sh` installs them from
+the locked packages. If the release carries
+`bpfcompat-validator-link-inputs-linux-amd64.tar.gz`, its archives can be
+passed explicitly with `--lib-dir`.
 
 ## Limits
 

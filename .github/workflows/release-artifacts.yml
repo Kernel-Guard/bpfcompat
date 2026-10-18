@@ -157,11 +157,14 @@ jobs:
           fi
           bash scripts/collect-go-licenses.sh dist-work/go-licenses \
             dist/bpfcompat-linux-amd64 dist/bpfcompat-linux-arm64
+          # Assigned on their own so a failing policy lookup stops the step.
+          ship_link_inputs="$(bash scripts/check-distribution-policy.sh --ship ship_link_inputs_asset)"
+          ship_native_sources="$(bash scripts/check-distribution-policy.sh --ship ship_native_sources_asset)"
           extra=()
-          if [[ "$(bash scripts/check-distribution-policy.sh --ship ship_link_inputs_asset)" == "true" ]]; then
+          if [[ "$ship_link_inputs" == "true" ]]; then
             extra+=(--with-link-inputs)
           fi
-          if [[ "$(bash scripts/check-distribution-policy.sh --ship ship_native_sources_asset)" == "true" ]]; then
+          if [[ "$ship_native_sources" == "true" ]]; then
             bash scripts/fetch-native-sources.sh dist-work/native-sources
             extra+=(--sources-dir dist-work/native-sources)
           fi
