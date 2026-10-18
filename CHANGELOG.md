@@ -7,7 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.5] - TBD (date set when the tag is cut)
+
+Release candidate for v0.4.0: the changes merged since v0.4.0-rc.4. rc.4
+qualification evidence does not carry over to this candidate.
+
 ### Security
+- `install.sh` binds verification to the requested release: the cosign
+  certificate identity and the GitHub attestation source ref must name exactly
+  that tag, so a signature or attestation made for another release (for example
+  a prerelease) no longer vouches for it. `BPFCOMPAT_VERSION` and the resolved
+  latest tag must look like `vX.Y.Z` or `vX.Y.Z-rc.N`; the installer body runs
+  only when the whole script was received; whether sudo is needed is decided per
+  target directory before anything is installed.
 - The GitHub Action no longer pastes inputs into its `run:` scripts. Every
   input reaches the scripts through `env:` and is read as quoted data, so a
   value containing quotes, `$(...)`, backticks or newlines can no longer run as
@@ -49,6 +61,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     prefix workspace files with `./`.
 
 ### Added
+- A read-only RC preflight inventories observed prerequisites without counting
+  pending qualification as a pass. Candidate Action pins are read from actual
+  workflow YAML nodes; comments and shell-script text cannot establish a pin.
 - Releases carry the third-party license material of their binaries as signed
   assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
   (verbatim license, notice and patent texts of every linked Go module, the Go
@@ -66,10 +81,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     refuses while a stable-blocking decision is undecided.
 
 ### Changed
+- Release build: the static validator is built inside a digest-pinned Ubuntu
+  builder from `validator/build-inputs.lock` (exact package versions from a
+  fixed snapshot.ubuntu.com state). While the validator sources are the tree the
+  lock records, the build fails unless the result is byte-identical to that
+  recorded reproduction. A stable release must ship the same validator bytes as
+  the release candidate it graduates.
+- Release gate: each VM gate report is evaluated on its own and the gate fails
+  closed on a missing or malformed report.
+- Production readiness binds more evidence to the exact candidate: inputs must
+  be single-object JSON; the rollback drill must use the candidate's alias and
+  image digest and complete after the candidate was built; the operator note
+  must contain the exact candidate-evidence hash; the Falco run must start after
+  the candidate was built (whether it ran the candidate's validator is recorded,
+  not required); the promotion incident note must link exactly one rejected
+  run, and an earlier candidate's note is accepted with that fact recorded.
+- CI: top-level workflow tokens are read-only; the hosted compatibility gate is
+  required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
+  coverage.
 - **Breaking:** implicit Docker Hub short refs in tag form, such as
   `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
   `docker.io/org/name:tag`; the "no such file" error suggests that spelling.
   Digest-pinned short refs (`org/name@sha256:…`) are still pulled.
+
+### Migration notes
+- Docker Hub images: write `docker.io/org/name:tag` instead of `org/name:tag`.
+  The "no such file" error suggests that spelling.
+- GitHub Action users with workspace artifacts whose first path component
+  contains `.` or `:` (for example `.output/` from libbpf-bootstrap, or
+  `out.v2/`): prefix the path with `./`. Without it the Action treats the input
+  as a remote reference.
+- Action inputs containing `$VAR`, backticks or `\` are now passed literally;
+  workflows that relied on bash expanding them must expand them in the workflow.
+- Command mode: a target whose guest kernel release cannot be read is now
+  `INFRA_ERROR` (and fails a required run) instead of passing or failing.
+- Self-hosted runners with a validator in `/usr/local/libexec` or
+  `/usr/libexec`: a release-pinned Action now runs the validator it downloaded;
+  set `BPFCOMPAT_VALIDATOR_BIN`/`BPFCOMPAT_VALIDATOR_SHA256` in the workflow to
+  keep using another one (the run then warns).
+- `install.sh` installs the license bundle under `<BIN_DIR>/../share/doc/bpfcompat/<tag>/`
+  (`BPFCOMPAT_DOC_DIR` to change it) when the release publishes one.
+
+### Known limitations
+- When this section was drafted, every stable-blocking decision in
+  `distribution/policy.json` was undecided. The license bundle and relink kit record facts and ship texts
+  verbatim; they do not elect a license or state that any license condition is
+  met. A stable release is refused until the stable-blocking decisions are
+  recorded.
+- The prebuilt static validator is published for x86_64 only.
+- See "Known limitations of the supported path" in
+  `docs/compatibility-contract.md` (artifact-path classification, untrusted
+  names in reports, classification codes, Action binary precedence, shared
+  hosts and SSH).
 
 ## [0.4.0-rc.4] - 2026-10-14
 
