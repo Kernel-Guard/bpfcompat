@@ -7,7 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.5] - TBD (date set when the tag is cut)
+
+Release candidate for v0.4.0. It closes the supported-path findings that made
+v0.4.0-rc.4 a no-go, and pins how release binaries are built and what ships
+with them. rc.4 qualification evidence does not carry over to this candidate.
+
 ### Security
+- `install.sh` binds verification to the requested release: the cosign
+  certificate identity and the GitHub attestation source ref must name exactly
+  that tag, so a signature or attestation made for another release (for example
+  a prerelease) no longer vouches for it. `BPFCOMPAT_VERSION` and the resolved
+  latest tag must look like `vX.Y.Z` or `vX.Y.Z-rc.N`; the installer body runs
+  only when the whole script was received; whether sudo is needed is decided per
+  target directory before anything is installed.
 - The GitHub Action no longer pastes inputs into its `run:` scripts. Every
   input reaches the scripts through `env:` and is read as quoted data, so a
   value containing quotes, `$(...)`, backticks or newlines can no longer run as
@@ -66,10 +79,55 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     refuses while a stable-blocking decision is undecided.
 
 ### Changed
+- Release build: the static validator is built inside a digest-pinned Ubuntu
+  builder from `validator/build-inputs.lock` (exact package versions from a
+  fixed snapshot.ubuntu.com state), and the build fails unless the result is
+  byte-identical to the recorded reproduction of the same validator sources. A
+  stable release must ship the same validator bytes as the release candidate it
+  graduates.
+- Release gate: each VM gate report is evaluated on its own and the gate fails
+  closed on a missing or malformed report.
+- Production readiness: the Falco, canary, rollback, incident and operator
+  evidence must be bound to the exact candidate (single-object JSON, exact
+  candidate-evidence hash in the operator note, rollback alias and digest of the
+  candidate, Falco started after the candidate evidence was generated).
+- CI: top-level workflow tokens are read-only; the hosted compatibility gate is
+  required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
+  coverage.
 - **Breaking:** implicit Docker Hub short refs in tag form, such as
   `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
   `docker.io/org/name:tag`; the "no such file" error suggests that spelling.
   Digest-pinned short refs (`org/name@sha256:…`) are still pulled.
+
+### Migration notes
+- Docker Hub images: write `docker.io/org/name:tag` instead of `org/name:tag`.
+  The "no such file" error suggests that spelling.
+- GitHub Action users with workspace artifacts whose first path component
+  contains `.` or `:` (for example `.output/` from libbpf-bootstrap, or
+  `out.v2/`): prefix the path with `./`. Without it the Action treats the input
+  as a remote reference.
+- Action inputs containing `$VAR`, backticks or `\` are now passed literally;
+  workflows that relied on bash expanding them must expand them in the workflow.
+- Command mode: a target whose guest kernel release cannot be read is now
+  `INFRA_ERROR` (and fails a required run) instead of passing or failing.
+- Self-hosted runners with a validator in `/usr/local/libexec` or
+  `/usr/libexec`: a release-pinned Action now runs the validator it downloaded;
+  set `BPFCOMPAT_VALIDATOR_BIN`/`BPFCOMPAT_VALIDATOR_SHA256` in the workflow to
+  keep using another one (the run then warns).
+- `install.sh` installs the license bundle under `<BIN_DIR>/../share/doc/bpfcompat/<tag>/`
+  (`BPFCOMPAT_DOC_DIR` to change it) when the release publishes one.
+
+### Known limitations
+- Distribution decisions recorded in `distribution/policy.json` are all
+  undecided. This candidate's license bundle and relink kit record facts and
+  ship texts verbatim; they do not elect a license or state that any license
+  condition is met. A stable release is refused until the stable-blocking
+  decisions are recorded.
+- The prebuilt static validator is published for x86_64 only.
+- See "Known limitations of the supported path" in
+  `docs/compatibility-contract.md` (artifact-path classification, untrusted
+  names in reports, classification codes, Action binary precedence, shared
+  hosts and SSH).
 
 ## [0.4.0-rc.4] - 2026-10-14
 
