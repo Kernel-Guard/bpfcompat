@@ -555,13 +555,23 @@ if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
   rollback_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${rollback_run_id}" 2>/dev/null)" ||
     fail "rollback drill run ${rollback_run_id} cannot be read from GitHub"
   jq -e '.path == ".github/workflows/rollback-drill.yml" and .head_branch == "main" and
+         .event == "workflow_dispatch" and .head_repository.full_name == "Kernel-Guard/bpfcompat" and
          .status == "completed" and .conclusion == "success"' <<<"$rollback_run" >/dev/null ||
-    fail "rollback drill run ${rollback_run_id} is not a successful rollback-drill.yml run on main"
+    fail "rollback drill run ${rollback_run_id} is not a successful, dispatched rollback-drill.yml run on this repository's main"
+  # The run itself started after the candidate was built, and the note's
+  # Completed time falls inside it.
+  rollback_run_started="$(iso_epoch "$(jq -r '.run_started_at // ""' <<<"$rollback_run")" "rollback drill run start")"
+  rollback_run_updated="$(iso_epoch "$(jq -r '.updated_at // ""' <<<"$rollback_run")" "rollback drill run end")"
+  [[ "$rollback_run_started" -gt "$candidate_generated_epoch" ]] ||
+    fail "rollback drill run ${rollback_run_id} started before release candidate ${candidate_tag} was built"
+  [[ "$rollback_completed_epoch" -ge "$rollback_run_started" && "$rollback_completed_epoch" -le "$rollback_run_updated" ]] ||
+    fail "rollback drill note's Completed time is outside run ${rollback_run_id}"
   incident_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${incident_run_id}" 2>/dev/null)" ||
     fail "incident run ${incident_run_id} cannot be read from GitHub"
   jq -e '.path == ".github/workflows/promote-release.yml" and
+         .event == "workflow_dispatch" and .head_repository.full_name == "Kernel-Guard/bpfcompat" and
          .status == "completed" and .conclusion != "success"' <<<"$incident_run" >/dev/null ||
-    fail "incident run ${incident_run_id} is not a rejected promote-release.yml run"
+    fail "incident run ${incident_run_id} is not a rejected, dispatched promote-release.yml run on this repository"
 fi
 incident_candidate_bound=false
 if grep -qE "(^|[^[:alnum:].-])${candidate_tag//./\\.}([^[:alnum:]]|$)" "$incident"; then

@@ -194,15 +194,17 @@ aggregator binds every piece of evidence to the attested candidate
   `ghcr.io/kernel-guard/bpfcompat:rollback-drill-vX.Y.Z-rc.N`,
   `- Candidate digest:` is the candidate image digest, `- Final digest:` equals
   a distinct `- Known-good digest:`, and `- Completed:` is after
-  `generated_at`. A drill of an earlier candidate is refused.
+  `generated_at`. A drill of an earlier candidate is refused. With attestation
+  verification on, `- Workflow run:` must be a successful, dispatched
+  `rollback-drill.yml` run on this repository's `main` that started after
+  `generated_at`, and `- Completed:` must fall inside that run.
 - **Incident.** The note must contain `[bpfcompat-promotion-incident:v1]`,
   name `promote-release`, and link the deliberately rejected run, and only
   that run, as
   `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. With
-  attestation verification on, that run must be a completed `promote-release.yml`
-  run that did not succeed, and the rollback evidence's workflow run must be a
-  successful `rollback-drill.yml` run on `main`; both are looked up on GitHub.
-  Written policy does not require the incident drill to target the current
+  attestation verification on, that run must be a completed, dispatched
+  `promote-release.yml` run on this repository that did not succeed. Written
+  policy does not require the incident drill to target the current
   candidate,
   so an earlier candidate's fail-closed drill is accepted; the output records
   `incident.promotion_run_id` and `incident.candidate_bound`.
@@ -226,7 +228,8 @@ The command writes both Markdown and JSON. Add the reviewed outputs to
 request. The stable release workflow validates, checksums, attests, and
 publishes those files; a stable tag fails if they are absent or not `ready`.
 The online candidate check requires an authenticated GitHub CLI version that
-provides `gh attestation`; an older CLI fails closed.
+provides `gh attestation`, and the drill and incident runs are read through the
+GitHub API; an older or unauthenticated CLI, or no network, fails closed.
 
 Do not use `BPFCOMPAT_SKIP_READINESS_ATTESTATION=1` outside the regression
 test; production evidence must verify the candidate attestation online.

@@ -633,10 +633,15 @@ if [[ "$1" == api && "$2" =~ ^repos/Kernel-Guard/bpfcompat/actions/runs/([0-9]+)
   case "${BASH_REMATCH[1]}" in
     5000) jq -n --arg p "${STUB_ROLLBACK_PATH:-.github/workflows/rollback-drill.yml}" \
             --arg b "${STUB_ROLLBACK_BRANCH:-main}" --arg c "${STUB_ROLLBACK_CONCLUSION:-success}" \
-            '{path: $p, head_branch: $b, status: "completed", conclusion: $c}' ;;
+            --arg e "${STUB_ROLLBACK_EVENT:-workflow_dispatch}" --arg r "${STUB_ROLLBACK_REPO:-Kernel-Guard/bpfcompat}" \
+            --arg s "${STUB_ROLLBACK_STARTED:-2026-07-30T15:55:00Z}" --arg u "${STUB_ROLLBACK_UPDATED:-2026-07-30T16:01:00Z}" \
+            '{path: $p, head_branch: $b, event: $e, head_repository: {full_name: $r},
+              run_started_at: $s, updated_at: $u, status: "completed", conclusion: $c}' ;;
     6000) jq -n --arg p "${STUB_INCIDENT_PATH:-.github/workflows/promote-release.yml}" \
-            --arg c "${STUB_INCIDENT_CONCLUSION:-failure}" \
-            '{path: $p, head_branch: "v0.4.0-rc.1", status: "completed", conclusion: $c}' ;;
+            --arg c "${STUB_INCIDENT_CONCLUSION:-failure}" --arg e "${STUB_INCIDENT_EVENT:-workflow_dispatch}" \
+            --arg r "${STUB_INCIDENT_REPO:-Kernel-Guard/bpfcompat}" \
+            '{path: $p, head_branch: "v0.4.0-rc.1", event: $e, head_repository: {full_name: $r},
+              status: "completed", conclusion: $c}' ;;
     *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   esac
   exit 0
@@ -685,6 +690,11 @@ for case in \
   "STUB_ROLLBACK_PATH=.github/workflows/ci.yml|a rollback drill run that is another workflow" \
   "STUB_ROLLBACK_CONCLUSION=failure|a rollback drill run that did not succeed" \
   "STUB_ROLLBACK_BRANCH=feature|a rollback drill run not on main" \
+  "STUB_ROLLBACK_REPO=someone/bpfcompat|a rollback drill run from a fork" \
+  "STUB_ROLLBACK_EVENT=pull_request|a rollback drill run that was not dispatched" \
+  "STUB_ROLLBACK_STARTED=2026-07-30T13:00:00Z|a rollback drill run that started before the candidate" \
+  "STUB_ROLLBACK_UPDATED=2026-07-30T15:59:00Z|a rollback note whose completion is outside its run" \
+  "STUB_INCIDENT_REPO=someone/bpfcompat|an incident linking a run from a fork" \
   "STUB_INCIDENT_PATH=.github/workflows/ci.yml|an incident linking a run of another workflow" \
   "STUB_INCIDENT_CONCLUSION=success|an incident linking a promotion that succeeded"; do
   if env "${case%%|*}" PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" "$script" "$tmp/input.json" "$tmp/bad.md" >/dev/null 2>&1; then
