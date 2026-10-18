@@ -338,6 +338,10 @@ scenario badev; printf 'garbage' >"$tmp/badev/release-candidate-evidence.json"
 run badev 200
 if [[ $rc -eq 3 ]] && grep -q 'release-candidate-evidence.json of .* is not JSON' "$tmp/out"; then ok "unparsable candidate evidence aborts"
 else fail "bad evidence (rc=$rc)"; show; fi
+scenario ccarray; touch "$tmp/ccarray/cc-fixed"; printf '[]' >"$tmp/ccarray/cc-raw.json"; contents "$tmp/ccarray/cc-raw.json" >"$tmp/ccarray/cc.json"
+run ccarray 200
+if [[ $rc -eq 3 ]] && grep -q 'campaign-candidate.json on main is not a JSON object' "$tmp/out"; then ok "a campaign pin that is not a JSON object aborts"
+else fail "non-object campaign pin (rc=$rc)"; show; fi
 
 # 9. Building the pin parser: no module or toolchain download, and the caller's
 #    toolchain choice is kept (an older Go on PATH may switch to a cached

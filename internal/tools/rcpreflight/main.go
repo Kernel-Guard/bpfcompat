@@ -256,20 +256,27 @@ type cronField struct {
 	star  bool
 }
 
-var cronNames = map[string]int{
-	"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
-	"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
-}
+var (
+	monthNames = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+	dayNames   = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+)
+
+func digits(s string) bool { return s != "" && strings.Trim(s, "0123456789") == "" }
 
 // parseCronField accepts what GitHub documents for schedule crons: *, a
-// value, a range a-b, a step */n or a-b/n, comma lists, and JAN-DEC/SUN-SAT
-// names. Anything else is refused rather than guessed.
-func parseCronField(s string, lo, hi int) (cronField, error) {
+// value, a range a-b, a step */n, a-b/n or a/n, comma lists, and names
+// (JAN-DEC, SUN-SAT) only in their own field. Anything else is refused rather
+// than guessed. As in cron, a field that starts with * is unrestricted for
+// the day-of-month/day-of-week rule.
+func parseCronField(s string, lo, hi int, names map[string]int) (cronField, error) {
 	var f cronField
-	f.star = s == "*"
+	f.star = strings.HasPrefix(s, "*")
 	value := func(v string) (int, error) {
-		if n, ok := cronNames[strings.ToLower(v)]; ok && hi <= 12 {
+		if n, ok := names[strings.ToLower(v)]; ok {
 			return n, nil
+		}
+		if !digits(v) {
+			return 0, fmt.Errorf("cron value %q", v)
 		}
 		n, err := strconv.Atoi(v)
 		if err != nil || n < lo || n > hi {
@@ -282,7 +289,7 @@ func parseCronField(s string, lo, hi int) (cronField, error) {
 		step := 1
 		if hasStep {
 			n, err := strconv.Atoi(stepText)
-			if err != nil || n < 1 {
+			if !digits(stepText) || err != nil || n < 1 || n > hi {
 				return f, fmt.Errorf("cron step %q", part)
 			}
 			step = n
@@ -301,14 +308,15 @@ func parseCronField(s string, lo, hi int) (cronField, error) {
 			if first > last {
 				return f, fmt.Errorf("cron range %q", part)
 			}
-		case hasStep:
-			return f, fmt.Errorf("cron step needs * or a range: %q", part)
 		default:
 			n, err := value(base)
 			if err != nil {
 				return f, err
 			}
-			first, last = n, n
+			first = n // a/n runs from a to the field's end
+			if !hasStep {
+				last = n
+			}
 		}
 		for n := first; n <= last; n += step {
 			f.match[n] = true
@@ -325,16 +333,14 @@ func parseCron(line string) (cronSpec, error) {
 	if len(fields) != 5 {
 		return c, fmt.Errorf("cron %q does not have 5 fields", line)
 	}
-	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
+	names := [5]map[string]int{3: monthNames, 4: dayNames}
 	for i, field := range fields {
-		f, err := parseCronField(field, bounds[i][0], bounds[i][1])
+		f, err := parseCronField(field, bounds[i][0], bounds[i][1], names[i])
 		if err != nil {
 			return c, err
 		}
 		c[i] = f
-	}
-	if c[4].match[7] {
-		c[4].match[0] = true // 7 is Sunday too
 	}
 	return c, nil
 }
@@ -372,6 +378,16 @@ func checkSchedule(root *yaml.Node, published string) error {
 	}
 	var crons []cronSpec
 	for _, item := range schedule.Content {
+		// Only cron is evaluated, in UTC; any other key (timezone, for one)
+		// would change when GitHub fires it, so it is refused, not ignored.
+		if item.Kind != yaml.MappingNode {
+			return fmt.Errorf("schedule entry is not a mapping at line %d", item.Line)
+		}
+		for i := 0; i < len(item.Content); i += 2 {
+			if k := item.Content[i]; k.Value != "cron" {
+				return fmt.Errorf("schedule entry key %q at line %d is not checked; only cron, in UTC", k.Value, k.Line)
+			}
+		}
 		_, line := field(item, "cron")
 		if line == nil || line.Kind != yaml.ScalarNode {
 			return fmt.Errorf("schedule entry without a cron string at line %d", item.Line)

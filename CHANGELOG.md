@@ -70,10 +70,10 @@ qualification evidence does not carry over to this candidate.
 - A read-only RC preflight inventories observed prerequisites without counting
   pending qualification as a pass. Candidate Action pins and the canary's
   candidate env are read from actual workflow YAML nodes; comments, shell-script
-  text and steps or jobs that can never run (an `if` that reads no context,
-  calls no function and is not `true`, or a job that needs one of those)
-  cannot establish them. Conditions that call functions are left to the
-  runner.
+  text and steps or jobs that can never run (a constant `if` other than
+  `true`, such as `false` or `0`, or a job that needs one of those; an empty
+  `if` is no condition) cannot establish them. Conditions that read a context
+  or call a function are left to the runner.
 - Releases carry the third-party license material of their binaries as signed
   assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
   (verbatim license, notice and patent texts of every linked Go module, the Go
@@ -107,10 +107,10 @@ qualification evidence does not carry over to this candidate.
   image digest and complete after the candidate was built; the operator note
   must contain the exact candidate-evidence hash; the Falco run must start after
   the candidate was built (whether it ran the candidate's validator is recorded,
-  not required); the promotion incident note must link exactly one workflow run
-  (the rejected `promote-release` run; that it was rejected is asserted by the
-  operator, not checked), and an earlier candidate's note is accepted with that
-  fact recorded.
+  not required); the promotion incident note must name `promote-release` and
+  link exactly one workflow run (that it is the rejected `promote-release` run
+  is asserted by the operator, not checked), and an earlier candidate's note is
+  accepted with that fact recorded.
 - CI: top-level workflow tokens are read-only; the hosted compatibility gate is
   required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
   coverage.

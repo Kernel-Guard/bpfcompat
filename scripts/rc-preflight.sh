@@ -232,7 +232,7 @@ else
   }
   ok_designations=0
   main_file .github/campaign-candidate.json "$tmp/cc.json"
-  jq -e . "$tmp/cc.json" >/dev/null 2>&1 || abort "campaign-candidate.json on main is not JSON"
+  jq -e 'type == "object"' "$tmp/cc.json" >/dev/null 2>&1 || abort "campaign-candidate.json on main is not a JSON object"
   # The scheduled campaigns also bind the two digests recorded there, so they
   # must be this release's SHA256SUMS and candidate evidence.
   cc_problems=""
