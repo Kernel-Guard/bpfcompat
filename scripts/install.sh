@@ -149,12 +149,18 @@ if have cosign; then
     die "cosign signature verification FAILED for SHA256SUMS - refusing to install"
   fi
 elif have gh; then
-  # The tag-bound check below needs `gh attestation` (gh 2.49.0),
-  # --signer-workflow (2.51.0) and --source-ref (2.68.0). An older gh would
-  # fail it like a forged release would, so ask gh's own help what it offers
-  # (not its version: distro builds vary) and name what is missing instead.
+  # The tag-bound check below needs `gh attestation` (gh 2.47.0, hidden until
+  # 2.49.0), --signer-workflow (2.51.0) and --source-ref (2.68.0). An older gh
+  # would fail it like a forged release would, so ask gh's own help what it
+  # offers (not its version: distro builds vary) and name what is missing.
   gh_lacks=""
   if ! gh attestation --help >/dev/null 2>&1; then
+    # A gh that cannot run at all (say, an unreadable config) fails every
+    # command; say so with gh's own error rather than blame its version.
+    if ! gh --help >/dev/null 2>&1; then
+      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p')"
+      die "installed gh could not run 'gh --help'${gh_err:+ ($gh_err)}; fix gh or install cosign - refusing checksum-only installation"
+    fi
     gh_lacks="the 'gh attestation' command"
   else
     gh_help="$(gh attestation verify --help 2>&1 || true)"

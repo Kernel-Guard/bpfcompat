@@ -11,9 +11,12 @@
 #     the identity baked into SHA256SUMS.crt (the release tag that signed it)
 #     and the signature covers this exact SHA256SUMS;
 #   * gh accepts an attestation only for a binary the fake release pipeline
-#     attested, and honours --source-ref like the real CLI does; with
-#     FAKE_GH_LACKS it plays an older gh that has no `attestation` command or
-#     no --signer-workflow / --source-ref flag, failing like cobra does;
+#     attested, and honours --source-ref like the real CLI does. It records
+#     every verify call, so the gh-path cases check that each installed asset
+#     was verified, bound to the release workflow and tag. With FAKE_GH_LACKS
+#     it plays an older gh that has no `attestation` command or no
+#     --signer-workflow / --source-ref flag, failing like cobra does; with
+#     FAKE_GH_BROKEN=1, a gh that cannot run at all (say, a bad config);
 #   * sudo pretends to be root by unlocking the test's read-only tree.
 #
 # Cases: latest -> stable, arch mapping (incl. extra SHA256SUMS lines, the
@@ -24,7 +27,8 @@
 # SHA256SUMS lists it, verified like the binaries, refused when
 # corrupt/missing/unattested, absent in old releases), and a gh too old for
 # the tag-bound check (refused naming what it lacks, never reported as a
-# failed verification or a missing gh; cosign still preferred when present).
+# failed verification or a missing gh; a gh that cannot run is reported as
+# such; cosign still preferred when present).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,6 +52,7 @@ TOOLS="$tmp/tools"
 ATTEST_DB="$tmp/attestations"
 CURL_LOG="$tmp/curl.log"
 GH_LOG="$tmp/gh.log"
+GH_VERIFY_LOG="$tmp/gh-verify.log"
 mkdir -p "$WWW" "$SHIM" "$TOOLS" "$tmp/home"
 : >"$ATTEST_DB"
 
@@ -140,11 +145,21 @@ EOF
 cat >"$SHIM/gh" <<EOF
 #!/usr/bin/env bash
 # Fake gh attestation verify backed by the attestation DB the fake release wrote.
-# FAKE_GH_LACKS plays an older gh (feature history from gh's release notes):
-# "attestation" = gh < 2.49.0, "--signer-workflow" = gh < 2.51.0,
-# "--source-ref" = gh < 2.68.0. FAKE_GH_VERSION is what --version reports.
+# FAKE_GH_LACKS plays an older gh (feature history from gh's source):
+# "attestation" = gh < 2.47.0 (hidden in 2.47-2.48, public from 2.49.0),
+# "--signer-workflow" = gh < 2.51.0, "--source-ref" = gh < 2.68.0.
+# FAKE_GH_VERSION is what --version reports. FAKE_GH_BROKEN=1 fails every
+# command the way gh does with an unreadable config.
 echo "\$*" >>"$GH_LOG"
+if [[ -n "\${FAKE_GH_BROKEN:-}" ]]; then
+  echo 'failed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml' >&2
+  exit 1
+fi
 lacks=" \${FAKE_GH_LACKS:-} "
+if [[ "\${1:-}" == "--help" ]]; then
+  echo 'Work seamlessly with GitHub from the command line.'
+  exit 0
+fi
 if [[ "\${1:-}" == "--version" ]]; then
   printf 'gh version %s (2026-01-01)\nhttps://github.com/cli/cli/releases/latest\n' "\${FAKE_GH_VERSION:-2.102.0}"
   exit 0
@@ -182,6 +197,7 @@ while [[ \$# -gt 0 ]]; do
     *) file="\$1"; shift;;
   esac
 done
+printf 'verify %s repo=%s signer=%s ref=%s\n' "\$file" "\$repo" "\$signer" "\$ref" >>"$GH_VERIFY_LOG"
 [[ "\$repo" == "$REPO" ]] || exit 1
 [[ "\$signer" == "$REPO/.github/workflows/release-artifacts.yml" ]] || exit 1
 sum="\$("$REAL_SHA" <"\$file" | cut -d' ' -f1)"
@@ -242,7 +258,7 @@ done
 OUT="$tmp/out"
 run() {
   local scen="$1" path="$2"; shift 2
-  : >"$CURL_LOG"; : >"$GH_LOG"; rm -f "$tmp/sudo.log"
+  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; rm -f "$tmp/sudo.log"
   set +e
   env -i HOME="$tmp/home" PATH="$path" FAKE_PORT="$FAKE_PORT" SCENARIO="$scen" "$@" \
     sh "$INSTALL" >"$OUT" 2>&1
@@ -252,9 +268,27 @@ run() {
 WITH_COSIGN="$SHIM:$TOOLS"
 GH_ONLY="$tmp/ghonly:$TOOLS"
 show() { sed 's/^/    | /' "$OUT" >&2; }
+# verified <PATH> <tag> <asset...>: on the gh-only PATH, gh verified exactly
+# these assets, once each, bound to the release workflow and refs/tags/<tag>;
+# with cosign on PATH, gh verified nothing. So a dropped, unbound or extra
+# verify call fails the case.
+verified() {
+  local path="$1" tag="$2" a want=""; shift 2
+  if [[ "$path" == "$GH_ONLY" ]]; then
+    for a in "$@"; do
+      want+="verify $a repo=$REPO signer=$REPO/.github/workflows/release-artifacts.yml ref=refs/tags/$tag"$'\n'
+    done
+  fi
+  [[ "$(sort "$GH_VERIFY_LOG")" == "$(printf '%s' "$want" | sort)" ]] && return 0
+  printf '%s' "$want" | sort | sed 's/^/    want gh | /' >&2
+  sort "$GH_VERIFY_LOG" | sed 's/^/    got gh  | /' >&2
+  return 1
+}
+CLI_AMD64=bpfcompat-linux-amd64
+VAL_AMD64=bpfcompat-validator-static-linux-amd64
 
 # ---------------------------------------------------------------- fixtures
-for s in stable arm64 nosha noverify mismatch bindcosign bindgh trunc dirs badver badlatest ghcap; do
+for s in stable arm64 nosha noverify mismatch bindcosign bindgh bindghcli bindghval trunc dirs badver badlatest ghcap; do
   release "$s" v0.3.7 amd64
   release "$s" v0.4.0-rc.4 amd64
   latest "$s" v0.3.7
@@ -274,7 +308,8 @@ for path in "$WITH_COSIGN" "$GH_ONLY"; do
   run stable "$path" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
   if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.3.7 amd64' "$OUT" &&
     grep -qx 'validator v0.3.7 amd64' "$d/libexec/bpfcompat-validator" &&
-    [[ ! -e "$d/share" ]] && grep -q 'publishes no third-party license bundle' "$OUT"; then
+    [[ ! -e "$d/share" ]] && grep -q 'publishes no third-party license bundle' "$OUT" &&
+    verified "$path" v0.3.7 "$CLI_AMD64" "$VAL_AMD64"; then
     ok "latest -> v0.3.7 (PATH=${path%%:*}), no license bundle in that release"
   else fail "latest did not install v0.3.7 (rc=$rc)"; show; fi
 done
@@ -283,7 +318,8 @@ done
 for path in "$WITH_COSIGN" "$GH_ONLY"; do
   d="$tmp/i-rc-${#path}"
   run stable "$path" BPFCOMPAT_VERSION=v0.4.0-rc.4 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
-  if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.4.0-rc.4 amd64' "$OUT"; then ok "pinned v0.4.0-rc.4"
+  if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.4.0-rc.4 amd64' "$OUT" &&
+    verified "$path" v0.4.0-rc.4 "$CLI_AMD64" "$VAL_AMD64"; then ok "pinned v0.4.0-rc.4"
   else fail "pinned prerelease did not install (rc=$rc)"; show; fi
 done
 
@@ -295,7 +331,8 @@ if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.3.7 arm64' "$OUT" && [[ ! -e "$
 else fail "aarch64 mapping (rc=$rc)"; show; fi
 d="$tmp/i-amd64"
 run arm64 "$GH_ONLY" FAKE_ARCH=amd64 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
-if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.3.7 amd64' "$OUT" && [[ -x "$d/libexec/bpfcompat-validator" ]]; then
+if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.3.7 amd64' "$OUT" && [[ -x "$d/libexec/bpfcompat-validator" ]] &&
+  verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64"; then
   ok "amd64 with extra SHA256SUMS entries"
 else fail "amd64 with extra SHA256SUMS entries (rc=$rc)"; show; fi
 d="$tmp/i-mips"
@@ -332,6 +369,21 @@ run bindgh "$GH_ONLY" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOM
 if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'attestation verification FAILED' "$OUT"; then
   ok "gh: rc.4 attestation refused for v0.3.7"
 else fail "gh accepted a binary attested for another tag (rc=$rc)"; show; fi
+# 4b. Each gh verify call stands on its own: swap only the CLI, or only the
+#     validator, for rc.4's attested bytes and regenerate SHA256SUMS to match,
+#     so the attestation is the only thing that can catch it. Dropping or
+#     neutralising that asset's verify call makes this install succeed. (The
+#     license bundle's call is covered by the unattested-bundle case in 8.)
+for c in "bindghcli $CLI_AMD64" "bindghval $VAL_AMD64"; do
+  scen="${c%% *}" asset="${c#* }"
+  cp "$(rel_dir "$scen" v0.4.0-rc.4)/$asset" "$(rel_dir "$scen" v0.3.7)/$asset"
+  (cd "$(rel_dir "$scen" v0.3.7)" && "$REAL_SHA" bpfcompat-* >SHA256SUMS)
+  d="$tmp/i-$scen"
+  run "$scen" "$GH_ONLY" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q "attestation verification FAILED for $asset\$" "$OUT"; then
+    ok "gh: only $asset attested for rc.4 -> refused for v0.3.7"
+  else fail "gh accepted $asset attested for another tag (rc=$rc)"; show; fi
+done
 
 # 5. INST-3: a truncated `curl | sh` stream must not run any part of the install.
 total="$(wc -l <"$INSTALL")"
@@ -406,7 +458,8 @@ for path in "$WITH_COSIGN" "$GH_ONLY"; do
   run lic "$path" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
   if [[ $rc -eq 0 ]] && grep -q '"version": "v0.4.0-rc.5"' "$d/share/doc/bpfcompat/v0.4.0-rc.5/INVENTORY.json" &&
     [[ -s "$d/share/doc/bpfcompat/v0.4.0-rc.5/go/toolchain/LICENSE" ]] &&
-    grep -q 'bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
+    grep -q 'bpfcompat-third-party-licenses.tar.gz' "$OUT" &&
+    verified "$path" v0.4.0-rc.5 "$CLI_AMD64" "$VAL_AMD64" bpfcompat-third-party-licenses.tar.gz; then
     ok "license bundle verified and installed next to the CLI (PATH=${path%%:*})"
   else fail "license bundle install (rc=$rc)"; show; fi
 done
@@ -469,14 +522,26 @@ gh_lacking attestation 2.45.0 "installed gh 2.45.0 lacks the 'gh attestation' co
 gh_lacking --source-ref 2.67.0 "installed gh 2.67.0 lacks --source-ref in 'gh attestation verify', needed for"
 gh_lacking "--signer-workflow --source-ref" 2.50.0 "installed gh 2.50.0 lacks --signer-workflow and --source-ref in 'gh attestation verify'"
 gh_lacking --source-ref "custom-build" "installed gh lacks --source-ref in 'gh attestation verify'"
-for lacks in attestation --source-ref; do
-  d="$tmp/i-ghcap-cosign-${lacks#--}"
-  run ghcap "$WITH_COSIGN" FAKE_GH_LACKS="$lacks" FAKE_GH_VERSION=2.45.0 \
+# A gh that cannot run at all (every command fails, as with an unreadable
+# config) is reported as such, with gh's own error, not as lacking a command.
+d="$tmp/i-ghbroken" bad=""
+run ghcap "$GH_ONLY" FAKE_GH_BROKEN=1 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+[[ $rc -ne 0 && ! -e "$d" ]] || bad="$bad installed-or-rc0"
+grep -qF "installed gh could not run 'gh --help' (failed to create root command: failed to read configuration: invalid config file" "$OUT" ||
+  bad="$bad reason-not-named"
+grep -qF 'fix gh or install cosign - refusing checksum-only installation' "$OUT" || bad="$bad no-remedy"
+! grep -qE 'lacks|FAILED|requires cosign or GitHub CLI' "$OUT" || bad="$bad wrong-reason"
+! grep -qE '^attestation verify [^-]' "$GH_LOG" || bad="$bad verify-attempted"
+if [[ -z "$bad" ]]; then ok "gh that cannot run: refused, naming gh's own error"
+else fail "gh that cannot run (rc=$rc):$bad"; show; fi
+for ghenv in FAKE_GH_LACKS=attestation FAKE_GH_LACKS=--source-ref FAKE_GH_BROKEN=1; do
+  d="$tmp/i-ghcap-cosign-${ghenv//[^A-Za-z]/}"
+  run ghcap "$WITH_COSIGN" "$ghenv" FAKE_GH_VERSION=2.45.0 \
     BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
   if [[ $rc -eq 0 && -x "$d/bin/bpfcompat" && -x "$d/libexec/bpfcompat-validator" ]] &&
     grep -q 'cosign signature over SHA256SUMS verified' "$OUT"; then
-    ok "gh lacking '$lacks' + cosign: verified with cosign and installed"
-  else fail "gh lacking '$lacks' with cosign present (rc=$rc)"; show; fi
+    ok "gh with $ghenv + cosign: verified with cosign and installed"
+  else fail "gh with $ghenv and cosign present (rc=$rc)"; show; fi
 done
 
 if [[ $failures -ne 0 ]]; then
