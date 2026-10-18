@@ -73,6 +73,15 @@ with one `Result` per profile plus the raw on-disk report.
   census (slower).
 - `WithValidator(path)` — pin a validator binary instead of the embedded one.
 
+The embedded validator is the same static binary the release ships
+(`make pkg-embed-validator` stages it). It links third-party native code
+(libbpf, libelf, zstd, zlib, glibc, libgcc); a program built with the
+`hostload` tag therefore contains it too. The release's
+`bpfcompat-third-party-licenses.tar.gz` and
+`bpfcompat-validator-relink-kit-linux-amd64.tar.gz` describe those components
+(see `THIRD_PARTY_NOTICES.md`); this note does not say what redistributing them
+requires.
+
 ## Stability
 
 **Pre-1.0 / experimental.** While the module is `v0.x`, the surface of this

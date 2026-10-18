@@ -48,6 +48,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     `.output/`) as remote even when a workspace file of that name exists;
     prefix workspace files with `./`.
 
+### Added
+- Releases carry the third-party license material of their binaries as signed
+  assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
+  (verbatim license, notice and patent texts of every linked Go module, the Go
+  toolchain and the validator's native components, with an `INVENTORY.json`
+  generated from the shipped binaries) and
+  `bpfcompat-validator-relink-kit-linux-amd64.tar.gz` (the validator's `main.o`,
+  link commands, linker trace and map, inputs with owning packages, sources and
+  `relink.sh`). `validator-build-inputs.json` is now a release asset too.
+  - `install.sh` and the GitHub Action install the license bundle, verified
+    with the binaries, when a release lists it; releases without it install
+    as before. The container image carries the CLI's texts in
+    `/usr/share/doc/bpfcompat/`.
+  - Open distribution decisions are recorded in `distribution/policy.json`;
+    the assets elect no license and claim no compliance, and a stable build
+    refuses while a stable-blocking decision is undecided.
+
 ### Changed
 - **Breaking:** implicit Docker Hub short refs in tag form, such as
   `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
