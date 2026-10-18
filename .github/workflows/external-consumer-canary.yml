@@ -13,6 +13,14 @@ name: external-consumer-canary
 # flows; the report job files/refreshes a single tracking issue and closes it
 # when all three pass again.
 #
+# Validator identity: every lane that exercises the bpfcompat validator uses
+# the ONE validator resolved by scripts/consumer-validator-identity.sh from
+# the checkout itself -- the release asset of the tag at HEAD (checksum +
+# build attestation bound to that tag and commit) when release-candidate-canary
+# dispatches this workflow at an RC tag, or a source build of HEAD on the
+# weekly run on main. There is no hard-coded release version and no fallback;
+# each lane fails closed unless its report proves that exact validator ran.
+#
 # Security note: no ${{ github.event.* }} / head_ref / commit-message fields are
 # interpolated into any run: block.
 
@@ -20,6 +28,11 @@ on:
   schedule:
     - cron: "0 19 * * 0"
   workflow_dispatch:
+    inputs:
+      candidate-tag:
+        description: "Optional release tag the validator must come from; must point at the dispatched ref (empty = derive from the checkout)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -36,6 +49,9 @@ jobs:
   inspektor-gadget:
     name: Inspektor Gadget (published OCI gadget)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: read # verify the RC validator's build attestation
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,8 +67,21 @@ jobs:
             libbpf-dev libelf-dev zlib1g-dev
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
+      - name: Resolve the validator under test
+        id: validator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+        run: |
+          set -euo pipefail
+          args=(resolve --out-dir "$RUNNER_TEMP/consumer-validator")
+          if [[ -n "${CANDIDATE_TAG:-}" ]]; then args+=(--tag "$CANDIDATE_TAG"); fi
+          bash scripts/consumer-validator-identity.sh "${args[@]}"
       - name: Validate the published gadget across kernels
         uses: ./
+        env:
+          BPFCOMPAT_VALIDATOR_BIN: ${{ steps.validator.outputs.path }}
+          BPFCOMPAT_VALIDATOR_SHA256: ${{ steps.validator.outputs.sha256 }}
         with:
           artifact: ghcr.io/inspektor-gadget/gadget/trace_open:latest
           matrix: matrices/consumer-external.yaml
@@ -60,6 +89,15 @@ jobs:
           markdown: reports/inspektor-gadget.md
           timeout: 15m
           concurrency: "2"
+      - name: Verify the report ran the resolved validator
+        env:
+          IDENTITY: ${{ steps.validator.outputs.identity }}
+        run: |
+          set -euo pipefail
+          cp "$IDENTITY" reports/inspektor-gadget-validator-identity.json
+          ./bin/bpfcompat version --json > reports/inspektor-gadget-bpfcompat-version.json
+          bash scripts/consumer-validator-identity.sh verify-report \
+            --identity "$IDENTITY" --report reports/inspektor-gadget.json --mode artifact
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -71,6 +109,9 @@ jobs:
   kubearmor:
     name: KubeArmor (build-on-target system_monitor)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: read # verify the RC validator's build attestation
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,6 +127,16 @@ jobs:
             libbpf-dev libelf-dev zlib1g-dev
       - name: Enable KVM on the hosted runner
         run: if [[ -e /dev/kvm ]]; then sudo chmod 0666 /dev/kvm || true; fi
+      - name: Resolve the validator under test
+        id: validator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.candidate-tag }}
+        run: |
+          set -euo pipefail
+          args=(resolve --out-dir "$RUNNER_TEMP/consumer-validator")
+          if [[ -n "${CANDIDATE_TAG:-}" ]]; then args+=(--tag "$CANDIDATE_TAG"); fi
+          bash scripts/consumer-validator-identity.sh "${args[@]}"
       - name: Build system_monitor on each kernel and load it
         uses: ./
         with:
@@ -111,22 +162,39 @@ jobs:
             make kernel_headers >/dev/null
             make system_monitor.bpf.o >/dev/null 2>&1
             echo "built system_monitor.bpf.o against $(uname -r)"
-            V=v0.3.7
-            base="https://github.com/Kernel-Guard/bpfcompat/releases/download/$V"
-            curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
-            curl -fsSLO "$base/SHA256SUMS"
-            grep 'bpfcompat-validator-static-linux-amd64' SHA256SUMS | sha256sum -c -
-            chmod +x bpfcompat-validator-static-linux-amd64
-            ./bpfcompat-validator-static-linux-amd64 \
+            "$BPFCOMPAT_BIN" \
               --artifact system_monitor.bpf.o \
               --set-map-inner-map kubearmor_visibility=hash:4:4:64 \
               --out /tmp/kubearmor-load.json
+            cat /tmp/kubearmor-load.json
+            echo
+            echo "kubearmor-source-sha=$(git rev-parse HEAD)"
+            echo "bpfcompat-validator-sha256=$(sha256sum "$BPFCOMPAT_BIN" | cut -d' ' -f1)"
+          command-binary: ${{ steps.validator.outputs.path }}
           matrix: matrices/consumer-external.yaml
           disk-resize: "4"
           out: reports/kubearmor.json
           markdown: reports/kubearmor.md
           timeout: 25m
           concurrency: "2"
+      - name: Collect the full in-guest validator output
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          shopt -s nullglob
+          for f in .bpfcompat/runs/*/targets/*/command.stdout; do
+            cp "$f" "reports/kubearmor-$(basename "$(dirname "$f")").command.stdout"
+          done
+      - name: Verify the report ran the resolved validator
+        env:
+          IDENTITY: ${{ steps.validator.outputs.identity }}
+        run: |
+          set -euo pipefail
+          cp "$IDENTITY" reports/kubearmor-validator-identity.json
+          ./bin/bpfcompat version --json > reports/kubearmor-bpfcompat-version.json
+          bash scripts/consumer-validator-identity.sh verify-report \
+            --identity "$IDENTITY" --report reports/kubearmor.json --mode command
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -187,6 +255,9 @@ jobs:
           actual="$(jq -r '.command.binary.sha256 // empty' reports/falco.json)"
           test -n "$actual"
           test "$actual" = "$expected"
+          # scap-open is the loader here; the bpfcompat validator is NOT run in
+          # this lane. Record the orchestrating CLI so the evidence says so.
+          ./bin/bpfcompat version --json > reports/falco-bpfcompat-version.json
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
