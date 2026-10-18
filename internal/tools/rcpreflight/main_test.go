@@ -36,10 +36,46 @@ func TestActiveWorkflowPins(t *testing.T) {
 		{"no-jobs", "all", "run: 'uses: " + good + "'\n", false},
 		{"wrong-type", "all", workflow("      - uses: [invalid]\n"), false},
 		{"subpath", "all", workflow("      - uses: " + good + "\n      - uses: Kernel-Guard/bpfcompat/sub@" + sha + " # " + tag + "\n"), false},
+		{"disabled-step", "all", workflow("      - if: false\n        uses: " + good + "\n"), false},
+		{"disabled-expression", "all", workflow("      - if: ${{ false }}\n        uses: " + good + "\n"), false},
+		{"disabled-job", "candidate", "jobs:\n  decoy:\n    if: ${{ false }}\n    steps:\n      - name: decoy\n        # bpfcompat-pin: candidate\n        uses: " + good + "\n  real:\n    steps:\n      - uses: Kernel-Guard/bpfcompat@main\n", false},
+		{"disabled-marked-step", "candidate", workflow("      - name: decoy\n        if: 0\n        # bpfcompat-pin: candidate\n        uses: " + good + "\n      - uses: Kernel-Guard/bpfcompat@main\n"), false},
+		{"conditional-step", "all", workflow("      - if: needs.plan.outputs.should_run == 'true'\n        uses: " + good + "\n"), true},
+		{"conditional-job", "all", "jobs:\n  test:\n    if: ${{ needs.plan.outputs.should_run == 'true' }}\n    uses: " + good + "\n", true},
+		{"merge-key", "all", workflow("      - uses: " + good + "\n      - <<: {uses: Kernel-Guard/bpfcompat@main}\n"), false},
+		{"case-variant-uses", "all", workflow("      - uses: " + good + "\n      - Uses: Kernel-Guard/bpfcompat@main\n"), false},
+		{"case-variant-steps", "all", "jobs:\n  test:\n    Steps:\n      - uses: Kernel-Guard/bpfcompat@main\n  ok:\n    steps:\n      - uses: " + good + "\n", false},
+		{"kelvin-sign-owner", "all", workflow("      - uses: \"\u212Aernel-Guard/bpfcompat@" + sha + "\" # " + tag + "\n"), false},
+		{"uppercase-sha", "all", workflow("      - uses: Kernel-Guard/bpfcompat@" + strings.ToUpper(sha) + " # " + tag + "\n"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := check(strings.NewReader(tt.text), tt.mode, sha, tag)
+			if (err == nil) != tt.ok {
+				t.Fatalf("check() = %v, want accepted=%v", err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestWorkflowEnvBindings(t *testing.T) {
+	head := "env:\n  CANDIDATE_TAG: v0.4.0-rc.5\n  CANDIDATE_PUBLISHED_AT: \"2026-11-02T10:00:00Z\"\n"
+	tests := []struct {
+		name, text, key, want string
+		ok                    bool
+	}{
+		{"top-level", head + "jobs:\n  x:\n    steps:\n      - run: true\n", "CANDIDATE_TAG", "v0.4.0-rc.5", true},
+		{"quoted", head + "jobs:\n  x:\n    steps:\n      - run: true\n", "CANDIDATE_PUBLISHED_AT", "2026-11-02T10:00:00Z", true},
+		{"stale", head + "jobs:\n  x:\n    steps:\n      - run: true\n", "CANDIDATE_TAG", "v0.4.0-rc.6", false},
+		{"run-text-before-stale-env", "jobs:\n  x:\n    steps:\n      - run: |\n          CANDIDATE_TAG: v0.4.0-rc.6\nenv:\n  CANDIDATE_TAG: v0.4.0-rc.5\n", "CANDIDATE_TAG", "v0.4.0-rc.6", false},
+		{"absent", "jobs:\n  x:\n    steps:\n      - run: true\n", "CANDIDATE_TAG", "v0.4.0-rc.5", false},
+		{"job-shadow", head + "jobs:\n  x:\n    env:\n      CANDIDATE_TAG: v0.4.0-rc.4\n    steps:\n      - run: true\n", "CANDIDATE_TAG", "v0.4.0-rc.5", false},
+		{"step-shadow", head + "jobs:\n  x:\n    steps:\n      - run: true\n        env:\n          CANDIDATE_TAG: v0.4.0-rc.4\n", "CANDIDATE_TAG", "v0.4.0-rc.5", false},
+		{"duplicate", head + "  CANDIDATE_TAG: v0.4.0-rc.4\njobs:\n  x:\n    steps:\n      - run: true\n", "CANDIDATE_TAG", "v0.4.0-rc.5", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := check(strings.NewReader(tt.text), "env", tt.key, tt.want)
 			if (err == nil) != tt.ok {
 				t.Fatalf("check() = %v, want accepted=%v", err, tt.ok)
 			}
@@ -69,6 +105,7 @@ func TestRunExitCodes(t *testing.T) {
 		{"pending", []string{"all", sha, tag, stale}, 0, "PENDING\n"},
 		{"usage", []string{"all", sha, tag}, 2, ""},
 		{"unknown-mode", []string{"some", sha, tag, good}, 2, ""},
+		{"env-mode", []string{"env", "CANDIDATE_TAG", tag, good}, 0, "PENDING\n"},
 		{"unreadable", []string{"all", sha, tag, dir + "/missing.yml"}, 2, ""},
 	}
 	for _, tt := range tests {

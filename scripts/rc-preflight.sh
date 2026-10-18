@@ -8,11 +8,15 @@
 # `gh release download` of two text files (SHA256SUMS and
 # release-candidate-evidence.json), and files in this checkout. It never dispatches or reruns a workflow, never writes to GitHub,
 # never executes a downloaded file and never writes operator evidence.
-# Active workflow pins are parsed by a helper compiled from this checkout's
-# Go sources and vendored YAML library into the temporary directory (writing
-# only Go's build cache). The build never downloads: GOPROXY=off, GOWORK=off,
-# -mod=vendor. GOTOOLCHAIN is left as the caller set it, so the Go on PATH, or
-# a toolchain at go.mod's version already in the module cache, can build it.
+# Active workflow pins and the canary's workflow env are parsed by a helper
+# compiled from this checkout's Go sources and vendored YAML library into the
+# temporary directory (writing only Go's build cache). The build cannot
+# download modules or a toolchain: GOPROXY=off, GONOPROXY and GONOSUMDB set to
+# a pattern nothing matches (so a caller GOPRIVATE cannot reopen direct
+# fetches), GOWORK=off, -mod=vendor. Verifying a cached toolchain may still
+# query the checksum database. GOTOOLCHAIN is left as the caller set it, so the
+# Go on PATH, or a toolchain at go.mod's version already in the module cache,
+# can build it.
 #
 # Status meanings:
 #   VERIFIED  observed directly (a ref, a run, a file, a hash) and as required.
@@ -59,8 +63,9 @@ say() { # <status> <item> <detail>
 }
 # fetch <path> <file>: GET JSON into <file>. Returns 0, or 4 for HTTP 404; any
 # other failure, or a body that is not JSON, aborts the whole report (exit 3).
-# Runs in the main shell, never in $(...), so the abort cannot be mistaken for
-# "not found".
+# Status decisions call it in the main shell, so the abort cannot be mistaken
+# for "not found"; inside last_change's $(...) the abort still ends the report
+# through set -e.
 abort() { echo "rc-preflight: $*; report incomplete" >&2; exit 3; }
 fetch() {
   if gh api "$1" >"$2" 2>"$tmp/err"; then
@@ -232,20 +237,26 @@ else
   else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
   command -v go >/dev/null || abort "Go is required to parse active workflow pins"
-  (cd "$ROOT" && GOWORK=off GOPROXY=off go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) ||
+  (cd "$ROOT" && GOWORK=off GOPROXY=off GONOPROXY=none.invalid GONOSUMDB=none.invalid go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) ||
     abort "cannot build the vendored workflow-pin parser without downloads; it needs Go at go.mod's version on PATH or already in the module cache"
   pin_result="$("$tmp/pincheck" candidate "$commit" "$tag" "$tmp/consumer.yml")" || abort "workflow-pin parser failed"
   if [[ "$pin_result" == VERIFIED ]]; then
     say VERIFIED "designated: consumer-canary candidate pin" "one active candidate marker pinned to $commit # $tag"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: consumer-canary candidate pin" "requires one '# bpfcompat-pin: candidate' marker followed by an active @$commit # $tag uses scalar"; fi
   main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"
-  envv() { sed -nE "s/^ *$1: *\"?([^\"]*)\"?\$/\\1/p" "$tmp/rcc.yml" | head -1; }
+  # envis <name> <value>: the workflow-level env binds it (parsed, not grepped,
+  # so run text cannot stand in for it) and no job or step rebinds it.
+  envis() {
+    local r
+    r="$("$tmp/pincheck" env "$1" "$2" "$tmp/rcc.yml" 2>/dev/null)" || abort "workflow-pin parser failed"
+    [[ "$r" == VERIFIED ]]
+  }
   problems=""
-  [[ "$(envv CANDIDATE_TAG)" == "$tag" ]] || problems+="CANDIDATE_TAG=$(envv CANDIDATE_TAG) "
-  [[ "$(envv CANDIDATE_COMMIT)" == "$commit" ]] || problems+="CANDIDATE_COMMIT=$(envv CANDIDATE_COMMIT) "
-  [[ "$(envv CANDIDATE_PUBLISHED_AT)" == "$published_at" ]] || problems+="CANDIDATE_PUBLISHED_AT=$(envv CANDIDATE_PUBLISHED_AT) "
+  envis CANDIDATE_TAG "$tag" || problems+="CANDIDATE_TAG=(not $tag) "
+  envis CANDIDATE_COMMIT "$commit" || problems+="CANDIDATE_COMMIT=(not $commit) "
+  envis CANDIDATE_PUBLISHED_AT "$published_at" || problems+="CANDIDATE_PUBLISHED_AT=(not $published_at) "
   if [[ -z "$digest" ]]; then problems+="(release-candidate-evidence.json names no image digest) "
-  elif [[ "$(envv CANDIDATE_DIGEST)" != "$digest" ]]; then problems+="CANDIDATE_DIGEST=$(envv CANDIDATE_DIGEST) "; fi
+  elif ! envis CANDIDATE_DIGEST "$digest"; then problems+="CANDIDATE_DIGEST=(not $digest) "; fi
   grep -q "rc${rcnum}-canary-component-" "$tmp/rcc.yml" || problems+="no rc${rcnum}-canary-component names "
   # The published-action job must use exactly this candidate's commit.
   pin_result="$("$tmp/pincheck" all "$commit" "$tag" "$tmp/rcc.yml")" || abort "workflow-pin parser failed"

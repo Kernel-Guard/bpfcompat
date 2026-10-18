@@ -203,6 +203,14 @@ contents "$tmp/olddigest/rcc-raw.yml" >"$tmp/olddigest/rcc.json"
 run olddigest 200
 if line PENDING "designated: release-candidate-canary" && grep -q 'CANDIDATE_DIGEST=' "$tmp/out"; then ok "previous candidate digest left in the canary: not designated"
 else fail "stale digest (rc=$rc)"; show; fi
+scenario runtext
+{ printf 'jobs:\n  notes:\n    steps:\n      - run: |\n          CANDIDATE_TAG: %s\n          CANDIDATE_COMMIT: %s\n          CANDIDATE_DIGEST: %s\n          CANDIDATE_PUBLISHED_AT: "%s"\n' "$TAG" "$C1" "$DIG" "$PUB"
+  printf '  x:\n    name: rc%s-canary-component-clean-install-1\n    uses: Kernel-Guard/bpfcompat@%s # %s\n    out: reports/rc%s-action.json\n' "$RCN" "$C1" "$TAG" "$RCN"
+  printf 'env:\n  CANDIDATE_TAG: v0.0.0-rc.1\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\n' "$C1" "$DIG" "$PUB"; } >"$tmp/runtext/rcc-raw.yml"
+contents "$tmp/runtext/rcc-raw.yml" >"$tmp/runtext/rcc.json"
+run runtext 200
+if line PENDING "designated: release-candidate-canary" && grep -q 'CANDIDATE_TAG=' "$tmp/out"; then ok "current values in run text do not hide a stale workflow env"
+else fail "run-text env (rc=$rc)"; show; fi
 scenario prerun; LATE_DES="$(date -u -d "@$((PUB_EPOCH + 3 * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
 jq --arg d "$LATE_DES" '.[0].merged_at = $d' "$tmp/prerun/pulls.json" >"$tmp/x" && mv "$tmp/x" "$tmp/prerun/pulls.json"
 # The API filter is what excludes earlier runs: serve only what created>=designation would return.
@@ -304,25 +312,27 @@ run badev 200
 if [[ $rc -eq 3 ]] && grep -q 'release-candidate-evidence.json of .* is not JSON' "$tmp/out"; then ok "unparsable candidate evidence aborts"
 else fail "bad evidence (rc=$rc)"; show; fi
 
-# 9. Building the pin parser: no downloads, and the caller's toolchain choice
-#    is kept (an older Go on PATH may switch to a cached go.mod toolchain).
+# 9. Building the pin parser: no module or toolchain download, and the caller's
+#    toolchain choice is kept (an older Go on PATH may switch to a cached
+#    go.mod toolchain). A caller GOPRIVATE would otherwise let Go fetch a
+#    toolchain directly despite GOPROXY=off.
 REAL_GO="$(command -v go)"
 mkdir -p "$tmp/goshim" "$tmp/gofail"
 cat >"$tmp/goshim/go" <<SHIM
 #!/usr/bin/env bash
-printf 'GOTOOLCHAIN=%s GOPROXY=%s GOWORK=%s ARGS=%s\n' "\${GOTOOLCHAIN-<unset>}" "\${GOPROXY-<unset>}" "\${GOWORK-<unset>}" "\$*" >>"$tmp/go.log"
+printf 'GOTOOLCHAIN=%s GOPROXY=%s GONOPROXY=%s GONOSUMDB=%s GOWORK=%s ARGS=%s\n' "\${GOTOOLCHAIN-<unset>}" "\${GOPROXY-<unset>}" "\${GONOPROXY-<unset>}" "\${GONOSUMDB-<unset>}" "\${GOWORK-<unset>}" "\$*" >>"$tmp/go.log"
 exec "$REAL_GO" "\$@"
 SHIM
 printf '#!/usr/bin/env bash\necho "go: go.mod requires go >= 9.9 (running go 1.0)" >&2\nexit 1\n' >"$tmp/gofail/go"
 chmod +x "$tmp/goshim/go" "$tmp/gofail/go"
 scenario gobuild; : >"$tmp/go.log"
 set +e
-PATH="$tmp/bin:$tmp/goshim:$PATH" FIX="$tmp/gobuild" GH_LOG="$tmp/gh.log" GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" \
+PATH="$tmp/bin:$tmp/goshim:$PATH" FIX="$tmp/gobuild" GH_LOG="$tmp/gh.log" GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" GOPRIVATE=golang.org GONOPROXY=golang.org/toolchain \
   BPFCOMPAT_PREFLIGHT_NOW=$((PUB_EPOCH + 200 * 3600)) bash "$PRE" --tag "$TAG" >"$tmp/out" 2>&1
 rc=$?
 set -e
-if [[ $rc -eq 0 ]] && grep -q "^GOTOOLCHAIN=${GOTOOLCHAIN:-auto} GOPROXY=off GOWORK=off ARGS=build -mod=vendor " "$tmp/go.log"; then
-  ok "parser build keeps the caller's GOTOOLCHAIN, with GOPROXY=off, GOWORK=off and -mod=vendor"
+if [[ $rc -eq 0 ]] && grep -q "^GOTOOLCHAIN=${GOTOOLCHAIN:-auto} GOPROXY=off GONOPROXY=none.invalid GONOSUMDB=none.invalid GOWORK=off ARGS=build -mod=vendor " "$tmp/go.log"; then
+  ok "parser build keeps the caller's GOTOOLCHAIN and overrides GOPRIVATE/GONOPROXY, with GOPROXY=off, GOWORK=off and -mod=vendor"
 else fail "parser build environment (rc=$rc): $(cat "$tmp/go.log")"; show; fi
 scenario gofails
 set +e
