@@ -5,8 +5,8 @@
 #
 # Prints one line per item: VERIFIED, MISSING or PENDING, the item, and the
 # evidence behind the status. It only reads: GitHub REST GETs through `gh api`,
-# `gh release download` of the text file SHA256SUMS, and files in this
-# checkout. It never dispatches or reruns a workflow, never writes to GitHub,
+# `gh release download` of two text files (SHA256SUMS and
+# release-candidate-evidence.json), and files in this checkout. It never dispatches or reruns a workflow, never writes to GitHub,
 # never executes a downloaded file and never writes operator evidence.
 #
 # Status meanings:
@@ -14,14 +14,18 @@
 #   MISSING   observed and wrong, or its window has closed without it.
 #   PENDING   not observable yet (no tag, no run, operator-held evidence, an
 #             open decision). Elapsed time alone never makes an item VERIFIED.
-# Run-level canary/campaign/drill items say only that a run of the right kind
-# exists; binding its evidence to the candidate is the job of
+# Canary and campaign runs count only when they started after publication and
+# after main was designated to this candidate; a canary run counts only if a
+# job after its planning job succeeded. A rollback drill run stays PENDING:
+# which candidate it drilled is not visible here. Run-level items say only
+# that a run of the right kind exists; binding its evidence to the candidate is the job of
 # scripts/production-readiness-report.sh, which this does not replace. Canary
 # windows (20-30h, 68-78h after publication) are judged from each run's start
 # time as a proxy for its plan job, which enforces the exact window itself.
 #
-# Exit: 0 no MISSING, 1 at least one MISSING, 2 usage, 3 a lookup failed (the
-# report is then incomplete and nothing is inferred from the failure).
+# Exit: 0 no MISSING, 1 at least one MISSING, 2 usage, 3 a lookup, download,
+# parse or decode failed (the report is then incomplete and nothing is inferred
+# from the failure).
 # Test hook: BPFCOMPAT_PREFLIGHT_NOW=<epoch> fixes "now".
 set -euo pipefail
 
@@ -48,19 +52,25 @@ say() { # <status> <item> <detail>
   printf '%-8s  %-44s  %s\n' "$1" "$2" "$3"
   [[ "$1" != MISSING ]] || missing=1
 }
-# fetch <path> <file>: GET into <file>. Returns 0, or 4 for HTTP 404; any other
-# failure aborts the whole report (exit 3). Runs in the main shell, never in
-# $(...), so the abort cannot be mistaken for "not found".
+# fetch <path> <file>: GET JSON into <file>. Returns 0, or 4 for HTTP 404; any
+# other failure, or a body that is not JSON, aborts the whole report (exit 3).
+# Runs in the main shell, never in $(...), so the abort cannot be mistaken for
+# "not found".
+abort() { echo "rc-preflight: $*; report incomplete" >&2; exit 3; }
 fetch() {
-  if gh api "$1" >"$2" 2>"$tmp/err"; then return 0; fi
+  if gh api "$1" >"$2" 2>"$tmp/err"; then
+    jq -e . "$2" >/dev/null 2>&1 || abort "GET $1 returned a body that is not JSON"
+    return 0
+  fi
   if grep -q 'HTTP 404' "$tmp/err"; then return 4; fi
-  echo "rc-preflight: lookup failed: GET $1: $(head -1 "$tmp/err")" >&2
-  exit 3
+  abort "lookup failed: GET $1: $(head -1 "$tmp/err")"
 }
 # need <path> <file>: like fetch, but a 404 is a lookup failure too.
-need() {
-  fetch "$1" "$2" || { echo "rc-preflight: lookup failed: GET $1: not found" >&2; exit 3; }
-}
+need() { fetch "$1" "$2" || abort "lookup failed: GET $1: not found"; }
+# decode <contents.json> <out>: base64 file contents from the contents API.
+decode() { jq -r .content "$1" | base64 -d >"$2" 2>/dev/null && [[ -s "$2" ]] || abort "cannot decode file contents ($1)"; }
+# asset <name> <dir>: download one release asset (text only, never executed).
+asset() { gh release download "$tag" --repo "$repo" --pattern "$1" --dir "$2" >/dev/null 2>"$tmp/err" || abort "cannot download $1 from the $tag release: $(head -1 "$tmp/err")"; }
 epoch() { date -u -d "$1" +%s; }
 
 echo "rc-preflight: ${repo} ${tag} at $(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ) (read-only)"
@@ -131,7 +141,7 @@ rel="$(jq -c --arg t "$tag" '[.[] | select(.tag_name == $t)] | first // empty' "
 required=(bpfcompat-linux-amd64 bpfcompat-linux-arm64 bpfcompat-validator-static-linux-amd64
   bpfcompat-third-party-licenses.tar.gz bpfcompat-validator-relink-kit-linux-amd64.tar.gz validator-build-inputs.json)
 signed=(SHA256SUMS SHA256SUMS.sig SHA256SUMS.crt bpfcompat.sbom.cdx.json bpfcompat.sbom.cdx.sig bpfcompat.sbom.cdx.crt release-candidate-evidence.json)
-published_at=""
+published_at="" digest=""
 if [[ -z "$rel" ]]; then
   for item in "release staged with required assets" "SHA256SUMS lists required assets" "validator identity" \
               "optional assets match tagged policy" "RC published as prerelease"; do say PENDING "$item" "no release for $tag yet"; done
@@ -141,7 +151,8 @@ else
   for a in "${required[@]}" "${signed[@]}"; do grep -qxF "$a" <<<"$names" || absent+=("$a"); done
   if [[ ${#absent[@]} -eq 0 ]]; then say VERIFIED "release staged with required assets" "$(jq '.assets | length' <<<"$rel") assets"
   else say MISSING "release staged with required assets" "absent: ${absent[*]}"; fi
-  if grep -qxF SHA256SUMS <<<"$names" && gh release download "$tag" --repo "$repo" --pattern SHA256SUMS --dir "$tmp/sums" >/dev/null 2>"$tmp/err"; then
+  if grep -qxF SHA256SUMS <<<"$names"; then
+    asset SHA256SUMS "$tmp/sums"
     sums="$tmp/sums/SHA256SUMS"
     unlisted=()
     for a in "${required[@]}"; do awk -v f="$a" '$2 == f && $1 ~ /^[0-9a-f]{64}$/ { n++ } END { exit n != 1 }' "$sums" || unlisted+=("$a"); done
@@ -150,8 +161,8 @@ else
     vs="$(awk '$2 == "bpfcompat-validator-static-linux-amd64" { print $1 }' "$sums")"
     if [[ -n "$vs" && "$vs" == "$expected_validator" ]]; then say VERIFIED "validator identity" "$vs (validator/build-inputs.lock reproduces=)"
     else say MISSING "validator identity" "SHA256SUMS ${vs:-none}, lock expects $expected_validator"; fi
-    if fetch "repos/${repo}/contents/distribution/policy.json?ref=${tag}" "$tmp/policy-contents.json" &&
-       jq -r .content "$tmp/policy-contents.json" | base64 -d >"$tmp/policy.json" 2>/dev/null && [[ -s "$tmp/policy.json" ]]; then
+    if fetch "repos/${repo}/contents/distribution/policy.json?ref=${tag}" "$tmp/policy-contents.json"; then
+      decode "$tmp/policy-contents.json" "$tmp/policy.json"
       bad=""
       for pair in "ship_link_inputs_asset:bpfcompat-validator-link-inputs-linux-amd64.tar.gz" "ship_native_sources_asset:bpfcompat-validator-native-sources.tar"; do
         d="${pair%%:*}" f="${pair#*:}"
@@ -166,62 +177,114 @@ else
     fi
   else
     for item in "SHA256SUMS lists required assets" "validator identity" "optional assets match tagged policy"; do
-      say MISSING "$item" "SHA256SUMS is not downloadable from the $tag release"
+      say MISSING "$item" "the $tag release has no SHA256SUMS asset"
     done
   fi
   draft="$(jq -r .draft <<<"$rel")" prerel="$(jq -r .prerelease <<<"$rel")"
   if [[ "$draft" == true ]]; then say PENDING "RC published as prerelease" "draft (promotion pending)"
-  elif [[ "$prerel" == true ]]; then published_at="$(jq -r .published_at <<<"$rel")"; say VERIFIED "RC published as prerelease" "published $published_at"
+  elif [[ "$prerel" == true ]]; then
+    published_at="$(jq -r .published_at <<<"$rel")"
+    say VERIFIED "RC published as prerelease" "published $published_at"
+    digest=""
+    if grep -qxF release-candidate-evidence.json <<<"$names"; then
+      asset release-candidate-evidence.json "$tmp/ev"
+      digest="$(jq -r '.image // empty' "$tmp/ev/release-candidate-evidence.json" 2>/dev/null | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p')"
+    fi
   else say MISSING "RC published as prerelease" "published but not marked prerelease"; fi
 fi
 
 # ------------------------------------------------------------ designation and qualification
+# Runs only count when they started after publication AND after main was
+# designated to this candidate; before that, the workflows still named the
+# previous candidate.
+rcnum="${tag##*-rc.}"
 if [[ -z "$published_at" ]]; then
   for item in "designated: campaign-candidate.json" "designated: consumer-canary candidate pin" "designated: release-candidate-canary" \
               "canary manual" "canary t-plus-24h" "canary t-plus-72h" "scheduled campaigns (4)" "rollback drill run"; do
     say PENDING "$item" "requires a published $tag"
   done
 else
-  main_file() { # <path> <out>
-    need "repos/${repo}/contents/$1?ref=main" "$tmp/contents.json"
-    jq -r .content "$tmp/contents.json" | base64 -d >"$2"
+  main_file() { need "repos/${repo}/contents/$1?ref=main" "$tmp/contents.json"; decode "$tmp/contents.json" "$2"; }
+  # last_change <path>: epoch at which the newest change to <path> landed on
+  # main: the merge time of the pull request that brought that commit in, or
+  # the commit's own date when it was pushed directly.
+  last_change() {
+    need "repos/${repo}/commits?sha=main&path=$1&per_page=1" "$tmp/commits.json"
+    local sha d
+    sha="$(jq -r '.[0].sha // empty' "$tmp/commits.json")"
+    [[ -n "$sha" ]] || abort "no main commit touches $1"
+    need "repos/${repo}/commits/${sha}/pulls" "$tmp/pulls.json"
+    d="$(jq -r '[.[] | select(.merged_at != null and .base.ref == "main") | .merged_at] | max // empty' "$tmp/pulls.json")"
+    [[ -n "$d" ]] || d="$(jq -r '.[0].commit.committer.date' "$tmp/commits.json")"
+    epoch "$d"
   }
-  main_file .github/campaign-candidate.json "$tmp/cc.json"; cc="$(cat "$tmp/cc.json")"
-  if [[ "$(jq -r .tag <<<"$cc")" == "$tag" && "$(jq -r .commit_sha <<<"$cc")" == "$commit" ]]; then say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit"
-  else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag <<<"$cc") (retarget after verification)"; fi
+  ok_designations=0
+  main_file .github/campaign-candidate.json "$tmp/cc.json"
+  jq -e . "$tmp/cc.json" >/dev/null 2>&1 || abort "campaign-candidate.json on main is not JSON"
+  if [[ "$(jq -r .tag "$tmp/cc.json")" == "$tag" && "$(jq -r .commit_sha "$tmp/cc.json")" == "$commit" ]]; then
+    say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit"; ok_designations=$((ok_designations + 1))
+  else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
   pin="$(grep -A1 'bpfcompat-pin: candidate' "$tmp/consumer.yml" | tail -1)"
-  if [[ "$pin" == *"@${commit} # ${tag}"* ]]; then say VERIFIED "designated: consumer-canary candidate pin" "pinned to $commit"
+  if [[ "$pin" == *"@${commit} # ${tag}"* ]]; then say VERIFIED "designated: consumer-canary candidate pin" "pinned to $commit"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: consumer-canary candidate pin" "main pins:${pin##*@}"; fi
-  main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"; rcc="$(cat "$tmp/rcc.yml")"
-  rcc_tag="$(sed -nE 's/^ *CANDIDATE_TAG: *"?([^"]*)"?$/\1/p' <<<"$rcc" | head -1)"
-  rcc_pub="$(sed -nE 's/^ *CANDIDATE_PUBLISHED_AT: *"?([^"]*)"?$/\1/p' <<<"$rcc" | head -1)"
-  if [[ "$rcc_tag" == "$tag" && "$rcc_pub" == "$published_at" ]]; then say VERIFIED "designated: release-candidate-canary" "$rcc_tag published $rcc_pub"
-  else say PENDING "designated: release-candidate-canary" "main has $rcc_tag published ${rcc_pub:-?} (retarget with dated schedules)"; fi
+  main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"
+  envv() { sed -nE "s/^ *$1: *\"?([^\"]*)\"?\$/\\1/p" "$tmp/rcc.yml" | head -1; }
+  problems=""
+  [[ "$(envv CANDIDATE_TAG)" == "$tag" ]] || problems+="CANDIDATE_TAG=$(envv CANDIDATE_TAG) "
+  [[ "$(envv CANDIDATE_COMMIT)" == "$commit" ]] || problems+="CANDIDATE_COMMIT=$(envv CANDIDATE_COMMIT) "
+  [[ "$(envv CANDIDATE_PUBLISHED_AT)" == "$published_at" ]] || problems+="CANDIDATE_PUBLISHED_AT=$(envv CANDIDATE_PUBLISHED_AT) "
+  if [[ -z "$digest" ]]; then problems+="(release-candidate-evidence.json names no image digest) "
+  elif [[ "$(envv CANDIDATE_DIGEST)" != "$digest" ]]; then problems+="CANDIDATE_DIGEST=$(envv CANDIDATE_DIGEST) "; fi
+  grep -q "rc${rcnum}-canary-component-" "$tmp/rcc.yml" || problems+="no rc${rcnum}-canary-component names "
+  if grep -Eo 'rc[0-9]+-canary-component-|reports/rc[0-9]+-action' "$tmp/rcc.yml" | grep -vqE "^(rc${rcnum}-|reports/rc${rcnum}-)"; then
+    problems+="other candidates' artifact/report names remain "
+  fi
+  if [[ -z "$problems" ]]; then say VERIFIED "designated: release-candidate-canary" "tag, commit, digest $digest, published $published_at, rc${rcnum} names"; ok_designations=$((ok_designations + 1))
+  else say PENDING "designated: release-candidate-canary" "main still differs: $problems"; fi
 
   pub="$(epoch "$published_at")"
-  need "repos/${repo}/actions/workflows/release-candidate-canary.yml/runs?created=%3E%3D${published_at}&per_page=100" "$tmp/cruns.json"
-  canary() { # <milestone> <event> <min-h> <max-h>
-    local hit
-    hit="$(jq -r --argjson p "$pub" --arg e "$2" --argjson lo "$3" --argjson hi "$4" '
-      [.workflow_runs[] | select(.event == $e and .status == "completed" and .conclusion == "success")
-       | select((((.run_started_at | fromdateiso8601) - $p) / 3600 | floor) as $h | $h >= $lo and $h <= $hi)
-       | "\(.id) attempt \(.run_attempt) started \(.run_started_at)"] | first // empty' "$tmp/cruns.json")"
-    if [[ -n "$hit" ]]; then say VERIFIED "canary $1" "successful $2 run $hit (candidate binding: readiness report)"
-    elif (( now < pub + ($4 + 1) * 3600 )); then say PENDING "canary $1" "window ${3}-${4}h after publication open or not reached"
-    else say MISSING "canary $1" "no successful $2 run started ${3}-${4}h after publication"; fi
-  }
-  canary manual workflow_dispatch 0 100000
-  canary t-plus-24h schedule 20 30
-  canary t-plus-72h schedule 68 78
-
-  need "repos/${repo}/actions/workflows/latest-kernel-compatibility.yml/runs?event=schedule&created=%3E%3D${published_at}&per_page=100" "$tmp/camp.json"
-  n="$(jq '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success")] | length' "$tmp/camp.json")"
-  if [[ "$n" -ge 4 ]]; then say VERIFIED "scheduled campaigns (4)" "$n successful scheduled runs since publication (spacing and binding: readiness report)"
-  else say PENDING "scheduled campaigns (4)" "$n of 4 successful scheduled runs since publication"; fi
+  if [[ "$ok_designations" -ne 3 ]]; then
+    for item in "canary manual" "canary t-plus-24h" "canary t-plus-72h" "scheduled campaigns (4)"; do
+      say PENDING "$item" "requires main to be designated to $tag"
+    done
+  else
+    since="$pub"
+    for f in .github/campaign-candidate.json .github/workflows/consumer-canary.yml .github/workflows/release-candidate-canary.yml; do
+      c="$(last_change "$f")"; (( c > since )) && since="$c"
+    done
+    since_iso="$(date -u -d "@$since" +%Y-%m-%dT%H:%M:%SZ)"
+    need "repos/${repo}/actions/workflows/release-candidate-canary.yml/runs?created=%3E%3D${since_iso}&per_page=100" "$tmp/cruns.json"
+    # A canary run counts only if a job after the planning job succeeded:
+    # that proves the plan job accepted its window (out-of-window runs skip
+    # every later job and still conclude "success").
+    executed() {
+      need "repos/${repo}/actions/runs/$1/jobs?per_page=100" "$tmp/jobs-$1.json"
+      jq -e '[.jobs[] | select(.name != "Select RC observation window" and .conclusion == "success")] | length > 0' "$tmp/jobs-$1.json" >/dev/null
+    }
+    canary() { # <milestone> <event> <min-h> <max-h>
+      local id st h hit=""
+      while IFS=$'\t' read -r id st; do
+        [[ -n "$id" ]] || continue
+        h=$(( ($(epoch "$st") - pub) / 3600 ))
+        (( h >= $3 && h <= $4 + 1 )) || continue
+        if executed "$id"; then hit="$id started $st"; break; fi
+      done < <(jq -r --arg e "$2" '.workflow_runs[] | select(.event == $e and .status == "completed" and .conclusion == "success") | "\(.id)\t\(.run_started_at)"' "$tmp/cruns.json")
+      if [[ -n "$hit" ]]; then say VERIFIED "canary $1" "$2 run $hit, past its plan job (candidate binding: readiness report)"
+      elif (( now < pub + ($4 + 2) * 3600 )); then say PENDING "canary $1" "window ${3}-${4}h after publication open or not reached"
+      else say MISSING "canary $1" "no executed $2 run ${3}-${4}h after publication"; fi
+    }
+    canary manual workflow_dispatch 0 100000
+    canary t-plus-24h schedule 20 30
+    canary t-plus-72h schedule 68 78
+    need "repos/${repo}/actions/workflows/latest-kernel-compatibility.yml/runs?event=schedule&created=%3E%3D${since_iso}&per_page=100" "$tmp/camp.json"
+    n="$(jq '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success")] | length' "$tmp/camp.json")"
+    if [[ "$n" -ge 4 ]]; then say VERIFIED "scheduled campaigns (4)" "$n successful scheduled runs since designation (spacing and binding: readiness report)"
+    else say PENDING "scheduled campaigns (4)" "$n of 4 successful scheduled runs since designation ($since_iso)"; fi
+  fi
   need "repos/${repo}/actions/workflows/rollback-drill.yml/runs?created=%3E%3D${published_at}&per_page=50" "$tmp/drill.json"
   drill="$(jq -r '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success") | .id] | first // empty' "$tmp/drill.json")"
-  if [[ -n "$drill" ]]; then say VERIFIED "rollback drill run" "successful run $drill since publication (alias/digest binding: readiness report)"
+  if [[ -n "$drill" ]]; then say PENDING "rollback drill run" "run $drill succeeded since publication; which candidate it drilled is checked only by the readiness report"
   else say PENDING "rollback drill run" "no successful run since publication"; fi
 fi
 say PENDING "Falco expanded entry" "operator-held; bound by production-readiness-report.sh"

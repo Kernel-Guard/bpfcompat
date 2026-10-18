@@ -21,9 +21,12 @@ TAG="v${version}"
 [[ "$TAG" =~ -rc\.[0-9]+$ ]] || { echo "[rc-preflight-test] skip: release.yaml is not a prerelease ($version)"; exit 0; }
 VSHA="$(awk -F= '$1 == "reproduces" { split($2, a, " "); print a[2] }' "$ROOT_DIR/validator/build-inputs.lock")"
 C1="$(printf 'a%.0s' {1..40})" C2="$(printf 'b%.0s' {1..40})" TAGOBJ="$(printf 'c%.0s' {1..40})"
+DIG="sha256:$(printf 'd%.0s' {1..64})"
+RCN="${TAG##*-rc.}"
 PUB="2026-11-02T10:00:00Z"
 PUB_EPOCH="$(date -u -d "$PUB" +%s)"
 at() { date -u -d "@$((PUB_EPOCH + $1 * 3600 + 600))" +%Y-%m-%dT%H:%M:%SZ; } # <hours> -> ISO, 10 min past the hour
+DESIGNATED="$(date -u -d "@$((PUB_EPOCH + 300))" +%Y-%m-%dT%H:%M:%SZ)"            # designation merged 5 min after T0
 
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/gh" <<'EOF'
@@ -43,8 +46,10 @@ if [[ "$1" == api ]]; then
   echo "gh: HTTP 404 (unrouted $2)" >&2; exit 1
 fi
 if [[ "$1 $2" == "release download" ]]; then
-  dir=""; while [[ $# -gt 0 ]]; do [[ "$1" == --dir ]] && dir="$2"; shift; done
-  mkdir -p "$dir"; cp "$FIX/SHA256SUMS" "$dir/SHA256SUMS"; exit 0
+  dir="" pat=""
+  while [[ $# -gt 0 ]]; do case "$1" in --dir) dir="$2";; --pattern) pat="$2";; esac; shift; done
+  if [[ -f "$FIX/download-fail" ]]; then echo "gh: HTTP 403" >&2; exit 1; fi
+  mkdir -p "$dir"; cp "$FIX/$pat" "$dir/$pat"; exit 0
 fi
 echo "gh shim: refusing non-read command: $*" >&2; exit 9
 EOF
@@ -70,7 +75,12 @@ scenario() {
   contents "$ROOT_DIR/distribution/policy.json" >"$F/policy.json"
   jq -n --arg t "$TAG" --arg c "$C1" '{tag: $t, commit_sha: $c}' >"$F/cc-raw.json"; contents "$F/cc-raw.json" >"$F/cc.json"
   printf '      - name: x\n        # bpfcompat-pin: candidate\n        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C1" "$TAG" >"$F/consumer-raw.yml"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
-  printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\n' "$TAG" "$PUB" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
+  printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    out: reports/rc%s-action.json\n' \
+    "$TAG" "$C1" "$DIG" "$PUB" "$RCN" "$RCN" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
+  jq -n --arg i "ghcr.io/kernel-guard/bpfcompat@$DIG" '{image: $i}' >"$F/release-candidate-evidence.json"
+  jq -n '[{sha: "e000000000000000000000000000000000000000", commit: {committer: {date: "2020-01-01T00:00:00Z"}}}]' >"$F/commits.json"
+  jq -n --arg m "$DESIGNATED" '[{merged_at: $m, base: {ref: "main"}}]' >"$F/pulls.json"
+  jq -n '{jobs: [{name: "Select RC observation window", conclusion: "success"}, {name: "Clean install", conclusion: "success"}]}' >"$F/jobs.json"
   jq -n --arg m "$(at 0)" --arg a "$(at 25)" --arg b "$(at 70)" '{workflow_runs: [
     {id: 1, run_attempt: 1, event: "workflow_dispatch", status: "completed", conclusion: "success", run_started_at: $m},
     {id: 2, run_attempt: 1, event: "schedule", status: "completed", conclusion: "success", run_started_at: $a},
@@ -89,6 +99,9 @@ repos/*/contents/.github/workflows/release-candidate-canary.yml?ref=main	200	rcc
 repos/*/actions/workflows/release-candidate-canary.yml/runs*	200	cruns.json
 repos/*/actions/workflows/latest-kernel-compatibility.yml/runs*	200	camp.json
 repos/*/actions/workflows/rollback-drill.yml/runs*	200	drill.json
+repos/*/commits?sha=main&path=*	200	commits.json
+repos/*/commits/*/pulls	200	pulls.json
+repos/*/actions/runs/*/jobs*	200	jobs.json
 EOF
 }
 route() { sed -i "1i $2" "$tmp/$1/routes"; } # prepend an overriding route
@@ -129,12 +142,13 @@ if [[ $rc -eq 0 ]] && line VERIFIED "tag exists" && grep -q "as approved" "$tmp/
   line VERIFIED "optional assets match tagged policy" && line VERIFIED "RC published as prerelease" &&
   line VERIFIED "designated: campaign-candidate.json" && line VERIFIED "designated: consumer-canary candidate pin" &&
   line VERIFIED "designated: release-candidate-canary" && line VERIFIED "canary manual" && line VERIFIED "canary t-plus-24h" &&
-  line VERIFIED "canary t-plus-72h" && line VERIFIED "scheduled campaigns" && line VERIFIED "rollback drill run" &&
+  line VERIFIED "canary t-plus-72h" && line VERIFIED "scheduled campaigns" && line PENDING "rollback drill run" &&
+  grep -q 'which candidate it drilled' "$tmp/out" &&
   line PENDING "operator promotion confirmation"; then ok "annotated tag dereferenced; every observable item VERIFIED"
 else fail "full scenario (rc=$rc)"; show; fi
-if awk '!/^api / && !/^release download .*--pattern SHA256SUMS/' "$tmp/gh.log" | grep -q .; then fail "non-read gh call: $(cat "$tmp/gh.log")"
-elif grep -qE -- '(-X|--method)' "$tmp/gh.log"; then fail "gh api called with a method"
-else ok "only GET api calls and the SHA256SUMS download were made"; fi
+if awk '!/^api / && !/^release download .*--pattern (SHA256SUMS|release-candidate-evidence\.json) /' "$tmp/gh.log" | grep -q .; then fail "non-read gh call: $(cat "$tmp/gh.log")"
+elif grep -qE -- '(-X|--method|-f |-F |--field|--input)' "$tmp/gh.log"; then fail "gh api called with a method or body"
+else ok "only GET api calls and the two text downloads were made"; fi
 
 # 4. Wrong identities are MISSING.
 run full 200 --commit "$C2"
@@ -177,7 +191,47 @@ if [[ $rc -eq 0 ]] && line PENDING "RC published as prerelease" && line PENDING 
   ok "draft: verified assets, publication-dependent items PENDING"
 else fail "draft (rc=$rc)"; show; fi
 
-# 7. Usage.
+# 7. Designation must cover every candidate-bound value; runs before it do not count.
+scenario stale; sed -i "s/rc${RCN}-canary-component-clean-install-1/rc4-canary-component-clean-install-1/" "$tmp/stale/rcc-raw.yml"
+contents "$tmp/stale/rcc-raw.yml" >"$tmp/stale/rcc.json"
+run stale 200
+if line PENDING "designated: release-candidate-canary" && grep -q "artifact/report names" "$tmp/out" && line PENDING "canary manual" &&
+  grep -q 'requires main to be designated' "$tmp/out"; then ok "leftover previous-candidate artifact names: not designated, canaries not counted"
+else fail "stale designation (rc=$rc)"; show; fi
+scenario olddigest; sed -i "s/CANDIDATE_DIGEST: .*/CANDIDATE_DIGEST: sha256:$(printf 'e%.0s' {1..64})/" "$tmp/olddigest/rcc-raw.yml"
+contents "$tmp/olddigest/rcc-raw.yml" >"$tmp/olddigest/rcc.json"
+run olddigest 200
+if line PENDING "designated: release-candidate-canary" && grep -q 'CANDIDATE_DIGEST=' "$tmp/out"; then ok "previous candidate digest left in the canary: not designated"
+else fail "stale digest (rc=$rc)"; show; fi
+scenario prerun; LATE_DES="$(date -u -d "@$((PUB_EPOCH + 3 * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
+jq --arg d "$LATE_DES" '.[0].merged_at = $d' "$tmp/prerun/pulls.json" >"$tmp/x" && mv "$tmp/x" "$tmp/prerun/pulls.json"
+# The API filter is what excludes earlier runs: serve only what created>=designation would return.
+jq '.workflow_runs |= map(select(.event == "schedule"))' "$tmp/prerun/cruns.json" >"$tmp/prerun/cruns-filtered.json"
+route prerun $'repos/*/actions/workflows/release-candidate-canary.yml/runs*\t200\tcruns-filtered.json'
+run prerun 200
+if grep -qF "created=%3E%3D${LATE_DES}" "$tmp/gh.log" && line PENDING "canary manual" && line VERIFIED "canary t-plus-24h"; then
+  ok "runs are listed from the designation merge time, not from publication"
+else fail "pre-designation run (rc=$rc)"; show; fi
+scenario planonly; jq '.jobs = [.jobs[0], {name: "Clean install", conclusion: "skipped"}]' "$tmp/planonly/jobs.json" >"$tmp/x" && mv "$tmp/x" "$tmp/planonly/jobs.json"
+run planonly 200
+if line MISSING "canary t-plus-24h" && line MISSING "canary t-plus-72h"; then ok "a run whose later jobs the plan job skipped does not count"
+else fail "plan-only run counted (rc=$rc)"; show; fi
+
+# 8. Malformed answers abort; nothing is inferred from them.
+scenario badjson; printf 'not json' >"$tmp/badjson/releases.json"
+run badjson 200
+if [[ $rc -eq 3 ]] && grep -q 'not JSON' "$tmp/out" && ! grep -q 'release staged' "$tmp/out"; then ok "non-JSON API body aborts"; else fail "non-JSON body (rc=$rc)"; show; fi
+scenario badb64; printf '{"content": "%%%%not-base64%%%%"}' >"$tmp/badb64/policy.json"
+run badb64 200
+if [[ $rc -eq 3 ]] && grep -q 'cannot decode' "$tmp/out"; then ok "undecodable file contents abort"; else fail "bad base64 (rc=$rc)"; show; fi
+scenario dlfail; touch "$tmp/dlfail/download-fail"
+run dlfail 200
+if [[ $rc -eq 3 ]] && grep -q 'cannot download SHA256SUMS' "$tmp/out" && ! grep -q '^MISSING   validator identity' "$tmp/out"; then
+  ok "a failed asset download aborts instead of reporting MISSING"
+else fail "download failure (rc=$rc)"; show; fi
+
+# 9. Usage.
+
 if bash "$PRE" --tag v0.4.0 >/dev/null 2>&1; then fail "stable tag accepted"; else ok "non-RC tag refused"; fi
 
 if [[ $failures -ne 0 ]]; then echo "[rc-preflight-test] $failures failure(s)" >&2; exit 1; fi

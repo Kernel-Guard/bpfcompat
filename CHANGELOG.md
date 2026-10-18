@@ -9,9 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [0.4.0-rc.5] - TBD (date set when the tag is cut)
 
-Release candidate for v0.4.0. It closes the supported-path findings that made
-v0.4.0-rc.4 a no-go, and pins how release binaries are built and what ships
-with them. rc.4 qualification evidence does not carry over to this candidate.
+Release candidate for v0.4.0: the changes merged since v0.4.0-rc.4. rc.4
+qualification evidence does not carry over to this candidate.
 
 ### Security
 - `install.sh` binds verification to the requested release: the cosign
@@ -81,16 +80,19 @@ with them. rc.4 qualification evidence does not carry over to this candidate.
 ### Changed
 - Release build: the static validator is built inside a digest-pinned Ubuntu
   builder from `validator/build-inputs.lock` (exact package versions from a
-  fixed snapshot.ubuntu.com state), and the build fails unless the result is
-  byte-identical to the recorded reproduction of the same validator sources. A
-  stable release must ship the same validator bytes as the release candidate it
-  graduates.
+  fixed snapshot.ubuntu.com state). While the validator sources are the tree the
+  lock records, the build fails unless the result is byte-identical to that
+  recorded reproduction. A stable release must ship the same validator bytes as
+  the release candidate it graduates.
 - Release gate: each VM gate report is evaluated on its own and the gate fails
   closed on a missing or malformed report.
-- Production readiness: the Falco, canary, rollback, incident and operator
-  evidence must be bound to the exact candidate (single-object JSON, exact
-  candidate-evidence hash in the operator note, rollback alias and digest of the
-  candidate, Falco started after the candidate evidence was generated).
+- Production readiness binds more evidence to the exact candidate: inputs must
+  be single-object JSON; the rollback drill must use the candidate's alias and
+  image digest and complete after the candidate was built; the operator note
+  must contain the exact candidate-evidence hash; the Falco run must start after
+  the candidate was built (whether it ran the candidate's validator is recorded,
+  not required); the promotion incident note must link exactly one rejected
+  run, and an earlier candidate's note is accepted with that fact recorded.
 - CI: top-level workflow tokens are read-only; the hosted compatibility gate is
   required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
   coverage.
@@ -118,11 +120,11 @@ with them. rc.4 qualification evidence does not carry over to this candidate.
   (`BPFCOMPAT_DOC_DIR` to change it) when the release publishes one.
 
 ### Known limitations
-- Distribution decisions recorded in `distribution/policy.json` are all
-  undecided. This candidate's license bundle and relink kit record facts and
-  ship texts verbatim; they do not elect a license or state that any license
-  condition is met. A stable release is refused until the stable-blocking
-  decisions are recorded.
+- When this section was drafted, every decision in `distribution/policy.json`
+  was undecided. The license bundle and relink kit record facts and ship texts
+  verbatim; they do not elect a license or state that any license condition is
+  met. A stable release is refused until the stable-blocking decisions are
+  recorded.
 - The prebuilt static validator is published for x86_64 only.
 - See "Known limitations of the supported path" in
   `docs/compatibility-contract.md` (artifact-path classification, untrusted
