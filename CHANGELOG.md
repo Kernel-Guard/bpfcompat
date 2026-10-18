@@ -120,8 +120,8 @@ qualification evidence does not carry over to this candidate.
   (`BPFCOMPAT_DOC_DIR` to change it) when the release publishes one.
 
 ### Known limitations
-- When this section was drafted, every decision in `distribution/policy.json`
-  was undecided. The license bundle and relink kit record facts and ship texts
+- When this section was drafted, every stable-blocking decision in
+  `distribution/policy.json` was undecided. The license bundle and relink kit record facts and ship texts
   verbatim; they do not elect a license or state that any license condition is
   met. A stable release is refused until the stable-blocking decisions are
   recorded.

@@ -75,8 +75,8 @@ scenario() {
   contents "$ROOT_DIR/distribution/policy.json" >"$F/policy.json"
   jq -n --arg t "$TAG" --arg c "$C1" '{tag: $t, commit_sha: $c}' >"$F/cc-raw.json"; contents "$F/cc-raw.json" >"$F/cc.json"
   printf '      - name: x\n        # bpfcompat-pin: candidate\n        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C1" "$TAG" >"$F/consumer-raw.yml"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
-  printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    out: reports/rc%s-action.json\n' \
-    "$TAG" "$C1" "$DIG" "$PUB" "$RCN" "$RCN" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
+  printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    uses: Kernel-Guard/bpfcompat@%s # %s\n    out: reports/rc%s-action.json\n' \
+    "$TAG" "$C1" "$DIG" "$PUB" "$RCN" "$C1" "$TAG" "$RCN" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
   jq -n --arg i "ghcr.io/kernel-guard/bpfcompat@$DIG" '{image: $i}' >"$F/release-candidate-evidence.json"
   jq -n '[{sha: "e000000000000000000000000000000000000000", commit: {committer: {date: "2020-01-01T00:00:00Z"}}}]' >"$F/commits.json"
   jq -n --arg m "$DESIGNATED" '[{merged_at: $m, base: {ref: "main"}}]' >"$F/pulls.json"
@@ -217,6 +217,16 @@ run planonly 200
 if line MISSING "canary t-plus-24h" && line MISSING "canary t-plus-72h"; then ok "a run whose later jobs the plan job skipped does not count"
 else fail "plan-only run counted (rc=$rc)"; show; fi
 
+scenario oldaction; printf '    uses: Kernel-Guard/bpfcompat@%s # v0.4.0-rc.4\n' "$C2" >>"$tmp/oldaction/rcc-raw.yml"
+contents "$tmp/oldaction/rcc-raw.yml" >"$tmp/oldaction/rcc.json"
+run oldaction 200
+if line PENDING "designated: release-candidate-canary" && grep -q 'published-action pin' "$tmp/out"; then ok "canary Action pin left on another commit: not designated"
+else fail "stale action pin (rc=$rc)"; show; fi
+scenario nomarker; printf 'jobs: {}\n' >"$tmp/nomarker/consumer-raw.yml"; contents "$tmp/nomarker/consumer-raw.yml" >"$tmp/nomarker/consumer.json"
+run nomarker 200
+if line PENDING "designated: consumer-canary candidate pin" && grep -q 'no .# bpfcompat-pin: candidate. marker' "$tmp/out"; then ok "missing pin marker is reported, not a silent exit"
+else fail "missing pin marker (rc=$rc)"; show; fi
+
 # 8. Malformed answers abort; nothing is inferred from them.
 scenario badjson; printf 'not json' >"$tmp/badjson/releases.json"
 run badjson 200
@@ -229,6 +239,11 @@ run dlfail 200
 if [[ $rc -eq 3 ]] && grep -q 'cannot download SHA256SUMS' "$tmp/out" && ! grep -q '^MISSING   validator identity' "$tmp/out"; then
   ok "a failed asset download aborts instead of reporting MISSING"
 else fail "download failure (rc=$rc)"; show; fi
+
+scenario badev; printf 'garbage' >"$tmp/badev/release-candidate-evidence.json"
+run badev 200
+if [[ $rc -eq 3 ]] && grep -q 'release-candidate-evidence.json of .* is not JSON' "$tmp/out"; then ok "unparsable candidate evidence aborts"
+else fail "bad evidence (rc=$rc)"; show; fi
 
 # 9. Usage.
 

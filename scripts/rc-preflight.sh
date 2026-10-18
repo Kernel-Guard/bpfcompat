@@ -188,7 +188,8 @@ else
     digest=""
     if grep -qxF release-candidate-evidence.json <<<"$names"; then
       asset release-candidate-evidence.json "$tmp/ev"
-      digest="$(jq -r '.image // empty' "$tmp/ev/release-candidate-evidence.json" 2>/dev/null | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p')"
+      jq -e . "$tmp/ev/release-candidate-evidence.json" >/dev/null 2>&1 || abort "release-candidate-evidence.json of $tag is not JSON"
+      digest="$(jq -r '.image // empty' "$tmp/ev/release-candidate-evidence.json" | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p')"
     fi
   else say MISSING "RC published as prerelease" "published but not marked prerelease"; fi
 fi
@@ -225,7 +226,8 @@ else
     say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
-  pin="$(grep -A1 'bpfcompat-pin: candidate' "$tmp/consumer.yml" | tail -1)"
+  pin="$({ grep -A1 'bpfcompat-pin: candidate' "$tmp/consumer.yml" || true; } | tail -1)"
+  [[ -n "$pin" ]] || pin="@(no '# bpfcompat-pin: candidate' marker on main)"
   if [[ "$pin" == *"@${commit} # ${tag}"* ]]; then say VERIFIED "designated: consumer-canary candidate pin" "pinned to $commit"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: consumer-canary candidate pin" "main pins:${pin##*@}"; fi
   main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"
@@ -237,6 +239,11 @@ else
   if [[ -z "$digest" ]]; then problems+="(release-candidate-evidence.json names no image digest) "
   elif [[ "$(envv CANDIDATE_DIGEST)" != "$digest" ]]; then problems+="CANDIDATE_DIGEST=$(envv CANDIDATE_DIGEST) "; fi
   grep -q "rc${rcnum}-canary-component-" "$tmp/rcc.yml" || problems+="no rc${rcnum}-canary-component names "
+  # The published-action job must use exactly this candidate's commit.
+  if grep -Eo 'uses: *Kernel-Guard/bpfcompat@[0-9a-f]{40}' "$tmp/rcc.yml" | grep -vqF "@${commit}" ||
+     ! grep -Eq "uses: *Kernel-Guard/bpfcompat@${commit}( |\$)" "$tmp/rcc.yml"; then
+    problems+="published-action pin is not @${commit} "
+  fi
   if grep -Eo 'rc[0-9]+-canary-component-|reports/rc[0-9]+-action' "$tmp/rcc.yml" | grep -vqE "^(rc${rcnum}-|reports/rc${rcnum}-)"; then
     problems+="other candidates' artifact/report names remain "
   fi
@@ -267,7 +274,9 @@ else
       while IFS=$'\t' read -r id st; do
         [[ -n "$id" ]] || continue
         h=$(( ($(epoch "$st") - pub) / 3600 ))
-        (( h >= $3 && h <= $4 + 1 )) || continue
+        # +-1h: the run may start just before its plan job crosses the hour;
+        # executed() below proves the plan job accepted the window.
+        (( h >= $3 - 1 && h <= $4 + 1 )) || continue
         if executed "$id"; then hit="$id started $st"; break; fi
       done < <(jq -r --arg e "$2" '.workflow_runs[] | select(.event == $e and .status == "completed" and .conclusion == "success") | "\(.id)\t\(.run_started_at)"' "$tmp/cruns.json")
       if [[ -n "$hit" ]]; then say VERIFIED "canary $1" "$2 run $hit, past its plan job (candidate binding: readiness report)"
