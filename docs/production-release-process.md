@@ -228,11 +228,22 @@ test; production evidence must verify the candidate attestation online.
 
 After every operational gate passes, set both `stable_version` and
 `release_version` to `X.Y.Z`, set `release_channel` to `stable`, update stable
-documentation, and tag the checked merge commit. The operator checks the
-graduation report and draft assets, records
-`[bpfcompat-solo-promotion:v1]`, and dispatches the exact promotion inputs.
-Only this path may update the `X.Y` and `latest` image aliases or GitHub's
-latest release.
+documentation, and tag the checked merge commit. The operator's
+`[bpfcompat-solo-promotion:v1]` record is an input of the final readiness
+report, so it is written before that report is generated; the operator then
+checks the graduation report and draft assets and dispatches the exact
+promotion inputs as a separate decision. Only this path may update the `X.Y`
+and `latest` image aliases or GitHub's latest release.
+
+Before tagging, confirm two stable-only gates, because the stable tag build
+refuses otherwise and a `v*` tag cannot be reused:
+
+- `scripts/check-distribution-policy.sh --require-decided` passes, that is,
+  every decision listed in `blocks_stable` in `distribution/policy.json` is
+  recorded.
+- The stable commit's validator rebuilds to the graduated release candidate's
+  `bpfcompat-validator-static-linux-amd64` sha256
+  (`scripts/check-validator-matches-candidate.sh`).
 
 The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
 that does not exist yet or that names their own commit, so they keep the
