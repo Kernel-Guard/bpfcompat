@@ -74,7 +74,7 @@ scenario() {
     printf '%s  bpfcompat-validator-static-linux-amd64\n' "$VSHA"; } >"$F/SHA256SUMS"
   contents "$ROOT_DIR/distribution/policy.json" >"$F/policy.json"
   jq -n --arg t "$TAG" --arg c "$C1" '{tag: $t, commit_sha: $c}' >"$F/cc-raw.json"; contents "$F/cc-raw.json" >"$F/cc.json"
-  printf '      - name: x\n        # bpfcompat-pin: candidate\n        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C1" "$TAG" >"$F/consumer-raw.yml"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
+  printf 'jobs:\n  test:\n    steps:\n      - name: x\n        # bpfcompat-pin: candidate\n        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C1" "$TAG" >"$F/consumer-raw.yml"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
   printf 'env:\n  CANDIDATE_TAG: %s\n  CANDIDATE_COMMIT: %s\n  CANDIDATE_DIGEST: %s\n  CANDIDATE_PUBLISHED_AT: "%s"\njobs:\n  x:\n    name: rc%s-canary-component-clean-install-1\n    uses: Kernel-Guard/bpfcompat@%s # %s\n    out: reports/rc%s-action.json\n' \
     "$TAG" "$C1" "$DIG" "$PUB" "$RCN" "$C1" "$TAG" "$RCN" >"$F/rcc-raw.yml"; contents "$F/rcc-raw.yml" >"$F/rcc.json"
   jq -n --arg i "ghcr.io/kernel-guard/bpfcompat@$DIG" '{image: $i}' >"$F/release-candidate-evidence.json"
@@ -224,8 +224,67 @@ if line PENDING "designated: release-candidate-canary" && grep -q 'published-act
 else fail "stale action pin (rc=$rc)"; show; fi
 scenario nomarker; printf 'jobs: {}\n' >"$tmp/nomarker/consumer-raw.yml"; contents "$tmp/nomarker/consumer-raw.yml" >"$tmp/nomarker/consumer.json"
 run nomarker 200
-if line PENDING "designated: consumer-canary candidate pin" && grep -q 'no .# bpfcompat-pin: candidate. marker' "$tmp/out"; then ok "missing pin marker is reported, not a silent exit"
+if line PENDING "designated: consumer-canary candidate pin" && grep -q "requires one '# bpfcompat-pin: candidate' marker" "$tmp/out"; then ok "missing pin marker is reported, not a silent exit"
 else fail "missing pin marker (rc=$rc)"; show; fi
+
+# An actual stale action cannot be hidden by a correct commented line or an
+# alternative YAML scalar spelling. Keep these end-to-end with the fake API.
+for variant in commented commentonly quoted lowercase tabbed ref subpath wrongtag; do
+  scenario "pin-$variant"
+  file="$F/rcc-raw.yml"
+  case "$variant" in
+    commented)
+      sed -i "s/uses: Kernel-Guard\/bpfcompat@$C1/# uses: Kernel-Guard\/bpfcompat@$C1/" "$file"
+      printf '    uses: Kernel-Guard/bpfcompat@v0.4.0-rc.4\n' >>"$file" ;;
+    commentonly) sed -i "s/uses: Kernel-Guard/# uses: Kernel-Guard/" "$file" ;;
+    quoted) printf '    uses: "Kernel-Guard/bpfcompat@%s" # %s\n' "$C2" "$TAG" >>"$file" ;;
+    lowercase) printf '    uses: kernel-guard/bpfcompat@%s # %s\n' "$C2" "$TAG" >>"$file" ;;
+    tabbed) printf '    uses:\tKernel-Guard/bpfcompat@%s # %s\n' "$C2" "$TAG" >>"$file" ;;
+    ref) printf '    uses: Kernel-Guard/bpfcompat@main\n' >>"$file" ;;
+    subpath) printf '    uses: Kernel-Guard/bpfcompat/sub@%s # %s\n' "$C1" "$TAG" >>"$file" ;;
+    wrongtag) sed -i "s/# $TAG/# v9.9.9-rc.1/" "$file" ;;
+  esac
+  contents "$file" >"$F/rcc.json"
+  run "pin-$variant" 200
+  if line PENDING "designated: release-candidate-canary" && line PENDING "canary manual"; then
+    ok "Action $variant cannot establish candidate designation"
+  else fail "Action $variant falsely designated (rc=$rc)"; show; fi
+done
+for variant in commented duplicate stale-after-comment; do
+  scenario "consumer-$variant"
+  file="$F/consumer-raw.yml"
+  case "$variant" in
+    commented) sed -i 's/        uses:/        # uses:/' "$file" ;;
+    duplicate) cat "$file" >>"$F/second"; cat "$F/second" >>"$file" ;;
+    stale-after-comment)
+      sed -i 's/        uses:/        # uses:/' "$file"
+      printf '        uses: Kernel-Guard/bpfcompat@%s # %s\n' "$C2" "$TAG" >>"$file" ;;
+  esac
+  contents "$file" >"$F/consumer.json"
+  run "consumer-$variant" 200
+  if line PENDING "designated: consumer-canary candidate pin" && line PENDING "canary manual"; then
+    ok "consumer $variant cannot establish candidate designation"
+  else fail "consumer $variant falsely designated (rc=$rc)"; show; fi
+done
+scenario quotedgood
+sed -i "s|uses: Kernel-Guard/bpfcompat@$C1|uses: 'kernel-guard/bpfcompat@$C1'|" "$F/rcc-raw.yml"
+sed -i "s|uses: Kernel-Guard/bpfcompat@$C1|uses: \"Kernel-Guard/bpfcompat@$C1\"|" "$F/consumer-raw.yml"
+contents "$F/rcc-raw.yml" >"$F/rcc.json"; contents "$F/consumer-raw.yml" >"$F/consumer.json"
+run quotedgood 200
+if line VERIFIED "designated: release-candidate-canary" && line VERIFIED "designated: consumer-canary candidate pin"; then
+  ok "correct quoted pins and case-insensitive repository names are accepted"
+else fail "valid quoted pins refused (rc=$rc)"; show; fi
+
+# The workflow's plan job can start after the run crosses its hour boundary.
+scenario hour19
+jq --arg t "$(at 19)" '.workflow_runs[1].run_started_at = $t' "$F/cruns.json" >"$tmp/x" && mv "$tmp/x" "$F/cruns.json"
+run hour19 200
+if line VERIFIED "canary t-plus-24h"; then ok "hour-19 run with successful executed jobs remains observable"
+else fail "hour-19 executed run refused (rc=$rc)"; show; fi
+jq '.jobs = [.jobs[0], {name: "Clean install", conclusion: "skipped"}]' "$F/jobs.json" >"$tmp/x" && mv "$tmp/x" "$F/jobs.json"
+run hour19 200
+if line MISSING "canary t-plus-24h"; then ok "hour-19 plan-only run never becomes VERIFIED"
+else fail "hour-19 plan-only run counted (rc=$rc)"; show; fi
 
 # 8. Malformed answers abort; nothing is inferred from them.
 scenario badjson; printf 'not json' >"$tmp/badjson/releases.json"

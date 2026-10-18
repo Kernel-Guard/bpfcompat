@@ -8,6 +8,10 @@
 # `gh release download` of two text files (SHA256SUMS and
 # release-candidate-evidence.json), and files in this checkout. It never dispatches or reruns a workflow, never writes to GitHub,
 # never executes a downloaded file and never writes operator evidence.
+# Active workflow pins are parsed by a helper compiled from this checkout's
+# Go sources and vendored YAML library into the temporary directory. Its build
+# disables toolchain/dependency downloads; Go meeting go.mod's version must
+# already be on PATH (as in CI's setup-go environment).
 #
 # Status meanings:
 #   VERIFIED  observed directly (a ref, a run, a file, a hash) and as required.
@@ -226,10 +230,12 @@ else
     say VERIFIED "designated: campaign-candidate.json" "main binds $tag $commit"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
-  pin="$({ grep -A1 'bpfcompat-pin: candidate' "$tmp/consumer.yml" || true; } | tail -1)"
-  [[ -n "$pin" ]] || pin="@(no '# bpfcompat-pin: candidate' marker on main)"
-  if [[ "$pin" == *"@${commit} # ${tag}"* ]]; then say VERIFIED "designated: consumer-canary candidate pin" "pinned to $commit"; ok_designations=$((ok_designations + 1))
-  else say PENDING "designated: consumer-canary candidate pin" "main pins:${pin##*@}"; fi
+  command -v go >/dev/null || abort "Go is required to parse active workflow pins"
+  (cd "$ROOT" && GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) || abort "cannot build vendored workflow-pin parser; put Go meeting go.mod's version on PATH"
+  pin_result="$("$tmp/pincheck" candidate "$commit" "$tag" "$tmp/consumer.yml")" || abort "workflow-pin parser failed"
+  if [[ "$pin_result" == VERIFIED ]]; then
+    say VERIFIED "designated: consumer-canary candidate pin" "one active candidate marker pinned to $commit # $tag"; ok_designations=$((ok_designations + 1))
+  else say PENDING "designated: consumer-canary candidate pin" "requires one '# bpfcompat-pin: candidate' marker followed by an active @$commit # $tag uses scalar"; fi
   main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"
   envv() { sed -nE "s/^ *$1: *\"?([^\"]*)\"?\$/\\1/p" "$tmp/rcc.yml" | head -1; }
   problems=""
@@ -240,8 +246,8 @@ else
   elif [[ "$(envv CANDIDATE_DIGEST)" != "$digest" ]]; then problems+="CANDIDATE_DIGEST=$(envv CANDIDATE_DIGEST) "; fi
   grep -q "rc${rcnum}-canary-component-" "$tmp/rcc.yml" || problems+="no rc${rcnum}-canary-component names "
   # The published-action job must use exactly this candidate's commit.
-  if grep -Eo 'uses: *Kernel-Guard/bpfcompat@[0-9a-f]{40}' "$tmp/rcc.yml" | grep -vqF "@${commit}" ||
-     ! grep -Eq "uses: *Kernel-Guard/bpfcompat@${commit}( |\$)" "$tmp/rcc.yml"; then
+  pin_result="$("$tmp/pincheck" all "$commit" "$tag" "$tmp/rcc.yml")" || abort "workflow-pin parser failed"
+  if [[ "$pin_result" != VERIFIED ]]; then
     problems+="published-action pin is not @${commit} "
   fi
   if grep -Eo 'rc[0-9]+-canary-component-|reports/rc[0-9]+-action' "$tmp/rcc.yml" | grep -vqE "^(rc${rcnum}-|reports/rc${rcnum}-)"; then
