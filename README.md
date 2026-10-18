@@ -376,12 +376,14 @@ published yet, so artifact-mode VM validation there needs
 curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
 ```
 
-Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`, and
-`BPFCOMPAT_LIBEXEC_DIR` (see [`scripts/install.sh`](scripts/install.sh)). A
-pinned version must be an exact release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`), and its
-signature or attestation must come from that tag's release run. A validator
-installed outside `/usr/local/libexec/bpfcompat` is not auto-discovered: point
-`BPFCOMPAT_VALIDATOR_BIN` at it.
+Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`,
+`BPFCOMPAT_LIBEXEC_DIR`, and `BPFCOMPAT_DOC_DIR` (where the third-party license
+bundle goes, for releases that publish one; see
+[`scripts/install.sh`](scripts/install.sh)). A pinned version must be an exact
+release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`), and its signature or attestation must
+come from that tag's release run. A validator installed outside
+`/usr/local/libexec/bpfcompat` or `/usr/libexec/bpfcompat` is not
+auto-discovered: point `BPFCOMPAT_VALIDATOR_BIN` at it.
 
 **1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and*
 the static validator (to a location the CLI auto-discovers), checksum- and
@@ -396,10 +398,12 @@ curl -fsSLO "$base/bpfcompat-validator-static-linux-amd64"
 curl -fsSLO "$base/SHA256SUMS"
 gh attestation verify ./bpfcompat-linux-amd64 \
   --repo Kernel-Guard/bpfcompat \
-  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+  --source-ref "refs/tags/$VER"
 gh attestation verify ./bpfcompat-validator-static-linux-amd64 \
   --repo Kernel-Guard/bpfcompat \
-  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+  --source-ref "refs/tags/$VER"
 sha256sum -c SHA256SUMS --ignore-missing
 sudo install -m 0755 bpfcompat-linux-amd64 /usr/local/bin/bpfcompat
 sudo install -D -m 0755 bpfcompat-validator-static-linux-amd64 \
@@ -444,7 +448,7 @@ multi-arch image (amd64 + arm64), published per release:
 docker run --rm ghcr.io/kernel-guard/bpfcompat:latest version
 ```
 
-Tags follow the release without the `v` prefix (`0.3.6`, `0.3`, `latest`). The
+Tags follow the release without the `v` prefix (`0.3.7`, `0.3`, `latest`). The
 image does not bundle QEMU or the validator and therefore is not a standalone
 VM-validation environment. Use option 0 or the GitHub Action for a kernel
 matrix. The experimental `serve` command remains present but does not start by
@@ -452,8 +456,19 @@ default and is outside the production support boundary.
 Release candidates use an exact tag such as `0.4.0-rc.1`; they never update
 the stable minor or `latest` aliases and are not returned by the installer's
 default latest-release lookup.
-Verify provenance with
-`cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 --certificate-identity-regexp github.com/Kernel-Guard/bpfcompat --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+Verify provenance with the exact signer identity of that release:
+
+```bash
+cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 \
+  --certificate-identity https://github.com/Kernel-Guard/bpfcompat/.github/workflows/ghcr-image.yml@refs/tags/v0.3.7 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The signer workflow differs by release: the 0.3.5 to 0.3.7 images were signed
+by `ghcr-image.yml`, while the 0.3.8-rc.2 and 0.4.0-rc.4 images, and later
+images from the release workflow, are signed by `release-artifacts.yml`
+(`--certificate-identity https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v<version>`).
+Change the identity together with the image tag.
 
 ### What a run looks like
 
@@ -813,9 +828,12 @@ Operator guidance:
 - **Risk scoring:** OpenSSF Scorecard (`scorecard.yml`), published to the
   public Scorecard API (badge above).
 - **Signed releases + SLSA provenance:** tag builds produce a CycloneDX SBOM,
-  cosign keyless (Sigstore OIDC) signatures over `SHA256SUMS` and the SBOM,
-  plus SLSA provenance attestations for the binaries and container bound to the
-  producing commit and workflow (`release-artifacts.yml`). Quick check:
+  cosign keyless (Sigstore OIDC) signatures over `SHA256SUMS` (and, from
+  v0.4.0-rc.4, the SBOM), plus SLSA provenance attestations for the binaries
+  and container bound to the producing commit and workflow
+  (`release-artifacts.yml`; the 0.3.5 to 0.3.7 images were signed and attested
+  by `ghcr-image.yml`). Quick check (it checks the repository only; the full
+  steps also bind the release workflow and tag):
 
   ```bash
   gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat

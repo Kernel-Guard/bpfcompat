@@ -1,17 +1,18 @@
 # Verifying bpfcompat releases
 
 Every tagged release of bpfcompat ships with a full supply-chain bundle so you can
-prove a binary came from this repository's build workflow before you run it:
+prove a binary came from this repository's build workflow before you run it.
+Rows marked with a version are published from that release on:
 
 | Artifact | What it is |
 |---|---|
-| `bpfcompat-linux-amd64`, `bpfcompat-validator-static-linux-amd64` | the binaries |
+| `bpfcompat-linux-amd64`, `bpfcompat-linux-arm64`, `bpfcompat-validator-static-linux-amd64` | the binaries (the static validator is published for amd64 only) |
 | `SHA256SUMS` (+ `.sig`, `.crt`) | checksums, cosign-signed (keyless) |
 | `bpfcompat.sbom.cdx.json` | CycloneDX SBOM |
-| `release-candidate-evidence.json` | Tag, commit, workflow run, exact image digest, and positive/negative VM report hashes |
-| `bpfcompat-third-party-licenses.tar.gz` | verbatim license/notice/patent texts of the third-party code in the binaries, with `INVENTORY.json` (from the release that introduces it) |
-| `bpfcompat-validator-relink-kit-linux-amd64.tar.gz` | the validator's `main.o`, link commands, linker trace and map, inputs with owning packages, sources and `relink.sh` |
-| `validator-build-inputs.json` | the validator's build record: builder image digest, package snapshot, package versions, sha256 |
+| `release-candidate-evidence.json` | Tag, commit, workflow run, exact image digest, and positive/negative VM report hashes (from v0.4.0-rc.4; not in v0.3.7) |
+| `bpfcompat-third-party-licenses.tar.gz` | verbatim license/notice/patent texts of the third-party code in the binaries, with `INVENTORY.json` (from v0.4.0-rc.5) |
+| `bpfcompat-validator-relink-kit-linux-amd64.tar.gz` | the validator's `main.o`, link commands, linker trace and map, inputs with owning packages, the validator's own C sources and `relink.sh` (from v0.4.0-rc.5) |
+| `validator-build-inputs.json` | the validator's build record: builder image digest, package snapshot, package versions, sha256 (from v0.4.0-rc.5) |
 | **SLSA provenance attestation** | provenance bound to the artifact digest, repository, commit, and release workflow |
 | **SBOM attestation** | the SBOM bound to the binary's digest |
 
@@ -21,27 +22,31 @@ long-lived private key. The signer identity is the release workflow itself.
 ## 1. Verify build provenance (recommended)
 
 Requires the GitHub CLI (`gh`). This is the strongest check — it proves the binary
-was built by *this repo's* release workflow:
+was built by *this repo's* release workflow for the tag you downloaded. Pin the
+workflow and the exact tag, as `scripts/install.sh` does:
 
 ```bash
-gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat
+VER=v0.3.7   # the exact release tag you downloaded
+gh attestation verify ./bpfcompat-linux-amd64 \
+  --repo Kernel-Guard/bpfcompat \
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+  --source-ref "refs/tags/$VER"
 ```
 
 A pass confirms the artifact's digest matches an attestation produced by the
-`release-artifacts` workflow on a `v*` tag. To pin the exact workflow identity:
+`release-artifacts` workflow on the tag `$VER`. Without `--source-ref`, an
+attestation from another tag's release run (for example a prerelease) also
+passes, and `gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat`
+alone accepts an attestation from any workflow in this repository.
 
-```bash
-gh attestation verify ./bpfcompat-linux-amd64 \
-  --repo Kernel-Guard/bpfcompat \
-  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
-```
-
-The promotion evidence is independently attested by the same workflow:
+From v0.4.0-rc.4 (v0.3.7 has no such asset), the promotion evidence is
+independently attested by the same workflow:
 
 ```bash
 gh attestation verify ./release-candidate-evidence.json \
   --repo Kernel-Guard/bpfcompat \
-  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+  --source-ref "refs/tags/$VER"
 ```
 
 Offline / air-gapped verification is supported by downloading the attestation
@@ -50,16 +55,21 @@ bundle first (`gh attestation download`) and verifying with `--bundle`.
 ## 2. Verify checksums + cosign signature
 
 ```bash
+VER=v0.3.7   # the exact release tag you downloaded
+
 # 1) integrity
 sha256sum -c SHA256SUMS
 
-# 2) authenticity of SHA256SUMS (keyless cosign)
+# 2) authenticity of SHA256SUMS (keyless cosign), bound to the exact tag
 cosign verify-blob SHA256SUMS \
   --signature SHA256SUMS.sig \
   --certificate SHA256SUMS.crt \
-  --certificate-identity-regexp '^https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v' \
+  --certificate-identity "https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/$VER" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+The identity names the exact tag, as `scripts/install.sh` does, so a signature
+made by another tag's release run (for example a prerelease) is refused.
 
 ## 3. Inspect the SBOM
 
@@ -67,7 +77,11 @@ cosign verify-blob SHA256SUMS \
 # human-readable component list
 cat bpfcompat.sbom.cdx.json | jq '.components[].name' | sort -u
 # or verify the SBOM attestation is bound to the binary
-gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat --predicate-type https://cyclonedx.org/bom
+gh attestation verify ./bpfcompat-linux-amd64 \
+  --repo Kernel-Guard/bpfcompat \
+  --signer-workflow Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml \
+  --source-ref "refs/tags/$VER" \
+  --predicate-type https://cyclonedx.org/bom
 ```
 
 ## 4. Third-party license material and the relink kit
@@ -90,7 +104,7 @@ cd bpfcompat-validator-relink-kit && sha256sum -c SHA256SUMS
 `INVENTORY.json` separates observed facts (what was linked, from where, with
 which texts), recorded distribution decisions (`undecided` until made) and what
 it does not establish. The bundle is not a statement that any license condition
-is met. Releases that predate these assets do not have them; the repository's
+is met. Releases before v0.4.0-rc.5 do not have these assets; the repository's
 `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.md` at that tag remain the
 reference for those.
 
@@ -102,21 +116,26 @@ reference for those.
 - **Provenance** — a tamper-evident record of *which commit and workflow*
   built them.
 - **Promotion binding** — one attested record connects the release tag and
-  commit to the tested VM reports and promoted container digest.
+  commit to the tested VM reports and promoted container digest (from
+  v0.4.0-rc.4).
 
-The GitHub Action consumes prebuilt release binaries only after both
-`sha256sum -c` and `gh attestation verify` succeed for the CLI and validator.
+From v0.4.0-rc.4 (the v0.3.7 Action verifies checksums only), the GitHub
+Action consumes prebuilt release binaries only after both `sha256sum -c` and
+`gh attestation verify` succeed for the CLI and validator, and, from
+v0.4.0-rc.5, for the third-party license bundle when `SHA256SUMS` lists it.
 Attestation verification is restricted to
 `.github/workflows/release-artifacts.yml`; a checksum or attestation mismatch
 is a hard failure. When attestation verification is unavailable, the Action
 builds from its pinned source instead of trusting unverifiable release bytes.
 
-After verification the Action runs that validator by path and pinned digest
-(`BPFCOMPAT_VALIDATOR_BIN` / `BPFCOMPAT_VALIDATOR_SHA256`), so a validator left
-in `/usr/local/libexec` or `/usr/libexec` on a self-hosted runner is not
-selected instead. While the Action is pinned to a release, every fallback to a
-source build is a `::warning::` annotation: that run does not use the attested
-release validator, and the CLI's normal search order (`/usr/local/libexec`,
-`/usr/libexec`, then the action checkout) applies to it. A workflow that sets
-`BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256` keeps its own
-settings, with a warning.
+From v0.4.0-rc.5, after verification the Action runs that validator by path
+and pinned digest (`BPFCOMPAT_VALIDATOR_BIN` / `BPFCOMPAT_VALIDATOR_SHA256`),
+so a validator left in `/usr/local/libexec` or `/usr/libexec` on a self-hosted
+runner is not selected instead. While the Action is pinned to a release, every
+fallback to a source build is a `::warning::` annotation: that run does not use
+the attested release validator, and the CLI's normal search order
+(`/usr/local/libexec`, `/usr/libexec`, then the action checkout) applies to it.
+A workflow that sets `BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256`
+keeps its own settings, with a warning. With v0.3.7 and v0.4.0-rc.4 that normal
+search order applies to every run, so a validator installed in those
+directories is used before the verified one.

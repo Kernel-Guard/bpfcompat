@@ -54,9 +54,11 @@ and do not provide evidence that the surface is production-ready.
 
 A passing result means the recorded artifact or command loader completed the
 requested load, attach, or behavior contract on the exact guest image bytes
-recorded in that report. Command-mode reports record the invocation digest and
-the loader binary's name, size, and SHA-256. Artifact-mode reports record the
-same identity fields for the staged libbpf validator.
+recorded in that report. Command-mode reports record the invocation digest,
+the loader binary's name, size, and SHA-256, and the guest kernel release; from
+v0.4.0-rc.5 a command-mode target whose guest kernel release cannot be recorded
+is an infrastructure error. Artifact-mode reports record the same identity
+fields for the staged libbpf validator.
 
 A pass is not a certification of:
 
@@ -76,18 +78,25 @@ Every supported release must:
 1. pass unit, race, vet, vulnerability, generated-doc, and release-consistency
    checks;
 2. build candidate binaries once and record their checksums;
-3. run the exact candidate CLI and static validator in a pinned-image positive
+3. build the static validator in the digest-pinned builder from
+   `validator/build-inputs.lock` and, when the validator tree is unchanged,
+   reproduce the lock's recorded validator byte for byte (from v0.4.0-rc.5);
+4. for a stable release, ship exactly the qualified release candidate's
+   validator bytes (from v0.4.0-rc.5);
+5. for a stable release, have every stable-blocking distribution decision in
+   `distribution/policy.json` recorded (from v0.4.0-rc.5);
+6. run the exact candidate CLI and static validator in a pinned-image positive
    VM test;
-4. produce the expected classification from an incompatible artifact;
-5. execute the exact ARM64 CLI candidate on a native ARM64 runner;
-6. build and version-check a candidate multi-architecture container;
-7. bind the release inputs and VM results into an attested candidate-evidence
-   record;
-8. publish signed checksums, SBOM, and build provenance;
-9. finish as a private draft without an automatic publication path;
-10. receive a separate exact-input manual promotion dispatch through the
+7. produce the expected classification from an incompatible artifact;
+8. execute the exact ARM64 CLI candidate on a native ARM64 runner;
+9. build and version-check a candidate multi-architecture container;
+10. bind the release inputs and VM results into an attested candidate-evidence
+    record;
+11. publish signed checksums, SBOM, and build provenance;
+12. finish as a private draft without an automatic publication path;
+13. receive a separate exact-input manual promotion dispatch through the
     15-minute `production-release` environment; and
-11. re-verify the run, tag, commit, assets, attestations, signatures, channel,
+14. re-verify the run, tag, commit, assets, attestations, signatures, channel,
     image digest, and version before making the draft release public.
 
 The release metadata source is [`release.yaml`](../release.yaml). It records

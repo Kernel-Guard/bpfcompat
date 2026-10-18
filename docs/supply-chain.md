@@ -90,14 +90,15 @@ and the `reproduces=` line from a pinned build, and cut a new release
 candidate: that changes the shipped validator.
 
 `dist/validator-build-inputs.json` is the validator's build record. It is
-attested with the candidate provenance and, from the release that introduces the
-distribution bundle on, shipped as a release asset listed in `SHA256SUMS`, so it
-outlives the workflow run artifact's retention.
+attested with the candidate provenance and, from v0.4.0-rc.5 on, shipped as a
+release asset listed in `SHA256SUMS`, so it outlives the workflow run
+artifact's retention.
 
 ### Third-party license bundle and relink kit
 
-The same build produces two more release assets, both listed in `SHA256SUMS`,
-attested, and reproducible byte for byte from the same inputs:
+From v0.4.0-rc.5 (not in v0.3.7 or v0.4.0-rc.4), the same build produces two
+more release assets, both listed in `SHA256SUMS`, attested, and reproducible
+byte for byte from the same inputs:
 
 - `bpfcompat-third-party-licenses.tar.gz`: the license, notice and patent texts
   (verbatim) of every Go module linked into the shipped CLIs, taken from each
@@ -109,8 +110,9 @@ attested, and reproducible byte for byte from the same inputs:
 - `bpfcompat-validator-relink-kit-linux-amd64.tar.gz`: the validator's `main.o`,
   the Makefile recipe split into compile and link commands, the linker's member
   trace and map, every link input and header with its owning package, the build
-  record and locks, the validator sources and `relink.sh`. The build refuses
-  unless relinking `main.o` reproduces the shipped validator byte for byte.
+  record and locks, the validator's own C sources and `relink.sh`. The build
+  refuses unless relinking `main.o` reproduces the shipped validator byte for
+  byte.
 
 `distribution/policy.json` records the open distribution decisions. Two of them
 add assets when decided: `bpfcompat-validator-link-inputs-linux-amd64.tar.gz`
@@ -122,18 +124,25 @@ license or states that any license condition is met.
 
 The installer and the GitHub Action install the license bundle when the
 release's `SHA256SUMS` lists it, and the container image carries the Go texts
-in `/usr/share/doc/bpfcompat/`.
+in `/usr/share/doc/bpfcompat/`. The installer served from `main` already does
+this; the GitHub Action and the container image do from v0.4.0-rc.5.
 
 ### Verifying a signed release
 
 ```bash
+VER=v0.3.7   # the exact release tag you downloaded
 cosign verify-blob \
   --certificate SHA256SUMS.crt --signature SHA256SUMS.sig \
-  --certificate-identity-regexp '^https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v' \
+  --certificate-identity "https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/$VER" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 sha256sum -c SHA256SUMS
 ```
+
+The identity names the exact tag, as `scripts/install.sh` does, so a signature
+made by another tag's release run (for example a prerelease) is refused. The
+tag-bound attestation checks are in
+[verifying-releases.md](verifying-releases.md).
 
 ## Maintainer-side settings (configure once, in the GitHub UI/API)
 
