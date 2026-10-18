@@ -58,14 +58,16 @@ func TestActiveWorkflowPins(t *testing.T) {
 	}
 }
 
-// A pin on a step or job that can never run must not count. GitHub treats
-// false, 0, -0, ”, null (and NaN) as falsy and accepts any JSON number form.
+// A pin on a step or job that can never run must not count. In an expression
+// GitHub treats false, 0, -0, the empty string, null and NaN as falsy and
+// accepts any JSON number form. An if that is empty or YAML null is no
+// condition at all, and keywords are case-insensitive.
 func TestNeverRunningPins(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	tag := "v0.4.0-rc.5"
 	good := "Kernel-Guard/bpfcompat@" + sha + " # " + tag
 	for _, cond := range []string{"false", "${{ false }}", "-0", "${{ -0 }}", "-0.0", "0.0", "${{ 0.0 }}", "0e0", ".0", "00",
-		"0x0", "${{ 0x0 }}", "0x00", "NaN", "${{ NaN }}", "''", "\"''\"", "null", "~", "false && true", "!true", "1 == 2"} {
+		"0x0", "${{ 0x0 }}", "0x00", "NaN", "${{ NaN }}", "\"''\"", "${{ '' }}", "${{ null }}", "False", "false && true", "${{ !true }}", "1 == 2"} {
 		t.Run("step if "+cond, func(t *testing.T) {
 			text := "jobs:\n  test:\n    steps:\n      - if: " + cond + "\n        uses: " + good + "\n"
 			if err := check(strings.NewReader(text), "all", sha, tag); err == nil {
@@ -79,7 +81,7 @@ func TestNeverRunningPins(t *testing.T) {
 			}
 		})
 	}
-	for _, cond := range []string{"true", "${{ true }}", "needs.plan.outputs.should_run == 'true'", "${{ github.event_name == 'schedule' }}", "always()"} {
+	for _, cond := range []string{"true", "${{ true }}", "True", "TRUE", "''", "null", "~", "", "needs.plan.outputs.should_run == 'true'", "${{ github.event_name == 'schedule' }}", "always()"} {
 		t.Run("runs "+cond, func(t *testing.T) {
 			text := "jobs:\n  test:\n    steps:\n      - if: " + cond + "\n        uses: " + good + "\n"
 			if err := check(strings.NewReader(text), "all", sha, tag); err != nil {
@@ -97,6 +99,14 @@ func TestNeverRunningPins(t *testing.T) {
 		{"needs-always", "all", "jobs:\n  a:\n    if: false\n    steps:\n      - run: true\n  b:\n    needs: a\n    if: ${{ always() }}\n    steps:\n      - uses: " + good + "\n", true},
 		{"needs-running", "all", "jobs:\n  plan:\n    steps:\n      - run: true\n  b:\n    needs: plan\n    if: needs.plan.outputs.should_run == 'true'\n    steps:\n      - uses: " + good + "\n", true},
 		{"needs-mapping", "all", "jobs:\n  a:\n    steps:\n      - run: true\n  b:\n    needs: {a: x}\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-quoted-always", "all", "jobs:\n  a:\n    if: false\n    steps:\n      - run: true\n  b:\n    needs: a\n    if: github.ref != 'always()'\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-failure", "all", "jobs:\n  a:\n    if: false\n    steps:\n      - run: true\n  b:\n    needs: a\n    if: success() || failure()\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-not-cancelled", "all", "jobs:\n  a:\n    if: false\n    steps:\n      - run: true\n  b:\n    needs: a\n    if: ${{ !cancelled() }}\n    steps:\n      - uses: " + good + "\n", true},
+		{"needs-case", "all", "jobs:\n  plan:\n    if: false\n    steps:\n      - run: true\n  b:\n    needs: PLAN\n    steps:\n      - uses: " + good + "\n", false},
+		{"job-ids-differ-by-case", "all", "jobs:\n  plan:\n    steps:\n      - run: true\n  Plan:\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-unknown", "all", "jobs:\n  b:\n    needs: nope\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-self", "all", "jobs:\n  b:\n    needs: b\n    steps:\n      - uses: " + good + "\n", false},
+		{"needs-cycle", "all", "jobs:\n  a:\n    needs: b\n    steps:\n      - run: true\n  b:\n    needs: a\n    steps:\n      - uses: " + good + "\n", false},
 	}
 	for _, tt := range needs {
 		t.Run(tt.name, func(t *testing.T) {

@@ -130,18 +130,20 @@ func asciiEqualFold(a, b string) bool {
 var (
 	quoted     = regexp.MustCompile(`'(?:[^']|'')*'`)
 	identifier = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_-]*)`)
-	resume     = regexp.MustCompile(`(?i)\b(?:always|failure|cancelled)\s*\(`)
+	resume     = regexp.MustCompile(`(?i)\balways\s*\(|!\s*cancelled\s*\(`)
 )
 
-// condition reads the if of a job or step. never is true when the condition
-// is a constant other than true: it names no context and calls no function,
-// so the runner can only ever skip it. GitHub treats false, 0, -0, ”, null
-// and NaN as false and accepts any JSON number form, so every constant except
-// the literal true is treated as never running instead of being evaluated
-// here. Conditions that read a context are the runner's to evaluate (the
-// canary jobs all depend on their plan job's output). resumes is true when
-// the condition calls always(), failure() or cancelled(), which let a job run
-// after a job it needs was skipped.
+// condition reads the if of a job or step. An if that is empty or YAML null
+// is no condition: GitHub runs it as success(). never is true when the
+// condition is a constant other than true: it names no context and calls no
+// function, so the runner can only ever skip it. GitHub treats false, 0, -0,
+// the empty string, null and NaN as false and accepts any JSON number form,
+// so every constant except true (keywords are case-insensitive) is treated as
+// never running instead of being evaluated here. A condition that reads a
+// context or calls a function is the runner's to evaluate (the canary jobs
+// all depend on their plan job's output). resumes is true when the condition
+// calls always() or !cancelled(), which can run a job after a job it needs
+// was skipped; success() and failure() are both false then.
 func condition(n *yaml.Node) (never, resumes bool, err error) {
 	_, cond := field(n, "if")
 	if cond == nil {
@@ -151,17 +153,21 @@ func condition(n *yaml.Node) (never, resumes bool, err error) {
 		return false, false, fmt.Errorf("if must be a scalar at line %d", cond.Line)
 	}
 	v := strings.TrimSpace(cond.Value)
+	if cond.Tag == "!!null" || v == "" {
+		return false, false, nil
+	}
 	if strings.HasPrefix(v, "${{") && strings.HasSuffix(v, "}}") {
 		v = strings.TrimSpace(v[3 : len(v)-2])
 	}
-	for _, m := range identifier.FindAllStringSubmatch(quoted.ReplaceAllString(v, "''"), -1) {
+	code := quoted.ReplaceAllString(v, "''")
+	for _, m := range identifier.FindAllStringSubmatch(code, -1) {
 		switch strings.ToLower(m[1]) {
 		case "true", "false", "null", "nan", "infinity":
 		default:
-			return false, resume.MatchString(v), nil
+			return false, resume.MatchString(code), nil
 		}
 	}
-	return v != "true", false, nil
+	return !strings.EqualFold(v, "true"), false, nil
 }
 
 // checkEnv requires the workflow-level env to bind name to want, and no job or
@@ -209,6 +215,37 @@ func checkEnv(root, jobs *yaml.Node, name, want string) error {
 	return nil
 }
 
+// needsGraph rejects needs that name no job, the job itself, or a cycle.
+func needsGraph(needs map[string][]string, jobs map[string]bool) error {
+	state := map[string]int{} // 0 unvisited, 1 on the current path, 2 done
+	var visit func(string) error
+	visit = func(name string) error {
+		switch state[name] {
+		case 1:
+			return fmt.Errorf("needs cycle through job %q", name)
+		case 2:
+			return nil
+		}
+		state[name] = 1
+		for _, dep := range needs[name] {
+			if _, ok := jobs[dep]; !ok {
+				return fmt.Errorf("job %q needs unknown job %q", name, dep)
+			}
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		state[name] = 2
+		return nil
+	}
+	for name := range needs {
+		if err := visit(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func check(r io.Reader, mode, commit, tag string) error {
 	if mode != "all" && mode != "candidate" && mode != "env" {
 		return fmt.Errorf("unknown mode %q", mode)
@@ -238,12 +275,16 @@ func check(r io.Reader, mode, commit, tag string) error {
 	}
 	// A job can never run when its own if is a constant other than true, or
 	// when a job it needs can never run and its if does not resume after a
-	// skipped need.
+	// skipped need. Job IDs compare case-insensitively, as GitHub resolves
+	// needs; a needs graph GitHub would reject is rejected here too.
 	never, resumes, needs := map[string]bool{}, map[string]bool{}, map[string][]string{}
 	for i := 0; i < len(jobs.Content); i += 2 {
-		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		name, job := strings.ToLower(jobs.Content[i].Value), jobs.Content[i+1]
 		if job.Kind != yaml.MappingNode {
 			return fmt.Errorf("expected job mapping")
+		}
+		if _, dup := never[name]; dup {
+			return fmt.Errorf("job IDs differ only by case at line %d", jobs.Content[i].Line)
 		}
 		if err := keywordCase(job); err != nil {
 			return err
@@ -263,17 +304,20 @@ func check(r io.Reader, mode, commit, tag string) error {
 		switch _, n := field(job, "needs"); {
 		case n == nil:
 		case n.Kind == yaml.ScalarNode:
-			needs[name] = []string{n.Value}
+			needs[name] = []string{strings.ToLower(n.Value)}
 		case n.Kind == yaml.SequenceNode:
 			for _, dep := range n.Content {
 				if dep.Kind != yaml.ScalarNode {
 					return fmt.Errorf("needs must list job names at line %d", dep.Line)
 				}
-				needs[name] = append(needs[name], dep.Value)
+				needs[name] = append(needs[name], strings.ToLower(dep.Value))
 			}
 		default:
 			return fmt.Errorf("needs must be a job name or a list at line %d", n.Line)
 		}
+	}
+	if err := needsGraph(needs, never); err != nil {
+		return err
 	}
 	for changed := true; changed; {
 		changed = false
@@ -325,7 +369,7 @@ func check(r io.Reader, mode, commit, tag string) error {
 		return nil
 	}
 	for i := 0; i < len(jobs.Content); i += 2 {
-		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		name, job := strings.ToLower(jobs.Content[i].Value), jobs.Content[i+1]
 		if err := inspect(job, never[name]); err != nil {
 			return err
 		}

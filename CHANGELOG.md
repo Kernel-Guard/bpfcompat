@@ -64,8 +64,10 @@ qualification evidence does not carry over to this candidate.
 - A read-only RC preflight inventories observed prerequisites without counting
   pending qualification as a pass. Candidate Action pins and the canary's
   candidate env are read from actual workflow YAML nodes; comments, shell-script
-  text and steps or jobs that can never run (an `if` that is a constant other
-  than `true`, or a job that needs one of those) cannot establish them.
+  text and steps or jobs that can never run (an `if` that reads no context,
+  calls no function and is not `true`, or a job that needs one of those)
+  cannot establish them. Conditions that call functions are left to the
+  runner.
 - Releases carry the third-party license material of their binaries as signed
   assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
   (verbatim license, notice and patent texts of every linked Go module, the Go
