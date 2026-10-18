@@ -89,8 +89,10 @@ canary_stable_version() {
   awk '
     /#[[:space:]]*bpfcompat-pin:[[:space:]]*stable[[:space:]]*$/ { want = 1; next }
     want && /uses:[[:space:]]*Kernel-Guard\/bpfcompat@/ {
-      if (match($0, /#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/)) {
-        v = substr($0, RSTART, RLENGTH); sub(/^#[[:space:]]*/, "", v); sub(/[[:space:]]*$/, "", v); print v
+      # The first "# v..." comment, exactly as scripts/check-canary-pins.sh
+      # reads it, so the two checks always see the same version.
+      if (match($0, /#[[:space:]]*v[0-9][0-9A-Za-z._-]*/)) {
+        v = substr($0, RSTART, RLENGTH); sub(/^#[[:space:]]*/, "", v); print v
       }
       exit
     }

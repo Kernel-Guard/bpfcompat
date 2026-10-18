@@ -122,6 +122,10 @@ template v0.3.6
 tag_head v0.4.0
 expect fail "tag build: templates on another release than the canary's fail" "docs pin more than one bpfcompat version"
 
+CANARY='v0.3.7 # v0.3.6' fixture tpltwocomments stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.6
+expect fail "stable PR: the canary's first version comment counts, as in check-canary-pins" "docs pin more than one bpfcompat version"
+
 NO_CANARY=1 fixture tplnocanary stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7
 template v0.3.7
 expect fail "stable PR: without a canary stable pin there is no window" "docs pin more than one bpfcompat version"
