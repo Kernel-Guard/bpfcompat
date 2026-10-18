@@ -367,18 +367,20 @@ host with `qemu-system-x86_64` for VM-backed runs.
 and the static guest validator, verifies checksums plus either the release
 workflow's Sigstore signature or GitHub build attestations, and installs the
 validator where `bpfcompat test` finds it automatically. Verification is
-fail-closed, so the host needs `cosign` or an authenticated GitHub CLI with
-attestation support. On arm64 the CLI installs but the static validator is not
-published yet, so artifact-mode VM validation there needs
-`make validator-static` or command mode:
+fail-closed, so the host needs `cosign` or an authenticated GitHub CLI 2.68.0
+or later (older gh lacks `--source-ref`; see
+[verifying releases](docs/verifying-releases.md)). On arm64 the CLI installs
+but the static validator is not published yet, so artifact-mode VM validation
+there needs `make validator-static` or command mode:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Kernel-Guard/bpfcompat/main/scripts/install.sh | sh
 ```
 
 Pin or redirect with `BPFCOMPAT_VERSION`, `BPFCOMPAT_BIN_DIR`,
-`BPFCOMPAT_LIBEXEC_DIR`, and `BPFCOMPAT_DOC_DIR` (where the third-party license
-bundle goes, for releases that publish one; see
+`BPFCOMPAT_LIBEXEC_DIR`, and `BPFCOMPAT_DOC_DIR` (for releases that publish a
+third-party license bundle, it is installed under `<BPFCOMPAT_DOC_DIR>/<tag>/`;
+the default directory is `<BIN_DIR>/../share/doc/bpfcompat`; see
 [`scripts/install.sh`](scripts/install.sh)). A pinned version must be an exact
 release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`), and its signature or attestation must
 come from that tag's release run. A validator installed outside
@@ -387,8 +389,9 @@ auto-discovered: point `BPFCOMPAT_VALIDATOR_BIN` at it.
 
 **1. Prebuilt release binary (Linux x86_64 / arm64).** Installs the CLI *and*
 the static validator (to a location the CLI auto-discovers), checksum- and
-attestation-verified. The validator is currently published for amd64 only; on
-arm64 use the CLI plus `make validator-static` or command mode:
+attestation-verified (the `gh attestation verify` flags below need gh 2.68.0 or
+later). The validator is currently published for amd64 only; on arm64 use the
+CLI plus `make validator-static` or command mode:
 
 ```bash
 VER=v0.3.7
@@ -464,9 +467,11 @@ cosign verify ghcr.io/kernel-guard/bpfcompat:0.3.7 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The signer workflow differs by release: the 0.3.5 to 0.3.7 images were signed
-by `ghcr-image.yml`, while the 0.3.8-rc.2 and 0.4.0-rc.4 images, and later
-images from the release workflow, are signed by `release-artifacts.yml`
+The signer workflow differs by release: the 0.3.5 to 0.3.7 images (and the
+`0.3` and `latest` aliases while they point at 0.3.7) were signed by
+`ghcr-image.yml`, while the 0.3.8-rc.1, 0.3.8-rc.2, 0.4.0-rc.2, 0.4.0-rc.3 and
+0.4.0-rc.4 images, and later images from the release workflow, are signed by
+`release-artifacts.yml`
 (`--certificate-identity https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/v<version>`).
 Change the identity together with the image tag.
 
@@ -829,10 +834,10 @@ Operator guidance:
   public Scorecard API (badge above).
 - **Signed releases + SLSA provenance:** tag builds produce a CycloneDX SBOM,
   cosign keyless (Sigstore OIDC) signatures over `SHA256SUMS` (and, from
-  v0.4.0-rc.4, the SBOM), plus SLSA provenance attestations for the binaries
-  and container bound to the producing commit and workflow
-  (`release-artifacts.yml`; the 0.3.5 to 0.3.7 images were signed and attested
-  by `ghcr-image.yml`). Quick check (it checks the repository only; the full
+  v0.4.0-rc.2 and v0.3.8-rc.1, the SBOM; not in v0.3.7), plus SLSA provenance
+  attestations for the binaries and container bound to the producing commit
+  and workflow (`release-artifacts.yml`; the 0.3.5 to 0.3.7 images were signed
+  and attested by `ghcr-image.yml`). Quick check (it checks the repository only; the full
   steps also bind the release workflow and tag):
 
   ```bash

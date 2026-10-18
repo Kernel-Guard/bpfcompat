@@ -8,7 +8,7 @@ inputs:
     required: false
     default: ""
   artifact:
-    description: "Local path to a compiled .bpf.o artifact, or a remote OCI reference the CLI pulls (for example ghcr.io/org/gadget:latest, host:port/repo, or an @sha256: digest). Prefix workspace paths whose first directory contains `.` or `:` with `./` (for example ./.output/minimal.bpf.o); otherwise they are treated as remote references."
+    description: "Local path to a compiled .bpf.o artifact, or a remote OCI reference the CLI pulls (for example ghcr.io/org/gadget:latest, host:port/repo, or an @sha256: digest). Prefix workspace paths whose first directory contains `.` or `:` or is `localhost` with `./` (for example ./.output/minimal.bpf.o); otherwise they are treated as remote references."
     required: false
     default: ""
   command:

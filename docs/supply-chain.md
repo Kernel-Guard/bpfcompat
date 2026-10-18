@@ -136,7 +136,7 @@ cosign verify-blob \
   --certificate-identity "https://github.com/Kernel-Guard/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/$VER" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
-sha256sum -c SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
 ```
 
 The identity names the exact tag, as `scripts/install.sh` does, so a signature

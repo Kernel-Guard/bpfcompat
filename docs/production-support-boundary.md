@@ -81,10 +81,12 @@ Every supported release must:
 3. build the static validator in the digest-pinned builder from
    `validator/build-inputs.lock` and, when the validator tree is unchanged,
    reproduce the lock's recorded validator byte for byte (from v0.4.0-rc.5);
-4. for a stable release, ship exactly the qualified release candidate's
-   validator bytes (from v0.4.0-rc.5);
-5. for a stable release, have every stable-blocking distribution decision in
-   `distribution/policy.json` recorded (from v0.4.0-rc.5);
+4. for a stable release only, ship exactly the qualified release candidate's
+   validator bytes (enforced by the release workflow from v0.4.0-rc.5 on;
+   release candidates do not run this gate);
+5. for a stable release only, have every stable-blocking distribution decision
+   in `distribution/policy.json` recorded (enforced by the release workflow
+   from v0.4.0-rc.5 on; release candidates do not run this gate);
 6. run the exact candidate CLI and static validator in a pinned-image positive
    VM test;
 7. produce the expected classification from an incompatible artifact;
