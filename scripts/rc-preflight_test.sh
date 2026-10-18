@@ -304,7 +304,37 @@ run badev 200
 if [[ $rc -eq 3 ]] && grep -q 'release-candidate-evidence.json of .* is not JSON' "$tmp/out"; then ok "unparsable candidate evidence aborts"
 else fail "bad evidence (rc=$rc)"; show; fi
 
-# 9. Usage.
+# 9. Building the pin parser: no downloads, and the caller's toolchain choice
+#    is kept (an older Go on PATH may switch to a cached go.mod toolchain).
+REAL_GO="$(command -v go)"
+mkdir -p "$tmp/goshim" "$tmp/gofail"
+cat >"$tmp/goshim/go" <<SHIM
+#!/usr/bin/env bash
+printf 'GOTOOLCHAIN=%s GOPROXY=%s GOWORK=%s ARGS=%s\n' "\${GOTOOLCHAIN-<unset>}" "\${GOPROXY-<unset>}" "\${GOWORK-<unset>}" "\$*" >>"$tmp/go.log"
+exec "$REAL_GO" "\$@"
+SHIM
+printf '#!/usr/bin/env bash\necho "go: go.mod requires go >= 9.9 (running go 1.0)" >&2\nexit 1\n' >"$tmp/gofail/go"
+chmod +x "$tmp/goshim/go" "$tmp/gofail/go"
+scenario gobuild; : >"$tmp/go.log"
+set +e
+PATH="$tmp/bin:$tmp/goshim:$PATH" FIX="$tmp/gobuild" GH_LOG="$tmp/gh.log" GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" \
+  BPFCOMPAT_PREFLIGHT_NOW=$((PUB_EPOCH + 200 * 3600)) bash "$PRE" --tag "$TAG" >"$tmp/out" 2>&1
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q "^GOTOOLCHAIN=${GOTOOLCHAIN:-auto} GOPROXY=off GOWORK=off ARGS=build -mod=vendor " "$tmp/go.log"; then
+  ok "parser build keeps the caller's GOTOOLCHAIN, with GOPROXY=off, GOWORK=off and -mod=vendor"
+else fail "parser build environment (rc=$rc): $(cat "$tmp/go.log")"; show; fi
+scenario gofails
+set +e
+PATH="$tmp/bin:$tmp/gofail:$PATH" FIX="$tmp/gofails" GH_LOG="$tmp/gh.log" \
+  BPFCOMPAT_PREFLIGHT_NOW=$((PUB_EPOCH + 200 * 3600)) bash "$PRE" --tag "$TAG" >"$tmp/out" 2>&1
+rc=$?
+set -e
+if [[ $rc -eq 3 ]] && grep -q 'cannot build the vendored workflow-pin parser' "$tmp/out" && ! grep -q 'designated: consumer-canary' "$tmp/out"; then
+  ok "an unusable Go aborts the report instead of reporting a pin status"
+else fail "unusable Go (rc=$rc)"; show; fi
+
+# 10. Usage.
 
 if bash "$PRE" --tag v0.4.0 >/dev/null 2>&1; then fail "stable tag accepted"; else ok "non-RC tag refused"; fi
 

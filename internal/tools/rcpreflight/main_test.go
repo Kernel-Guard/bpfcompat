@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,6 +42,40 @@ func TestActiveWorkflowPins(t *testing.T) {
 			err := check(strings.NewReader(tt.text), tt.mode, sha, tag)
 			if (err == nil) != tt.ok {
 				t.Fatalf("check() = %v, want accepted=%v", err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestRunExitCodes(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	tag := "v0.4.0-rc.5"
+	dir := t.TempDir()
+	good := dir + "/good.yml"
+	stale := dir + "/stale.yml"
+	if err := os.WriteFile(good, []byte("jobs:\n  t:\n    steps:\n      - uses: Kernel-Guard/bpfcompat@"+sha+" # "+tag+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("jobs:\n  t:\n    steps:\n      - uses: Kernel-Guard/bpfcompat@main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		args []string
+		code int
+		out  string
+	}{
+		{"verified", []string{"all", sha, tag, good}, 0, "VERIFIED\n"},
+		{"pending", []string{"all", sha, tag, stale}, 0, "PENDING\n"},
+		{"usage", []string{"all", sha, tag}, 2, ""},
+		{"unknown-mode", []string{"some", sha, tag, good}, 2, ""},
+		{"unreadable", []string{"all", sha, tag, dir + "/missing.yml"}, 2, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := run(tt.args, &stdout, &stderr); code != tt.code || stdout.String() != tt.out {
+				t.Fatalf("run() = %d, %q; want %d, %q (stderr %q)", code, stdout.String(), tt.code, tt.out, stderr.String())
 			}
 		})
 	}

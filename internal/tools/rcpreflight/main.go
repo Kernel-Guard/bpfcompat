@@ -15,24 +15,31 @@ import (
 const target = "kernel-guard/bpfcompat"
 const marker = "bpfcompat-pin: candidate"
 
-func main() {
-	if len(os.Args) != 5 {
-		fmt.Fprintln(os.Stderr, "usage: rcpreflight <all|candidate> <commit> <tag> <workflow>")
-		fmt.Println("PENDING")
-		return
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+
+// run prints VERIFIED or PENDING and returns 0 for a workflow it could judge.
+// A usage error or an unreadable file is not a judgement about the workflow:
+// it prints nothing to stdout and returns 2, so the caller aborts instead of
+// reporting a status.
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 4 || (args[0] != "all" && args[0] != "candidate") {
+		fmt.Fprintln(stderr, "usage: rcpreflight <all|candidate> <commit> <tag> <workflow>")
+		return 2
 	}
-	// #nosec G703 -- this local CLI intentionally reads the operator-supplied workflow path; it never writes it.
-	f, err := os.Open(os.Args[4])
-	if err == nil {
-		defer f.Close()
-		err = check(f, os.Args[1], os.Args[2], os.Args[3])
-	}
+	// #nosec G304 G703 -- this local CLI intentionally reads the operator-supplied workflow path; it never writes it.
+	f, err := os.Open(args[3])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "rc-preflight pins:", err)
-		fmt.Println("PENDING")
-		return
+		fmt.Fprintln(stderr, "rc-preflight pins:", err)
+		return 2
 	}
-	fmt.Println("VERIFIED")
+	defer f.Close()
+	if err := check(f, args[0], args[1], args[2]); err != nil {
+		fmt.Fprintln(stderr, "rc-preflight pins:", err)
+		fmt.Fprintln(stdout, "PENDING")
+		return 0
+	}
+	fmt.Fprintln(stdout, "VERIFIED")
+	return 0
 }
 
 func commentsHave(s, want string) bool {

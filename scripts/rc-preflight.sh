@@ -9,9 +9,10 @@
 # release-candidate-evidence.json), and files in this checkout. It never dispatches or reruns a workflow, never writes to GitHub,
 # never executes a downloaded file and never writes operator evidence.
 # Active workflow pins are parsed by a helper compiled from this checkout's
-# Go sources and vendored YAML library into the temporary directory. Its build
-# disables toolchain/dependency downloads; Go meeting go.mod's version must
-# already be on PATH (as in CI's setup-go environment).
+# Go sources and vendored YAML library into the temporary directory (writing
+# only Go's build cache). The build never downloads: GOPROXY=off, GOWORK=off,
+# -mod=vendor. GOTOOLCHAIN is left as the caller set it, so the Go on PATH, or
+# a toolchain at go.mod's version already in the module cache, can build it.
 #
 # Status meanings:
 #   VERIFIED  observed directly (a ref, a run, a file, a hash) and as required.
@@ -231,7 +232,8 @@ else
   else say PENDING "designated: campaign-candidate.json" "main binds $(jq -r .tag "$tmp/cc.json") (retarget after verification)"; fi
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
   command -v go >/dev/null || abort "Go is required to parse active workflow pins"
-  (cd "$ROOT" && GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) || abort "cannot build vendored workflow-pin parser; put Go meeting go.mod's version on PATH"
+  (cd "$ROOT" && GOWORK=off GOPROXY=off go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) ||
+    abort "cannot build the vendored workflow-pin parser without downloads; it needs Go at go.mod's version on PATH or already in the module cache"
   pin_result="$("$tmp/pincheck" candidate "$commit" "$tag" "$tmp/consumer.yml")" || abort "workflow-pin parser failed"
   if [[ "$pin_result" == VERIFIED ]]; then
     say VERIFIED "designated: consumer-canary candidate pin" "one active candidate marker pinned to $commit # $tag"; ok_designations=$((ok_designations + 1))
