@@ -1006,13 +1006,26 @@ func machineArgsFor(arch string, kvm bool) []string {
 // kvmAvailable reports whether hardware-accelerated virtualization is usable on
 // this host. When /dev/kvm is missing (some CI runners), callers degrade to TCG
 // software emulation rather than failing the QEMU launch outright.
+//
+// A /dev/kvm that exists but cannot be opened read-write by this process (for
+// example the user is not in the kvm group) is not usable either: QEMU would
+// fail at -enable-kvm instead of falling back to TCG.
 func kvmAvailable() bool {
-	info, err := os.Stat("/dev/kvm")
+	info, err := os.Stat(kvmDevicePath)
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	f, err := os.OpenFile(kvmDevicePath, os.O_RDWR, 0)
 	if err != nil {
 		return false
 	}
-	return info.Mode()&os.ModeCharDevice != 0
+	_ = f.Close()
+	return true
 }
+
+// kvmDevicePath is the KVM device probed by kvmAvailable; a variable so tests
+// can point the probe at other device nodes.
+var kvmDevicePath = "/dev/kvm"
 
 func normalizeArch(arch string) string {
 	switch strings.ToLower(strings.TrimSpace(arch)) {
