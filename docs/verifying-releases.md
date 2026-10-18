@@ -22,9 +22,10 @@ long-lived private key. The signer identity is the release workflow itself.
 ## 1. Verify build provenance (recommended)
 
 Requires the GitHub CLI (`gh`) 2.68.0 or later: `--signer-workflow` was added
-in gh 2.51.0 and `--source-ref` in gh 2.68.0, and an older gh stops with
-`unknown flag` without verifying anything (upgrade it, or use the cosign check
-in section 2). How strictly gh matches these values also depends on its
+in gh 2.51.0 and `--source-ref` in gh 2.68.0. An older gh stops without
+verifying anything, with `unknown flag` (before 2.68.0) or
+`unknown command "attestation"` (before 2.49.0); upgrade it, or use the cosign
+check in section 2. How strictly gh matches these values also depends on its
 version: gh 2.97.0 and 2.102.0 fixed published advisories in that matching
 (GHSA-mm27-mwq9-fr5g, GHSA-wjmr-j3rp-mh2g, GHSA-4mq3-hpgx-9cx8), so 2.102.0 or
 later is recommended.
@@ -134,8 +135,10 @@ and, from v0.4.0-rc.5, for the third-party license bundle when `SHA256SUMS`
 lists it.
 Attestation verification is restricted to
 `.github/workflows/release-artifacts.yml`; a checksum or attestation mismatch
-is a hard failure. When attestation verification is unavailable, the Action
-builds from its pinned source instead of trusting unverifiable release bytes.
+is a hard failure. When attestation verification is unavailable (no `gh` with
+attestation support), the v0.4.0 release candidates' Action builds from its
+pinned source instead of trusting unverifiable release bytes; the v0.3.8
+release candidates' Action fails the job instead.
 
 From v0.4.0-rc.5, after verification the Action runs that validator by path
 and pinned digest (`BPFCOMPAT_VALIDATOR_BIN` / `BPFCOMPAT_VALIDATOR_SHA256`),
