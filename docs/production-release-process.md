@@ -198,8 +198,12 @@ aggregator binds every piece of evidence to the attested candidate
 - **Incident.** The note must contain `[bpfcompat-promotion-incident:v1]`,
   name `promote-release`, and link the deliberately rejected run, and only
   that run, as
-  `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. Written
-  policy does not require the incident drill to target the current candidate,
+  `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. With
+  attestation verification on, that run must be a completed `promote-release.yml`
+  run that did not succeed, and the rollback evidence's workflow run must be a
+  successful `rollback-drill.yml` run on `main`; both are looked up on GitHub.
+  Written policy does not require the incident drill to target the current
+  candidate,
   so an earlier candidate's fail-closed drill is accepted; the output records
   `incident.promotion_run_id` and `incident.candidate_bound`.
 - **Operator.** The confirmation must contain

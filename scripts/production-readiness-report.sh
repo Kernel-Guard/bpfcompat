@@ -545,6 +545,24 @@ incident_run_ids="$(
 [[ "$(wc -l <<<"$incident_run_ids")" -eq 1 ]] ||
   fail "incident evidence links more than one workflow run; it must link only the rejected promote-release run"
 incident_run_id="$incident_run_ids"
+# Written policy: the rollback evidence is the note rollback-drill.yml writes,
+# and the incident links the deliberately rejected promote-release run. With
+# attestation verification on, both run IDs must be real runs of those
+# workflows here: the drill a successful run on main, the incident a completed
+# promote-release run that did not succeed. (Which rejection qualifies stays
+# the operator's call; a successful or unrelated run never does.)
+if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
+  rollback_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${rollback_run_id}" 2>/dev/null)" ||
+    fail "rollback drill run ${rollback_run_id} cannot be read from GitHub"
+  jq -e '.path == ".github/workflows/rollback-drill.yml" and .head_branch == "main" and
+         .status == "completed" and .conclusion == "success"' <<<"$rollback_run" >/dev/null ||
+    fail "rollback drill run ${rollback_run_id} is not a successful rollback-drill.yml run on main"
+  incident_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${incident_run_id}" 2>/dev/null)" ||
+    fail "incident run ${incident_run_id} cannot be read from GitHub"
+  jq -e '.path == ".github/workflows/promote-release.yml" and
+         .status == "completed" and .conclusion != "success"' <<<"$incident_run" >/dev/null ||
+    fail "incident run ${incident_run_id} is not a rejected promote-release.yml run"
+fi
 incident_candidate_bound=false
 if grep -qE "(^|[^[:alnum:].-])${candidate_tag//./\\.}([^[:alnum:]]|$)" "$incident"; then
   incident_candidate_bound=true

@@ -626,6 +626,21 @@ mkdir -p "$tmp/bin"
 cat >"$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 [[ "$1" == attestation && "$2" == --help ]] && exit 0
+# Workflow run lookups: run 5000 is the rollback drill and 6000 the rejected
+# promotion; STUB_* variables override their fields, any other run is a 404.
+if [[ "$1" == api && "$2" =~ ^repos/Kernel-Guard/bpfcompat/actions/runs/([0-9]+)$ ]]; then
+  printf '%s\n' "$*" >>"$STUB_LOG"
+  case "${BASH_REMATCH[1]}" in
+    5000) jq -n --arg p "${STUB_ROLLBACK_PATH:-.github/workflows/rollback-drill.yml}" \
+            --arg b "${STUB_ROLLBACK_BRANCH:-main}" --arg c "${STUB_ROLLBACK_CONCLUSION:-success}" \
+            '{path: $p, head_branch: $b, status: "completed", conclusion: $c}' ;;
+    6000) jq -n --arg p "${STUB_INCIDENT_PATH:-.github/workflows/promote-release.yml}" \
+            --arg c "${STUB_INCIDENT_CONCLUSION:-failure}" \
+            '{path: $p, head_branch: "v0.4.0-rc.1", status: "completed", conclusion: $c}' ;;
+    *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  esac
+  exit 0
+fi
 [[ "$1 $2" == "attestation verify" ]] || { echo "unexpected gh $*" >&2; exit 99; }
 printf '%s\n' "$*" >>"$STUB_LOG"
 [[ -n "${STUB_FAIL:-}" && "$3" == *"$STUB_FAIL"* ]] && exit 1
@@ -661,6 +676,30 @@ if PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" STUB_EVENT=workflow_dispatch "$s
   echo "[production-readiness-test] a dispatched run relabelled as scheduled was accepted" >&2; exit 1
 fi
 echo "[production-readiness-test] refused: evidence claiming schedule whose attestation shows workflow_dispatch"
+grep -Fq "api repos/Kernel-Guard/bpfcompat/actions/runs/5000" "$tmp/gh.log" &&
+  grep -Fq "api repos/Kernel-Guard/bpfcompat/actions/runs/6000" "$tmp/gh.log" || {
+  echo "[production-readiness-test] the drill and incident runs were not looked up" >&2; exit 1; }
+# Written policy: the rollback note comes from a rollback-drill.yml run and the
+# incident links the rejected promote-release run. Both must be real runs.
+for case in \
+  "STUB_ROLLBACK_PATH=.github/workflows/ci.yml|a rollback drill run that is another workflow" \
+  "STUB_ROLLBACK_CONCLUSION=failure|a rollback drill run that did not succeed" \
+  "STUB_ROLLBACK_BRANCH=feature|a rollback drill run not on main" \
+  "STUB_INCIDENT_PATH=.github/workflows/ci.yml|an incident linking a run of another workflow" \
+  "STUB_INCIDENT_CONCLUSION=success|an incident linking a promotion that succeeded"; do
+  if env "${case%%|*}" PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" "$script" "$tmp/input.json" "$tmp/bad.md" >/dev/null 2>&1; then
+    echo "[production-readiness-test] ${case#*|} was accepted" >&2; exit 1
+  fi
+  echo "[production-readiness-test] refused: ${case#*|}"
+done
+sed 's#/actions/runs/6000#/actions/runs/6999#' "$incident_note" >"$tmp/incident-404.md"
+cp "$incident_note" "$incident_note.keep"; cp "$tmp/incident-404.md" "$incident_note"
+rehash "$incident_note" .incident.evidence_sha256 "$tmp/bad-incident-404.json"
+if PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" "$script" "$tmp/bad-incident-404.json" "$tmp/bad.md" >/dev/null 2>&1; then
+  echo "[production-readiness-test] an incident linking a run that does not exist was accepted" >&2; exit 1
+fi
+echo "[production-readiness-test] refused: an incident linking a run that does not exist"
+mv "$incident_note.keep" "$incident_note"
 
 # --- Readiness output v0.2 and the real stable gate ----------------------------
 jq -e --arg c "$(printf 'c%.0s' {1..40})" '
