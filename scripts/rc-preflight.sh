@@ -238,25 +238,29 @@ else
   main_file .github/workflows/consumer-canary.yml "$tmp/consumer.yml"
   command -v go >/dev/null || abort "Go is required to parse active workflow pins"
   (cd "$ROOT" && GOWORK=off GOPROXY=off GONOPROXY=none.invalid GONOSUMDB=none.invalid go build -mod=vendor -o "$tmp/pincheck" ./internal/tools/rcpreflight) ||
-    abort "cannot build the vendored workflow-pin parser without downloads; it needs Go at go.mod's version on PATH or already in the module cache"
+    abort "cannot build the vendored workflow-pin parser without downloads; it needs Go at go.mod's version on PATH, or that toolchain already in the module cache with checksum verification on (GOSUMDB not off)"
   pin_result="$("$tmp/pincheck" candidate "$commit" "$tag" "$tmp/consumer.yml")" || abort "workflow-pin parser failed"
   if [[ "$pin_result" == VERIFIED ]]; then
     say VERIFIED "designated: consumer-canary candidate pin" "one active candidate marker pinned to $commit # $tag"; ok_designations=$((ok_designations + 1))
   else say PENDING "designated: consumer-canary candidate pin" "requires one '# bpfcompat-pin: candidate' marker followed by an active @$commit # $tag uses scalar"; fi
   main_file .github/workflows/release-candidate-canary.yml "$tmp/rcc.yml"
   # envis <name> <value>: the workflow-level env binds it (parsed, not grepped,
-  # so run text cannot stand in for it) and no job or step rebinds it.
+  # so run text cannot stand in for it) and no job or step rebinds it. When it
+  # does not, why= holds what the parser found instead.
   envis() {
     local r
-    r="$("$tmp/pincheck" env "$1" "$2" "$tmp/rcc.yml" 2>/dev/null)" || abort "workflow-pin parser failed"
-    [[ "$r" == VERIFIED ]]
+    r="$("$tmp/pincheck" env "$1" "$2" "$tmp/rcc.yml" 2>"$tmp/envis.err")" ||
+      abort "workflow-pin parser failed: $(cat "$tmp/envis.err")"
+    [[ "$r" == VERIFIED ]] && return 0
+    why="$(sed -n 's/^rc-preflight pins: //p' "$tmp/envis.err" | tail -1)"
+    return 1
   }
   problems=""
-  envis CANDIDATE_TAG "$tag" || problems+="CANDIDATE_TAG=(not $tag) "
-  envis CANDIDATE_COMMIT "$commit" || problems+="CANDIDATE_COMMIT=(not $commit) "
-  envis CANDIDATE_PUBLISHED_AT "$published_at" || problems+="CANDIDATE_PUBLISHED_AT=(not $published_at) "
+  envis CANDIDATE_TAG "$tag" || problems+="CANDIDATE_TAG=($why) "
+  envis CANDIDATE_COMMIT "$commit" || problems+="CANDIDATE_COMMIT=($why) "
+  envis CANDIDATE_PUBLISHED_AT "$published_at" || problems+="CANDIDATE_PUBLISHED_AT=($why) "
   if [[ -z "$digest" ]]; then problems+="(release-candidate-evidence.json names no image digest) "
-  elif ! envis CANDIDATE_DIGEST "$digest"; then problems+="CANDIDATE_DIGEST=(not $digest) "; fi
+  elif ! envis CANDIDATE_DIGEST "$digest"; then problems+="CANDIDATE_DIGEST=($why) "; fi
   grep -q "rc${rcnum}-canary-component-" "$tmp/rcc.yml" || problems+="no rc${rcnum}-canary-component names "
   # The published-action job must use exactly this candidate's commit.
   pin_result="$("$tmp/pincheck" all "$commit" "$tag" "$tmp/rcc.yml")" || abort "workflow-pin parser failed"

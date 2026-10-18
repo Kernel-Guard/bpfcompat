@@ -201,7 +201,8 @@ else fail "stale designation (rc=$rc)"; show; fi
 scenario olddigest; sed -i "s/CANDIDATE_DIGEST: .*/CANDIDATE_DIGEST: sha256:$(printf 'e%.0s' {1..64})/" "$tmp/olddigest/rcc-raw.yml"
 contents "$tmp/olddigest/rcc-raw.yml" >"$tmp/olddigest/rcc.json"
 run olddigest 200
-if line PENDING "designated: release-candidate-canary" && grep -q 'CANDIDATE_DIGEST=' "$tmp/out"; then ok "previous candidate digest left in the canary: not designated"
+if line PENDING "designated: release-candidate-canary" && grep -q "CANDIDATE_DIGEST=(\"sha256:$(printf 'e%.0s' {1..64})\" in the workflow env)" "$tmp/out"; then
+  ok "previous candidate digest left in the canary: not designated, and the stale value is shown"
 else fail "stale digest (rc=$rc)"; show; fi
 scenario runtext
 { printf 'jobs:\n  notes:\n    steps:\n      - run: |\n          CANDIDATE_TAG: %s\n          CANDIDATE_COMMIT: %s\n          CANDIDATE_DIGEST: %s\n          CANDIDATE_PUBLISHED_AT: "%s"\n' "$TAG" "$C1" "$DIG" "$PUB"

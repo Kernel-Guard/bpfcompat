@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -53,9 +54,21 @@ func commentsHave(s, want string) bool {
 }
 
 // keywords are the workflow keys this checker reads. GitHub matches them
-// case-sensitively and has no merge keys, so a case variant or "<<" would be
-// ignored here while a YAML tool might honour it: both are rejected.
-var keywords = map[string]bool{"jobs": true, "steps": true, "uses": true, "if": true, "env": true}
+// case-sensitively, so a case variant would be ignored here while a YAML tool
+// might honour it. They are checked only where GitHub reads its own keywords
+// (the workflow, each job and each step); env names, inputs and matrix keys
+// are user data and may be spelled any way. Merge keys ("<<"), which GitHub
+// does not support, are rejected everywhere.
+var keywords = map[string]bool{"jobs": true, "steps": true, "uses": true, "if": true, "env": true, "needs": true}
+
+func keywordCase(n *yaml.Node) error {
+	for i := 0; i < len(n.Content); i += 2 {
+		if k := n.Content[i].Value; keywords[strings.ToLower(k)] && !keywords[k] {
+			return fmt.Errorf("case-variant key %q at line %d", k, n.Content[i].Line)
+		}
+	}
+	return nil
+}
 
 // validate rejects ambiguous keys and aliases rather than guessing which use
 // a runner would execute. Comment markers inside run strings are not comments.
@@ -78,8 +91,8 @@ func validate(n *yaml.Node) (int, error) {
 			if k.Kind != yaml.ScalarNode || keys[k.Value] {
 				return 0, fmt.Errorf("non-scalar or duplicate mapping key at line %d", k.Line)
 			}
-			if k.Value == "<<" || k.Tag == "!!merge" || (keywords[strings.ToLower(k.Value)] && !keywords[k.Value]) {
-				return 0, fmt.Errorf("merge or case-variant key %q at line %d", k.Value, k.Line)
+			if k.Value == "<<" || k.Tag == "!!merge" {
+				return 0, fmt.Errorf("merge key at line %d", k.Line)
 			}
 			keys[k.Value] = true
 		}
@@ -114,26 +127,41 @@ func asciiEqualFold(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// disabled reports whether a job or step can never run: its if is a literal
-// false. Conditions that read a context are the runner's to evaluate and are
-// left alone (the canary jobs all depend on their plan job's output).
-func disabled(n *yaml.Node) (bool, error) {
+var (
+	quoted     = regexp.MustCompile(`'(?:[^']|'')*'`)
+	identifier = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_-]*)`)
+	resume     = regexp.MustCompile(`(?i)\b(?:always|failure|cancelled)\s*\(`)
+)
+
+// condition reads the if of a job or step. never is true when the condition
+// is a constant other than true: it names no context and calls no function,
+// so the runner can only ever skip it. GitHub treats false, 0, -0, ”, null
+// and NaN as false and accepts any JSON number form, so every constant except
+// the literal true is treated as never running instead of being evaluated
+// here. Conditions that read a context are the runner's to evaluate (the
+// canary jobs all depend on their plan job's output). resumes is true when
+// the condition calls always(), failure() or cancelled(), which let a job run
+// after a job it needs was skipped.
+func condition(n *yaml.Node) (never, resumes bool, err error) {
 	_, cond := field(n, "if")
 	if cond == nil {
-		return false, nil
+		return false, false, nil
 	}
 	if cond.Kind != yaml.ScalarNode {
-		return false, fmt.Errorf("if must be a scalar at line %d", cond.Line)
+		return false, false, fmt.Errorf("if must be a scalar at line %d", cond.Line)
 	}
 	v := strings.TrimSpace(cond.Value)
 	if strings.HasPrefix(v, "${{") && strings.HasSuffix(v, "}}") {
 		v = strings.TrimSpace(v[3 : len(v)-2])
 	}
-	switch strings.ToLower(v) {
-	case "false", "0", "''", "null":
-		return true, nil
+	for _, m := range identifier.FindAllStringSubmatch(quoted.ReplaceAllString(v, "''"), -1) {
+		switch strings.ToLower(m[1]) {
+		case "true", "false", "null", "nan", "infinity":
+		default:
+			return false, resume.MatchString(v), nil
+		}
 	}
-	return false, nil
+	return v != "true", false, nil
 }
 
 // checkEnv requires the workflow-level env to bind name to want, and no job or
@@ -157,8 +185,11 @@ func checkEnv(root, jobs *yaml.Node, name, want string) error {
 	if err != nil {
 		return err
 	}
-	if v == nil || v.Value != want {
-		return fmt.Errorf("workflow env %s is not %q", name, want)
+	if v == nil {
+		return fmt.Errorf("absent from the workflow env")
+	}
+	if v.Value != want {
+		return fmt.Errorf("%q in the workflow env", v.Value)
 	}
 	for i := 1; i < len(jobs.Content); i += 2 {
 		scopes := []*yaml.Node{jobs.Content[i]}
@@ -171,7 +202,7 @@ func checkEnv(root, jobs *yaml.Node, name, want string) error {
 				return err
 			}
 			if v != nil && v.Value != want {
-				return fmt.Errorf("%s rebound to %q at line %d", name, v.Value, v.Line)
+				return fmt.Errorf("rebound to %q at line %d", v.Value, v.Line)
 			}
 		}
 	}
@@ -198,9 +229,61 @@ func check(r io.Reader, mode, commit, tag string) error {
 	if len(doc.Content) != 1 {
 		return fmt.Errorf("expected workflow mapping")
 	}
+	if err := keywordCase(doc.Content[0]); err != nil {
+		return err
+	}
 	_, jobs := field(doc.Content[0], "jobs")
 	if jobs == nil || jobs.Kind != yaml.MappingNode {
 		return fmt.Errorf("expected jobs mapping")
+	}
+	// A job can never run when its own if is a constant other than true, or
+	// when a job it needs can never run and its if does not resume after a
+	// skipped need.
+	never, resumes, needs := map[string]bool{}, map[string]bool{}, map[string][]string{}
+	for i := 0; i < len(jobs.Content); i += 2 {
+		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		if job.Kind != yaml.MappingNode {
+			return fmt.Errorf("expected job mapping")
+		}
+		if err := keywordCase(job); err != nil {
+			return err
+		}
+		if _, steps := field(job, "steps"); steps != nil && steps.Kind == yaml.SequenceNode {
+			for _, step := range steps.Content {
+				if err := keywordCase(step); err != nil {
+					return err
+				}
+			}
+		}
+		off, res, err := condition(job)
+		if err != nil {
+			return err
+		}
+		never[name], resumes[name] = off, res
+		switch _, n := field(job, "needs"); {
+		case n == nil:
+		case n.Kind == yaml.ScalarNode:
+			needs[name] = []string{n.Value}
+		case n.Kind == yaml.SequenceNode:
+			for _, dep := range n.Content {
+				if dep.Kind != yaml.ScalarNode {
+					return fmt.Errorf("needs must list job names at line %d", dep.Line)
+				}
+				needs[name] = append(needs[name], dep.Value)
+			}
+		default:
+			return fmt.Errorf("needs must be a job name or a list at line %d", n.Line)
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, deps := range needs {
+			for _, dep := range deps {
+				if !never[name] && !resumes[name] && never[dep] {
+					never[name], changed = true, true
+				}
+			}
+		}
 	}
 	if mode == "env" {
 		return checkEnv(doc.Content[0], jobs, commit, tag)
@@ -209,7 +292,7 @@ func check(r io.Reader, mode, commit, tag string) error {
 		return fmt.Errorf("expected exactly one candidate marker, got %d", markers)
 	}
 	found := 0
-	inspect := func(n *yaml.Node, jobOff bool) error {
+	inspect := func(n *yaml.Node, off bool) error {
 		key, value := field(n, "uses")
 		if key == nil {
 			return nil
@@ -226,12 +309,8 @@ func check(r io.Reader, mode, commit, tag string) error {
 			return nil
 		}
 		found++
-		off, err := disabled(n)
-		if err != nil {
-			return err
-		}
-		if off || jobOff {
-			return fmt.Errorf("candidate uses at line %d never runs (if is false)", value.Line)
+		if off {
+			return fmt.Errorf("candidate uses at line %d can never run (a constant if other than true, here or on a needed job)", value.Line)
 		}
 		// The owner and repository match ASCII case-insensitively, as GitHub
 		// resolves them; the commit must be spelled exactly.
@@ -245,16 +324,9 @@ func check(r io.Reader, mode, commit, tag string) error {
 		}
 		return nil
 	}
-	for i := 1; i < len(jobs.Content); i += 2 {
-		job := jobs.Content[i]
-		if job.Kind != yaml.MappingNode {
-			return fmt.Errorf("expected job mapping")
-		}
-		jobOff, err := disabled(job)
-		if err != nil {
-			return err
-		}
-		if err := inspect(job, jobOff); err != nil {
+	for i := 0; i < len(jobs.Content); i += 2 {
+		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		if err := inspect(job, never[name]); err != nil {
 			return err
 		}
 		_, steps := field(job, "steps")
@@ -268,7 +340,11 @@ func check(r io.Reader, mode, commit, tag string) error {
 			if step.Kind != yaml.MappingNode {
 				return fmt.Errorf("expected step mapping")
 			}
-			if err := inspect(step, jobOff); err != nil {
+			off, _, err := condition(step)
+			if err != nil {
+				return err
+			}
+			if err := inspect(step, off || never[name]); err != nil {
 				return err
 			}
 		}
