@@ -26,6 +26,9 @@ restore() {
   rm -rf "$tmp"
 }
 trap restore EXIT
+current_stable="$(
+  awk -F': ' '$1 == "stable_version" {print $2; exit}' release.yaml
+)"
 current_release="$(
   awk -F': ' '$1 == "release_version" {print $2; exit}' release.yaml
 )"
@@ -53,7 +56,9 @@ EOF
 BPFCOMPAT_RELEASE_METADATA=release.yaml "$script" >"$tmp/current.log"
 grep -Fq 'channel=prerelease' "$tmp/current.log"
 
-write_metadata 0.3.7 0.3.7 stable
+# The current stable release as a stable channel: docs and canary pins must
+# already agree with it (the stable PR changes stable_version, so this follows).
+write_metadata "$current_stable" "$current_stable" stable
 BPFCOMPAT_RELEASE_METADATA="$tmp/release.yaml" "$script" >"$tmp/stable.log"
 grep -Fq 'channel=stable' "$tmp/stable.log"
 

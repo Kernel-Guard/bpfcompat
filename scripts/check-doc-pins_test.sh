@@ -30,6 +30,21 @@ fixture() {
   for t in "$@"; do gitq -C "$d/work" tag -d "$t"; done
   W="$d/work"
 }
+# template <version> [file]: an integration template SHA-pinned to <version>,
+# committed on top of the fixture (the version's tag is on the base commit).
+template() {
+  mkdir -p "$W/docs/integrations"
+  printf 'jobs:\n  t:\n    steps:\n      - uses: Kernel-Guard/bpfcompat@%s # %s\n' \
+    "$(git -C "$W" rev-list --max-parents=0 HEAD)" "$1" >"$W/docs/integrations/${2:-t}.yml"
+  gitq -C "$W" add -A
+  gitq -C "$W" commit -m "template $1"
+}
+# tag_head <tag>: tag the current HEAD on the remote (the tag build of it).
+tag_head() {
+  gitq -C "$W" tag -a "$1" -m "$1"
+  gitq -C "$W" push origin "$1"
+  gitq -C "$W" tag -d "$1"
+}
 expect() { # <pass|fail> <description> [stderr-substring]
   local want="$1" desc="$2" needle="${3:-}" rc=0
   bash "$W/scripts/check-doc-pins.sh" >"$tmp/out" 2>&1 || rc=$?
@@ -61,6 +76,35 @@ expect fail "stable PR: a SHA pin claiming the unreleased version fails" "claims
 fixture offline stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7
 git -C "$W" remote set-url origin "$tmp/offline/does-not-exist.git"
 expect fail "stable PR: an unreachable remote fails closed" "pins v0.4.0, which is not a released tag"
+
+# The integration templates are SHA-pinned (docs/integrations/README.md), so
+# they cannot name vX.Y.Z before its tag exists: during the stable release
+# window they stay on the most recent earlier stable release.
+fixture tplpr stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.7
+expect pass "stable PR: templates keep their SHA pin on the newest earlier stable"
+
+fixture tplold stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.6
+expect fail "stable PR: a template on an older stable than the newest fails" "docs pin more than one bpfcompat version"
+
+fixture tplthree stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.6 v0.3.7
+template v0.3.7 a
+template v0.3.6 b
+expect fail "stable PR: three documented versions fail" "docs pin more than one bpfcompat version"
+
+fixture tplbuild stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7
+template v0.3.7
+tag_head v0.4.0
+expect pass "tag build: the new tag is HEAD, templates still on the previous stable"
+
+fixture tplafter stable 0.4.0 'uses: Kernel-Guard/bpfcompat@v0.4.0' v0.3.7 v0.4.0
+template v0.3.7
+expect fail "after the tag: templates must be repinned to the new release" "docs pin more than one bpfcompat version"
+
+fixture tplrc prerelease 0.3.7 'uses: Kernel-Guard/bpfcompat@v0.3.7' v0.3.6 v0.3.7
+template v0.3.6
+expect fail "prerelease channel: two documented versions fail as before" "docs pin more than one bpfcompat version"
 
 if [[ $failures -ne 0 ]]; then echo "[doc-pins-test] $failures failure(s)" >&2; exit 1; fi
 echo "[doc-pins-test] PASS"

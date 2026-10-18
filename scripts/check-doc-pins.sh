@@ -25,6 +25,13 @@
 # release_channel `stable`, a tag-form pin on exactly v<stable_version> is
 # accepted when the remote positively has no such tag; an unreachable remote
 # still fails. Commit-SHA pins never get this exemption.
+#
+# The integration templates are pinned by commit SHA (docs/integrations), so
+# they cannot name vX.Y.Z until its tag exists. During the same stable window
+# -- the stable PR while vX.Y.Z is absent, and the vX.Y.Z tag build itself --
+# rule 3 allows exactly one other version beside v<stable_version>: the most
+# recent earlier stable release tag (vA.B.C < X.Y.Z). Every later commit is
+# strict again, so the templates are repinned once the tag exists.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -57,6 +64,35 @@ release_value() { awk -F': *' -v k="$1" '$1 == k { gsub(/["\r]/, "", $2); print 
 preparing=""
 [[ "$(release_value release_channel)" == stable ]] && preparing="v$(release_value stable_version)"
 prepared=""
+
+# version_lt A B: X.Y.Z version A sorts strictly before X.Y.Z version B.
+version_lt() {
+  local -a a b
+  local i
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
+  for i in 0 1 2; do
+    if (( 10#${a[i]} != 10#${b[i]} )); then
+      (( 10#${a[i]} < 10#${b[i]} ))
+      return
+    fi
+  done
+  return 1
+}
+
+# previous_stable <vX.Y.Z>: the newest vA.B.C tag on the remote below it, or
+# nothing when the remote cannot be listed.
+previous_stable() {
+  local tags tag newest=""
+  tags="$(git ls-remote --tags --refs origin 'refs/tags/v*' 2>/dev/null)" || return 0
+  while read -r _ tag; do
+    tag="${tag#refs/tags/}"
+    [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+    version_lt "${tag#v}" "${1#v}" || continue
+    if [[ -z "$newest" ]] || version_lt "${newest#v}" "${tag#v}"; then newest="$tag"; fi
+  done <<<"$tags"
+  printf '%s' "$newest"
+}
 
 # tag_absent <tag>: the remote answered and has no such tag (git ls-remote
 # --exit-code returns 2); a remote that cannot be queried is not "absent".
@@ -120,7 +156,18 @@ if (( ${#versions[@]} == 0 )); then
   note_fail "found no 'uses: Kernel-Guard/bpfcompat@...' pins in README.md or docs -- the docs moved, or this check no longer matches them"
 fi
 
-if (( ${#versions[@]} > 1 )); then
+# The stable window: v<stable_version> is being prepared (positively absent)
+# or this is its tag build (it resolves to HEAD).
+window_previous=""
+if [[ -n "$preparing" && ${#versions[@]} -eq 2 && -n "${versions[$preparing]:-}" ]]; then
+  head_commit="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  if [[ -n "$prepared" ]] || [[ -n "$head_commit" && "$(tag_commit "$preparing")" == "$head_commit" ]]; then
+    window_previous="$(previous_stable "$preparing")"
+  fi
+fi
+if (( ${#versions[@]} == 2 )) && [[ -n "$window_previous" && -n "${versions[$window_previous]:-}" ]]; then
+  echo "[doc-pins] stable window for ${preparing}: SHA-pinned templates may stay on ${window_previous} until the tag exists (${versions[$window_previous]% })"
+elif (( ${#versions[@]} > 1 )); then
   note_fail "docs pin more than one bpfcompat version:"
   for v in "${!versions[@]}"; do
     echo "           $v -> ${versions[$v]}" >&2
@@ -132,7 +179,9 @@ if (( fail )); then
   exit 1
 fi
 
-if [[ -n "$prepared" ]]; then
+if [[ -n "$window_previous" ]]; then
+  echo "[doc-pins] ok: documented pins name ${preparing}, the stable release being prepared or built; SHA-pinned templates stay on ${window_previous} until its tag exists"
+elif [[ -n "$prepared" ]]; then
   echo "[doc-pins] ok: every documented action pin names ${prepared}, the stable release being prepared (its tag does not exist yet)"
 else
   echo "[doc-pins] ok: every documented action pin resolves to ${!versions[*]}"
