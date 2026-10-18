@@ -83,3 +83,13 @@ Attestation verification is restricted to
 `.github/workflows/release-artifacts.yml`; a checksum or attestation mismatch
 is a hard failure. When attestation verification is unavailable, the Action
 builds from its pinned source instead of trusting unverifiable release bytes.
+
+After verification the Action runs that validator by path and pinned digest
+(`BPFCOMPAT_VALIDATOR_BIN` / `BPFCOMPAT_VALIDATOR_SHA256`), so a validator left
+in `/usr/local/libexec` or `/usr/libexec` on a self-hosted runner is not
+selected instead. While the Action is pinned to a release, every fallback to a
+source build is a `::warning::` annotation: that run does not use the attested
+release validator, and the CLI's normal search order (`/usr/local/libexec`,
+`/usr/libexec`, then the action checkout) applies to it. A workflow that sets
+`BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256` keeps its own
+settings, with a warning.

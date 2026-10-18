@@ -76,8 +76,28 @@ jobs:
         # baseline-report / candidate-report policy, path safety, stale-output
         # and checksum handling, against the real `bpfcompat diff` (#141).
         run: bash scripts/action-diff_test.sh
+      - name: Action input-injection regression
+        # The runner pastes inputs.* expressions into run: scripts as source,
+        # so a consumer passing an attacker-influenced value (e.g. a PR branch
+        # name) got command execution in its own job. Inputs must go through
+        # env:; the guard rejects any interpolation into run:, and the
+        # end-to-end test renders the real step with hostile values.
+        run: |
+          bash scripts/check-action-input-interpolation_test.sh
+          bash scripts/action-input-injection_test.sh
+      - name: Action validator identity regression
+        # A release-pinned action must run the validator it downloaded and
+        # verified (by path and pinned digest), not one already installed in
+        # /usr/local/libexec or /usr/libexec; source-build fallbacks while
+        # pinned to a release are ::warning:: annotations.
+        run: bash scripts/action-validator-pin_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
+      - name: Validator build-input pin regression
+        # The static validator links distro libbpf/zlib/glibc; it is built
+        # from validator/build-inputs.lock, never the runner image, and a
+        # stable tag must ship its release candidate's validator bytes.
+        run: bash scripts/validator-build-inputs_test.sh
       - name: Image prefetch reliability regression
         # The public matrix lane lost five of seven weekly runs (Aug-Oct 2026)
         # to a single failed image download aborting the whole prefetch. These
@@ -91,6 +111,8 @@ jobs:
           bash scripts/check-matrix-reports_test.sh
       - name: Release-asset verification regression
         run: bash scripts/verify-release-assets_test.sh
+      - name: Release VM gate per-report assertion regression
+        run: bash scripts/check-release-gate-reports_test.sh
       - name: One-command installer regression
         # scripts/install.sh is what README consumers pipe into sh. Runs it
         # against a local fake release (no network): signatures bound to the
