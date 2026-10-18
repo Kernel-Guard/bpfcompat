@@ -91,6 +91,10 @@ jobs:
         # /usr/local/libexec or /usr/libexec; source-build fallbacks while
         # pinned to a release are ::warning:: annotations.
         run: bash scripts/action-validator-pin_test.sh
+      - name: Action license bundle regression
+        # A release-pinned action installs the release's third-party license
+        # bundle, verified with the binaries, whenever SHA256SUMS lists it.
+        run: bash scripts/action-license-bundle_test.sh
       - name: Compiling-toolchain proof regression
         run: bash scripts/check-binary-toolchain_test.sh
       - name: Validator build-input pin regression

@@ -63,6 +63,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         -X github.com/kernel-guard/bpfcompat/internal/version.BuildDate=${BUILD_DATE}" \
       -o /out/bpfcompat ./cmd/bpfcompat
 
+# License, notice and patent texts of every Go module linked into the binary
+# just built (from its own build information), the Go toolchain's LICENSE and
+# PATENTS, and bpfcompat's LICENSE and NOTICE, copied verbatim. Fails the build
+# if a linked module has no license file.
+RUN bash scripts/collect-go-licenses.sh /out/licenses /out/bpfcompat
+
 #######################################
 # 2. Optional stage with the C validator bundled
 #######################################
@@ -114,6 +120,7 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db0
 WORKDIR /data
 
 COPY --from=builder /out/bpfcompat /usr/local/bin/bpfcompat
+COPY --from=builder /out/licenses/ /usr/share/doc/bpfcompat/
 
 # distroless images carry an unprivileged 'nonroot' user (uid 65532) already.
 USER nonroot:nonroot
