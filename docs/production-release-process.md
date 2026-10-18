@@ -166,8 +166,11 @@ aggregator binds every piece of evidence to the attested candidate
 (`generated_at`, tag, commit, image digest, evidence SHA-256):
 
 - **Falco.** `falco.started_at` must equal the report's own `run.started_at`,
-  and, as for the campaigns, that run must start after the candidate's
-  `generated_at`: evidence must postdate the candidate it graduates.
+  and the run must start after the candidate's `generated_at`: evidence must
+  postdate the candidate it graduates. The runner writes `run.started_at` when
+  it assembles the report, so the run's start is the earliest of that and every
+  target's `started_at`; a required or passing target without `started_at` is
+  refused, while an optional profile the runner never booted does not count.
   `workflow_run_id` and `commit_sha` are not recorded in the report and remain
   operator-asserted (`falco.run_identity` in the output). Written policy does
   not require the Falco lane to run the candidate's own bpfcompat, so this is

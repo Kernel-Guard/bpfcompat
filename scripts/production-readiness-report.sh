@@ -353,13 +353,15 @@ falco_started_epoch="$(iso_epoch "$falco_report_started_at" "Falco report run.st
 # run.started_at is written when the report is assembled, after the targets
 # ran, so it can postdate the candidate while the run itself began before it.
 # The run started at the earliest of run.started_at and every target's
-# started_at, and every target must record one.
-jq -e '[.targets[] | select((.started_at // "") == "")] | length == 0' "$falco_report" >/dev/null ||
-  fail "Falco report has a target without started_at, so when the run started cannot be established"
+# started_at. Every required or passing target must record one; an optional
+# profile the runner never booted (no started_at, not passing) does not count.
+jq -e '[.targets[] | select((.required == true or .status == "pass") and (.started_at // "") == "")] | length == 0' \
+  "$falco_report" >/dev/null ||
+  fail "Falco report has a target that ran without started_at, so when the run started cannot be established"
 while IFS= read -r target_started_at; do
   target_epoch="$(iso_epoch "$target_started_at" "Falco report target started_at")"
   ((target_epoch < falco_started_epoch)) && falco_started_epoch="$target_epoch"
-done < <(jq -r '.targets[].started_at' "$falco_report")
+done < <(jq -r '.targets[] | .started_at // empty' "$falco_report")
 [[ "$falco_started_epoch" -gt "$candidate_generated_epoch" ]] ||
   fail "Falco run started before release candidate ${candidate_tag} was built"
 # Written policy does not say the Falco run must execute the candidate's own

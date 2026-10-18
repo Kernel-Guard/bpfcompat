@@ -487,8 +487,22 @@ expect_refused "a Falco run whose first target predates the candidate" "$tmp/bad
   "Falco run started before release candidate"
 jq 'del(.targets[2].started_at)' "$falco_report.keep" >"$falco_report"
 rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-target-nostart.json"
-expect_refused "a Falco report with a target that has no start time" "$tmp/bad-falco-target-nostart.json" \
-  "Falco report has a target without started_at"
+expect_refused "a Falco report whose required target has no start time" "$tmp/bad-falco-target-nostart.json" \
+  "Falco report has a target that ran without started_at"
+# Shaped like a real report: targets start minutes before run.started_at, all
+# after the candidate; an optional profile the runner never booted
+# ("unsupported", no started_at) does not count.
+jq '.targets |= map(.started_at = "2026-08-03T05:50:00Z") |
+    .targets += [{profile_id: "talos-1.7", required: false, status: "unsupported", duration_ms: 0}]' \
+  "$falco_report.keep" >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/good-falco-real-shape.json"
+if BPFCOMPAT_SKIP_READINESS_ATTESTATION=1 "$script" "$tmp/good-falco-real-shape.json" "$tmp/good.md" >"$tmp/falco-real-shape.log" 2>&1; then
+  echo "[production-readiness-test] accepted: a real-shaped Falco report with an unbooted optional profile"
+else
+  cat "$tmp/falco-real-shape.log" >&2
+  echo "[production-readiness-test] a real-shaped Falco report with an unbooted optional profile was refused" >&2
+  exit 1
+fi
 restore "$falco_report"
 
 # Rollback: alias, drilled digest and recovery are this candidate's.
