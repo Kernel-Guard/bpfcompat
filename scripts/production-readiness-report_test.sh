@@ -23,6 +23,7 @@ make_report() {
         profile_id: .,
         required: true,
         status: "pass",
+        started_at: $started_at,
         duration_ms: 1000
       }],
       summary: {status: "pass"},
@@ -478,6 +479,16 @@ jq 'del(.run.started_at)' "$falco_report.keep" >"$falco_report"
 rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-nostart.json"
 expect_refused "a Falco report without a run start" "$tmp/bad-falco-nostart.json" \
   "Falco started_at does not match the report's run.started_at"
+# run.started_at is written when the report is assembled, after the targets
+# ran: a run whose first target predates the candidate must not pass on it.
+jq '.targets[0].started_at = "2026-07-30T13:59:59Z"' "$falco_report.keep" >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-early-target.json"
+expect_refused "a Falco run whose first target predates the candidate" "$tmp/bad-falco-early-target.json" \
+  "Falco run started before release candidate"
+jq 'del(.targets[2].started_at)' "$falco_report.keep" >"$falco_report"
+rehash "$falco_report" .falco.report_sha256 "$tmp/bad-falco-target-nostart.json"
+expect_refused "a Falco report with a target that has no start time" "$tmp/bad-falco-target-nostart.json" \
+  "Falco report has a target without started_at"
 restore "$falco_report"
 
 # Rollback: alias, drilled digest and recovery are this candidate's.
