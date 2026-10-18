@@ -73,6 +73,16 @@ with one `Result` per profile plus the raw on-disk report.
   census (slower).
 - `WithValidator(path)` — pin a validator binary instead of the embedded one.
 
+The embedded validator is whatever `make pkg-embed-validator` staged: it builds
+`validator-static` on the build host, against that host's static libbpf,
+libelf, zstd, zlib, glibc and libgcc, so a program built with the `hostload`
+tag contains that host's copies of them. The release assets
+`bpfcompat-third-party-licenses.tar.gz` and
+`bpfcompat-validator-relink-kit-linux-amd64.tar.gz` describe the release's own
+validator (built in the pinned builder of `validator/build-inputs.lock`); they
+describe an embedded validator only if it is that same binary (compare sha256).
+This note does not say what redistributing either requires.
+
 ## Stability
 
 **Pre-1.0 / experimental.** While the module is `v0.x`, the surface of this

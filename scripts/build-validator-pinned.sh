@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Build the shipped static validator from declared, pinned inputs.
 #
-#   build-validator-pinned.sh <out-binary> <out-build-inputs.json>
+#   build-validator-pinned.sh <out-binary> <out-build-inputs.json> [<out-dist-dir>]
+#
+# With <out-dist-dir>, the same builder container also records how the binary
+# was made (scripts/validator-distribution-inside.sh): main.o, the split
+# compile/link commands, the linker trace and map, every link input and header
+# with its owning package, those packages' copyright files, and copies of the
+# link inputs. It refuses unless relinking main.o reproduces the built binary.
 #
 # The validator statically links distro libbpf/libelf/zlib/zstd/glibc, so the
 # runner image used to decide its bytes. This builds it inside the lock's
@@ -181,15 +187,23 @@ if [[ "${1:-}" == "--inside" ]]; then
   # Same recipe as `make validator-static` in the top-level Makefile.
   make -C /build/validator/c-libbpf clean all LIBBPF_LINK_MODE=static
   cp /build/validator/c-libbpf/bin/bpfcompat-validator /out/bpfcompat-validator
+  if [[ "${BPFCOMPAT_VALIDATOR_DIST:-0}" == "1" ]]; then
+    bash /src/scripts/validator-distribution-inside.sh /build/validator/c-libbpf /out/dist
+  fi
   exit 0
 fi
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <out-binary> <out-build-inputs.json>" >&2
+if [[ $# -ne 2 && $# -ne 3 ]]; then
+  echo "Usage: $0 <out-binary> <out-build-inputs.json> [<out-dist-dir>]" >&2
   exit 2
 fi
 out_bin="$1"
 out_json="$2"
+out_dist="${3:-}"
+if [[ -n "$out_dist" && -e "$out_dist" && -n "$(ls -A "$out_dist")" ]]; then
+  echo "build-validator-pinned: $out_dist must be empty or absent" >&2
+  exit 2
+fi
 validate_lock
 for tool in docker jq git sha256sum; do
   command -v "$tool" >/dev/null || { echo "build-validator-pinned: $tool is required" >&2; exit 2; }
@@ -213,6 +227,7 @@ fi
 docker run --rm --pull=missing "${ca_mount[@]}" \
   -v "$ROOT:/src:ro" -v "$work:/out" -v "$(cd "$(dirname "$LOCK")" && pwd)/$(basename "$LOCK"):/build-inputs.lock:ro" \
   -e BPFCOMPAT_VALIDATOR_LOCK=/build-inputs.lock \
+  -e BPFCOMPAT_VALIDATOR_DIST="$([[ -n "$out_dist" ]] && echo 1 || echo 0)" \
   "$image" bash /src/scripts/build-validator-pinned.sh --inside
 
 bash "$ROOT/scripts/check-validator-build-inputs.sh" "$work/bpfcompat-validator" "$LOCK"
@@ -238,6 +253,15 @@ fi
 
 mkdir -p "$(dirname "$out_bin")" "$(dirname "$out_json")"
 cp "$work/bpfcompat-validator" "$out_bin"
+if [[ -n "$out_dist" ]]; then
+  relinked="$(awk 'NR == 1 { print $1 }' "$work/dist/relinked.sha256" 2>/dev/null || true)"
+  if [[ "$relinked" != "$sha" ]]; then
+    echo "::error::the distribution record's relink (${relinked:-missing}) does not reproduce the built validator $sha" >&2
+    exit 1
+  fi
+  mkdir -p "$out_dist"
+  cp -r "$work/dist/." "$out_dist/"
+fi
 jq -n \
   --arg image "$image" \
   --arg snapshot "$(lock_value apt_snapshot)" \

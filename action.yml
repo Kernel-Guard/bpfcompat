@@ -199,6 +199,19 @@ runs:
             exit 0
           fi
         done
+        # The third-party license bundle ships with the binaries when the
+        # release lists it in SHA256SUMS (older releases do not); it is then
+        # downloaded and verified together with them.
+        license_asset="bpfcompat-third-party-licenses.tar.gz"
+        verify_assets=(bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64)
+        if awk -v f="$license_asset" '$2 == f || $2 == "*" f { found = 1 } END { exit !found }' "$tmp/SHA256SUMS"; then
+          if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 \
+            -o "$tmp/$license_asset" "$base/$license_asset"; then
+            echo "::warning::Release asset $license_asset not available for ${ref}; building from source. This run does not use the attested ${ref} binaries or validator."
+            exit 0
+          fi
+          verify_assets+=("$license_asset")
+        fi
         if ! command -v gh >/dev/null 2>&1 || ! gh attestation --help >/dev/null 2>&1; then
           echo "::warning::GitHub CLI attestation verification is unavailable; building from the pinned Action source instead of using unverifiable prebuilt binaries. This run does not use the attested ${ref} validator."
           exit 0
@@ -207,8 +220,7 @@ runs:
         # but do not match what the release workflow published or attested.
         GH_TOKEN="$GITHUB_API_TOKEN" bash \
           "$GITHUB_ACTION_PATH/scripts/verify-release-assets.sh" \
-          "$tmp" Kernel-Guard/bpfcompat \
-          bpfcompat-linux-amd64 bpfcompat-validator-static-linux-amd64
+          "$tmp" Kernel-Guard/bpfcompat "${verify_assets[@]}"
 
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"
         install -m 0755 "$tmp/bpfcompat-linux-amd64" "$GITHUB_ACTION_PATH/bin/bpfcompat"
@@ -223,6 +235,20 @@ runs:
         if [[ ! "$validator_sha" =~ ^[0-9a-f]{64}$ || "$validator_sha" != "$installed_sha" ]]; then
           echo "::error::Installed validator does not match its verified SHA256SUMS entry (${validator_sha:-missing} vs ${installed_sha})."
           exit 1
+        fi
+        if [[ " ${verify_assets[*]} " == *" $license_asset "* ]]; then
+          mkdir -p "$tmp/licenses"
+          tar -xzf "$tmp/$license_asset" -C "$tmp/licenses"
+          if [[ ! -f "$tmp/licenses/bpfcompat-third-party-licenses/INVENTORY.json" ]]; then
+            echo "::error::Verified $license_asset does not have the expected layout."
+            exit 1
+          fi
+          license_dir="$GITHUB_ACTION_PATH/share/doc/bpfcompat"
+          mkdir -p "$license_dir"
+          cp -R "$tmp/licenses/bpfcompat-third-party-licenses/." "$license_dir/"
+          echo "Third-party license texts for ${ref}: ${license_dir}"
+        else
+          echo "Release ${ref} publishes no third-party license bundle; see LICENSE, NOTICE and THIRD_PARTY_NOTICES.md in the action checkout."
         fi
         echo "validator-bin=$validator_bin" >> "$GITHUB_OUTPUT"
         echo "validator-sha256=$validator_sha" >> "$GITHUB_OUTPUT"

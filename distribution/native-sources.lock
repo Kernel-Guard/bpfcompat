@@ -1,0 +1,42 @@
+# Exact Ubuntu source packages of the native code linked into the validator
+# (bpfcompat-validator-static-linux-amd64), as installed in the pinned builder
+# (validator/build-inputs.lock). Each file's size and sha256 were read from the
+# Launchpad librarian and match the snapshot.ubuntu.com copy named here (the
+# same snapshot the builder installs from). scripts/fetch-native-sources.sh
+# downloads these files and refuses any size or hash mismatch.
+# linux-libc-dev (kernel UAPI headers, read at compile time, not linked) is
+# recorded in the validator's distribution record; its source is not listed.
+#
+# Format: source=<package> <version>
+#         file=<package> <file name> <size> <sha256> <url>
+
+source=libbpf 1.3.0-2build2
+file=libbpf libbpf_1.3.0-2build2.dsc 2024 87023eb0efe8f19c9066433593b4218f623931d2b5bfb92d31796eace8bd2dbe https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libb/libbpf/libbpf_1.3.0-2build2.dsc
+file=libbpf libbpf_1.3.0-2build2.debian.tar.xz 7224 cf307f4a37e17847b5cf91b0ed5426c2213a4c0e30a9010a10d4854f23ebe156 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libb/libbpf/libbpf_1.3.0-2build2.debian.tar.xz
+file=libbpf libbpf_1.3.0.orig.tar.gz 999282 11db86acd627e468bc48b7258c1130aba41a12c4d364f78e184fd2f5a913d861 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libb/libbpf/libbpf_1.3.0.orig.tar.gz
+
+source=elfutils 0.190-1.1ubuntu0.1
+file=elfutils elfutils_0.190-1.1ubuntu0.1.dsc 3410 7852785ce5ce51a6dad0f6b67188d94ffedaffa6d0128fecabeb6a1ccc2aabea https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/e/elfutils/elfutils_0.190-1.1ubuntu0.1.dsc
+file=elfutils elfutils_0.190-1.1ubuntu0.1.debian.tar.xz 46976 4c3130951f7b865d50ff57379a258926a66bcd2753e3c12301bbb110fbb417fa https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/e/elfutils/elfutils_0.190-1.1ubuntu0.1.debian.tar.xz
+file=elfutils elfutils_0.190.orig.tar.bz2 9162766 8e00a3a9b5f04bc1dc273ae86281d2d26ed412020b391ffcc23198f10231d692 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/e/elfutils/elfutils_0.190.orig.tar.bz2
+
+source=libzstd 1.5.5+dfsg2-2build1.1
+file=libzstd libzstd_1.5.5+dfsg2-2build1.1.dsc 2485 c190a5dff9e7c5b5b1399f0d701bb2c173bc7cbdf14d5e05970f5ac066c25570 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libz/libzstd/libzstd_1.5.5+dfsg2-2build1.1.dsc
+file=libzstd libzstd_1.5.5+dfsg2-2build1.1.debian.tar.xz 21288 c1df6d2628b26d085259b8e7ac020eb060e4c1feca98d6103058eda5ded725bc https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libz/libzstd/libzstd_1.5.5+dfsg2-2build1.1.debian.tar.xz
+file=libzstd libzstd_1.5.5+dfsg2.orig.tar.xz 1784164 d7cf3c10d416fd999cb8fcf7685d9268ba7bec8eb78121fc2d0d916fa393d22b https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/libz/libzstd/libzstd_1.5.5+dfsg2.orig.tar.xz
+
+source=zlib 1:1.3.dfsg-3.1ubuntu2.2
+file=zlib zlib_1.3.dfsg-3.1ubuntu2.2.dsc 2987 56a7cd029863cbddafce831e4e63cccfa84017f93617929cb7c02f80bb5a122a https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/z/zlib/zlib_1.3.dfsg-3.1ubuntu2.2.dsc
+file=zlib zlib_1.3.dfsg-3.1ubuntu2.2.debian.tar.xz 61316 de1c2d532ecb7caf99ccb905fb03c37fe0c8117fbdc79d05be4474b71e6398c2 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/z/zlib/zlib_1.3.dfsg-3.1ubuntu2.2.debian.tar.xz
+file=zlib zlib_1.3.dfsg.orig.tar.xz 1128572 5eea0322c1c21c75cad3b607ac1c43ff5c71e014b8ac4a34300b5e2b80d02e70 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/z/zlib/zlib_1.3.dfsg.orig.tar.xz
+
+source=glibc 2.39-0ubuntu8.9
+file=glibc glibc_2.39-0ubuntu8.9.dsc 9387 1b73a89e0910eb3e5920cde639ac7eb606256d8ee809688ff9b5912b67002711 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/glibc/glibc_2.39-0ubuntu8.9.dsc
+file=glibc glibc_2.39-0ubuntu8.9.debian.tar.xz 491440 d6114f2302896a3c8612453e1bf1d0e61603e3029ba4a7c246fbb1ab4c48d2b0 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/glibc/glibc_2.39-0ubuntu8.9.debian.tar.xz
+file=glibc glibc_2.39.orig.tar.xz.asc 833 2cce427ef7933c17379f5514e4f0ccf8dffae5bf8c72f0f7e0bf8b8401f34be5 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/glibc/glibc_2.39.orig.tar.xz.asc
+file=glibc glibc_2.39.orig.tar.xz 18520988 f77bd47cf8170c57365ae7bf86696c118adb3b120d3259c64c502d3dc1e2d926 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/glibc/glibc_2.39.orig.tar.xz
+
+source=gcc-13 13.3.0-6ubuntu2~24.04.1
+file=gcc-13 gcc-13_13.3.0-6ubuntu2~24.04.1.dsc 39540 86b4012c312ac13e3e092877719a62a5b5dbab082ae7e9680780a25c6a13ddc6 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2%7E24.04.1.dsc
+file=gcc-13 gcc-13_13.3.0-6ubuntu2~24.04.1.debian.tar.xz 646156 5523658f272ad6d15a83b6e26d178fbd5cb7709ec7ce2ca52b0c843e19c228e3 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2%7E24.04.1.debian.tar.xz
+file=gcc-13 gcc-13_13.3.0.orig.tar.gz 92761021 3b85d91bf38d1b858d9d01134f4046b3359731968ed4e6e912d29717a35d1a46 https://snapshot.ubuntu.com/ubuntu/20261014T154800Z/pool/main/g/gcc-13/gcc-13_13.3.0.orig.tar.gz

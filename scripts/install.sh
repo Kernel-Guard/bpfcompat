@@ -7,7 +7,9 @@
 # GitHub release, verifies both against the release SHA256SUMS and either its
 # Sigstore signature or GitHub build attestation, and installs them. The
 # validator goes to a location the CLI discovers automatically, so
-# `bpfcompat test` works from any directory.
+# `bpfcompat test` works from any directory. When the release publishes a
+# third-party license bundle (listed in its SHA256SUMS), it is verified the
+# same way and its texts are installed under the documentation directory.
 #
 # Environment overrides:
 #   BPFCOMPAT_VERSION      release tag to install (default: latest)
@@ -15,6 +17,8 @@
 #   BPFCOMPAT_LIBEXEC_DIR  validator install dir (default: /usr/local/libexec/bpfcompat;
 #                          any other dir needs BPFCOMPAT_VALIDATOR_BIN at run time)
 #   BPFCOMPAT_NO_VALIDATOR set to 1 to install the CLI only
+#   BPFCOMPAT_DOC_DIR      license texts dir     (default: <BIN_DIR>/../share/doc/bpfcompat;
+#                          the bundle goes to <DOC_DIR>/<tag>/)
 #
 # Linux CLI assets are published for x86_64 and arm64. The static validator is
 # currently published for x86_64 only.
@@ -47,6 +51,8 @@ needs_root() {
 main() {
 BIN_DIR="${BPFCOMPAT_BIN_DIR:-/usr/local/bin}"
 LIBEXEC_DIR="${BPFCOMPAT_LIBEXEC_DIR:-$DEFAULT_LIBEXEC_DIR}"
+DOC_DIR="${BPFCOMPAT_DOC_DIR:-$(dirname "$BIN_DIR")/share/doc/bpfcompat}"
+LICENSE_ASSET="bpfcompat-third-party-licenses.tar.gz"
 
 have curl || die "curl is required"
 if have sha256sum; then SHACHK="sha256sum -c"; elif have shasum; then SHACHK="shasum -a 256 -c"; else
@@ -111,6 +117,19 @@ fi
 #    makes tampering detectable. Verification is mandatory, and it is bound to
 #    the requested tag: a signature or attestation produced by the release run
 #    of a different tag (say, a prerelease) does not vouch for $VERSION.
+# Releases built with the distribution bundle list it in SHA256SUMS; older ones do not.
+# A bundle listed in SHA256SUMS is required and verified like the binaries.
+install_licenses=0
+if grep -qE "^[0-9a-fA-F]{64}  ${LICENSE_ASSET}\$" SHA256SUMS; then
+  curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
+    "$base/$LICENSE_ASSET" || die "download failed: $LICENSE_ASSET ($VERSION)"
+  DL_FILES="$DL_FILES $LICENSE_ASSET"
+  install_licenses=1
+else
+  err "note: $VERSION publishes no third-party license bundle; see LICENSE, NOTICE and"
+  err "      THIRD_PARTY_NOTICES.md at https://github.com/$REPO/tree/$VERSION"
+fi
+
 if have cosign; then
   curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
     "$base/SHA256SUMS.sig" || die "cannot fetch SHA256SUMS.sig for signature verification"
@@ -135,6 +154,12 @@ elif have gh && gh attestation --help >/dev/null 2>&1; then
       --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
       --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
       die "GitHub attestation verification FAILED for $VALIDATOR_ASSET"
+  fi
+  if [ "$install_licenses" = "1" ]; then
+    GH_REPO="$REPO" gh attestation verify "$LICENSE_ASSET" --repo "$REPO" \
+      --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
+      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
+      die "GitHub attestation verification FAILED for $LICENSE_ASSET"
   fi
   err "GitHub build attestations verified"
 else
@@ -162,6 +187,11 @@ if needs_root "$BIN_DIR"; then
   have sudo || die "no write access to $BIN_DIR and sudo not available (set BPFCOMPAT_BIN_DIR to a writable path)"
   BIN_SUDO="sudo"
 fi
+DOC_SUDO=""
+if [ "$install_licenses" = "1" ] && needs_root "$DOC_DIR"; then
+  have sudo || die "no write access to $DOC_DIR and sudo not available (set BPFCOMPAT_DOC_DIR to a writable path)"
+  DOC_SUDO="sudo"
+fi
 LIBEXEC_SUDO=""
 if [ "$install_validator" = "1" ] && needs_root "$LIBEXEC_DIR"; then
   have sudo || die "no write access to $LIBEXEC_DIR and sudo not available (set BPFCOMPAT_LIBEXEC_DIR to a writable path, or BPFCOMPAT_NO_VALIDATOR=1)"
@@ -185,6 +215,22 @@ if [ "$install_validator" = "1" ]; then
       err "note: 'bpfcompat test' does not search $LIBEXEC_DIR; set"
       err "      export BPFCOMPAT_VALIDATOR_BIN=$LIBEXEC_DIR/bpfcompat-validator" ;;
   esac
+fi
+
+if [ "$install_licenses" = "1" ]; then
+  lic_dir="$DOC_DIR/$VERSION"
+  $DOC_SUDO install -d "$lic_dir"
+  if have tar && have gzip; then
+    mkdir licenses
+    tar -xzf "$LICENSE_ASSET" -C licenses || die "cannot unpack $LICENSE_ASSET"
+    [ -f licenses/bpfcompat-third-party-licenses/INVENTORY.json ] ||
+      die "$LICENSE_ASSET does not have the expected layout"
+    $DOC_SUDO cp -R licenses/bpfcompat-third-party-licenses/. "$lic_dir/"
+  else
+    $DOC_SUDO install -m 0644 "$LICENSE_ASSET" "$lic_dir/$LICENSE_ASSET"
+    err "note: tar/gzip not found; installed the license bundle as its unextracted archive"
+  fi
+  err "installed third-party license texts in $lic_dir"
 fi
 
 printf '\n'

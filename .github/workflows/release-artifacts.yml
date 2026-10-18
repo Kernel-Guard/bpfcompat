@@ -137,9 +137,48 @@ jobs:
           set -euo pipefail
           bash scripts/build-validator-pinned.sh \
             dist/bpfcompat-validator-static-linux-amd64 \
-            dist/validator-build-inputs.json
+            dist/validator-build-inputs.json \
+            dist-work/validator-dist
           jq -e --arg sha "$(sha256sum dist/bpfcompat-validator-static-linux-amd64 | awk '{print $1}')" \
             '.sha256 == $sha' dist/validator-build-inputs.json >/dev/null
+      - name: Assemble third-party license bundle and relink kit
+        # Verbatim license texts of everything linked into the shipped CLIs
+        # and validator, the validator's relink kit, and the optional assets
+        # that distribution/policy.json records as shipped. A stable build
+        # refuses while a stable-blocking distribution decision is open.
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          set -euo pipefail
+          bash scripts/check-distribution-policy.sh
+          if [[ "$CHANNEL" == "stable" ]]; then
+            bash scripts/check-distribution-policy.sh --require-decided
+          fi
+          bash scripts/collect-go-licenses.sh dist-work/go-licenses \
+            dist/bpfcompat-linux-amd64 dist/bpfcompat-linux-arm64
+          # Assigned on their own so a failing policy lookup stops the step.
+          ship_link_inputs="$(bash scripts/check-distribution-policy.sh --ship ship_link_inputs_asset)"
+          ship_native_sources="$(bash scripts/check-distribution-policy.sh --ship ship_native_sources_asset)"
+          extra=()
+          if [[ "$ship_link_inputs" == "true" ]]; then
+            extra+=(--with-link-inputs)
+          fi
+          if [[ "$ship_native_sources" == "true" ]]; then
+            bash scripts/fetch-native-sources.sh dist-work/native-sources
+            extra+=(--sources-dir dist-work/native-sources)
+          fi
+          bash scripts/build-distribution-bundle.sh \
+            --go-dir dist-work/go-licenses \
+            --native-dir dist-work/validator-dist \
+            --validator dist/bpfcompat-validator-static-linux-amd64 \
+            --build-inputs dist/validator-build-inputs.json \
+            --version "$VERSION" --commit "$GITHUB_SHA" \
+            --out dist-work/assets "${extra[@]}"
+          cp dist-work/assets/* dist/
+          # Keep the working records (link inputs, source packages) out of the
+          # repository-wide SBOM scan below; the assets now live in dist/.
+          rm -rf dist-work
       - name: Stage production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         env:
@@ -195,7 +234,13 @@ jobs:
             bpfcompat-linux-amd64
             bpfcompat-linux-arm64
             bpfcompat-validator-static-linux-amd64
+            bpfcompat-third-party-licenses.tar.gz
+            bpfcompat-validator-relink-kit-linux-amd64.tar.gz
+            validator-build-inputs.json
           )
+          for optional in bpfcompat-validator-link-inputs-linux-amd64.tar.gz bpfcompat-validator-native-sources.tar; do
+            if [[ -e "$optional" ]]; then assets+=("$optional"); fi
+          done
           if [[ -s production-readiness.json && -s production-readiness.md ]]; then
             assets+=(production-readiness.json production-readiness.md)
           fi
@@ -208,8 +253,9 @@ jobs:
           output-file: dist/bpfcompat.sbom.cdx.json
       - name: Attest candidate provenance
         # validator-build-inputs.json records the validator's pinned build
-        # inputs. It is attested and kept in the run artifact; it is a build
-        # record, not a release asset, and not in SHA256SUMS.
+        # inputs. It is attested and, like the license bundle and the relink
+        # kit, shipped as a release asset listed in SHA256SUMS. The glob also
+        # covers the optional link-inputs and native-sources assets.
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -218,6 +264,8 @@ jobs:
             dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
             dist/validator-build-inputs.json
+            dist/bpfcompat-third-party-licenses.tar.gz
+            dist/bpfcompat-validator-*.tar*
       - name: Attest production readiness evidence
         if: startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.channel == 'stable'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
@@ -561,6 +609,9 @@ jobs:
             dist/bpfcompat-linux-amd64
             dist/bpfcompat-linux-arm64
             dist/bpfcompat-validator-static-linux-amd64
+            dist/bpfcompat-third-party-licenses.tar.gz
+            dist/bpfcompat-validator-*.tar*
+            dist/validator-build-inputs.json
             dist/SHA256SUMS
             dist/SHA256SUMS.sig
             dist/SHA256SUMS.crt

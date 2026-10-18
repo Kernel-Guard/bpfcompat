@@ -17,7 +17,9 @@
 # Cases: latest -> stable, arch mapping (incl. extra SHA256SUMS lines, the
 # v0.3.6 bug class), fail-closed without sha tools / without cosign+gh / on a
 # checksum mismatch, signatures bound to the requested tag, truncated
-# `curl | sh` streams, custom install dirs, and tag validation.
+# `curl | sh` streams, custom install dirs, tag validation, and the
+# third-party license bundle (installed when SHA256SUMS lists it, verified like
+# the binaries, refused when corrupt/missing/unattested, absent in old releases).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,10 +50,12 @@ fail() { echo "[install-test] FAIL: $*" >&2; failures=$((failures + 1)); }
 ok() { echo "[install-test] ok: $*"; }
 
 # ---------------------------------------------------------------- fake release
-# release <scenario> <tag> [validator-arches]: builds a signed, attested release
-# under the scenario's fake github.com tree, the way release-artifacts.yml does.
+# release <scenario> <tag> [validator-arches] [bundle]: builds a signed,
+# attested release under the scenario's fake github.com tree, the way
+# release-artifacts.yml does. bundle: "yes" adds the third-party license
+# bundle; "unattested" adds it to SHA256SUMS without an attestation.
 release() {
-  local scen="$1" tag="$2" varches="${3:-amd64}" d a
+  local scen="$1" tag="$2" varches="${3:-amd64}" bundle="${4:-no}" d a b
   d="$WWW/$scen/gh/$REPO/releases/download/$tag"
   mkdir -p "$d"
   for a in amd64 arm64; do
@@ -60,8 +64,17 @@ release() {
   for a in $varches; do
     printf 'validator %s %s\n' "$tag" "$a" >"$d/bpfcompat-validator-static-linux-$a"
   done
+  if [[ "$bundle" != no ]]; then
+    b="$tmp/bundle-$scen-$tag/bpfcompat-third-party-licenses"
+    mkdir -p "$b/go/toolchain"
+    # Unique per scenario: the attestation DB is keyed by digest.
+    printf '{"bpfcompat": {"version": "%s"}, "fixture": "%s"}\n' "$tag" "$scen" >"$b/INVENTORY.json"
+    printf 'Go license text\n' >"$b/go/toolchain/LICENSE"
+    tar -C "$(dirname "$b")" -czf "$d/bpfcompat-third-party-licenses.tar.gz" bpfcompat-third-party-licenses
+  fi
   (cd "$d" && "$REAL_SHA" bpfcompat-* >SHA256SUMS)
   for a in "$d"/bpfcompat-*; do
+    [[ "$bundle" == unattested && "$a" == *third-party-licenses* ]] && continue
     printf '%s refs/tags/%s\n' "$("$REAL_SHA" <"$a" | cut -d' ' -f1)" "$tag" >>"$ATTEST_DB"
   done
   printf 'sig:%s\n' "$("$REAL_SHA" <"$d/SHA256SUMS" | cut -d' ' -f1)" >"$d/SHA256SUMS.sig"
@@ -155,7 +168,7 @@ chmod 0755 "$SHIM"/*
 
 # Curated tools: everything install.sh and the shims need, nothing else (no
 # real gh/cosign/sudo). Variants drop sha tools or the signature verifiers.
-for t in sh bash grep sed head cut cat mktemp rm install dirname chmod cp tr env sha256sum; do
+for t in sh bash grep sed head cut cat mktemp rm install dirname chmod cp tr env sha256sum mkdir tar gzip; do
   p="$(command -v "$t")" || { echo "[install-test] missing tool $t" >&2; exit 1; }
   ln -s "$p" "$TOOLS/$t"
 done
@@ -167,6 +180,11 @@ done
 for t in "$SHIM"/*; do
   n="$(basename "$t")"
   [[ "$n" == cosign || "$n" == gh ]] || ln -s "$t" "$tmp/noverify/$n"
+done
+mkdir -p "$tmp/notar"
+for t in "$TOOLS"/*; do
+  n="$(basename "$t")"
+  [[ "$n" == tar ]] || ln -s "$(readlink "$t")" "$tmp/notar/$n"
 done
 mkdir -p "$tmp/ghonly"
 for t in "$SHIM"/*; do
@@ -206,14 +224,23 @@ for s in stable arm64 nosha noverify mismatch bindcosign bindgh trunc dirs badve
   release "$s" v0.4.0-rc.4 amd64
   latest "$s" v0.3.7
 done
+for s in lic licbad licmissing licunattested; do
+  release "$s" v0.3.7 amd64
+  latest "$s" v0.3.7
+done
+release lic v0.4.0-rc.5 amd64 yes
+release licbad v0.4.0-rc.5 amd64 yes
+release licmissing v0.4.0-rc.5 amd64 yes
+release licunattested v0.4.0-rc.5 amd64 unattested
 
 # 1. latest resolves to the stable release, not the newer prerelease.
 for path in "$WITH_COSIGN" "$GH_ONLY"; do
   d="$tmp/i-stable-${#path}"
   run stable "$path" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
   if [[ $rc -eq 0 ]] && grep -q 'fake bpfcompat v0.3.7 amd64' "$OUT" &&
-    grep -qx 'validator v0.3.7 amd64' "$d/libexec/bpfcompat-validator"; then
-    ok "latest -> v0.3.7 (PATH=${path%%:*})"
+    grep -qx 'validator v0.3.7 amd64' "$d/libexec/bpfcompat-validator" &&
+    [[ ! -e "$d/share" ]] && grep -q 'publishes no third-party license bundle' "$OUT"; then
+    ok "latest -> v0.3.7 (PATH=${path%%:*}), no license bundle in that release"
   else fail "latest did not install v0.3.7 (rc=$rc)"; show; fi
 done
 
@@ -332,6 +359,52 @@ run badlatest "$WITH_COSIGN" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_NO_VALIDATOR=1
 if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'invalid release tag' "$OUT" &&
   ! grep -q '/releases/download/' "$CURL_LOG"; then ok "malformed latest tag refused"
 else fail "malformed latest tag (rc=$rc)"; show; fi
+
+# 8. Third-party license bundle: listed in SHA256SUMS -> required, verified
+#    like the binaries, installed under <DOC_DIR>/<tag>/; never half-installed.
+for path in "$WITH_COSIGN" "$GH_ONLY"; do
+  d="$tmp/i-lic-${#path}"
+  run lic "$path" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  if [[ $rc -eq 0 ]] && grep -q '"version": "v0.4.0-rc.5"' "$d/share/doc/bpfcompat/v0.4.0-rc.5/INVENTORY.json" &&
+    [[ -s "$d/share/doc/bpfcompat/v0.4.0-rc.5/go/toolchain/LICENSE" ]] &&
+    grep -q 'bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
+    ok "license bundle verified and installed next to the CLI (PATH=${path%%:*})"
+  else fail "license bundle install (rc=$rc)"; show; fi
+done
+d="$tmp/i-lic-docdir"
+run lic "$WITH_COSIGN" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" BPFCOMPAT_DOC_DIR="$d/docs"
+if [[ $rc -eq 0 && -s "$d/docs/v0.4.0-rc.5/INVENTORY.json" && ! -e "$d/share" ]]; then ok "BPFCOMPAT_DOC_DIR honoured"
+else fail "BPFCOMPAT_DOC_DIR (rc=$rc)"; show; fi
+d="$tmp/i-lic-notar"
+run lic "$SHIM:$tmp/notar" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -eq 0 && -s "$d/share/doc/bpfcompat/v0.4.0-rc.5/bpfcompat-third-party-licenses.tar.gz" ]] &&
+  grep -q 'unextracted archive' "$OUT"; then ok "without tar the verified bundle archive is installed as is"
+else fail "license bundle without tar (rc=$rc)"; show; fi
+printf 'tampered\n' >>"$(rel_dir licbad v0.4.0-rc.5)/bpfcompat-third-party-licenses.tar.gz"
+d="$tmp/i-licbad"
+run licbad "$WITH_COSIGN" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'checksum verification failed' "$OUT"; then ok "corrupt license bundle: nothing installed"
+else fail "corrupt license bundle (rc=$rc)"; show; fi
+rm "$(rel_dir licmissing v0.4.0-rc.5)/bpfcompat-third-party-licenses.tar.gz"
+d="$tmp/i-licmissing"
+run licmissing "$WITH_COSIGN" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'download failed: bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
+  ok "listed but missing license bundle: nothing installed"
+else fail "missing license bundle (rc=$rc)"; show; fi
+d="$tmp/i-licunattested"
+run licunattested "$GH_ONLY" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'attestation verification FAILED for bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
+  ok "unattested license bundle refused on the gh path"
+else fail "unattested license bundle (rc=$rc)"; show; fi
+if [[ "$(id -u)" -ne 0 ]]; then
+  mkdir -p "$tmp/ro"; chmod 0555 "$tmp/ro"
+  d="$tmp/i-lic-sudo"
+  run lic "$WITH_COSIGN" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" BPFCOMPAT_DOC_DIR="$tmp/ro/doc"
+  if [[ $rc -eq 0 && -s "$tmp/ro/doc/v0.4.0-rc.5/INVENTORY.json" ]] && grep -q "install -d $tmp/ro/doc/v0.4.0-rc.5" "$tmp/sudo.log" &&
+    ! grep -q 'bpfcompat-linux-amd64' "$tmp/sudo.log"; then ok "unwritable doc dir: sudo only for the license texts"
+  else fail "doc dir sudo (rc=$rc)"; show; cat "$tmp/sudo.log" >&2 2>/dev/null || true; fi
+  chmod -R u+w "$tmp/ro"
+fi
 
 if [[ $failures -ne 0 ]]; then
   echo "[install-test] $failures failure(s)" >&2

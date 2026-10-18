@@ -9,6 +9,9 @@ prove a binary came from this repository's build workflow before you run it:
 | `SHA256SUMS` (+ `.sig`, `.crt`) | checksums, cosign-signed (keyless) |
 | `bpfcompat.sbom.cdx.json` | CycloneDX SBOM |
 | `release-candidate-evidence.json` | Tag, commit, workflow run, exact image digest, and positive/negative VM report hashes |
+| `bpfcompat-third-party-licenses.tar.gz` | verbatim license/notice/patent texts of the third-party code in the binaries, with `INVENTORY.json` (from the release that introduces it) |
+| `bpfcompat-validator-relink-kit-linux-amd64.tar.gz` | the validator's `main.o`, link commands, linker trace and map, inputs with owning packages, sources and `relink.sh` |
+| `validator-build-inputs.json` | the validator's build record: builder image digest, package snapshot, package versions, sha256 |
 | **SLSA provenance attestation** | provenance bound to the artifact digest, repository, commit, and release workflow |
 | **SBOM attestation** | the SBOM bound to the binary's digest |
 
@@ -66,6 +69,30 @@ cat bpfcompat.sbom.cdx.json | jq '.components[].name' | sort -u
 # or verify the SBOM attestation is bound to the binary
 gh attestation verify ./bpfcompat-linux-amd64 --repo Kernel-Guard/bpfcompat --predicate-type https://cyclonedx.org/bom
 ```
+
+## 4. Third-party license material and the relink kit
+
+These assets are listed in `SHA256SUMS` and attested like the binaries, so the
+checks above cover them (`gh attestation verify bpfcompat-third-party-licenses.tar.gz ...`).
+Each archive also carries its own `SHA256SUMS` over its contents:
+
+```bash
+tar -xzf bpfcompat-third-party-licenses.tar.gz
+(cd bpfcompat-third-party-licenses && sha256sum -c SHA256SUMS)
+jq '.observed.go.modules[] | "\(.module) \(.version)"' bpfcompat-third-party-licenses/INVENTORY.json
+jq '.recorded_decisions' bpfcompat-third-party-licenses/INVENTORY.json
+
+tar -xzf bpfcompat-validator-relink-kit-linux-amd64.tar.gz
+cd bpfcompat-validator-relink-kit && sha256sum -c SHA256SUMS
+./relink.sh   # pinned builder (docker); reproduces the shipped validator byte for byte
+```
+
+`INVENTORY.json` separates observed facts (what was linked, from where, with
+which texts), recorded distribution decisions (`undecided` until made) and what
+it does not establish. The bundle is not a statement that any license condition
+is met. Releases that predate these assets do not have them; the repository's
+`LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.md` at that tag remain the
+reference for those.
 
 ## What this gives you
 
