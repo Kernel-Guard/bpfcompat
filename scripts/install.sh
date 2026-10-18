@@ -77,7 +77,12 @@ if [ "$VERSION" = "latest" ]; then
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
 # The tag is spliced into download URLs and into the exact signing identity
-# below, so it must be a plain release tag (no path segments, no regex).
+# below, so it must be a plain release tag (no path segments, no regex). grep
+# matches line by line, so first reject any character a tag cannot hold (a
+# newline included): the whole value is checked, not just one of its lines.
+case "$VERSION" in
+  *[!0123456789.crv-]*) die "invalid release tag '$VERSION' (expected vX.Y.Z or vX.Y.Z-rc.N)" ;;
+esac
 printf '%s\n' "$VERSION" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' ||
   die "invalid release tag '$VERSION' (expected vX.Y.Z or vX.Y.Z-rc.N)"
 base="https://github.com/$REPO/releases/download/$VERSION"
@@ -143,7 +148,26 @@ if have cosign; then
   else
     die "cosign signature verification FAILED for SHA256SUMS - refusing to install"
   fi
-elif have gh && gh attestation --help >/dev/null 2>&1; then
+elif have gh; then
+  # The tag-bound check below needs `gh attestation` (gh 2.49.0),
+  # --signer-workflow (2.51.0) and --source-ref (2.68.0). An older gh would
+  # fail it like a forged release would, so ask gh's own help what it offers
+  # (not its version: distro builds vary) and name what is missing instead.
+  gh_lacks=""
+  if ! gh attestation --help >/dev/null 2>&1; then
+    gh_lacks="the 'gh attestation' command"
+  else
+    gh_help="$(gh attestation verify --help 2>&1 || true)"
+    for flag in --signer-workflow --source-ref; do
+      printf '%s\n' "$gh_help" | grep -Eq -- "(^|[^[:alnum:]-])$flag([^[:alnum:]-]|\$)" ||
+        gh_lacks="${gh_lacks:+$gh_lacks and }$flag"
+    done
+    [ -z "$gh_lacks" ] || gh_lacks="$gh_lacks in 'gh attestation verify'"
+  fi
+  if [ -n "$gh_lacks" ]; then
+    gh_ver="$(gh --version 2>/dev/null | sed -n '1s/^gh version \([0-9][0-9.]*\).*/\1/p')"
+    die "installed gh${gh_ver:+ $gh_ver} lacks $gh_lacks, needed for tag-bound attestation verification; upgrade to gh >= 2.68.0 or install cosign - refusing checksum-only installation"
+  fi
   err "cosign not found; verifying GitHub build attestations"
   GH_REPO="$REPO" gh attestation verify "$CLI_ASSET" --repo "$REPO" \
     --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \

@@ -11,15 +11,20 @@
 #     the identity baked into SHA256SUMS.crt (the release tag that signed it)
 #     and the signature covers this exact SHA256SUMS;
 #   * gh accepts an attestation only for a binary the fake release pipeline
-#     attested, and honours --source-ref like the real CLI does;
+#     attested, and honours --source-ref like the real CLI does; with
+#     FAKE_GH_LACKS it plays an older gh that has no `attestation` command or
+#     no --signer-workflow / --source-ref flag, failing like cobra does;
 #   * sudo pretends to be root by unlocking the test's read-only tree.
 #
 # Cases: latest -> stable, arch mapping (incl. extra SHA256SUMS lines, the
 # v0.3.6 bug class), fail-closed without sha tools / without cosign+gh / on a
 # checksum mismatch, signatures bound to the requested tag, truncated
-# `curl | sh` streams, custom install dirs, tag validation, and the
-# third-party license bundle (installed when SHA256SUMS lists it, verified like
-# the binaries, refused when corrupt/missing/unattested, absent in old releases).
+# `curl | sh` streams, custom install dirs, tag validation (the whole value,
+# embedded newlines included), the third-party license bundle (installed when
+# SHA256SUMS lists it, verified like the binaries, refused when
+# corrupt/missing/unattested, absent in old releases), and a gh too old for
+# the tag-bound check (refused naming what it lacks, never reported as a
+# failed verification or a missing gh; cosign still preferred when present).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,6 +47,7 @@ SHIM="$tmp/shim"
 TOOLS="$tmp/tools"
 ATTEST_DB="$tmp/attestations"
 CURL_LOG="$tmp/curl.log"
+GH_LOG="$tmp/gh.log"
 mkdir -p "$WWW" "$SHIM" "$TOOLS" "$tmp/home"
 : >"$ATTEST_DB"
 
@@ -134,11 +140,40 @@ EOF
 cat >"$SHIM/gh" <<EOF
 #!/usr/bin/env bash
 # Fake gh attestation verify backed by the attestation DB the fake release wrote.
+# FAKE_GH_LACKS plays an older gh (feature history from gh's release notes):
+# "attestation" = gh < 2.49.0, "--signer-workflow" = gh < 2.51.0,
+# "--source-ref" = gh < 2.68.0. FAKE_GH_VERSION is what --version reports.
+echo "\$*" >>"$GH_LOG"
+lacks=" \${FAKE_GH_LACKS:-} "
+if [[ "\${1:-}" == "--version" ]]; then
+  printf 'gh version %s (2026-01-01)\nhttps://github.com/cli/cli/releases/latest\n' "\${FAKE_GH_VERSION:-2.102.0}"
+  exit 0
+fi
+if [[ "\${1:-}" == attestation && "\$lacks" == *" attestation "* ]]; then
+  printf 'unknown command "attestation" for "gh"\n\nUsage:  gh <command> <subcommand> [flags]\n' >&2
+  exit 1
+fi
 [[ "\${1:-} \${2:-}" == "attestation --help" ]] && exit 0
+if [[ "\${1:-} \${2:-} \${3:-}" == "attestation verify --help" ]]; then
+  echo 'Verify the integrity and provenance of an artifact using its associated'
+  echo 'cryptographically signed attestations.'
+  [[ "\$lacks" == *" --signer-workflow "* ]] ||
+    echo 'When using reusable workflows, use the \`--signer-repo\` or \`--signer-workflow\` flags.'
+  echo
+  echo 'FLAGS'
+  echo '  -o, --owner string             GitHub organization to scope attestation lookup by'
+  echo '  -R, --repo string              Repository name in the format <owner>/<repo>'
+  [[ "\$lacks" == *" --signer-workflow "* ]] ||
+    echo '      --signer-workflow string   Workflow that signed attestation in the format [host/]<owner>/<repo>/<path>/<to>/<workflow>'
+  [[ "\$lacks" == *" --source-ref "* ]] ||
+    echo '      --source-ref string        Ref associated with the source workflow'
+  exit 0
+fi
 [[ "\${1:-} \${2:-}" == "attestation verify" ]] || exit 1
 shift 2
 file="" repo="" signer="" ref=""
 while [[ \$# -gt 0 ]]; do
+  if [[ "\$1" == --* && "\$lacks" == *" \$1 "* ]]; then echo "unknown flag: \$1" >&2; exit 1; fi
   case "\$1" in
     --repo) repo="\$2"; shift 2;;
     --signer-workflow) signer="\$2"; shift 2;;
@@ -207,7 +242,7 @@ done
 OUT="$tmp/out"
 run() {
   local scen="$1" path="$2"; shift 2
-  : >"$CURL_LOG"; rm -f "$tmp/sudo.log"
+  : >"$CURL_LOG"; : >"$GH_LOG"; rm -f "$tmp/sudo.log"
   set +e
   env -i HOME="$tmp/home" PATH="$path" FAKE_PORT="$FAKE_PORT" SCENARIO="$scen" "$@" \
     sh "$INSTALL" >"$OUT" 2>&1
@@ -219,7 +254,7 @@ GH_ONLY="$tmp/ghonly:$TOOLS"
 show() { sed 's/^/    | /' "$OUT" >&2; }
 
 # ---------------------------------------------------------------- fixtures
-for s in stable arm64 nosha noverify mismatch bindcosign bindgh trunc dirs badver badlatest; do
+for s in stable arm64 nosha noverify mismatch bindcosign bindgh trunc dirs badver badlatest ghcap; do
   release "$s" v0.3.7 amd64
   release "$s" v0.4.0-rc.4 amd64
   latest "$s" v0.3.7
@@ -346,12 +381,16 @@ else
 fi
 
 # 7. INST-5: BPFCOMPAT_VERSION and the resolved latest tag must look like a tag.
-for v in "../../../../evil/x/releases/download/v1" "v0.3.7/../v0.4.0-rc.4" "latest-ish" "v1.2" "v1.2.3-beta.1" "v1.2.3 "; do
+#    The whole value is checked: a valid tag on one line of a multi-line
+#    value must not get through either.
+for v in "../../../../evil/x/releases/download/v1" "v0.3.7/../v0.4.0-rc.4" "latest-ish" "v1.2" "v1.2.3-beta.1" "v1.2.3 " \
+  $'v0.3.7\nx' $'x\nv0.3.7' $'v0.3.7\n'; do
+  printf -v shown '%q' "$v"
   d="$tmp/i-badver"
   run badver "$WITH_COSIGN" BPFCOMPAT_VERSION="$v" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_NO_VALIDATOR=1
   if [[ $rc -ne 0 && ! -e "$d" && ! -s "$CURL_LOG" ]] && grep -q 'invalid release tag' "$OUT"; then
-    ok "BPFCOMPAT_VERSION '$v' refused before any download"
-  else fail "BPFCOMPAT_VERSION '$v' not refused up front (rc=$rc)"; show; fi
+    ok "BPFCOMPAT_VERSION $shown refused before any download"
+  else fail "BPFCOMPAT_VERSION $shown not refused up front (rc=$rc)"; show; fi
 done
 latest badlatest '../../evil'
 d="$tmp/i-badlatest"
@@ -405,6 +444,40 @@ if [[ "$(id -u)" -ne 0 ]]; then
   else fail "doc dir sudo (rc=$rc)"; show; cat "$tmp/sudo.log" >&2 2>/dev/null || true; fi
   chmod -R u+w "$tmp/ro"
 fi
+
+# 9. A gh too old for the tag-bound attestation check is refused, naming what
+#    it lacks and the gh that has it, not reported as a failed verification
+#    (which reads like tampering) or as a missing gh. It is judged by what its
+#    help offers, so an unparsable version still gets the precise reason.
+#    cosign, when present, is preferred and used as before.
+# gh_lacking <FAKE_GH_LACKS> <FAKE_GH_VERSION> <text the refusal must contain>
+gh_lacking() {
+  local lacks="$1" ver="$2" want="$3" d="$tmp/i-ghcap" bad=""
+  run ghcap "$GH_ONLY" FAKE_GH_LACKS="$lacks" FAKE_GH_VERSION="$ver" \
+    BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  [[ $rc -ne 0 && ! -e "$d" ]] || bad="$bad installed-or-rc0"
+  grep -qF -- "$want" "$OUT" || bad="$bad reason-not-named"
+  grep -qF 'upgrade to gh >= 2.68.0 or install cosign - refusing checksum-only installation' "$OUT" ||
+    bad="$bad no-remedy"
+  ! grep -q 'requires cosign or GitHub CLI' "$OUT" || bad="$bad says-gh-missing"
+  ! grep -q 'FAILED' "$OUT" || bad="$bad says-verification-failed"
+  ! grep -qE '^attestation verify [^-]' "$GH_LOG" || bad="$bad verify-attempted"
+  if [[ -z "$bad" ]]; then ok "gh $ver lacking '$lacks': refused, naming what it lacks"
+  else fail "gh $ver lacking '$lacks' (rc=$rc):$bad"; show; fi
+}
+gh_lacking attestation 2.45.0 "installed gh 2.45.0 lacks the 'gh attestation' command, needed for tag-bound attestation verification"
+gh_lacking --source-ref 2.67.0 "installed gh 2.67.0 lacks --source-ref in 'gh attestation verify', needed for"
+gh_lacking "--signer-workflow --source-ref" 2.50.0 "installed gh 2.50.0 lacks --signer-workflow and --source-ref in 'gh attestation verify'"
+gh_lacking --source-ref "custom-build" "installed gh lacks --source-ref in 'gh attestation verify'"
+for lacks in attestation --source-ref; do
+  d="$tmp/i-ghcap-cosign-${lacks#--}"
+  run ghcap "$WITH_COSIGN" FAKE_GH_LACKS="$lacks" FAKE_GH_VERSION=2.45.0 \
+    BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  if [[ $rc -eq 0 && -x "$d/bin/bpfcompat" && -x "$d/libexec/bpfcompat-validator" ]] &&
+    grep -q 'cosign signature over SHA256SUMS verified' "$OUT"; then
+    ok "gh lacking '$lacks' + cosign: verified with cosign and installed"
+  else fail "gh lacking '$lacks' with cosign present (rc=$rc)"; show; fi
+done
 
 if [[ $failures -ne 0 ]]; then
   echo "[install-test] $failures failure(s)" >&2
