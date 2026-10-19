@@ -29,6 +29,15 @@ gh attestation --help >/dev/null 2>&1 || {
   exit 1
 }
 
+# Provenance is bound to exactly one release: the tag ref and the commit its
+# release run built. Without them any v* tag's attestation would pass.
+[[ "${BPFCOMPAT_EXPECTED_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo '[release-assets] exact source commit is required' >&2; exit 2;
+}
+[[ "${BPFCOMPAT_EXPECTED_SOURCE_REF:-}" =~ ^refs/tags/v[0-9A-Za-z.-]+$ ]] || {
+  echo '[release-assets] exact release tag ref is required' >&2; exit 2;
+}
+
 checklist="$(mktemp "${asset_dir}/.bpfcompat-checksums.XXXXXX")"
 trap 'rm -f "$checklist"' EXIT
 
@@ -70,7 +79,9 @@ done
 for asset in "${assets[@]}"; do
   gh attestation verify "${asset_dir}/${asset}" \
     --repo "$repo" \
-    --signer-workflow "${repo}/.github/workflows/release-artifacts.yml"
+    --signer-workflow "${repo}/.github/workflows/release-artifacts.yml" \
+    --source-digest "$BPFCOMPAT_EXPECTED_SOURCE_SHA" \
+    --source-ref "$BPFCOMPAT_EXPECTED_SOURCE_REF"
 done
 
 echo "[release-assets] checksums and release-workflow attestations verified"

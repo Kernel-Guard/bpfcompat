@@ -216,10 +216,47 @@ runs:
           echo "::warning::GitHub CLI attestation verification is unavailable; building from the pinned Action source instead of using unverifiable prebuilt binaries. This run does not use the attested ${ref} validator."
           exit 0
         fi
+        # Verification is bound to this exact release (tag ref and commit),
+        # which needs --signer-workflow (gh 2.51.0) and --source-ref and
+        # --source-digest (gh 2.68.0). Ask gh's own help, as scripts/install.sh
+        # does, rather than its version.
+        gh_help="$(gh attestation verify --help 2>&1 || true)"
+        gh_lacks=""
+        for flag in --signer-workflow --source-ref --source-digest; do
+          grep -Eq -- "(^|[^[:alnum:]-])${flag}([^[:alnum:]-]|\$)" <<<"$gh_help" ||
+            gh_lacks="${gh_lacks:+$gh_lacks }$flag"
+        done
+        if [[ -n "$gh_lacks" ]]; then
+          echo "::warning::GitHub CLI cannot bind attestations to the release ('gh attestation verify' lacks ${gh_lacks}; needs gh >= 2.68.0); building from the pinned Action source instead of using unverifiable prebuilt binaries. This run does not use the attested ${ref} validator."
+          exit 0
+        fi
+        # The commit the release was built from: a SHA pin names it; a tag
+        # pin is resolved to the commit the tag points at (peeled when
+        # annotated). If that fails, build from source rather than install
+        # binaries that cannot be bound to this release.
+        source_sha="${ACTION_REF:-}"
+        if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+          source_sha=""
+          if tag_refs="$(GIT_TERMINAL_PROMPT=0 git ls-remote https://github.com/Kernel-Guard/bpfcompat.git \
+            "refs/tags/${ref}" "refs/tags/${ref}^{}" 2>/dev/null)"; then
+            source_sha="$(awk -v tag="refs/tags/${ref}" '
+              $2 == tag && !peeled { sha = $1 }
+              $2 == (tag "^{}") { sha = $1; peeled = 1 }
+              END { print sha }
+            ' <<<"$tag_refs")"
+          fi
+        fi
+        if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::warning::Could not resolve release ${ref} to its commit; building from the pinned Action source instead of using prebuilt binaries that cannot be bound to the release. This run does not use the attested ${ref} binaries or validator."
+          exit 0
+        fi
         # A failed verification is a hard error, not a fallback: assets exist
-        # but do not match what the release workflow published or attested.
-        GH_TOKEN="$GITHUB_API_TOKEN" bash \
-          "$GITHUB_ACTION_PATH/scripts/verify-release-assets.sh" \
+        # but do not match what this release's workflow run published or
+        # attested.
+        GH_TOKEN="$GITHUB_API_TOKEN" \
+          BPFCOMPAT_EXPECTED_SOURCE_SHA="$source_sha" \
+          BPFCOMPAT_EXPECTED_SOURCE_REF="refs/tags/${ref}" \
+          bash "$GITHUB_ACTION_PATH/scripts/verify-release-assets.sh" \
           "$tmp" Kernel-Guard/bpfcompat "${verify_assets[@]}"
 
         mkdir -p "$GITHUB_ACTION_PATH/bin" "$GITHUB_ACTION_PATH/validator/c-libbpf/bin"

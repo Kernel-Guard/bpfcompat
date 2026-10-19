@@ -151,6 +151,12 @@ jobs:
 
           cmp candidate/run-assets/SHA256SUMS candidate/draft-assets/SHA256SUMS
           cmp "$evidence" candidate/draft-assets/release-candidate-evidence.json
+          # The SBOM and the signature files are not listed in SHA256SUMS:
+          # the draft must carry the exact candidate run's copies.
+          for signed in SHA256SUMS.sig SHA256SUMS.crt \
+            bpfcompat.sbom.cdx.json bpfcompat.sbom.cdx.sig bpfcompat.sbom.cdx.crt; do
+            cmp "candidate/run-assets/${signed}" "candidate/draft-assets/${signed}"
+          done
 
           assets=(
             bpfcompat-linux-amd64
@@ -170,23 +176,28 @@ jobs:
           if [[ "$channel" == "stable" ]]; then
             assets+=(production-readiness.json production-readiness.md)
           fi
+          # Attestations and signatures must come from this tag's release
+          # run at the expected commit, not from any v* tag's run.
+          export BPFCOMPAT_EXPECTED_SOURCE_SHA="$EXPECTED_COMMIT"
+          export BPFCOMPAT_EXPECTED_SOURCE_REF="refs/tags/$RELEASE_TAG"
           bash scripts/verify-release-assets.sh \
             candidate/draft-assets "$GITHUB_REPOSITORY" "${assets[@]}"
           gh attestation verify "$evidence" \
             --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml"
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml" \
+            --source-digest "$EXPECTED_COMMIT" --source-ref "refs/tags/$RELEASE_TAG"
 
-          identity_regexp="^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/v"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/${RELEASE_TAG}"
           cosign verify-blob \
             --certificate candidate/draft-assets/SHA256SUMS.crt \
             --signature candidate/draft-assets/SHA256SUMS.sig \
-            --certificate-identity-regexp "$identity_regexp" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             candidate/draft-assets/SHA256SUMS
           cosign verify-blob \
             --certificate candidate/draft-assets/bpfcompat.sbom.cdx.crt \
             --signature candidate/draft-assets/bpfcompat.sbom.cdx.sig \
-            --certificate-identity-regexp "$identity_regexp" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             candidate/draft-assets/bpfcompat.sbom.cdx.json
 
@@ -219,7 +230,7 @@ jobs:
             version --json | jq -r .version)"
           test "$actual_version" = "$expected_version"
           cosign verify \
-            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/v" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-artifacts.yml@refs/tags/${RELEASE_TAG}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${IMAGE}@${EXPECTED_DIGEST}"
 
