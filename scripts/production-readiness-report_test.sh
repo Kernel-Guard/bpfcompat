@@ -626,8 +626,18 @@ mkdir -p "$tmp/bin"
 cat >"$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 [[ "$1" == attestation && "$2" == --help ]] && exit 0
+# serve <API path>: answer a read from $STUB_API_DIR/<path without its query
+# string>.json (the canary runs, their attempts and jobs, and the candidate
+# release); a missing file is a 404.
+serve() {
+  local file="${STUB_API_DIR:?}/${1#repos/Kernel-Guard/bpfcompat/}"
+  file="${file%%\?*}.json"
+  [[ -f "$file" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+  cat "$file"
+}
 # Workflow run lookups: run 5000 is the rollback drill and 6000 the rejected
-# promotion; STUB_* variables override their fields, any other run is a 404.
+# promotion; STUB_* variables override their fields. Any other run is served
+# from $STUB_API_DIR, else a 404.
 if [[ "$1" == api && "$2" =~ ^repos/Kernel-Guard/bpfcompat/actions/runs/([0-9]+)$ ]]; then
   printf '%s\n' "$*" >>"$STUB_LOG"
   case "${BASH_REMATCH[1]}" in
@@ -642,8 +652,13 @@ if [[ "$1" == api && "$2" =~ ^repos/Kernel-Guard/bpfcompat/actions/runs/([0-9]+)
             --arg r "${STUB_INCIDENT_REPO:-Kernel-Guard/bpfcompat}" \
             '{path: $p, head_branch: "v0.4.0-rc.1", event: $e, head_repository: {full_name: $r},
               status: "completed", conclusion: $c}' ;;
-    *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+    *) serve "$2" ;;
   esac
+  exit 0
+fi
+if [[ "$1" == api && "$2" == repos/Kernel-Guard/bpfcompat/* ]]; then
+  printf '%s\n' "$*" >>"$STUB_LOG"
+  serve "$2"
   exit 0
 fi
 [[ "$1 $2" == "attestation verify" ]] || { echo "unexpected gh $*" >&2; exit 99; }
@@ -660,6 +675,51 @@ if [[ "$*" == *latest-kernel-compatibility.yml* ]]; then
 fi
 STUB
 chmod +x "$tmp/bin/gh"
+# GitHub API answers for the canary lookups, one file per endpoint. The
+# candidate release was published (T0) at 14:50Z, 50 minutes after
+# generated_at. Canary run 300<i> has one successful attempt, from the
+# workflow_dispatch (manual) or schedule event, whose evidence job ran in it
+# just before the canary's completed_at.
+api="$tmp/api"
+# api_put <API dir> <path> <jq program> [jq args...]: write one answer.
+api_put() {
+  local dir="$1" path="$2" program="$3"
+  shift 3
+  mkdir -p "$(dirname "$dir/$path")"
+  jq -n "$@" "$program" >"$dir/$path.json"
+}
+# canary_attempt <API dir> <run> <attempt> <event> <conclusion> <started>
+#   <updated> <evidence job conclusion> <evidence job started>: one attempt of
+# a canary run and its jobs. The run itself shows its latest attempt, so the
+# last attempt written also becomes the run.
+# shellcheck disable=SC2016 # the single-quoted arguments are jq programs
+canary_attempt() {
+  api_put "$1" "actions/runs/$2/attempts/$3" \
+    '{id: $run, path: ".github/workflows/release-candidate-canary.yml", head_branch: "main",
+      event: $e, head_repository: {full_name: "Kernel-Guard/bpfcompat"}, run_attempt: $n,
+      status: "completed", conclusion: $c, run_started_at: $s, updated_at: $u}' \
+    --argjson run "$2" --argjson n "$3" --arg e "$4" --arg c "$5" --arg s "$6" --arg u "$7"
+  api_put "$1" "actions/runs/$2/attempts/$3/jobs" \
+    '{total_count: 2, jobs: [
+       {name: "Select RC observation window", run_attempt: $n, status: "completed",
+        conclusion: "success", started_at: $s, completed_at: $s},
+       {name: "Assemble RC canary evidence", run_attempt: $n, status: "completed",
+        conclusion: $ec, started_at: $es, completed_at: $u}]}' \
+    --argjson n "$3" --arg s "$6" --arg u "$7" --arg ec "$8" --arg es "$9"
+  cp "$1/actions/runs/$2/attempts/$3.json" "$1/actions/runs/$2.json"
+}
+api_put "$api" releases/tags/v0.4.0-rc.1 \
+  '{tag_name: "v0.4.0-rc.1", draft: false, prerelease: true, published_at: "2026-07-30T14:50:00Z"}'
+for index in 0 1 2; do
+  day=$((index * (index + 1) / 2))
+  event=schedule
+  [[ "$index" == 0 ]] && event=workflow_dispatch
+  canary_attempt "$api" "$((3000 + index))" 1 "$event" success \
+    "$(date -u -d "2026-07-30 14:59:00 UTC +${day} days" +%Y-%m-%dT%H:%M:%SZ)" \
+    "$(date -u -d "2026-07-30 15:06:00 UTC +${day} days" +%Y-%m-%dT%H:%M:%SZ)" success \
+    "$(date -u -d "2026-07-30 15:05:20 UTC +${day} days" +%Y-%m-%dT%H:%M:%SZ)"
+done
+export STUB_API_DIR="$api"
 : >"$tmp/gh.log"
 PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" "$script" "$tmp/input.json" "$tmp/attested.md" >/dev/null
 grep -Fq -- "--source-digest $(printf 'c%.0s' {1..40}) --source-ref refs/tags/v0.4.0-rc.1" "$tmp/gh.log" || {
@@ -710,6 +770,216 @@ if PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" "$script" "$tmp/bad-incident-404
 fi
 echo "[production-readiness-test] refused: an incident linking a run that does not exist"
 mv "$incident_note.keep" "$incident_note"
+
+# --- Canary runs: identity, attempt and observation windows --------------------
+# Written policy: a canary is a run of the temporary release-candidate-canary
+# workflow, the timed ones from its dated schedule, and its plan job admits
+# T+24h only 20-30 and T+72h only 68-78 whole hours after publication (T0). A
+# partial re-run keeps the plan job's earlier decision and writes new evidence
+# later, so with attestation verification on every canary run is looked up.
+for path in releases/tags/v0.4.0-rc.1 \
+  actions/runs/3000 actions/runs/3000/attempts/1 "actions/runs/3000/attempts/1/jobs?per_page=100" \
+  actions/runs/3001 actions/runs/3001/attempts/1 "actions/runs/3001/attempts/1/jobs?per_page=100" \
+  actions/runs/3002 actions/runs/3002/attempts/1 "actions/runs/3002/attempts/1/jobs?per_page=100"; do
+  grep -Fxq "api repos/Kernel-Guard/bpfcompat/$path" "$tmp/gh.log" || {
+    echo "[production-readiness-test] canary lookup $path was not made" >&2; exit 1; }
+done
+jq -e '
+  [.canaries[].workflow_run_attempt] == [1, 1, 1] and
+  [.canaries[].attempt_started_at] == ["2026-07-30T14:59:00Z", "2026-07-31T14:59:00Z", "2026-08-02T14:59:00Z"] and
+  [.canaries[].head_branch] == ["main", "main", "main"] and
+  .candidate.published_at == "2026-07-30T14:50:00Z"
+' "$tmp/attested.json" >/dev/null || {
+  echo "[production-readiness-test] attested readiness output does not record the canary attempts" >&2; exit 1; }
+grep -Fq "| t-plus-24h | \`3001\` | 1 | 2026-07-31T14:59:00Z | main | 2026-07-31T15:05:34Z |" "$tmp/attested.md" || {
+  echo "[production-readiness-test] attested readiness Markdown does not show the canary attempts" >&2; exit 1; }
+jq -e '([.canaries[] | .workflow_run_attempt == null and .attempt_started_at == null and .head_branch == null] | all) and
+       .candidate.published_at == null' "$tmp/readiness.json" >/dev/null || {
+  echo "[production-readiness-test] bypass readiness output claims canary lookups it did not make" >&2; exit 1; }
+echo "[production-readiness-test] attested: the release and every canary run, attempt and job list were looked up and recorded"
+# The jobs API names a job only by its display name. While the temporary
+# canary workflow exists, its evidence job must carry the name readiness
+# looks for.
+rcc="${ROOT_DIR}/.github/workflows/release-candidate-canary.yml"
+grep -Fq 'select(.name == "Assemble RC canary evidence")' "$script" || {
+  echo "[production-readiness-test] readiness no longer looks up the evidence job by name" >&2; exit 1; }
+if [[ -f "$rcc" ]]; then
+  awk '/^  evidence:$/ {getline; found = ($0 == "    name: Assemble RC canary evidence")} END {exit !found}' "$rcc" || {
+    echo "[production-readiness-test] release-candidate-canary.yml does not name its evidence job \"Assemble RC canary evidence\"" >&2; exit 1; }
+  echo "[production-readiness-test] release-candidate-canary.yml names its evidence job as readiness expects"
+fi
+
+c="$tmp/api-case"
+# api_case: a fresh copy of the default API answers for one case.
+api_case() { rm -rf "$c"; cp -R "$api" "$c"; }
+# api_edit <path> <jq filter>: change one answer of the current case.
+api_edit() { jq "$2" "$c/$1.json" >"$c/$1.json.new" && mv "$c/$1.json.new" "$c/$1.json"; }
+# canary_completed <index> <completed_at> <out manifest>: a manifest pinning
+# canary <index> evidence that records another completed_at; canary_restore
+# puts the original evidence back.
+canary_completed() {
+  local file="$tmp/canary-$1/release-candidate-canary.json"
+  cp "$file" "$file.orig"
+  jq --arg t "$2" '.completed_at = $t' "$file.orig" >"$file"
+  rehash "$file" ".canaries[$1].evidence_sha256" "$3"
+}
+canary_restore() { mv "$tmp/canary-$1/release-candidate-canary.json.orig" "$tmp/canary-$1/release-candidate-canary.json"; }
+# canary_refused <label> <manifest> <message fragment>: refused, for that
+# reason, with the current case's API answers.
+canary_refused() {
+  local out
+  if out="$(PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" STUB_API_DIR="$c" "$script" "$2" "$tmp/bad.md" 2>&1)"; then
+    echo "[production-readiness-test] $1 was accepted" >&2
+    exit 1
+  fi
+  grep -Fq -- "$3" <<<"$out" || {
+    echo "[production-readiness-test] $1 refused for the wrong reason: $out" >&2
+    exit 1
+  }
+  echo "[production-readiness-test] refused: $1"
+}
+# canary_accepted <label> <manifest> <jq assertion on the readiness JSON>
+canary_accepted() {
+  local out
+  out="$(PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/gh.log" STUB_API_DIR="$c" "$script" "$2" "$tmp/case.md" 2>&1)" || {
+    echo "[production-readiness-test] $1 was refused: $out" >&2
+    exit 1
+  }
+  jq -e "$3" "$tmp/case.json" >/dev/null || {
+    echo "[production-readiness-test] $1 is not recorded as expected: $(jq -c '.canaries' "$tmp/case.json")" >&2
+    exit 1
+  }
+  echo "[production-readiness-test] accepted and recorded: $1"
+}
+
+# Run identity.
+api_case; api_edit actions/runs/3001 '.path = ".github/workflows/ci.yml"'
+canary_refused "a T+24h canary run of another workflow" "$tmp/input.json" \
+  "RC canary t-plus-24h run 3001 is not a successful schedule run of release-candidate-canary.yml on this repository"
+api_case; api_edit actions/runs/3002 '.head_branch = "feature"'
+canary_refused "a T+72h canary run not on main" "$tmp/input.json" "RC canary t-plus-72h run 3002 is not on main"
+api_case; api_edit actions/runs/3001 '.head_repository.full_name = "someone/bpfcompat"'
+canary_refused "a T+24h canary run from a fork" "$tmp/input.json" "RC canary t-plus-24h run 3001 is not a successful schedule run"
+api_case; api_edit actions/runs/3001 '.event = "workflow_dispatch"'
+canary_refused "a T+24h canary from a dispatched run" "$tmp/input.json" "RC canary t-plus-24h run 3001 is not a successful schedule run"
+api_case; api_edit actions/runs/3000 '.event = "schedule"'
+canary_refused "a manual canary from a scheduled run" "$tmp/input.json" "RC canary manual run 3000 is not a successful workflow_dispatch run"
+api_case; api_edit actions/runs/3001 '.conclusion = "failure"'
+canary_refused "a T+24h canary run that failed" "$tmp/input.json" "RC canary t-plus-24h run 3001 is not a successful schedule run"
+api_case; rm "$c/actions/runs/3002.json"
+canary_refused "a T+72h canary naming a run that does not exist" "$tmp/input.json" "RC canary t-plus-72h run 3002 cannot be read from GitHub"
+# No written rule names the manual dispatch's branch: recorded, not enforced.
+api_case; api_edit actions/runs/3000 '.head_branch = "feature"'
+canary_accepted "a manual canary dispatched on a branch (branch recorded)" "$tmp/input.json" '.canaries[0].head_branch == "feature"'
+
+# The candidate release: T0 is its publication.
+api_case; api_edit releases/tags/v0.4.0-rc.1 '.draft = true'
+canary_refused "an unpublished (draft) candidate release" "$tmp/input.json" "release v0.4.0-rc.1 is a draft, not a published release"
+api_case; rm "$c/releases/tags/v0.4.0-rc.1.json"
+canary_refused "a candidate release that cannot be read" "$tmp/input.json" "release v0.4.0-rc.1 cannot be read from GitHub"
+api_case; api_edit releases/tags/v0.4.0-rc.1 '.published_at = "2026-07-30T13:59:59Z"'
+canary_refused "a candidate release published before its evidence was generated" "$tmp/input.json" \
+  "release v0.4.0-rc.1 was published at 2026-07-30T13:59:59Z, before its candidate evidence was generated"
+api_case; api_edit releases/tags/v0.4.0-rc.1 '.published_at = "2026-07-30T15:00:00Z"'
+canary_refused "a manual canary attempt that started before publication" "$tmp/input.json" \
+  "RC canary manual attempt 1 of run 3000 started before release v0.4.0-rc.1 was published"
+
+# The attempt: the successful one whose span contains completed_at.
+api_case
+api_edit actions/runs/3001 '.updated_at = "2026-07-31T15:05:00Z"'
+api_edit actions/runs/3001/attempts/1 '.updated_at = "2026-07-31T15:05:00Z"'
+canary_refused "a T+24h canary that completed after its run ended" "$tmp/input.json" \
+  "RC canary t-plus-24h completed_at 2026-07-31T15:05:34Z is not inside a successful attempt of run 3001"
+# A later "re-run all jobs" outside the window concludes success with every job
+# skipped; the evidence is attempt 1's.
+api_case
+canary_attempt "$c" 3001 2 schedule success 2026-08-01T05:00:00Z 2026-08-01T05:01:00Z skipped 2026-08-01T05:00:40Z
+canary_accepted "T+24h evidence from an earlier successful attempt of a re-run run" "$tmp/input.json" \
+  '.canaries[1].workflow_run_attempt == 1 and .canaries[1].attempt_started_at == "2026-07-31T14:59:00Z"'
+# A failed attempt never counts, even when its span contains completed_at.
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:06:00Z success 2026-07-31T15:05:20Z
+canary_attempt "$c" 3001 2 schedule success 2026-07-31T16:20:00Z 2026-07-31T16:31:00Z success 2026-07-31T16:29:30Z
+canary_refused "T+24h evidence from a failed attempt" "$tmp/input.json" "is not inside a successful attempt of run 3001"
+# A late re-run's completed_at edited back into the window: no successful
+# attempt spans it.
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:03:00Z skipped 2026-07-31T15:03:00Z
+canary_attempt "$c" 3001 2 schedule success 2026-08-01T01:50:00Z 2026-08-01T02:01:00Z success 2026-08-01T01:59:30Z
+canary_refused "a late re-run whose completed_at was edited into the window" "$tmp/input.json" \
+  "is not inside a successful attempt of run 3001"
+
+# The evidence job itself ran, and succeeded, in that attempt.
+api_case
+api_edit actions/runs/3001/attempts/1/jobs '(.jobs[] | select(.name == "Assemble RC canary evidence") | .conclusion) = "skipped"'
+canary_refused "a T+24h attempt whose evidence job was skipped" "$tmp/input.json" \
+  "RC canary t-plus-24h run 3001 attempt 1 has no successful \"Assemble RC canary evidence\" job"
+api_case
+api_edit actions/runs/3001/attempts/1/jobs '.jobs |= map(select(.name != "Assemble RC canary evidence"))'
+canary_refused "a T+24h attempt without an evidence job" "$tmp/input.json" "has no successful \"Assemble RC canary evidence\" job"
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:03:00Z skipped 2026-07-31T15:03:00Z
+canary_attempt "$c" 3001 2 schedule success 2026-07-31T16:20:00Z 2026-07-31T16:31:00Z success 2026-07-31T15:02:00Z
+canary_completed 1 2026-07-31T16:30:00Z "$tmp/canary-case.json"
+canary_refused "a T+24h evidence job carried over into a re-run attempt" "$tmp/canary-case.json" \
+  "RC canary t-plus-24h run 3001: its evidence job was carried over into attempt 2, not run in it"
+canary_restore 1
+
+# Observation windows from T0 (14:50Z): T+24h [T0+20h, T0+31h) = [07-31 10:50Z,
+# 07-31 21:50Z), T+72h [T0+68h, T0+79h) = [08-02 10:50Z, 08-02 21:50Z).
+api_case
+canary_attempt "$c" 3001 1 schedule success 2026-07-31T22:00:00Z 2026-07-31T22:15:00Z success 2026-07-31T22:09:30Z
+canary_completed 1 2026-07-31T22:10:00Z "$tmp/canary-case.json"
+canary_refused "a first-attempt T+24h canary started after its window closed" "$tmp/canary-case.json" \
+  "RC canary t-plus-24h attempt 1 of run 3001 started 31h or more after release v0.4.0-rc.1 was published"
+canary_restore 1
+# F6: "re-run failed jobs" on a failed in-window run, after the window closed.
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:03:00Z skipped 2026-07-31T15:03:00Z
+canary_attempt "$c" 3001 2 schedule success 2026-08-01T01:50:00Z 2026-08-01T02:01:00Z success 2026-08-01T01:59:30Z
+canary_completed 1 2026-08-01T02:00:00Z "$tmp/canary-case.json"
+canary_refused "a late partial re-run of a failed in-window T+24h run" "$tmp/canary-case.json" \
+  "RC canary t-plus-24h attempt 2 of run 3001 started 31h or more after release v0.4.0-rc.1 was published"
+canary_restore 1
+api_case
+canary_attempt "$c" 3002 1 schedule failure 2026-08-02T14:59:00Z 2026-08-02T15:03:00Z skipped 2026-08-02T15:03:00Z
+canary_attempt "$c" 3002 2 schedule success 2026-08-02T21:50:00Z 2026-08-02T21:58:00Z success 2026-08-02T21:56:30Z
+canary_completed 2 2026-08-02T21:57:00Z "$tmp/canary-case.json"
+canary_refused "a T+72h re-run started exactly when its window closed" "$tmp/canary-case.json" \
+  "RC canary t-plus-72h attempt 2 of run 3002 started 79h or more after release v0.4.0-rc.1 was published"
+canary_restore 2
+# A re-run started inside the window counts as the text is written: the open
+# operator decision may tighten or relax this, the test records today's rule.
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:03:00Z skipped 2026-07-31T15:03:00Z
+canary_attempt "$c" 3001 2 schedule success 2026-07-31T16:20:00Z 2026-07-31T16:31:00Z success 2026-07-31T16:29:30Z
+canary_completed 1 2026-07-31T16:30:00Z "$tmp/canary-case.json"
+canary_accepted "an in-window re-run of a failed T+24h run (attempt 2)" "$tmp/canary-case.json" \
+  '.canaries[1].workflow_run_attempt == 2 and .canaries[1].attempt_started_at == "2026-07-31T16:20:00Z"'
+grep -Fq "| t-plus-24h | \`3001\` | 2 | 2026-07-31T16:20:00Z | main | 2026-07-31T16:30:00Z |" "$tmp/case.md" || {
+  echo "[production-readiness-test] the re-run attempt is not shown in the readiness Markdown" >&2; exit 1; }
+canary_restore 1
+api_case
+canary_attempt "$c" 3001 1 schedule failure 2026-07-31T14:59:00Z 2026-07-31T15:03:00Z skipped 2026-07-31T15:03:00Z
+canary_attempt "$c" 3001 2 schedule success 2026-07-31T21:49:59Z 2026-07-31T21:56:00Z success 2026-07-31T21:54:30Z
+canary_completed 1 2026-07-31T21:55:00Z "$tmp/canary-case.json"
+canary_accepted "a T+24h re-run started one second before its window closed" "$tmp/canary-case.json" \
+  '.canaries[1].workflow_run_attempt == 2 and .canaries[1].attempt_started_at == "2026-07-31T21:49:59Z"'
+canary_restore 1
+# A first attempt ran its own plan job, so its evidence cannot complete before
+# the window opened, even 20h (68h) after generated_at.
+api_case
+canary_attempt "$c" 3001 1 schedule success 2026-07-31T10:25:00Z 2026-07-31T10:32:00Z success 2026-07-31T10:29:40Z
+canary_completed 1 2026-07-31T10:30:00Z "$tmp/canary-case.json"
+canary_refused "a first-attempt T+24h canary completed before T0+20h" "$tmp/canary-case.json" \
+  "RC canary t-plus-24h completed less than 20h after release v0.4.0-rc.1 was published"
+canary_restore 1
+api_case
+canary_attempt "$c" 3002 1 schedule success 2026-08-02T10:25:00Z 2026-08-02T10:32:00Z success 2026-08-02T10:29:40Z
+canary_completed 2 2026-08-02T10:30:00Z "$tmp/canary-case.json"
+canary_refused "a first-attempt T+72h canary completed before T0+68h" "$tmp/canary-case.json" \
+  "RC canary t-plus-72h completed less than 68h after release v0.4.0-rc.1 was published"
+canary_restore 2
 
 # --- Readiness output v0.2 and the real stable gate ----------------------------
 jq -e --arg c "$(printf 'c%.0s' {1..40})" '

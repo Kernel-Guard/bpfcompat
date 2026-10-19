@@ -377,6 +377,21 @@ fi
 : >"$tmp/canaries.ndjson"
 : >"$tmp/canary_run_ids"
 previous_canary_epoch=0
+# The canary plan job measures its windows from publication (T0), which the
+# canary designation records as CANDIDATE_PUBLISHED_AT. With attestation
+# verification on, T0 is read from the release itself: it must be published,
+# not a draft, and cannot precede the candidate evidence it publishes.
+candidate_published_at=""
+if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
+  candidate_release="$(gh api "repos/Kernel-Guard/bpfcompat/releases/tags/${candidate_tag}" 2>/dev/null)" ||
+    fail "release ${candidate_tag} cannot be read from GitHub"
+  jq -e '.draft == false' <<<"$candidate_release" >/dev/null ||
+    fail "release ${candidate_tag} is a draft, not a published release"
+  candidate_published_at="$(jq -r '.published_at // ""' <<<"$candidate_release")"
+  candidate_published_epoch="$(iso_epoch "$candidate_published_at" "release ${candidate_tag} published_at")"
+  [[ "$candidate_published_epoch" -ge "$candidate_generated_epoch" ]] ||
+    fail "release ${candidate_tag} was published at ${candidate_published_at}, before its candidate evidence was generated"
+fi
 while IFS= read -r canary; do
   milestone="$(jq -r '.milestone' <<<"$canary")"
   evidence_rel="$(jq -r '.evidence' <<<"$canary")"
@@ -426,7 +441,8 @@ while IFS= read -r canary; do
   # hours, and T+72h only 68-78 whole hours, after CANDIDATE_PUBLISHED_AT.
   # Publication time is not part of the attested candidate evidence, but it
   # cannot precede generated_at, so generated_at + 0/20/68h is a floor every
-  # authentic observation meets. Upper bounds are left to the plan job.
+  # authentic observation meets. The plan job does not bound a partial re-run,
+  # which keeps its earlier decision; the run lookup below does.
   case "$milestone" in
     manual) floor_hours=0 ;;
     t-plus-24h) floor_hours=20 ;;
@@ -438,6 +454,92 @@ while IFS= read -r canary; do
   [[ "$canary_completed_epoch" -gt "$previous_canary_epoch" ]] ||
     fail "RC canaries must complete in manual, T+24h, T+72h order"
   previous_canary_epoch="$canary_completed_epoch"
+
+  # Written policy: a canary is a run of the temporary release-candidate-canary
+  # workflow, the timed ones from its dated schedule, and its plan job admits
+  # T+24h only 20-30 and T+72h only 68-78 whole hours after T0. A partial
+  # re-run ("Re-run failed jobs") does not run the plan job again: it keeps
+  # the earlier decision and writes new evidence later. With attestation
+  # verification on, the run is looked up. It must be a successful run of that
+  # workflow on this repository from the expected event, and the evidence must
+  # come from the successful attempt whose span contains completed_at, with
+  # the evidence job itself run in that attempt. That attempt started after
+  # T0 and, for a timed milestone, before its window closed (T0+31h, T0+79h);
+  # a first attempt ran its own plan job, so its evidence also completed after
+  # the window opened (T0+20h, T0+68h). Whether a re-run started inside the
+  # window should count is an open operator decision; this applies the windows
+  # as written. The attempt is recorded.
+  canary_attempt=null
+  canary_attempt_started_at=""
+  canary_head_branch=""
+  if [[ "${BPFCOMPAT_SKIP_READINESS_ATTESTATION:-0}" != "1" ]]; then
+    canary_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${canary_run_id}" 2>/dev/null)" ||
+      fail "RC canary ${milestone} run ${canary_run_id} cannot be read from GitHub"
+    jq -e --arg event "$expected_event" '
+      .path == ".github/workflows/release-candidate-canary.yml" and
+      .event == $event and
+      .head_repository.full_name == "Kernel-Guard/bpfcompat" and
+      .status == "completed" and .conclusion == "success"
+    ' <<<"$canary_run" >/dev/null ||
+      fail "RC canary ${milestone} run ${canary_run_id} is not a successful ${expected_event} run of release-candidate-canary.yml on this repository"
+    canary_head_branch="$(jq -r '.head_branch // ""' <<<"$canary_run")"
+    # Scheduled runs execute on the default branch. Written policy names no
+    # branch for the manual dispatch, so its branch is recorded, not enforced.
+    if [[ "$milestone" != manual ]]; then
+      [[ "$canary_head_branch" == main ]] ||
+        fail "RC canary ${milestone} run ${canary_run_id} is not on main"
+    fi
+    canary_last_attempt="$(jq -r '.run_attempt' <<<"$canary_run")"
+    [[ "$canary_last_attempt" =~ ^[1-9][0-9]*$ ]] ||
+      fail "RC canary ${milestone} run ${canary_run_id} has no valid run_attempt"
+    for ((attempt = 1; attempt <= canary_last_attempt; attempt++)); do
+      attempt_run="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${canary_run_id}/attempts/${attempt}" 2>/dev/null)" ||
+        fail "RC canary ${milestone} run ${canary_run_id} attempt ${attempt} cannot be read from GitHub"
+      jq -e '.conclusion == "success"' <<<"$attempt_run" >/dev/null || continue
+      attempt_started_at="$(jq -r '.run_started_at // ""' <<<"$attempt_run")"
+      attempt_started_epoch="$(iso_epoch "$attempt_started_at" "RC canary run ${canary_run_id} attempt ${attempt} start")"
+      attempt_updated_epoch="$(iso_epoch "$(jq -r '.updated_at // ""' <<<"$attempt_run")" "RC canary run ${canary_run_id} attempt ${attempt} end")"
+      if [[ "$canary_completed_epoch" -ge "$attempt_started_epoch" && "$canary_completed_epoch" -le "$attempt_updated_epoch" ]]; then
+        canary_attempt="$attempt"
+        canary_attempt_started_at="$attempt_started_at"
+        canary_attempt_started_epoch="$attempt_started_epoch"
+        break
+      fi
+    done
+    [[ "$canary_attempt" != null ]] ||
+      fail "RC canary ${milestone} completed_at ${canary_completed_at} is not inside a successful attempt of run ${canary_run_id}"
+    # An out-of-window or late "Re-run all jobs" attempt also concludes success,
+    # with every check and the evidence job skipped, and a re-run attempt lists
+    # carried-over jobs with their earlier start. The jobs API names a job by
+    # its display name, which release-candidate-canary.yml gives its evidence
+    # job; a renamed job fails closed.
+    canary_jobs="$(gh api "repos/Kernel-Guard/bpfcompat/actions/runs/${canary_run_id}/attempts/${canary_attempt}/jobs?per_page=100" 2>/dev/null)" ||
+      fail "RC canary ${milestone} run ${canary_run_id} attempt ${canary_attempt} jobs cannot be read from GitHub"
+    evidence_job_started_at="$(jq -r '
+      [(.jobs // [])[] | select(.name == "Assemble RC canary evidence")] |
+      if length == 1 and .[0].conclusion == "success" then .[0].started_at // "" else "" end
+    ' <<<"$canary_jobs")"
+    [[ -n "$evidence_job_started_at" ]] ||
+      fail "RC canary ${milestone} run ${canary_run_id} attempt ${canary_attempt} has no successful \"Assemble RC canary evidence\" job"
+    evidence_job_started_epoch="$(iso_epoch "$evidence_job_started_at" "RC canary run ${canary_run_id} evidence job start")"
+    [[ "$evidence_job_started_epoch" -ge "$canary_attempt_started_epoch" ]] ||
+      fail "RC canary ${milestone} run ${canary_run_id}: its evidence job was carried over into attempt ${canary_attempt}, not run in it"
+    [[ "$canary_attempt_started_epoch" -ge "$candidate_published_epoch" ]] ||
+      fail "RC canary ${milestone} attempt ${canary_attempt} of run ${canary_run_id} started before release ${candidate_tag} was published"
+    case "$milestone" in
+      t-plus-24h) window_open=20 window_close=31 ;;
+      t-plus-72h) window_open=68 window_close=79 ;;
+      *) window_open="" window_close="" ;;
+    esac
+    if [[ -n "$window_close" ]]; then
+      [[ "$canary_attempt_started_epoch" -lt $((candidate_published_epoch + window_close * 3600)) ]] ||
+        fail "RC canary ${milestone} attempt ${canary_attempt} of run ${canary_run_id} started ${window_close}h or more after release ${candidate_tag} was published"
+      if [[ "$canary_attempt" -eq 1 ]]; then
+        [[ "$canary_completed_epoch" -ge $((candidate_published_epoch + window_open * 3600)) ]] ||
+          fail "RC canary ${milestone} completed less than ${window_open}h after release ${candidate_tag} was published"
+      fi
+    fi
+  fi
 
   # Components: each is an artifact of this exact canary run (the workflow
   # downloads rc*-canary-component-<check>-<run id>), every check is
@@ -475,17 +577,29 @@ while IFS= read -r canary; do
   done
 
   printf '%s\n' "$canary_run_id" >>"$tmp/canary_run_ids"
-  printf "| %s | \`%s\` | %s |\n" \
-    "$milestone" "$canary_run_id" "$canary_completed_at" >>"$tmp/canary_rows"
+  if [[ "$canary_attempt" == null ]]; then
+    printf "| %s | \`%s\` | not looked up | not looked up | not looked up | %s |\n" \
+      "$milestone" "$canary_run_id" "$canary_completed_at" >>"$tmp/canary_rows"
+  else
+    printf "| %s | \`%s\` | %s | %s | %s | %s |\n" \
+      "$milestone" "$canary_run_id" "$canary_attempt" "$canary_attempt_started_at" \
+      "$canary_head_branch" "$canary_completed_at" >>"$tmp/canary_rows"
+  fi
   jq -n \
     --arg milestone "$milestone" \
     --argjson workflow_run_id "$canary_run_id" \
+    --argjson attempt "$canary_attempt" \
+    --arg attempt_started_at "$canary_attempt_started_at" \
+    --arg head_branch "$canary_head_branch" \
     --arg completed_at "$canary_completed_at" \
     --arg evidence_sha256 "$canary_sha" \
     --argjson minutes "$(((canary_completed_epoch - candidate_generated_epoch) / 60))" \
     '{
       milestone: $milestone,
       workflow_run_id: $workflow_run_id,
+      workflow_run_attempt: $attempt,
+      attempt_started_at: (if $attempt_started_at == "" then null else $attempt_started_at end),
+      head_branch: (if $head_branch == "" then null else $head_branch end),
       completed_at: $completed_at,
       minutes_after_candidate_generated: $minutes,
       components_verified: true,
@@ -627,8 +741,12 @@ mkdir -p "$(dirname "$output_json")"
   echo
   echo "## Release-Candidate Canaries"
   echo
-  echo "| Milestone | Workflow run | Completed (UTC) |"
-  echo "|---|---|---|"
+  if [[ -n "$candidate_published_at" ]]; then
+    echo "Windows are measured from the release's publication at ${candidate_published_at}; each run, attempt and evidence job was read from GitHub."
+    echo
+  fi
+  echo "| Milestone | Workflow run | Attempt | Attempt started (UTC) | Branch | Completed (UTC) |"
+  echo "|---|---|---|---|---|---|"
   cat "$tmp/canary_rows"
   echo
   echo "## Required External Evidence"
@@ -682,6 +800,7 @@ jq -n \
   --arg candidate_commit "$candidate_commit" \
   --arg candidate_image "$candidate_image" \
   --arg candidate_sha "$candidate_sha" \
+  --arg candidate_published_at "$candidate_published_at" \
   --arg rollback_sha "$rollback_sha" \
   --arg incident_sha "$incident_sha" \
   --arg operator "$operator" \
@@ -735,7 +854,8 @@ jq -n \
       tag: $candidate_tag,
       commit_sha: $candidate_commit,
       image: $candidate_image,
-      evidence_sha256: $candidate_sha
+      evidence_sha256: $candidate_sha,
+      published_at: (if $candidate_published_at == "" then null else $candidate_published_at end)
     },
     canaries: $canaries,
     rollback: {

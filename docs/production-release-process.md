@@ -67,8 +67,12 @@ digest, and the external Inspektor Gadget/KubeArmor/Falco workflow dispatched
 at the immutable RC tag. Run it once immediately after publication. Its two
 dated schedules run just after T+24 hours and T+72 hours and emit
 `[bpfcompat-rc-canary:v1]` evidence; any out-of-window invocation exits after
-the planning job. Remove or retarget these temporary schedules after
-graduation.
+the planning job. A partial re-run ("Re-run failed jobs", or re-running one
+job) is not a new invocation: it does not run the planning job again, keeps
+the first attempt's window decision, and can write evidence after the window
+has closed. The planning job alone therefore does not bound re-runs; the
+readiness report checks each canary run's attempts (see **Canaries** below).
+Remove or retarget these temporary schedules after graduation.
 
 Every job in `release-candidate-canary`, `external-consumer-canary`, and
 `consumer-canary` runs on the pinned `ubuntu-24.04` image, not the moving
@@ -181,9 +185,25 @@ aggregator binds every piece of evidence to the attested candidate
   every canary must bind the same RC tag, commit, and image digest as the
   attested candidate. Completion times must be in milestone order and at least
   0, 20, and 68 hours after `generated_at`. These are floors derived from the
-  plan job's 20-30h and 68-78h windows after publication: publication time is
-  not in the attested evidence, but it never precedes `generated_at`. The plan
-  job itself enforces the upper bounds. Each canary's components must be
+  plan job's 20-30h and 68-78h windows after publication (T0): publication time
+  is not in the attested evidence, but it never precedes `generated_at`. With
+  attestation verification on, T0 is the release's `published_at`; the release
+  must be published, not a draft, and not before `generated_at`. Each canary's
+  `workflow_run_id` must be a successful `release-candidate-canary.yml` run of
+  this repository from `workflow_dispatch` (manual) or `schedule` (timed, on
+  `main`). Its `completed_at` must fall inside a successful attempt of that
+  run in which the `Assemble RC canary evidence` job itself ran and succeeded,
+  and that attempt must have started at or after T0. A timed canary's attempt
+  must have started before its window closed (T0+31h or T0+79h), and a first
+  attempt, which ran its own plan job, must have completed after the window
+  opened (T0+20h or T0+68h). The output records each canary's
+  `workflow_run_attempt`, `attempt_started_at` and `head_branch`, and the
+  release's `published_at`; no written rule names the manual dispatch's
+  branch, so it is recorded, not enforced. A re-run started inside the window
+  is accepted, as the windows are written. Whether a re-run should count is an
+  open operator decision: counting first attempts only would tighten this, and
+  counting a re-run started after the window closed would relax the windows
+  and must be written here first. Each canary's components must be
   artifacts of that canary's own run (`*canary-component-<check>-<run ID>/`),
   and the `<check>.json` record of each of the five checks must be present,
   match its recorded SHA-256, pass, and name the candidate tag and commit; the
@@ -228,7 +248,8 @@ The command writes both Markdown and JSON. Add the reviewed outputs to
 request. The stable release workflow validates, checksums, attests, and
 publishes those files; a stable tag fails if they are absent or not `ready`.
 The online candidate check requires an authenticated GitHub CLI version that
-provides `gh attestation`, and the drill and incident runs are read through the
+provides `gh attestation`, and the candidate release, the canary runs with
+their attempts and jobs, and the drill and incident runs are read through the
 GitHub API; an older or unauthenticated CLI, or no network, fails closed.
 
 Do not use `BPFCOMPAT_SKIP_READINESS_ATTESTATION=1` outside the regression
