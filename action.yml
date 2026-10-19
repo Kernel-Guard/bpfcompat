@@ -232,12 +232,13 @@ runs:
         fi
         # The commit the release was built from: a SHA pin names it; a tag
         # pin is resolved to the commit the tag points at (peeled when
-        # annotated). If that fails, build from source rather than install
-        # binaries that cannot be bound to this release.
+        # annotated). If that fails or does not finish within 60 s (the
+        # bound of the tags API call above), build from source rather than
+        # install binaries that cannot be bound to this release.
         source_sha="${ACTION_REF:-}"
         if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
           source_sha=""
-          if tag_refs="$(GIT_TERMINAL_PROMPT=0 git ls-remote https://github.com/Kernel-Guard/bpfcompat.git \
+          if tag_refs="$(GIT_TERMINAL_PROMPT=0 timeout 60 git ls-remote https://github.com/Kernel-Guard/bpfcompat.git \
             "refs/tags/${ref}" "refs/tags/${ref}^{}" 2>/dev/null)"; then
             source_sha="$(awk -v tag="refs/tags/${ref}" '
               $2 == tag && !peeled { sha = $1 }

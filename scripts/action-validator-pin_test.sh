@@ -180,12 +180,16 @@ done
 exit 0
 """)
     git_log = os.path.join(case, "git_calls")
+    git_env_log = os.path.join(case, "git_ls_remote_env")
     ls_file = os.path.join(case, "ls_remote")
     with open(ls_file, "w") as fh:
         fh.write(ls_remote or "")
     write_exec(os.path.join(stubs, "git"), f"""#!/usr/bin/env bash
 printf '%s\\n' "$*" >>'{git_log}'
 if [[ "${{1:-}}" == ls-remote ]]; then
+  # The prompt setting, and the command line of the process that ran git.
+  printf 'PROMPT=%s PARENT=%s\\n' "${{GIT_TERMINAL_PROMPT-<unset>}}" \\
+    "$(tr '\\0' ',' </proc/$PPID/cmdline 2>/dev/null)" >>'{git_env_log}'
   {"echo 'fatal: unable to access https://github.com/Kernel-Guard/bpfcompat.git/: Could not resolve host: github.com' >&2; exit 128" if ls_remote is None else ""}
   cat '{ls_file}'
   exit 0
@@ -217,6 +221,8 @@ exec '{REAL_GIT}' "$@"
         with open(verifier_log) as fh:
             LAST["verifier"] = dict(l.rstrip("\n").split("=", 1) for l in fh if "=" in l)
     LAST["git"] = open(git_log).read().splitlines() if os.path.exists(git_log) else []
+    LAST["git_env"] = ([dict(kv.split("=", 1) for kv in line.split()) for line in open(git_env_log)]
+                       if os.path.exists(git_env_log) else [])
     LAST["installed"] = os.path.exists(os.path.join(root, "bin", "bpfcompat"))
     return res.returncode, res.stdout + res.stderr, outputs, root
 
@@ -365,6 +371,19 @@ check(got.get("REF") == "refs/tags/v9.9.9", "tag pin: verifier bound to refs/tag
 check(got.get("SHA") == TAG_COMMIT, "tag pin: verifier bound to the tag's peeled commit")
 check(any(c.startswith("ls-remote ") and "refs/tags/v9.9.9" in c for c in LAST["git"]),
       "tag pin: the tag is resolved with git ls-remote")
+# The resolution cannot hang the job, as every curl in the step is
+# time-bounded too: git never prompts for credentials, and it runs under
+# timeout(1) with a limit of at most the step's longest curl bound (300 s).
+# An expired limit is an ls-remote failure: the warned source build (9).
+def bounded(env):
+    parent = env.get("PARENT", "").split(",")
+    if env.get("PROMPT") != "0" or len(parent) < 3 or os.path.basename(parent[0]) != "timeout":
+        return False
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([smhd]?)", parent[1])
+    seconds = m and float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
+    return bool(seconds) and 0 < seconds <= 300 and os.path.basename(parent[2]) == "git"
+check(len(LAST["git_env"]) >= 1 and all(bounded(e) for e in LAST["git_env"]),
+      f"tag pin: git ls-remote cannot prompt and runs under a time limit ({LAST['git_env']})")
 
 # 8b. A lightweight tag has no ^{} line: its own line is the commit.
 case = new_case()
