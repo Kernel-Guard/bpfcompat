@@ -61,6 +61,12 @@ jobs:
         # v0.3.6 shipped a broken action; the docs kept pointing at it for two
         # weeks because nothing checked the pins a reader copy-pastes.
         run: bash scripts/check-doc-pins.sh
+      - name: Documented action pins regression
+        # The stable release window: docs may name vX.Y.Z before its tag
+        # exists (only that tag, only in the stable channel, only when the
+        # remote positively lacks it), and SHA-pinned templates may stay on
+        # the release the consumer canary's stable pin names until the tag.
+        run: bash scripts/check-doc-pins_test.sh
       - name: Action OCI-artifact detection regression
         # Guards the fix that lets the action accept remote OCI references
         # (ghcr.io/...) as `artifact`. Extracts is_remote_artifact() from

@@ -234,11 +234,23 @@ fx="$tmp/bootstrap"
 mkdir -p "$fx/bin"
 cat >"$fx/bin/gh" <<'STUB'
 #!/usr/bin/env bash
+# $GH_RELEASES holds one "<tag> <draft> <prerelease>" line per GitHub release.
 # gh api repos/Kernel-Guard/bpfcompat/releases/tags/<tag> --jq ...
-[[ "$1" == api && "$2" == repos/Kernel-Guard/bpfcompat/releases/tags/* ]] || exit 99
-tag="${2##*/}"
-line="$(grep -m1 "^${tag} " "$GH_RELEASES" 2>/dev/null)" || exit 1
-echo "${line#* }"
+if [[ "$1" == api && "$2" == repos/Kernel-Guard/bpfcompat/releases/tags/* ]]; then
+  tag="${2##*/}"
+  line="$(grep -m1 "^${tag} " "$GH_RELEASES" 2>/dev/null)" || exit 1
+  echo "${line#* }"
+  exit 0
+fi
+# gh api --paginate repos/Kernel-Guard/bpfcompat/releases?per_page=100 --jq ...
+# (the stable bootstrap; only the exact projection it asks for is answered).
+if [[ "$1" == api && "$2" == --paginate &&
+      "$3" == "repos/Kernel-Guard/bpfcompat/releases?per_page=100" &&
+      "$4" == --jq && "$5" == '.[] | "\(.tag_name) \(.draft) \(.prerelease)"' ]]; then
+  cat -- "$GH_RELEASES" 2>/dev/null || exit 1
+  exit 0
+fi
+exit 99
 STUB
 chmod +x "$fx/bin/gh"
 
@@ -346,16 +358,21 @@ ffail "commit after the rc tag with a stale candidate pin" "candidate pin is com
 # ...and repinned to the new RC it passes strictly.
 { pin stable "$S" v0.3.7; pin candidate "$(fsha v0.4.0-rc.4)" v0.4.0-rc.4; } | fcanary
 fpass "repinned to the new rc after the tag"
-# 27. Stable channel is unchanged: wrong stable pin fails, correct passes,
-#     and no bootstrap applies to the stable pin.
+# 27. Stable channel, strict path: whenever v<stable_version> exists at a
+#     commit other than the one under check, a wrong stable pin fails, the
+#     correct one passes, and a pin left on the previous stable release fails
+#     even though that release is published -- the stable bootstrap (29-38)
+#     never outlives the new stable tag.
 fmeta 0.3.7 0.3.7 stable
 { pin stable "$R3" v0.3.7; } | fcanary
 ffail "stable channel: stale stable pin" "stable pin is ${R3} but v0.3.7 is ${S}"
 { pin stable "$S" v0.3.7; } | fcanary
 fpass "stable channel: correct stable pin"
+printf 'v0.3.7 false false\n' >>"$fx/releases"
+( cd "$fx/work" && gitq tag -a v0.3.8 -m v0.3.8 HEAD^ && gitq push -q origin --tags )
 fmeta 0.3.8 0.3.8 stable
 { pin stable "$S" v0.3.7; } | fcanary
-ffail "stable channel: stable pin never bootstraps to an older release" "stable pin is commented 'v0.3.7' but release.yaml says v0.3.8"
+ffail "stable channel: previous stable pin once v0.3.8 is tagged at another commit" "stable pin is commented 'v0.3.7' but release.yaml says v0.3.8"
 
 # 28. Every workflow step that reaches the canary-pin check -- directly or via
 #     `make production-tech-check` -- must provide GH_TOKEN, or the RC
@@ -387,5 +404,157 @@ if [[ -n "$missing" ]]; then
   exit 1
 fi
 echo "[canary-pins-test] every workflow path into the canary-pin check provides GH_TOKEN"
+
+# 29-38. The stable bootstrap (DEF-1). The stable release PR sets
+#        stable_version = release_version = X.Y.Z with release_channel stable
+#        before vX.Y.Z exists, and the vX.Y.Z tag build checks the very commit
+#        that tag names; neither can pin the canary to vX.Y.Z. While vX.Y.Z
+#        positively does not exist, or resolves to the commit under check, the
+#        stable pin may still name the most recent published stable release
+#        before X.Y.Z (non-draft, non-prerelease GitHub release); every later
+#        commit is strict again. Same harness as 16-27. The fixture mirrors the
+#        real cycle: v0.3.6 and v0.3.7 published, v0.3.8 only a draft,
+#        v0.4.0-rc.3 a prerelease, and research-v1 a published release whose
+#        tag is not a version; the API lists them in no particular order.
+new_stable_fixture() {
+  rm -rf "$fx/work" "$fx/origin.git"
+  git init -q --bare "$fx/origin.git"
+  git init -q -b main "$fx/work"
+  mkdir -p "$fx/work/scripts" "$fx/work/.github/workflows"
+  cp "$ROOT_DIR/$script" "$fx/work/scripts/check-canary-pins.sh"
+  (
+    cd "$fx/work"
+    gitq remote add origin "$fx/origin.git"
+    for t in v0.3.6 v0.3.7 v0.3.8 v0.4.0-rc.3; do
+      gitq commit --allow-empty -m "$t"
+      gitq tag -a "$t" -m "$t"
+    done
+    gitq commit --allow-empty -m "release: v0.4.0 stable metadata"
+    gitq push -q origin main --tags
+  )
+  printf 'v0.3.6 false false\nv0.4.0-rc.3 false true\nresearch-v1 false false\nv0.3.8 true false\nv0.3.7 false false\n' >"$fx/releases"
+}
+new_stable_fixture
+T6="$(fsha v0.3.6)"; T7="$(fsha v0.3.7)"; T8="$(fsha v0.3.8)"; RC3="$(fsha v0.4.0-rc.3)"
+
+# 29. The stable PR: v0.4.0 positively absent, the pin stays on v0.3.7.
+fmeta 0.4.0 0.4.0 stable
+pin stable "$T7" v0.3.7 | fcanary
+fpass "stable PR before its tag: most recent published stable accepted"
+grep -Fq "[canary-pins] stable bootstrap: v0.4.0 is being prepared; canary still pins published stable v0.3.7 ${T7}" "$fx/out.log" ||
+  { echo "[canary-pins-test] stable bootstrap must be announced" >&2; cat "$fx/out.log" >&2; exit 1; }
+{ pin stable "$T7" v0.3.7; pin candidate "$RC3" v0.4.0-rc.3; } | fcanary
+fpass "stable PR before its tag, last cycle's candidate pin left in place"
+grep -Fq "candidate pin not enforced" "$fx/out.log" ||
+  { echo "[canary-pins-test] candidate pin must stay unenforced in the stable channel" >&2; exit 1; }
+
+# 30. Naming the new (or a later) release before its tag exists still fails.
+pin stable "$T7" v0.4.0 | fcanary
+ffail "stable PR pins v0.4.0 before the tag exists" "stable pin v0.4.0 is not earlier than v0.4.0"
+pin stable "$T7" v0.4.1 | fcanary
+ffail "stable PR pins a later release" "stable pin v0.4.1 is not earlier than v0.4.0"
+
+# 31. A published stable release that is not the most recent one before v0.4.0.
+pin stable "$T6" v0.3.6 | fcanary
+ffail "bootstrap pin on an older-than-latest stable" "stable pin v0.3.6 is not the most recent published stable release before v0.4.0 (v0.3.7 is)"
+
+# 32. Not a published stable release: an rc, a draft, a release marked
+#     prerelease, a tag with no release at all.
+pin stable "$RC3" v0.4.0-rc.3 | fcanary
+ffail "bootstrap pin on a release candidate" "stable pin 'v0.4.0-rc.3' must be an earlier vX.Y.Z stable release while v0.4.0 is being prepared"
+pin stable "$T7" "" | fcanary
+ffail "bootstrap pin with no version comment" "stable pin '<no comment>' must be an earlier vX.Y.Z stable release"
+pin stable "$T8" v0.3.8 | fcanary
+ffail "bootstrap pin on a draft release" "v0.3.8 is not a verified published stable release"
+pin stable "$T7" v0.3.7 | fcanary
+sed -i 's/^v0.3.7 false false$/v0.3.7 false true/' "$fx/releases"
+ffail "bootstrap pin on a release marked prerelease" "v0.3.7 is not a verified published stable release"
+sed -i '/^v0.3.7 /d' "$fx/releases"
+ffail "bootstrap pin on a tag with no GitHub release" "v0.3.7 is not a verified published stable release"
+printf 'v0.3.7 false false\n' >>"$fx/releases"
+fpass "bootstrap restored once v0.3.7 is published again"
+
+# 33. The pinned commit must be the one the named tag resolves to, and the
+#     named tag must resolve at all.
+pin stable "$T6" v0.3.7 | fcanary
+ffail "bootstrap pin whose tag resolves elsewhere" "stable pin is ${T6} but v0.3.7 is ${T7}"
+pin stable "$T7" v0.3.5 | fcanary
+ffail "bootstrap pin names a tag that does not exist" "could not resolve v0.3.5 (absent); failing closed"
+
+# 34. A mutable or short ref is not a pin, and a missing pin is not a skip.
+pin stable v0.3.7 v0.3.7 | fcanary
+ffail "bootstrap pin is a tag ref" "stable pin 'v0.3.7' is not a full 40-character commit SHA"
+pin stable "${T7:0:12}" v0.3.7 | fcanary
+ffail "bootstrap pin is a short SHA" "stable pin '${T7:0:12}' is not a full 40-character commit SHA"
+pin candidate "$RC3" v0.4.0-rc.3 | fcanary
+ffail "bootstrap without a stable pin" "declares no '# bpfcompat-pin: stable' pin"
+
+# 35. Every lookup failure fails closed: an unanswerable API, an API that
+#     fails part-way through pagination, a malformed API answer, and a remote
+#     that cannot say whether v0.4.0 exists.
+pin stable "$T7" v0.3.7 | fcanary
+mv "$fx/releases" "$fx/releases.off"
+ffail "GitHub API unanswerable" "could not list the GitHub releases to verify v0.3.7"
+mv "$fx/releases.off" "$fx/releases"
+mkdir -p "$fx/partialgh"
+cat >"$fx/partialgh/gh" <<'STUB'
+#!/usr/bin/env bash
+# A first page that looks fine, then a failed request for the next one.
+printf 'v0.3.7 false false\n'
+exit 1
+STUB
+chmod +x "$fx/partialgh/gh"
+ffail "GitHub API fails part-way through" "could not list the GitHub releases to verify v0.3.7" "$fx/partialgh"
+cp "$fx/releases" "$fx/releases.good"
+printf 'v0.3.9 false\n' >>"$fx/releases"
+ffail "malformed GitHub API answer" "could not list the GitHub releases to verify v0.3.7"
+cp "$fx/releases.good" "$fx/releases"
+git -C "$fx/work" remote set-url origin "$fx/no-such-origin.git"
+ffail "unreachable remote" "cannot determine whether v0.4.0 exists"
+git -C "$fx/work" remote remove origin
+ffail "no remote configured" "cannot determine whether v0.4.0 exists"
+git -C "$fx/work" remote add origin "$fx/origin.git"
+cat >"$fx/badgit/git" <<STUB
+#!/usr/bin/env bash
+if [[ "\$1" == ls-remote ]]; then printf 'not-a-sha\trefs/tags/v0.4.0\n'; exit 0; fi
+exec "$real_git" "\$@"
+STUB
+chmod +x "$fx/badgit/git"
+ffail "malformed ls-remote answer" "cannot determine whether v0.4.0 exists" "$fx/badgit"
+fpass "stable PR passes again with every lookup answering"
+
+# 36. The v0.4.0 tag build: v0.4.0 exists and IS the commit under check. The
+#     build stages v0.4.0 as a draft, and a re-check after promotion sees it
+#     published; neither changes which release precedes v0.4.0.
+( cd "$fx/work" && gitq tag -a v0.4.0 -m v0.4.0 && gitq push -q origin main --tags )
+fpass "tag build of the new stable itself: previous published stable accepted"
+printf 'v0.4.0 true false\n' >>"$fx/releases"
+fpass "tag build with the v0.4.0 draft staged"
+sed -i 's/^v0.4.0 true false$/v0.4.0 false false/' "$fx/releases"
+fpass "tag build re-checked after v0.4.0 is published"
+pin stable "$(git -C "$fx/work" rev-parse HEAD^)" v0.4.0 | fcanary
+ffail "tag build pins its parent commit as v0.4.0" "stable pin v0.4.0 is not earlier than v0.4.0"
+pin stable "$T6" v0.3.6 | fcanary
+ffail "tag build pins an older-than-latest stable" "stable pin v0.3.6 is not the most recent published stable release before v0.4.0 (v0.3.7 is)"
+
+# 37. Any later commit is strict again: the previous stable pin fails, and the
+#     repin to the new stable passes on the strict path, not the bootstrap.
+( cd "$fx/work" && gitq commit --allow-empty -m "next change on main" )
+pin stable "$T7" v0.3.7 | fcanary
+ffail "commit after the stable tag with the previous stable pin" "stable pin is commented 'v0.3.7' but release.yaml says v0.4.0"
+pin stable "$(fsha v0.4.0)" v0.4.0 | fcanary
+fpass "repinned to the new stable after the tag"
+if ! grep -Fq "[canary-pins] stable v0.4.0 $(fsha v0.4.0)" "$fx/out.log" || grep -q "stable bootstrap" "$fx/out.log"; then
+  echo "[canary-pins-test] the repinned stable must pass strictly" >&2; cat "$fx/out.log" >&2; exit 1
+fi
+
+# 38. release_channel: prerelease is untouched: its stable pin is always
+#     strict, even while v<stable_version> does not exist and the pin names
+#     the most recent published stable before it.
+fmeta 0.4.1 0.5.0-rc.1 prerelease
+pin stable "$(fsha v0.4.0)" v0.4.0 | fcanary
+ffail "prerelease channel: no stable bootstrap" "stable pin is commented 'v0.4.0' but release.yaml says v0.4.1"
+fmeta 0.4.1 0.4.1 stable
+fpass "the same pin is the stable bootstrap once the channel is stable"
 
 echo "[canary-pins-test] PASS"
