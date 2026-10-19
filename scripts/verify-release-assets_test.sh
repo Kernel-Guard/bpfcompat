@@ -240,5 +240,11 @@ expect_usage_error "no release ref" "$ref_required" -u BPFCOMPAT_EXPECTED_SOURCE
 expect_usage_error "branch ref" "$ref_required" BPFCOMPAT_EXPECTED_SOURCE_REF=refs/heads/main
 expect_usage_error "bare tag name" "$ref_required" BPFCOMPAT_EXPECTED_SOURCE_REF=v0.4.0-rc.5
 expect_usage_error "case-variant tag ref" "$ref_required" BPFCOMPAT_EXPECTED_SOURCE_REF=refs/tags/V0.4.0-rc.5
+# The whole ref must be one tag: not a tag-like path under another ref, and
+# nothing after the tag name.
+expect_usage_error "tag ref under another ref" "$ref_required" \
+  BPFCOMPAT_EXPECTED_SOURCE_REF=refs/heads/refs/tags/v0.4.0-rc.5
+expect_usage_error "tag ref with a trailing path" "$ref_required" \
+  BPFCOMPAT_EXPECTED_SOURCE_REF=refs/tags/v0.4.0-rc.5/x
 
 echo "[release-assets-test] PASS"

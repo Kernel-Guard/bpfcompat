@@ -13,8 +13,10 @@
 #      re-verification and image steps run against stub cosign/gh/docker. The
 #      draft's signature files and SBOM must be the candidate run's own
 #      copies; every cosign identity is the exact
-#      release-artifacts.yml@refs/tags/<tag> (a signature made by another v*
-#      tag's run is refused); attestation checks are bound to the tag ref and
+#      release-artifacts.yml@refs/tags/<tag> of this repository (a signature
+#      made by another v* tag's run, by a tag whose name extends or resembles
+#      the release tag, by the tag in another repository or by another
+#      workflow is refused); attestation checks are bound to the tag ref and
 #      the expected commit.
 #   3. Every workflow call of scripts/verify-release-assets.sh supplies the
 #      source commit and tag ref that script requires.
@@ -169,6 +171,21 @@ other_commit="$(printf 'e%.0s' {1..40})"
 digest="sha256:$(printf 'd%.0s' {1..64})"
 image=ghcr.io/kernel-guard/bpfcompat
 san="https://github.com/${repo}/.github/workflows/release-artifacts.yml@refs/tags/"
+# Signer identities that are close to, but not exactly, this tag's release
+# run. cosign matches an identity regexp unanchored (the stub's grep -E does
+# too), so only the exact identity refuses all of them: a regexp of the
+# identity accepts the first even when start-anchored, and the second even
+# when anchored at both ends, because its dots are unescaped.
+declare -A ROGUE_SIGNER=(
+  # A newly created tag whose name starts with the release tag (v0.4.0-rc.50-rogue).
+  [a-tag-extending-the-release-tag]="${san}${tag}0-rogue"
+  # A tag that differs from the release tag only where it has a dot (v0.4.0-rc-5).
+  [a-tag-differing-at-a-dot]="${san}${tag%.*}-${tag##*.}"
+  # The release tag's name in another repository's release workflow.
+  [the-tag-in-another-repository]="https://github.com/rogue/bpfcompat/.github/workflows/release-artifacts.yml@refs/tags/${tag}"
+  # Another workflow of this repository, run on the release tag.
+  [another-workflow-on-the-tag]="https://github.com/${repo}/.github/workflows/ci.yml@refs/tags/${tag}"
+)
 work="$tmp/promote"
 mkdir -p "$work/stubs"
 
@@ -387,6 +404,26 @@ tamper() { # $1 = case, $2 = case directory
       mv "$2/attest-db.new" "$2/attest-db" ;;
     tampered-sbom-bytes-control)
       sbom "$draft/bpfcompat.sbom.cdx.json" tampered ;;
+    run-checksums-signed-by-* | run-sbom-signed-by-* | image-signed-only-by-*)
+      # A ROGUE_SIGNER identity. For the blobs the run artifact and the draft
+      # agree, so the exact identity is the only barrier.
+      local who="${1#*-by-}" id
+      id="${ROGUE_SIGNER[$who]-}"
+      [[ -n "$id" ]] || { echo "unknown signer in case $1" >&2; exit 1; }
+      case "$1" in
+        run-checksums-*)
+          for f in "$run" "$draft"; do
+            mkcert "$f/SHA256SUMS.crt" "$id" rogue-sums
+            mksig "$f/SHA256SUMS.sig" "$f/SHA256SUMS" rogue-sums
+          done ;;
+        run-sbom-*)
+          for f in "$run" "$draft"; do
+            mkcert "$f/bpfcompat.sbom.cdx.crt" "$id" rogue-sbom
+            mksig "$f/bpfcompat.sbom.cdx.sig" "$f/bpfcompat.sbom.cdx.json" rogue-sbom
+          done ;;
+        image-*)
+          printf '%s@%s %s rogue-image\n' "$image" "$digest" "$id" >"$2/image-sigs" ;;
+      esac ;;
     *) echo "unknown case $1" >&2; exit 1 ;;
   esac
 }
@@ -444,7 +481,26 @@ run-sbom-signed-by-another-tag refuse ID
 evidence-attested-by-another-tag-at-the-commit refuse ATT
 evidence-attested-for-the-tag-at-another-commit refuse ATT
 tampered-sbom-bytes-control refuse CMP_OR_SIG
+run-checksums-signed-by-a-tag-extending-the-release-tag refuse ID
+run-sbom-signed-by-a-tag-extending-the-release-tag refuse ID
+image-signed-only-by-a-tag-extending-the-release-tag refuse ID
+run-checksums-signed-by-a-tag-differing-at-a-dot refuse ID
+run-sbom-signed-by-a-tag-differing-at-a-dot refuse ID
+image-signed-only-by-a-tag-differing-at-a-dot refuse ID
+run-checksums-signed-by-the-tag-in-another-repository refuse ID
+run-sbom-signed-by-the-tag-in-another-repository refuse ID
+image-signed-only-by-the-tag-in-another-repository refuse ID
+run-checksums-signed-by-another-workflow-on-the-tag refuse ID
+run-sbom-signed-by-another-workflow-on-the-tag refuse ID
+image-signed-only-by-another-workflow-on-the-tag refuse ID
 CASES
+
+# Every ROGUE_SIGNER identity is used at all three cosign sites above.
+for who in "${!ROGUE_SIGNER[@]}"; do
+  for site in run-checksums-signed-by run-sbom-signed-by image-signed-only-by; do
+    [[ -d "$work/${site}-${who}" ]] || bad "no promotion case ${site}-${who}"
+  done
+done
 
 want="SHA=${commit} REF=refs/tags/${tag}"
 if [[ "$(cat "$work/untouched-draft/vra.log" 2>/dev/null)" == "$want" ]]; then
