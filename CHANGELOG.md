@@ -22,6 +22,14 @@ qualification evidence does not carry over to this candidate.
   target directory before anything is installed. (The installer is served from
   `main`, so this already applies to `curl … /main/scripts/install.sh | sh`
   users since #236 merged, including v0.3.7 installs.)
+- `install.sh` without cosign (the gh path) also checks the unsigned
+  `SHA256SUMS` against the subjects of the CLI's verified provenance. It
+  refuses, as a failed verification, when the two disagree on whether the
+  release has a validator or a license bundle, or when a file would be
+  installed under a name that provenance does not give its bytes. Before, a
+  deleted `SHA256SUMS` line, or a genuine asset of the same release served
+  under another asset's name, installed without error. The cosign path is
+  unchanged.
 - The GitHub Action no longer pastes inputs into its `run:` scripts. Every
   input reaches the scripts through `env:` and is read as quoted data, so a
   value containing quotes, `$(...)`, backticks or newlines can no longer run as
@@ -31,6 +39,35 @@ qualification evidence does not carry over to this candidate.
   - Values containing `$VAR`, backticks or `\` used to be expanded by bash as
     a side effect; they are now passed literally. `command` is unchanged: it
     was already passed through `env:` and is still run by the guest shell.
+- The GitHub Action verifies prebuilt binaries against the attestations of
+  exactly the pinned release: its tag ref and the commit it was built from
+  (`--source-ref`, `--source-digest`). Assets attested by another release's
+  run are a hard error. A tag pin is resolved to its commit with
+  `git ls-remote`, bounded to 60 seconds; if that fails or times out, or gh is
+  older than 2.68.0, the Action builds from its pinned source with a warning
+  instead of using the prebuilt binaries. The v0.4.0-rc.2 to rc.4 Actions
+  accept assets attested by another tag's release run.
+- `scripts/verify-release-assets.sh` requires `BPFCOMPAT_EXPECTED_SOURCE_SHA`
+  (a full commit SHA) and `BPFCOMPAT_EXPECTED_SOURCE_REF` (`refs/tags/v…`),
+  refuses to run without them (exit 2), and binds every
+  `gh attestation verify` to them. The release, promotion and maintenance
+  workflows pass the release's own commit and tag.
+- Promotion requires the draft release's `SHA256SUMS.sig`, `SHA256SUMS.crt`
+  and SBOM files (`bpfcompat.sbom.cdx.json` and its `.sig` and `.crt`) to be
+  the candidate run's own copies, and binds the attestations of the draft
+  assets and the candidate evidence to the tag and commit. Every cosign
+  signature it checks (`SHA256SUMS`, the SBOM and the image) must carry the
+  exact `release-artifacts.yml@refs/tags/<tag>` identity, as on the v0.3.8
+  line, so a signature made by another tag's run is refused.
+- The stable release gate (the `vX.Y.Z` tag build) requires the committed
+  readiness record to show a completed rollback drill of the release's own
+  candidate (drill alias and image digest), as it already required a
+  completed incident drill. It also requires the canary run lookups an
+  attested readiness report records (each canary's run attempt and attempt
+  start, and the release's publication time), so a record written by an
+  earlier `production-readiness-report.sh` is refused.
+  `scripts/release-workflow-gates_test.sh` runs the stable gate and the
+  promotion steps above against stub tools in CI.
 
 ### Fixed
 - A release-pinned GitHub Action now runs the validator it downloaded and
@@ -65,6 +102,26 @@ qualification evidence does not carry over to this candidate.
     the Action treats an `artifact` input that looks remote (including
     dot-directories such as `.output/`) as remote even when a workspace file of
     that name exists; prefix workspace files with `./`.
+- `install.sh` without cosign names why gh cannot check a release, instead of
+  saying gh is missing or that verification FAILED, and still refuses: gh
+  lacks the attestation command or flags (gh 2.68.0 or later is needed) or
+  cannot run at all; gh is not logged in or its token is rejected; or the
+  GitHub API cannot be reached (no response, a 5xx, a 429 or a rate-limited
+  403). One read-only API request made before any verification tells these
+  apart from a refusal; a 5xx or no response there is tried up to three
+  times, 3 s apart. A refused verification still reads "GitHub attestation
+  verification FAILED".
+- `install.sh` checks the whole release tag (`BPFCOMPAT_VERSION` or the
+  resolved latest tag): a value that holds a valid tag on one of several lines
+  is refused before any download, not only by curl.
+- The manual verification commands in `README.md` and
+  `docs/verifying-releases.md` are bound to the exact release tag, as
+  `install.sh` is: `cosign verify-blob` uses the exact
+  `release-artifacts.yml@refs/tags/$VER` identity, and `gh attestation verify`
+  passes `--source-ref "refs/tags/$VER"` (gh 2.68.0 or later). The README's
+  image check uses the exact signer identity of the pinned image. Before, they
+  accepted another tag's signature or attestation, and the image check any
+  signer whose identity contained the repository name.
 
 ### Added
 - A read-only RC preflight inventories observed prerequisites without counting
@@ -108,12 +165,45 @@ qualification evidence does not carry over to this candidate.
   must contain the exact candidate-evidence hash; the Falco run must start after
   the candidate was built (whether it ran the candidate's validator is recorded,
   not required); the promotion incident note must name `promote-release` and
-  link exactly one workflow run (that it is the rejected `promote-release` run
-  is asserted by the operator, not checked), and an earlier candidate's note is
-  accepted with that fact recorded.
+  link exactly one workflow run, and an earlier candidate's note is accepted
+  with that fact recorded.
+  - The Falco run's start is the earliest of the report's `run.started_at`,
+    which the runner writes after the targets ran, and every target's
+    `started_at`; every required or passing target must record one.
+  - With attestation verification on, the drill and incident runs are read
+    from GitHub. The drill must be a successful, dispatched
+    `rollback-drill.yml` run of this repository on `main` that started after
+    the candidate was built, with the note's completion time inside it. The
+    incident must link a completed, dispatched `promote-release.yml` run of
+    this repository that did not succeed; which rejection qualifies is the
+    operator's call.
+  - With attestation verification on, every release-candidate canary run is
+    looked up. The run must be a successful `release-candidate-canary.yml` run
+    of this repository from the expected event (the timed ones on `main`). The
+    evidence must come from a successful attempt in which the evidence job
+    itself ran. That attempt must start after the release was published (read
+    from the release, which must be published and not predate the candidate
+    evidence) and, for T+24h and T+72h, before the plan job's window closes:
+    a partial re-run of a failed canary started after its window closed is
+    refused, and one started inside it is accepted. GitHub reports a run's
+    conclusion from its latest attempt, so a failed re-run of a successful
+    canary voids it. The attempt, its start and the run's branch are recorded,
+    with the release's publication time.
 - CI: top-level workflow tokens are read-only; the hosted compatibility gate is
   required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
   coverage.
+- The stable release can pass its own consistency checks. While
+  `release.yaml` is on the `stable` channel and `vX.Y.Z` positively does not
+  exist (the stable pull request) or resolves to the commit under check (its
+  tag build), the consumer canary's `# bpfcompat-pin: stable` step may still
+  pin the most recent published stable release before `X.Y.Z`, and the
+  SHA-pinned integration templates may stay on that release; tag-form pins in
+  the docs may name `vX.Y.Z` while its tag does not exist. Every later commit
+  is strict again, so both are repinned once the tag exists, and a failed
+  lookup fails the check. `check-release-consistency_test.sh` reads the
+  channel and stable version from `release.yaml`. The runbook lists the
+  stable-only tag gates and the order: operator record, readiness report,
+  stable pull request, tag, promotion.
 - **Breaking** (CLI, API and `pkg/bpfcompat`; the Action already required an
   explicit host): implicit Docker Hub short refs in tag form, such as
   `org/name:tag` or `name:tag` (e.g. `alpine:3`), are no longer pulled. Spell
@@ -148,6 +238,19 @@ qualification evidence does not carry over to this candidate.
   release publishes one (default `<BIN_DIR>/../share/doc/bpfcompat`; set
   `BPFCOMPAT_DOC_DIR` to change it). If that directory is not writable, the
   installer uses sudo or stops before installing anything.
+- GitHub Action pinned to a release with `prebuilt: auto` (the default): the
+  prebuilt binaries now need gh 2.68.0 or later on the runner, and a tag pin
+  also needs `git` and `timeout` to resolve the tag within 60 seconds.
+  Otherwise the run builds from the pinned source with a warning, which needs
+  the source-build dependencies. With the v0.4.0-rc.4 Action, self-hosted
+  runners on gh 2.51 to 2.67 used the prebuilt binaries, and on gh 2.47 to
+  2.50 the job failed. A SHA pin needs neither `git` nor `timeout`.
+- Callers of `scripts/verify-release-assets.sh` must set
+  `BPFCOMPAT_EXPECTED_SOURCE_SHA` and `BPFCOMPAT_EXPECTED_SOURCE_REF`; without
+  them it exits 2.
+- A production readiness record generated with an earlier
+  `production-readiness-report.sh` must be regenerated: the stable tag build
+  refuses it.
 
 ### Known limitations
 - When this section was drafted, every stable-blocking decision in
