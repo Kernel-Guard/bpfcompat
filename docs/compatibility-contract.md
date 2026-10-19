@@ -46,16 +46,18 @@ A static libbpf validator loads the object and optionally attaches it.
 Provenance: `validator.basename`, `validator.sha256`, `validator.size_bytes` —
 the same staged bytes are reused for every target in the run.
 
-When the GitHub Action is pinned to a release (a tag, or a commit that maps to
-one) and the prebuilt assets verify, the run uses that attested validator,
-selected by path and pinned digest: a validator installed elsewhere on the
-runner is not used, and other bytes fail closed. A workflow that sets
-`BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256` itself keeps its own
-settings, with a warning, and every fallback to a source build while pinned to
-a release is a `::warning::` annotation. Neither of those runs is pinned to the
-qualified release validator (on a source-build fallback a validator installed
-under `/usr/local/libexec` or `/usr/libexec` is still searched first); compare
-`validator.sha256` with the release `SHA256SUMS` when it matters.
+From v0.4.0-rc.5, when the GitHub Action is pinned to a release (a tag, or a
+commit that maps to one) and the prebuilt assets verify, the run uses that
+attested validator, selected by path and pinned digest: a validator installed
+elsewhere on the runner is not used, and other bytes fail closed. A workflow
+that sets `BPFCOMPAT_VALIDATOR_BIN` or `BPFCOMPAT_VALIDATOR_SHA256` itself
+keeps its own settings, with a warning, and every fallback to a source build
+while pinned to a release is a `::warning::` annotation. Neither of those runs
+is pinned to the qualified release validator (on a source-build fallback a
+validator installed under `/usr/local/libexec` or `/usr/libexec` is still
+searched first); compare `validator.sha256` with the release `SHA256SUMS` when
+it matters. With v0.3.7 and v0.4.0-rc.4 that search order applies to every run,
+so a validator installed in those directories is used before the verified one.
 
 ### The project's own loader (command mode)
 
@@ -77,9 +79,11 @@ Provenance:
 | `targets[].functional.tests[0].{stdout_tail,stderr_tail}` | bounded diagnostic output |
 
 A command-mode target is tied to a kernel by the guest kernel release recorded
-before the command starts. If that release cannot be read (or is empty), the
-command is not started and the target is `INFRA_ERROR`, never `COMPATIBLE` or
-`INCOMPATIBLE`; a required target then fails the run closed.
+before the command starts. From v0.4.0-rc.5, if that release cannot be read (or
+is empty), the command is not started and the target is `INFRA_ERROR`, never
+`COMPATIBLE` or `INCOMPATIBLE`; a required target then fails the run closed.
+Earlier releases record the release on a best-effort basis and run the command
+even when it cannot be read.
 
 Only the invocation bpfcompat was given is recorded. Guest environment contents
 are not captured, and output is truncated to tails. Do not put secrets in the
@@ -271,7 +275,9 @@ Known limitations of the supported path:
   `localhost/prog.o` are pulled. Spell local files with `./` or an absolute
   path. Docker Hub images need an explicit `docker.io/` host for tag
   references; a short digest reference (`name@sha256:…`) is still pulled from
-  Docker Hub.
+  Docker Hub. These rules apply from v0.4.0-rc.5; earlier releases treat any
+  missing path that parses as an image reference as one and try to pull it
+  (for example `build/prog.bpf.o` from Docker Hub).
 - **Action `artifact` input.** The Action decides "remote" before looking at
   the workspace. An input that contains `://` or `@sha256:`, that is
   `localhost` or starts with `localhost:` or `localhost/`, or whose first
@@ -279,7 +285,8 @@ Known limitations of the supported path:
   unchanged even when a file of that name exists in the workspace. The CLI
   runs from the Action's own checkout, so such a path is not looked up in the
   workspace. Dot-directories are caught by this rule too: `.output/minimal.bpf.o`
-  (the libbpf-bootstrap layout) fails with "no such file", and
+  (the libbpf-bootstrap layout) fails with "no such file" (from v0.4.0-rc.5;
+  earlier releases read it as an image on registry host `.output`), and
   `.output/minimal.o` is read as an image on registry host `.output`. Prefix
   workspace files with `./` (for example `./.output/minimal.bpf.o` or
   `./out.v2/prog.o`).
