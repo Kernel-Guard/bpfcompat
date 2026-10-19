@@ -35,6 +35,23 @@ ALT_LIBEXEC_DIR="/usr/libexec/bpfcompat"
 err() { printf 'bpfcompat-install: %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# first_line FILE: its first non-blank line, without control characters, to
+# quote gh's own words in a refusal (never more, never terminal escapes).
+first_line() { sed -n '/[^[:space:]]/{p;q;}' "$1" | tr -d '[:cntrl:]'; }
+# gh_no_auth REASON FILE: gh cannot authenticate to GitHub; quote FILE's
+# first line (gh's own words) and refuse.
+gh_no_auth() {
+  gh_err="$(first_line "$2")" || :
+  die "GitHub authentication needed for attestation verification: $1${gh_err:+ ($gh_err)}; run 'gh auth login' or set a valid GH_TOKEN, or install cosign - refusing checksum-only installation"
+}
+# gh_refused ASSET STATUS: a `gh attestation verify` call failed. gh exits
+# 4 only when it has no credentials at all (its root check, which runs
+# before the asset is read), so that is no refusal; any other failure is
+# reported as a failed verification, whatever gh printed.
+gh_refused() {
+  [ "$2" != 4 ] || gh_no_auth "gh is not logged in" .gh-verify.out
+  die "GitHub attestation verification FAILED for $1"
+}
 
 # needs_root DIR: true when DIR (or, if it does not exist yet, its nearest
 # existing ancestor, which `install -d` would create it under) is not writable.
@@ -55,9 +72,10 @@ DOC_DIR="${BPFCOMPAT_DOC_DIR:-$(dirname "$BIN_DIR")/share/doc/bpfcompat}"
 LICENSE_ASSET="bpfcompat-third-party-licenses.tar.gz"
 
 have curl || die "curl is required"
-if have sha256sum; then SHACHK="sha256sum -c"; elif have shasum; then SHACHK="shasum -a 256 -c"; else
+if have sha256sum; then SHA256="sha256sum"; elif have shasum; then SHA256="shasum -a 256"; else
   die "need sha256sum or shasum to verify downloads"
 fi
+SHACHK="$SHA256 -c"
 
 os="$(uname -s)"; arch="$(uname -m)"
 [ "$os" = "Linux" ] || die "unsupported OS '$os' (only Linux is published today)"
@@ -158,7 +176,7 @@ elif have gh; then
     # A gh that cannot run at all (say, an unreadable config) fails every
     # command; say so with gh's own error rather than blame its version.
     if ! gh --help >/dev/null 2>&1; then
-      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p')"
+      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p' | tr -d '[:cntrl:]')" || :
       die "installed gh could not run 'gh --help'${gh_err:+ ($gh_err)}; fix gh or install cosign - refusing checksum-only installation"
     fi
     gh_lacks="the 'gh attestation' command"
@@ -171,25 +189,60 @@ elif have gh; then
     [ -z "$gh_lacks" ] || gh_lacks="$gh_lacks in 'gh attestation verify'"
   fi
   if [ -n "$gh_lacks" ]; then
-    gh_ver="$(gh --version 2>/dev/null | sed -n '1s/^gh version \([0-9][0-9.]*\).*/\1/p')"
+    gh_ver="$(gh --version 2>/dev/null | sed -n '1s/^gh version \([0-9][0-9.]*\).*/\1/p')" || :
     die "installed gh${gh_ver:+ $gh_ver} lacks $gh_lacks, needed for tag-bound attestation verification; upgrade to gh >= 2.68.0 or install cosign - refusing checksum-only installation"
   fi
   err "cosign not found; verifying GitHub build attestations"
+  # A capable gh can still be unable to check anything: not logged in, its
+  # token rejected, or the GitHub API out of reach. Tell those apart from a
+  # refused verification without trusting gh's wording, which changes
+  # between releases and is all gh prints when stdout is not a terminal:
+  # before the first verify call, make one read-only request to the
+  # attestation API that call uses (same gh, host, token and proxy), and
+  # refuse here only on positive evidence - gh's documented auth exit code
+  # (4), an HTTP 401, no HTTP response at all, a 5xx, a 429 or a
+  # rate-limited 403. Any other answer (200, 404 = no attestation for this
+  # digest, ...) leaves the decision to the verify calls, whose failures are
+  # always reported as a failed verification. Probing first, not after a
+  # failure, means a refusal can never be relabelled as an auth or network
+  # problem, however gh words it or whatever the API does next.
+  gh_digest="$($SHA256 <"$CLI_ASSET" | sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p')" || :
+  gh_rc=0
+  gh api --method GET --include "repos/$REPO/attestations/sha256:$gh_digest?per_page=1" \
+    >.gh-api.out 2>.gh-api.err || gh_rc=$?
+  gh_status="$(tr -d '\r' <.gh-api.out | sed -n '1s/^HTTP\/[0-9.]* \([0-9][0-9][0-9]\).*/\1/p')" || :
+  gh_down=""
+  case "$gh_rc:$gh_status" in
+    4:) gh_no_auth "gh is not logged in" .gh-api.err ;;
+    *:401) gh_no_auth "GitHub rejected gh's credentials (HTTP 401)" .gh-api.err ;;
+    *:5[0-9][0-9]) gh_down="HTTP $gh_status" ;;
+    *:429) gh_down="HTTP 429, rate limited" ;;
+    *:403)
+      # A 403 is an outage only with GitHub's own rate-limit headers.
+      gh_rl="$(tr -d '\r\033' <.gh-api.out | sed -n '2,/^$/{s/\[[0-9;]*m//g;p;}' |
+        grep -ciE '^(x-ratelimit-remaining: *0|retry-after: *[0-9]+)$')" || :
+      [ "${gh_rl:-0}" = 0 ] || gh_down="HTTP 403, rate limited" ;;
+    1:) [ -s .gh-api.out ] || gh_down="no HTTP response" ;;
+  esac
+  if [ -n "$gh_down" ]; then
+    gh_err="$(first_line .gh-api.err)" || :
+    die "GitHub API unavailable for attestation verification: $gh_down${gh_err:+ ($gh_err)}; check the network or proxy and https://www.githubstatus.com, then retry, or install cosign - refusing checksum-only installation"
+  fi
   GH_REPO="$REPO" gh attestation verify "$CLI_ASSET" --repo "$REPO" \
     --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-    --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-    die "GitHub attestation verification FAILED for $CLI_ASSET"
+    --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+    gh_refused "$CLI_ASSET" "$?"
   if [ "$install_validator" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$VALIDATOR_ASSET" --repo "$REPO" \
       --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-      die "GitHub attestation verification FAILED for $VALIDATOR_ASSET"
+      --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+      gh_refused "$VALIDATOR_ASSET" "$?"
   fi
   if [ "$install_licenses" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$LICENSE_ASSET" --repo "$REPO" \
       --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-      die "GitHub attestation verification FAILED for $LICENSE_ASSET"
+      --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+      gh_refused "$LICENSE_ASSET" "$?"
   fi
   err "GitHub build attestations verified"
 else

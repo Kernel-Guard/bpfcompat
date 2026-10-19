@@ -16,7 +16,11 @@
 #     was verified, bound to the release workflow and tag. With FAKE_GH_LACKS
 #     it plays an older gh that has no `attestation` command or no
 #     --signer-workflow / --source-ref flag, failing like cobra does; with
-#     FAKE_GH_BROKEN=1, a gh that cannot run at all (say, a bad config);
+#     FAKE_GH_BROKEN=1, a gh that cannot run at all (say, a bad config). It
+#     also answers the installer's read-only API probe (`gh api --include`)
+#     from the attestation DB and records it, and can play a capable gh that
+#     is not logged in, holds a rejected token, cannot reach the API or gets
+#     a 5xx / 429 / rate-limited 403, modelled on real gh 2.68.0 / 2.102.0;
 #   * sudo pretends to be root by unlocking the test's read-only tree.
 #
 # Cases: latest -> stable, arch mapping (incl. extra SHA256SUMS lines, the
@@ -25,10 +29,15 @@
 # `curl | sh` streams, custom install dirs, tag validation (the whole value,
 # embedded newlines included), the third-party license bundle (installed when
 # SHA256SUMS lists it, verified like the binaries, refused when
-# corrupt/missing/unattested, absent in old releases), and a gh too old for
+# corrupt/missing/unattested, absent in old releases), a gh too old for
 # the tag-bound check (refused naming what it lacks, never reported as a
 # failed verification or a missing gh; a gh that cannot run is reported as
-# such; cosign still preferred when present).
+# such; cosign still preferred when present), and a capable gh that cannot
+# complete the check (not logged in / credentials rejected / GitHub API
+# unavailable, each refused under its own name, never as a failed
+# verification, while every refusal - including one whose stderr claims a
+# network or auth problem - still reads "verification FAILED"), with gh's
+# words stripped of control bytes and imported pipefail tolerated.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,6 +62,8 @@ ATTEST_DB="$tmp/attestations"
 CURL_LOG="$tmp/curl.log"
 GH_LOG="$tmp/gh.log"
 GH_VERIFY_LOG="$tmp/gh-verify.log"
+GH_API_LOG="$tmp/gh-api.log"
+ITMP="$tmp/itmp"
 mkdir -p "$WWW" "$SHIM" "$TOOLS" "$tmp/home"
 : >"$ATTEST_DB"
 
@@ -144,15 +155,33 @@ exit 0
 EOF
 cat >"$SHIM/gh" <<EOF
 #!/usr/bin/env bash
-# Fake gh attestation verify backed by the attestation DB the fake release wrote.
+# Fake gh attestation verify backed by the attestation DB the fake release
+# wrote, and the installer's read-only API probe (gh api --method GET
+# --include <path>), answered from the same DB: 200 when the digest is
+# attested, 404 when it is not, as the real API does.
 # FAKE_GH_LACKS plays an older gh (feature history from gh's source):
 # "attestation" = gh < 2.47.0 (hidden in 2.47-2.48, public from 2.49.0),
 # "--signer-workflow" = gh < 2.51.0, "--source-ref" = gh < 2.68.0.
-# FAKE_GH_VERSION is what --version reports. FAKE_GH_BROKEN=1 fails every
-# command the way gh does with an unreadable config.
+# FAKE_GH_VERSION is what --version reports ("fail": --version fails).
+# FAKE_GH_BROKEN=1 fails every command the way gh does with an unreadable
+# config. A capable gh that cannot finish the check, modelled on real gh
+# 2.68.0/2.102.0 runs (exit codes, --include output; help and --version
+# are exempt, like gh's root auth check):
+#   FAKE_GH_AUTH=none   no credentials: gh's login hint on stderr, exit 4
+#   FAKE_GH_AUTH=bad    token rejected: HTTP 401
+#   FAKE_GH_NET=down    no HTTP response (proxy/DNS/connect failure), exit 1
+#   FAKE_GH_NET=503|429|403|403rl|403ra  that HTTP status; 403rl carries
+#                       X-Ratelimit-Remaining: 0, 403ra a Retry-After header
+#   FAKE_GH_COLOR=1     header names coloured, as with CLICOLOR_FORCE
+#   FAKE_GH_ERR_CTRL=1  terminal control bytes in gh's error lines
+#   FAKE_GH_VERIFY_RC=4 verify exits 4 even though the API probe answered
+#   FAKE_GH_VERIFY_ERR  text a failing verify prints instead of its error
+#   FAKE_GH_ATTEST_SIGNER  workflow the stored attestations were signed by
 echo "\$*" >>"$GH_LOG"
+ctl="" cr=""
+if [[ -n "\${FAKE_GH_ERR_CTRL:-}" ]]; then ctl=\$'\e]0;PWNED\a\e[31m' cr=\$'\r'; fi
 if [[ -n "\${FAKE_GH_BROKEN:-}" ]]; then
-  echo 'failed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml' >&2
+  echo "\${ctl}failed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml\$cr" >&2
   exit 1
 fi
 lacks=" \${FAKE_GH_LACKS:-} "
@@ -161,8 +190,65 @@ if [[ "\${1:-}" == "--help" ]]; then
   exit 0
 fi
 if [[ "\${1:-}" == "--version" ]]; then
+  [[ "\${FAKE_GH_VERSION:-}" != fail ]] || exit 1
   printf 'gh version %s (2026-01-01)\nhttps://github.com/cli/cli/releases/latest\n' "\${FAKE_GH_VERSION:-2.102.0}"
   exit 0
+fi
+login_hint() {
+  printf 'To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\n' >&2
+  exit 4
+}
+# hdrs <status line> [header...]: what gh api --include prints before the body.
+hdrs() {
+  local h c="" r=""
+  if [[ -n "\${FAKE_GH_COLOR:-}" ]]; then c=\$'\e[1;34m' r=\$'\e[m'; fi
+  printf '%s\n' "\$1"; shift
+  for h in "Content-Type: application/json; charset=utf-8" "\$@"; do
+    printf '%s%s%s:%s\r\n' "\$c" "\${h%%:*}" "\$r" "\${h#*:}"
+  done
+  printf '\r\n'
+}
+if [[ "\${1:-}" == api ]]; then
+  [[ \$# -eq 5 && "\$2 \$3 \$4" == "--method GET --include" ]] || { echo "gh shim: unexpected api call: \$*" >&2; exit 2; }
+  path="\$5" st=""
+  if [[ "\${FAKE_GH_AUTH:-}" == none ]]; then echo "\$path noauth" >>"$GH_API_LOG"; login_hint; fi
+  if [[ "\${FAKE_GH_AUTH:-}" == bad ]]; then st=401
+  else
+    case "\${FAKE_GH_NET:-}" in
+      down)
+        echo "\$path -" >>"$GH_API_LOG"
+        echo "\${ctl}Get \"https://api.github.com/\$path\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused\$cr" >&2
+        exit 1;;
+      503|429|403|403rl|403ra) st="\$FAKE_GH_NET";;
+      "")
+        d="\${path#repos/$REPO/attestations/sha256:}"; d="\${d%%\?*}"
+        if [[ "\$path" == "repos/$REPO/attestations/sha256:\$d?per_page=1" && "\$d" =~ ^[0-9a-f]{64}\$ ]] &&
+          grep -q "^\$d " "$ATTEST_DB"; then st=200; else st=404; fi;;
+      *) echo "gh shim: unknown FAKE_GH_NET" >&2; exit 2;;
+    esac
+  fi
+  echo "\$path \$st" >>"$GH_API_LOG"
+  case "\$st" in
+    200) hdrs "HTTP/2.0 200 OK" "X-Ratelimit-Remaining: 4999"; echo '{"attestations":[{"bundle":{}}]}'; exit 0;;
+    404) hdrs "HTTP/2.0 404 Not Found" "X-Ratelimit-Remaining: 4998"
+         echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2;;
+    401) hdrs "HTTP/2.0 401 Unauthorized"
+         echo '{"message":"Bad credentials","status":"401"}'; echo "gh: Bad credentials (HTTP 401)" >&2;;
+    503) hdrs "HTTP/2.0 503 Service Unavailable"; echo 'unicorn'; echo "\${ctl}gh: HTTP 503\$cr" >&2;;
+    429) hdrs "HTTP/2.0 429 Too Many Requests" "Retry-After: 60"
+         echo '{"message":"You have exceeded a secondary rate limit."}'
+         echo "gh: You have exceeded a secondary rate limit. (HTTP 429)" >&2;;
+    403rl) hdrs "HTTP/2.0 403 Forbidden" "X-Ratelimit-Remaining: 0" "X-Ratelimit-Reset: 1760000000"
+         echo '{"message":"API rate limit exceeded for user ID 1."}'
+         echo "gh: API rate limit exceeded for user ID 1. (HTTP 403)" >&2;;
+    403ra) hdrs "HTTP/2.0 403 Forbidden" "Retry-After: 60" "X-Ratelimit-Remaining: 4000"
+         echo '{"message":"You have exceeded a secondary rate limit."}'
+         echo "gh: You have exceeded a secondary rate limit. (HTTP 403)" >&2;;
+    403) hdrs "HTTP/2.0 403 Forbidden" "X-Ratelimit-Remaining: 4000"
+         echo '{"message":"Resource not accessible by personal access token"}'
+         echo "gh: Resource not accessible by personal access token (HTTP 403)" >&2;;
+  esac
+  exit 1
 fi
 if [[ "\${1:-}" == attestation && "\$lacks" == *" attestation "* ]]; then
   printf 'unknown command "attestation" for "gh"\n\nUsage:  gh <command> <subcommand> [flags]\n' >&2
@@ -198,11 +284,27 @@ while [[ \$# -gt 0 ]]; do
   esac
 done
 printf 'verify %s repo=%s signer=%s ref=%s\n' "\$file" "\$repo" "\$signer" "\$ref" >>"$GH_VERIFY_LOG"
-[[ "\$repo" == "$REPO" ]] || exit 1
-[[ "\$signer" == "$REPO/.github/workflows/release-artifacts.yml" ]] || exit 1
+# refuse <error>: how gh reports a failed verify when stdout is not a TTY.
+refuse() {
+  if [[ -n "\${FAKE_GH_VERIFY_ERR:-}" ]]; then printf '%s\n' "\$FAKE_GH_VERIFY_ERR" >&2
+  else printf '\nError: %s\n' "\$1" >&2; fi
+  exit 1
+}
+[[ "\${FAKE_GH_AUTH:-}" != none && "\${FAKE_GH_VERIFY_RC:-}" != 4 ]] || login_hint
+url="https://api.github.com/repos/\$repo/attestations/sha256:...?per_page=30"
+[[ "\${FAKE_GH_AUTH:-}" != bad ]] || refuse "failed to fetch attestations from \$repo: HTTP 401: Bad credentials (\$url)"
+case "\${FAKE_GH_NET:-}" in
+  "") ;;
+  down) refuse "failed to fetch attestations from \$repo: Get \"\$url\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused";;
+  *) refuse "failed to fetch attestations from \$repo: HTTP \${FAKE_GH_NET:0:3} (\$url)";;
+esac
+[[ "\$repo" == "$REPO" ]] || refuse "no attestations found"
+[[ "\$signer" == "$REPO/.github/workflows/release-artifacts.yml" &&
+  "\$signer" == "\${FAKE_GH_ATTEST_SIGNER:-$REPO/.github/workflows/release-artifacts.yml}" ]] ||
+  refuse "expected SAN to match signer workflow \$signer"
 sum="\$("$REAL_SHA" <"\$file" | cut -d' ' -f1)"
-if [[ -n "\$ref" ]]; then grep -qx "\$sum \$ref" "$ATTEST_DB"
-else grep -q "^\$sum " "$ATTEST_DB"; fi
+if [[ -n "\$ref" ]]; then grep -qx "\$sum \$ref" "$ATTEST_DB" || refuse "expected SourceRepositoryRef to be \$ref"
+else grep -q "^\$sum " "$ATTEST_DB" || refuse "no attestations found"; fi
 EOF
 cat >"$SHIM/uname" <<'EOF'
 #!/bin/sh
@@ -254,14 +356,18 @@ for _ in $(seq 100); do
 done
 [[ -n "$FAKE_PORT" ]] || { echo "[install-test] fake server did not start" >&2; exit 1; }
 
-# run <scenario> <path> [VAR=value...] : run install.sh from a file.
+# run <scenario> <path> [VAR=value...] : run install.sh from a file, with
+# "${RUN_SH[@]}" (default: sh) and TMPDIR pointing at an empty $ITMP, so a
+# case can check that the installer removed its temp dir.
 OUT="$tmp/out"
+RUN_SH=(sh)
 run() {
   local scen="$1" path="$2"; shift 2
-  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; rm -f "$tmp/sudo.log"
+  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; : >"$GH_API_LOG"; rm -f "$tmp/sudo.log"
+  rm -rf "$ITMP"; mkdir -p "$ITMP"
   set +e
-  env -i HOME="$tmp/home" PATH="$path" FAKE_PORT="$FAKE_PORT" SCENARIO="$scen" "$@" \
-    sh "$INSTALL" >"$OUT" 2>&1
+  env -i HOME="$tmp/home" TMPDIR="$ITMP" PATH="$path" FAKE_PORT="$FAKE_PORT" SCENARIO="$scen" "$@" \
+    "${RUN_SH[@]}" "$INSTALL" >"$OUT" 2>&1
   rc=$?
   set -e
 }
@@ -288,7 +394,8 @@ CLI_AMD64=bpfcompat-linux-amd64
 VAL_AMD64=bpfcompat-validator-static-linux-amd64
 
 # ---------------------------------------------------------------- fixtures
-for s in stable arm64 nosha noverify mismatch bindcosign bindgh bindghcli bindghval trunc dirs badver badlatest ghcap; do
+for s in stable arm64 nosha noverify mismatch bindcosign bindgh bindghcli bindghval trunc dirs badver badlatest ghcap \
+  ghapi ghrefuse ghnoatt; do
   release "$s" v0.3.7 amd64
   release "$s" v0.4.0-rc.4 amd64
   latest "$s" v0.3.7
@@ -515,6 +622,7 @@ gh_lacking() {
   ! grep -q 'requires cosign or GitHub CLI' "$OUT" || bad="$bad says-gh-missing"
   ! grep -q 'FAILED' "$OUT" || bad="$bad says-verification-failed"
   ! grep -qE '^attestation verify [^-]' "$GH_LOG" || bad="$bad verify-attempted"
+  ! grep -q '^api ' "$GH_LOG" || bad="$bad api-probed"
   if [[ -z "$bad" ]]; then ok "gh $ver lacking '$lacks': refused, naming what it lacks"
   else fail "gh $ver lacking '$lacks' (rc=$rc):$bad"; show; fi
 }
@@ -532,6 +640,7 @@ grep -qF "installed gh could not run 'gh --help' (failed to create root command:
 grep -qF 'fix gh or install cosign - refusing checksum-only installation' "$OUT" || bad="$bad no-remedy"
 ! grep -qE 'lacks|FAILED|requires cosign or GitHub CLI' "$OUT" || bad="$bad wrong-reason"
 ! grep -qE '^attestation verify [^-]' "$GH_LOG" || bad="$bad verify-attempted"
+! grep -q '^api ' "$GH_LOG" || bad="$bad api-probed"
 if [[ -z "$bad" ]]; then ok "gh that cannot run: refused, naming gh's own error"
 else fail "gh that cannot run (rc=$rc):$bad"; show; fi
 for ghenv in FAKE_GH_LACKS=attestation FAKE_GH_LACKS=--source-ref FAKE_GH_BROKEN=1; do
@@ -543,6 +652,138 @@ for ghenv in FAKE_GH_LACKS=attestation FAKE_GH_LACKS=--source-ref FAKE_GH_BROKEN
     ok "gh with $ghenv + cosign: verified with cosign and installed"
   else fail "gh with $ghenv and cosign present (rc=$rc)"; show; fi
 done
+
+# 10. S2: a capable gh that cannot complete the check is told apart from a
+#     refused verification, and every outcome refuses. Before the first
+#     verify call, one read-only probe of the attestation API the verify
+#     uses decides "not authenticated" (gh's auth exit code 4, or HTTP 401)
+#     and "GitHub API unavailable" (no HTTP response, 5xx, 429, rate-limited
+#     403); any other answer hands over to the verify calls, whose failures
+#     (other than exit code 4) always read "verification FAILED", whatever
+#     gh prints. Each case: nonzero exit, nothing installed, the installer's
+#     temp dir gone, only its own class named, no terminal control bytes.
+C2='GitHub authentication needed for attestation verification'
+C3='GitHub API unavailable for attestation verification'
+C4='GitHub attestation verification FAILED for'
+# ghrefuse: the v0.3.7 CLI is rc.4's attested binary (attested, other tag).
+# ghnoatt: the v0.3.7 CLI has no attestation at all. SHA256SUMS matches both.
+cp "$(rel_dir ghrefuse v0.4.0-rc.4)/$CLI_AMD64" "$(rel_dir ghrefuse v0.3.7)/$CLI_AMD64"
+printf '#!/bin/sh\necho "unattested build"\n' >"$(rel_dir ghnoatt v0.3.7)/$CLI_AMD64"
+for s in ghrefuse ghnoatt; do (cd "$(rel_dir "$s" v0.3.7)" && "$REAL_SHA" bpfcompat-* >SHA256SUMS); done
+# probe_path <scenario>: the probe the installer must make for v0.3.7's CLI.
+probe_path() {
+  echo "repos/$REPO/attestations/sha256:$("$REAL_SHA" <"$(rel_dir "$1" v0.3.7)/$CLI_AMD64" | cut -d' ' -f1)?per_page=1"
+}
+itmp_clean() { [[ -d "$ITMP" && -z "$(ls -A "$ITMP")" ]]; }
+no_ctl() { [[ -z "$(LC_ALL=C tr -d '\n[:print:]' <"$OUT")" ]]; }
+# gh_class <title> <scenario> <class 2|3|4> <text> <verify calls> <probe status> [VAR=value...]
+#   verify calls: how many `gh attestation verify` calls may have been made;
+#   probe status: what the one probe got ("-" = no HTTP response).
+gh_class() {
+  local title="$1" scen="$2" cls="$3" want="$4" nver="$5" pst="$6" d="$tmp/i-ghclass" bad="" n
+  shift 6
+  run "$scen" "$GH_ONLY" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" "$@"
+  [[ $rc -ne 0 && ! -e "$d" ]] || bad+=" installed-or-rc0"
+  itmp_clean || bad+=" tmpdir-left"
+  grep -qF -- "$want" "$OUT" || bad+=" reason-not-named"
+  case "$cls" in
+    2) grep -qF 'or install cosign - refusing checksum-only installation' "$OUT" || bad+=" no-remedy"
+       ! grep -qE "$C3|FAILED|lacks|requires cosign or GitHub CLI" "$OUT" || bad+=" other-class-named";;
+    3) grep -qF 'then retry, or install cosign - refusing checksum-only installation' "$OUT" || bad+=" no-remedy"
+       ! grep -qE "$C2|FAILED|lacks|requires cosign or GitHub CLI" "$OUT" || bad+=" other-class-named";;
+    4) ! grep -qiE 'authenticat|logged in|credential|GH_TOKEN|network|proxy|unavailable|unreachable|rate.limit|refused|retry|HTTP [0-9]|lacks' "$OUT" ||
+         bad+=" auth-or-network-wording"
+       ! grep -qF -- "$C2" "$OUT" && ! grep -qF -- "$C3" "$OUT" || bad+=" other-class-named";;
+  esac
+  no_ctl || bad+=" control-bytes"
+  [[ "$(cat "$GH_API_LOG")" == "$(probe_path "$scen") $pst" ]] || bad+=" probe($(tr '\n' '|' <"$GH_API_LOG"))"
+  n="$(grep -c . "$GH_VERIFY_LOG" || true)"
+  [[ "$n" == "$nver" ]] || bad+=" verify-calls=$n"
+  if [[ -z "$bad" ]]; then ok "gh $title: class $cls, refused"
+  else fail "gh $title (rc=$rc):$bad"; show; fi
+}
+gh_class "not logged in" ghapi 2 \
+  "$C2: gh is not logged in (To get started with GitHub CLI, please run:  gh auth login); run 'gh auth login' or set a valid GH_TOKEN" \
+  0 noauth FAKE_GH_AUTH=none
+gh_class "token rejected (HTTP 401)" ghapi 2 \
+  "$C2: GitHub rejected gh's credentials (HTTP 401) (gh: Bad credentials (HTTP 401)); run 'gh auth login' or set a valid GH_TOKEN" \
+  0 401 FAKE_GH_AUTH=bad
+gh_class "API unreachable" ghapi 3 \
+  "$C3: no HTTP response (Get \"https://api.github.com/$(probe_path ghapi)\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused); check the network" \
+  0 - FAKE_GH_NET=down
+gh_class "API HTTP 503" ghapi 3 "$C3: HTTP 503 (gh: HTTP 503)" 0 503 FAKE_GH_NET=503
+gh_class "API HTTP 429" ghapi 3 "$C3: HTTP 429, rate limited (gh: You have exceeded a secondary rate limit. (HTTP 429))" 0 429 FAKE_GH_NET=429
+gh_class "API rate limit (403, X-Ratelimit-Remaining: 0, coloured headers)" ghapi 3 \
+  "$C3: HTTP 403, rate limited (gh: API rate limit exceeded for user ID 1. (HTTP 403))" 0 403rl FAKE_GH_NET=403rl FAKE_GH_COLOR=1
+gh_class "API secondary rate limit (403, Retry-After)" ghapi 3 "$C3: HTTP 403, rate limited" 0 403ra FAKE_GH_NET=403ra
+gh_class "API 403 without rate-limit headers" ghapi 4 "$C4 $CLI_AMD64" 1 403 FAKE_GH_NET=403
+gh_class "no attestation for the CLI digest (API 404)" ghnoatt 4 "$C4 $CLI_AMD64" 1 404
+gh_class "CLI attested for another tag (API answers)" ghrefuse 4 "$C4 $CLI_AMD64" 1 200
+gh_class "attestation signed by another workflow (API answers)" ghapi 4 "$C4 $CLI_AMD64" 1 200 \
+  FAKE_GH_ATTEST_SIGNER="$REPO/.github/workflows/ci.yml"
+gh_class "refusal whose stderr claims a network error" ghrefuse 4 "$C4 $CLI_AMD64" 1 200 \
+  FAKE_GH_VERIFY_ERR=$'error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'
+gh_class "refusal whose stderr claims missing auth" ghrefuse 4 "$C4 $CLI_AMD64" 1 200 \
+  FAKE_GH_VERIFY_ERR=$'To get started with GitHub CLI, please run:  gh auth login\nHTTP 401: Bad credentials'
+gh_class "verify exits 4 after the API answered" ghapi 2 \
+  "$C2: gh is not logged in (To get started with GitHub CLI, please run:  gh auth login)" 1 200 FAKE_GH_VERIFY_RC=4
+gh_class "API unreachable, control bytes in gh's error" ghapi 3 "$C3: no HTTP response (]0;PWNED[31mGet \"https://api.github.com/" \
+  0 - FAKE_GH_NET=down FAKE_GH_ERR_CTRL=1
+# R2-N2: the "could not run 'gh --help'" line is stripped of control bytes too.
+d="$tmp/i-ghbroken-ctl" bad=""
+run ghcap "$GH_ONLY" FAKE_GH_BROKEN=1 FAKE_GH_ERR_CTRL=1 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+[[ $rc -ne 0 && ! -e "$d" ]] && itmp_clean || bad+=" installed-or-rc0-or-tmpdir"
+grep -qF "installed gh could not run 'gh --help' (]0;PWNED[31mfailed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml); fix gh" "$OUT" ||
+  bad+=" reason-not-named"
+no_ctl || bad+=" control-bytes"
+if [[ -z "$bad" ]]; then ok "gh that cannot run, control bytes in its error: stripped, refused"
+else fail "gh that cannot run with control bytes (rc=$rc):$bad"; show; fi
+
+# 10b. The probe on a good release: exactly one read-only GET of the CLI's
+#      attestations, before the first verify call; with cosign present, gh
+#      is never run. The cosign path is the same for every gh mode above.
+d="$tmp/i-ghprobe" bad=""
+run ghapi "$GH_ONLY" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+[[ $rc -eq 0 && -x "$d/bin/bpfcompat" ]] && itmp_clean || bad+=" not-installed-or-tmpdir"
+verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64" || bad+=" verify-calls"
+[[ "$(cat "$GH_API_LOG")" == "$(probe_path ghapi) 200" ]] || bad+=" probe"
+[[ "$(grep -nE '^(api |attestation verify [^-])' "$GH_LOG" | head -1)" == *":api --method GET --include $(probe_path ghapi)" ]] ||
+  bad+=" probe-not-first"
+if [[ -z "$bad" ]]; then ok "gh path: one read-only API probe of the CLI digest, before the verify calls"
+else fail "gh path probe (rc=$rc):$bad"; show; sed 's/^/    gh | /' "$GH_LOG" >&2; fi
+for ghenv in FAKE_GH_AUTH=none FAKE_GH_AUTH=bad FAKE_GH_NET=down FAKE_GH_NET=503 FAKE_GH_NET=429 FAKE_GH_NET=403rl \
+  FAKE_GH_NET=403 FAKE_GH_VERIFY_RC=4 FAKE_GH_VERIFY_ERR=x FAKE_GH_ERR_CTRL=1; do
+  d="$tmp/i-ghclass-cosign"
+  run ghapi "$WITH_COSIGN" "$ghenv" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  if [[ $rc -eq 0 && -x "$d/bin/bpfcompat" && -x "$d/libexec/bpfcompat-validator" && ! -s "$GH_LOG" ]] && itmp_clean &&
+    grep -q 'cosign signature over SHA256SUMS verified' "$OUT"; then
+    ok "cosign path with $ghenv: gh never run, cosign verified, installed"
+  else fail "cosign path with $ghenv (rc=$rc)"; show; fi
+  rm -rf "$d"
+done
+
+# 10c. R2-N1: with pipefail imported (bash as sh, SHELLOPTS exported) every
+#      refusal still prints its reason, and a good release still installs.
+RUN_SH=(bash --posix)
+PF=SHELLOPTS=braceexpand:hashall:interactive-comments:pipefail
+for c in "FAKE_GH_BROKEN=1|installed gh could not run 'gh --help' (failed to create root command" \
+  "FAKE_GH_VERSION=fail FAKE_GH_LACKS=attestation|installed gh lacks the 'gh attestation' command" \
+  "FAKE_GH_NET=down|$C3: no HTTP response (Get " "FAKE_GH_NET=403rl|$C3: HTTP 403, rate limited" \
+  "FAKE_GH_NET=403|$C4 $CLI_AMD64" "FAKE_GH_AUTH=none|$C2: gh is not logged in (To get started" \
+  "FAKE_GH_AUTH=bad|$C2: GitHub rejected gh's credentials (HTTP 401) (gh: Bad credentials"; do
+  d="$tmp/i-pipefail"
+  read -r -a envs <<<"${c%%|*}"
+  run ghapi "$GH_ONLY" "$PF" "${envs[@]}" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+  if [[ $rc -ne 0 && ! -e "$d" ]] && itmp_clean && grep -qF -- "${c#*|}" "$OUT"; then
+    ok "pipefail imported, ${c%%|*}: refused with its reason"
+  else fail "pipefail imported, ${c%%|*} (rc=$rc)"; show; fi
+done
+d="$tmp/i-pipefail-ok"
+run ghapi "$GH_ONLY" "$PF" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -eq 0 && -x "$d/bin/bpfcompat" ]] && verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64" &&
+  [[ "$(cat "$GH_API_LOG")" == "$(probe_path ghapi) 200" ]]; then ok "pipefail imported: gh path installs a good release"
+else fail "pipefail imported, good release (rc=$rc)"; show; fi
+RUN_SH=(sh)
 
 if [[ $failures -ne 0 ]]; then
   echo "[install-test] $failures failure(s)" >&2
