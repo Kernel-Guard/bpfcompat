@@ -114,6 +114,10 @@ jobs:
         # missing or inconsistent inputs; open distribution decisions withhold
         # optional assets and block stable builds.
         run: bash scripts/distribution-bundle_test.sh
+      - name: RC preflight regression
+        # The read-only release-candidate inventory reports VERIFIED, MISSING
+        # or PENDING from observed state only; lookup failures abort it.
+        run: bash scripts/rc-preflight_test.sh
       - name: Image prefetch reliability regression
         # The public matrix lane lost five of seven weekly runs (Aug-Oct 2026)
         # to a single failed image download aborting the whole prefetch. These
