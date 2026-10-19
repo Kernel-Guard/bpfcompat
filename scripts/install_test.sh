@@ -20,7 +20,9 @@
 #     also answers the installer's read-only API probe (`gh api --include`)
 #     from the attestation DB and records it, and can play a capable gh that
 #     is not logged in, holds a rejected token, cannot reach the API or gets
-#     a 5xx / 429 / rate-limited 403, modelled on real gh 2.68.0 / 2.102.0;
+#     a 5xx / 429 / rate-limited 403, modelled on real gh 2.68.0 / 2.102.0,
+#     one probe attempt at a time;
+#   * sleep only records how long the installer would have waited;
 #   * sudo pretends to be root by unlocking the test's read-only tree.
 #
 # Cases: latest -> stable, arch mapping (incl. extra SHA256SUMS lines, the
@@ -37,7 +39,8 @@
 # unavailable, each refused under its own name, never as a failed
 # verification, while every refusal - including one whose stderr claims a
 # network or auth problem - still reads "verification FAILED"), with gh's
-# words stripped of control bytes and imported pipefail tolerated.
+# words reduced to printable ASCII and imported pipefail tolerated; the
+# API probe retried only on a 5xx or no response, at most three times.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,6 +66,7 @@ CURL_LOG="$tmp/curl.log"
 GH_LOG="$tmp/gh.log"
 GH_VERIFY_LOG="$tmp/gh-verify.log"
 GH_API_LOG="$tmp/gh-api.log"
+SLEEP_LOG="$tmp/sleep.log"
 ITMP="$tmp/itmp"
 mkdir -p "$WWW" "$SHIM" "$TOOLS" "$tmp/home"
 : >"$ATTEST_DB"
@@ -172,14 +176,24 @@ cat >"$SHIM/gh" <<EOF
 #   FAKE_GH_NET=down    no HTTP response (proxy/DNS/connect failure), exit 1
 #   FAKE_GH_NET=503|429|403|403rl|403ra  that HTTP status; 403rl carries
 #                       X-Ratelimit-Remaining: 0, 403ra a Retry-After header
+#   FAKE_GH_PROBE_SEQ   what each API probe attempt gets, in turn (the last
+#                       entry repeats): ok (the DB's answer), down, 401, 503,
+#                       429, 403rl, crash (exit 2, no stdout) or garbage
+#                       (exit 1, stdout that is no status line); the verify
+#                       calls are not affected
+#   FAKE_GH_PROTO=1.1   the API answers over HTTP/1.1 (default HTTP/2.0)
 #   FAKE_GH_COLOR=1     header names coloured, as with CLICOLOR_FORCE
-#   FAKE_GH_ERR_CTRL=1  terminal control bytes in gh's error lines
-#   FAKE_GH_VERIFY_RC=4 verify exits 4 even though the API probe answered
+#   FAKE_GH_ERR_CTRL=1  C0 terminal control bytes in gh's error lines; =c1:
+#                       C1 CSI bytes, raw (0x9b) and UTF-8 encoded (c2 9b)
+#   FAKE_GH_VERIFY_RC=4 verify exits 4 even though the API probe answered;
+#                     =2  verify exits 2 (gh's "cancelled" code): no refusal, no auth
 #   FAKE_GH_VERIFY_ERR  text a failing verify prints instead of its error
 #   FAKE_GH_ATTEST_SIGNER  workflow the stored attestations were signed by
+# More than 10 probes in one run is an unbounded retry: exit 4 to stop it.
 echo "\$*" >>"$GH_LOG"
 ctl="" cr=""
-if [[ -n "\${FAKE_GH_ERR_CTRL:-}" ]]; then ctl=\$'\e]0;PWNED\a\e[31m' cr=\$'\r'; fi
+if [[ "\${FAKE_GH_ERR_CTRL:-}" == c1 ]]; then ctl=\$'\x9b''31m'\$'\xc2\x9b''32m'
+elif [[ -n "\${FAKE_GH_ERR_CTRL:-}" ]]; then ctl=\$'\e]0;PWNED\a\e[31m' cr=\$'\r'; fi
 if [[ -n "\${FAKE_GH_BROKEN:-}" ]]; then
   echo "\${ctl}failed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml\$cr" >&2
   exit 1
@@ -198,11 +212,11 @@ login_hint() {
   printf 'To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\n' >&2
   exit 4
 }
-# hdrs <status line> [header...]: what gh api --include prints before the body.
+# hdrs <status> <reason> [header...]: what gh api --include prints before the body.
 hdrs() {
   local h c="" r=""
   if [[ -n "\${FAKE_GH_COLOR:-}" ]]; then c=\$'\e[1;34m' r=\$'\e[m'; fi
-  printf '%s\n' "\$1"; shift
+  printf 'HTTP/%s %s %s\n' "\${FAKE_GH_PROTO:-2.0}" "\$1" "\$2"; shift 2
   for h in "Content-Type: application/json; charset=utf-8" "\$@"; do
     printf '%s%s%s:%s\r\n' "\$c" "\${h%%:*}" "\$r" "\${h#*:}"
   done
@@ -210,16 +224,32 @@ hdrs() {
 }
 if [[ "\${1:-}" == api ]]; then
   [[ \$# -eq 5 && "\$2 \$3 \$4" == "--method GET --include" ]] || { echo "gh shim: unexpected api call: \$*" >&2; exit 2; }
-  path="\$5" st=""
+  path="\$5" st="" n="\$(grep -c . "$GH_API_LOG" || true)"
+  if [[ \$n -ge 10 ]]; then echo "\$path stop" >>"$GH_API_LOG"; echo "gh shim: API probe made \$((n + 1)) times" >&2; exit 4; fi
   if [[ "\${FAKE_GH_AUTH:-}" == none ]]; then echo "\$path noauth" >>"$GH_API_LOG"; login_hint; fi
-  if [[ "\${FAKE_GH_AUTH:-}" == bad ]]; then st=401
+  net="\${FAKE_GH_NET:-}"
+  if [[ -n "\${FAKE_GH_PROBE_SEQ:-}" ]]; then
+    read -r -a seq <<<"\$FAKE_GH_PROBE_SEQ"
+    [[ \$n -lt \${#seq[@]} ]] || n=\$((\${#seq[@]} - 1))
+    net="\${seq[\$n]}"; [[ "\$net" != ok ]] || net=""
+  fi
+  if [[ "\${FAKE_GH_AUTH:-}" == bad || "\$net" == 401 ]]; then st=401
   else
-    case "\${FAKE_GH_NET:-}" in
+    case "\$net" in
       down)
         echo "\$path -" >>"$GH_API_LOG"
         echo "\${ctl}Get \"https://api.github.com/\$path\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused\$cr" >&2
         exit 1;;
-      503|429|403|403rl|403ra) st="\$FAKE_GH_NET";;
+      crash)
+        echo "\$path crash" >>"$GH_API_LOG"
+        echo "panic: runtime error: invalid memory address or nil pointer dereference" >&2
+        exit 2;;
+      garbage)
+        echo "\$path garbage" >>"$GH_API_LOG"
+        echo "<html>proxy login page</html>"
+        echo "gh: unexpected response" >&2
+        exit 1;;
+      5[0-9][0-9]|429|403|403rl|403ra) st="\$net";;
       "")
         d="\${path#repos/$REPO/attestations/sha256:}"; d="\${d%%\?*}"
         if [[ "\$path" == "repos/$REPO/attestations/sha256:\$d?per_page=1" && "\$d" =~ ^[0-9a-f]{64}\$ ]] &&
@@ -229,22 +259,23 @@ if [[ "\${1:-}" == api ]]; then
   fi
   echo "\$path \$st" >>"$GH_API_LOG"
   case "\$st" in
-    200) hdrs "HTTP/2.0 200 OK" "X-Ratelimit-Remaining: 4999"; echo '{"attestations":[{"bundle":{}}]}'; exit 0;;
-    404) hdrs "HTTP/2.0 404 Not Found" "X-Ratelimit-Remaining: 4998"
+    200) hdrs 200 OK "X-Ratelimit-Remaining: 4999"; echo '{"attestations":[{"bundle":{}}]}'; exit 0;;
+    404) hdrs 404 "Not Found" "X-Ratelimit-Remaining: 4998"
          echo '{"message":"Not Found","status":"404"}'; echo "gh: Not Found (HTTP 404)" >&2;;
-    401) hdrs "HTTP/2.0 401 Unauthorized"
+    401) hdrs 401 Unauthorized
          echo '{"message":"Bad credentials","status":"401"}'; echo "gh: Bad credentials (HTTP 401)" >&2;;
-    503) hdrs "HTTP/2.0 503 Service Unavailable"; echo 'unicorn'; echo "\${ctl}gh: HTTP 503\$cr" >&2;;
-    429) hdrs "HTTP/2.0 429 Too Many Requests" "Retry-After: 60"
+    503) hdrs 503 "Service Unavailable"; echo 'unicorn'; echo "\${ctl}gh: HTTP 503\$cr" >&2;;
+    5??) hdrs "\$st" "Bad Gateway"; echo '<html>bad gateway</html>'; echo "gh: HTTP \$st" >&2;;
+    429) hdrs 429 "Too Many Requests" "Retry-After: 60"
          echo '{"message":"You have exceeded a secondary rate limit."}'
          echo "gh: You have exceeded a secondary rate limit. (HTTP 429)" >&2;;
-    403rl) hdrs "HTTP/2.0 403 Forbidden" "X-Ratelimit-Remaining: 0" "X-Ratelimit-Reset: 1760000000"
+    403rl) hdrs 403 Forbidden "X-Ratelimit-Remaining: 0" "X-Ratelimit-Reset: 1760000000"
          echo '{"message":"API rate limit exceeded for user ID 1."}'
          echo "gh: API rate limit exceeded for user ID 1. (HTTP 403)" >&2;;
-    403ra) hdrs "HTTP/2.0 403 Forbidden" "Retry-After: 60" "X-Ratelimit-Remaining: 4000"
+    403ra) hdrs 403 Forbidden "Retry-After: 60" "X-Ratelimit-Remaining: 4000"
          echo '{"message":"You have exceeded a secondary rate limit."}'
          echo "gh: You have exceeded a secondary rate limit. (HTTP 403)" >&2;;
-    403) hdrs "HTTP/2.0 403 Forbidden" "X-Ratelimit-Remaining: 4000"
+    403) hdrs 403 Forbidden "X-Ratelimit-Remaining: 4000"
          echo '{"message":"Resource not accessible by personal access token"}'
          echo "gh: Resource not accessible by personal access token (HTTP 403)" >&2;;
   esac
@@ -284,6 +315,7 @@ while [[ \$# -gt 0 ]]; do
   esac
 done
 printf 'verify %s repo=%s signer=%s ref=%s\n' "\$file" "\$repo" "\$signer" "\$ref" >>"$GH_VERIFY_LOG"
+if [[ "\${FAKE_GH_VERIFY_RC:-}" == 2 ]]; then echo "gh shim: verify ended with exit code 2" >&2; exit 2; fi
 # refuse <error>: how gh reports a failed verify when stdout is not a TTY.
 refuse() {
   if [[ -n "\${FAKE_GH_VERIFY_ERR:-}" ]]; then printf '%s\n' "\$FAKE_GH_VERIFY_ERR" >&2
@@ -305,6 +337,11 @@ esac
 sum="\$("$REAL_SHA" <"\$file" | cut -d' ' -f1)"
 if [[ -n "\$ref" ]]; then grep -qx "\$sum \$ref" "$ATTEST_DB" || refuse "expected SourceRepositoryRef to be \$ref"
 else grep -q "^\$sum " "$ATTEST_DB" || refuse "no attestations found"; fi
+EOF
+cat >"$SHIM/sleep" <<EOF
+#!/bin/sh
+# Record the wait instead of waiting.
+echo "\$*" >>"$SLEEP_LOG"
 EOF
 cat >"$SHIM/uname" <<'EOF'
 #!/bin/sh
@@ -363,7 +400,8 @@ OUT="$tmp/out"
 RUN_SH=(sh)
 run() {
   local scen="$1" path="$2"; shift 2
-  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; : >"$GH_API_LOG"; rm -f "$tmp/sudo.log"
+  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; : >"$GH_API_LOG"; : >"$SLEEP_LOG"
+  rm -f "$tmp/sudo.log"
   rm -rf "$ITMP"; mkdir -p "$ITMP"
   set +e
   env -i HOME="$tmp/home" TMPDIR="$ITMP" PATH="$path" FAKE_PORT="$FAKE_PORT" SCENARIO="$scen" "$@" \
@@ -374,6 +412,13 @@ run() {
 WITH_COSIGN="$SHIM:$TOOLS"
 GH_ONLY="$tmp/ghonly:$TOOLS"
 show() { sed 's/^/    | /' "$OUT" >&2; }
+# A shell that runs its own sleep (busybox's applet) bypasses the sleep
+# shim: then the retry cases can check the attempts but not the waits.
+: >"$SLEEP_LOG"
+env -i PATH="$GH_ONLY" sh -c 'sleep 0' || true
+SLEEP_SHIMMED=0
+if [[ -s "$SLEEP_LOG" ]]; then SLEEP_SHIMMED=1
+else echo "[install-test] note: this sh does not run sleep from PATH; waits between probe attempts are not checked" >&2; fi
 # verified <PATH> <tag> <asset...>: on the gh-only PATH, gh verified exactly
 # these assets, once each, bound to the release workflow and refs/tags/<tag>;
 # with cosign on PATH, gh verified nothing. So a dropped, unbound or extra
@@ -670,15 +715,26 @@ C4='GitHub attestation verification FAILED for'
 cp "$(rel_dir ghrefuse v0.4.0-rc.4)/$CLI_AMD64" "$(rel_dir ghrefuse v0.3.7)/$CLI_AMD64"
 printf '#!/bin/sh\necho "unattested build"\n' >"$(rel_dir ghnoatt v0.3.7)/$CLI_AMD64"
 for s in ghrefuse ghnoatt; do (cd "$(rel_dir "$s" v0.3.7)" && "$REAL_SHA" bpfcompat-* >SHA256SUMS); done
-# probe_path <scenario>: the probe the installer must make for v0.3.7's CLI.
+# probe_path <scenario> [tag] [cli asset]: the probe the installer must make
+# for that release's CLI (default: v0.3.7's amd64 CLI).
 probe_path() {
-  echo "repos/$REPO/attestations/sha256:$("$REAL_SHA" <"$(rel_dir "$1" v0.3.7)/$CLI_AMD64" | cut -d' ' -f1)?per_page=1"
+  echo "repos/$REPO/attestations/sha256:$("$REAL_SHA" <"$(rel_dir "$1" "${2:-v0.3.7}")/${3:-$CLI_AMD64}" | cut -d' ' -f1)?per_page=1"
+}
+# probes <scenario> <status...>: the probe log of one attempt per status.
+probes() { local s="$1" st; shift; for st in "$@"; do echo "$(probe_path "$s") $st"; done; }
+# waited <status...>: the installer waited 3 s before every attempt but the
+# first, and at no other time (unchecked when sh bypasses the sleep shim).
+waited() {
+  local want="" i
+  for ((i = 1; i < $#; i++)); do want+="3"$'\n'; done
+  [[ $SLEEP_SHIMMED == 0 || "$(cat "$SLEEP_LOG")" == "${want%$'\n'}" ]]
 }
 itmp_clean() { [[ -d "$ITMP" && -z "$(ls -A "$ITMP")" ]]; }
 no_ctl() { [[ -z "$(LC_ALL=C tr -d '\n[:print:]' <"$OUT")" ]]; }
-# gh_class <title> <scenario> <class 2|3|4> <text> <verify calls> <probe status> [VAR=value...]
+# gh_class <title> <scenario> <class 2|3|4> <text> <verify calls> <probe statuses> [VAR=value...]
 #   verify calls: how many `gh attestation verify` calls may have been made;
-#   probe status: what the one probe got ("-" = no HTTP response).
+#   probe statuses: what each probe attempt got, in order ("-" = no HTTP
+#   response); the waits between attempts are checked too.
 gh_class() {
   local title="$1" scen="$2" cls="$3" want="$4" nver="$5" pst="$6" d="$tmp/i-ghclass" bad="" n
   shift 6
@@ -696,7 +752,10 @@ gh_class() {
        ! grep -qF -- "$C2" "$OUT" && ! grep -qF -- "$C3" "$OUT" || bad+=" other-class-named";;
   esac
   no_ctl || bad+=" control-bytes"
-  [[ "$(cat "$GH_API_LOG")" == "$(probe_path "$scen") $pst" ]] || bad+=" probe($(tr '\n' '|' <"$GH_API_LOG"))"
+  # shellcheck disable=SC2086 # one probe attempt per word
+  [[ "$(cat "$GH_API_LOG")" == "$(probes "$scen" $pst)" ]] || bad+=" probe($(tr '\n' '|' <"$GH_API_LOG"))"
+  # shellcheck disable=SC2086
+  waited $pst || bad+=" waits($(tr '\n' '|' <"$SLEEP_LOG"))"
   n="$(grep -c . "$GH_VERIFY_LOG" || true)"
   [[ "$n" == "$nver" ]] || bad+=" verify-calls=$n"
   if [[ -z "$bad" ]]; then ok "gh $title: class $cls, refused"
@@ -710,8 +769,8 @@ gh_class "token rejected (HTTP 401)" ghapi 2 \
   0 401 FAKE_GH_AUTH=bad
 gh_class "API unreachable" ghapi 3 \
   "$C3: no HTTP response (Get \"https://api.github.com/$(probe_path ghapi)\": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused); check the network" \
-  0 - FAKE_GH_NET=down
-gh_class "API HTTP 503" ghapi 3 "$C3: HTTP 503 (gh: HTTP 503)" 0 503 FAKE_GH_NET=503
+  0 "- - -" FAKE_GH_NET=down
+gh_class "API HTTP 503" ghapi 3 "$C3: HTTP 503 (gh: HTTP 503)" 0 "503 503 503" FAKE_GH_NET=503
 gh_class "API HTTP 429" ghapi 3 "$C3: HTTP 429, rate limited (gh: You have exceeded a secondary rate limit. (HTTP 429))" 0 429 FAKE_GH_NET=429
 gh_class "API rate limit (403, X-Ratelimit-Remaining: 0, coloured headers)" ghapi 3 \
   "$C3: HTTP 403, rate limited (gh: API rate limit exceeded for user ID 1. (HTTP 403))" 0 403rl FAKE_GH_NET=403rl FAKE_GH_COLOR=1
@@ -728,7 +787,7 @@ gh_class "refusal whose stderr claims missing auth" ghrefuse 4 "$C4 $CLI_AMD64" 
 gh_class "verify exits 4 after the API answered" ghapi 2 \
   "$C2: gh is not logged in (To get started with GitHub CLI, please run:  gh auth login)" 1 200 FAKE_GH_VERIFY_RC=4
 gh_class "API unreachable, control bytes in gh's error" ghapi 3 "$C3: no HTTP response (]0;PWNED[31mGet \"https://api.github.com/" \
-  0 - FAKE_GH_NET=down FAKE_GH_ERR_CTRL=1
+  0 "- - -" FAKE_GH_NET=down FAKE_GH_ERR_CTRL=1
 # R2-N2: the "could not run 'gh --help'" line is stripped of control bytes too.
 d="$tmp/i-ghbroken-ctl" bad=""
 run ghcap "$GH_ONLY" FAKE_GH_BROKEN=1 FAKE_GH_ERR_CTRL=1 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
@@ -738,6 +797,18 @@ grep -qF "installed gh could not run 'gh --help' (]0;PWNED[31mfailed to create r
 no_ctl || bad+=" control-bytes"
 if [[ -z "$bad" ]]; then ok "gh that cannot run, control bytes in its error: stripped, refused"
 else fail "gh that cannot run with control bytes (rc=$rc):$bad"; show; fi
+# N2: gh's words keep printable ASCII only, so C1 controls go too - a raw
+#     CSI byte (0x9b) and its UTF-8 form (c2 9b) - in both quoting places.
+gh_class "API unreachable, C1 control bytes in gh's error" ghapi 3 "$C3: no HTTP response (31m32mGet \"https://api.github.com/" \
+  0 "- - -" FAKE_GH_NET=down FAKE_GH_ERR_CTRL=c1
+d="$tmp/i-ghbroken-c1" bad=""
+run ghcap "$GH_ONLY" FAKE_GH_BROKEN=1 FAKE_GH_ERR_CTRL=c1 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+[[ $rc -ne 0 && ! -e "$d" ]] && itmp_clean || bad+=" installed-or-rc0-or-tmpdir"
+grep -qF "installed gh could not run 'gh --help' (31m32mfailed to create root command: failed to read configuration: invalid config file /home/u/.config/gh/config.yml: invalid yaml); fix gh" "$OUT" ||
+  bad+=" reason-not-named"
+no_ctl || bad+=" control-bytes"
+if [[ -z "$bad" ]]; then ok "gh that cannot run, C1 control bytes in its error: stripped, refused"
+else fail "gh that cannot run with C1 control bytes (rc=$rc):$bad"; show; fi
 
 # 10b. The probe on a good release: exactly one read-only GET of the CLI's
 #      attestations, before the first verify call; with cosign present, gh
@@ -749,6 +820,7 @@ verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64" || bad+=" verify-calls"
 [[ "$(cat "$GH_API_LOG")" == "$(probe_path ghapi) 200" ]] || bad+=" probe"
 [[ "$(grep -nE '^(api |attestation verify [^-])' "$GH_LOG" | head -1)" == *":api --method GET --include $(probe_path ghapi)" ]] ||
   bad+=" probe-not-first"
+waited 200 || bad+=" waited"
 if [[ -z "$bad" ]]; then ok "gh path: one read-only API probe of the CLI digest, before the verify calls"
 else fail "gh path probe (rc=$rc):$bad"; show; sed 's/^/    gh | /' "$GH_LOG" >&2; fi
 for ghenv in FAKE_GH_AUTH=none FAKE_GH_AUTH=bad FAKE_GH_NET=down FAKE_GH_NET=503 FAKE_GH_NET=429 FAKE_GH_NET=403rl \
@@ -784,6 +856,59 @@ if [[ $rc -eq 0 && -x "$d/bin/bpfcompat" ]] && verified "$GH_ONLY" v0.3.7 "$CLI_
   [[ "$(cat "$GH_API_LOG")" == "$(probe_path ghapi) 200" ]]; then ok "pipefail imported: gh path installs a good release"
 else fail "pipefail imported, good release (rc=$rc)"; show; fi
 RUN_SH=(sh)
+
+# 10d. N7: a 5xx or no HTTP response at the probe may be transient (gh's
+#      own verify retries a 5xx), so the probe is made up to three times,
+#      3 s apart, and the last attempt decides. Nothing else is retried: the
+#      single-attempt expectations in 10 pin 401, 404, 200, a plain 403, a
+#      429, rate-limited 403s and gh's auth exit code 4.
+# gh_installs <title> <scenario> <probe statuses> [VAR=value...]: the good
+#   v0.3.7 release still installs, verified, after exactly these attempts.
+gh_installs() {
+  local title="$1" scen="$2" pst="$3" d="$tmp/i-ghok" bad=""
+  shift 3
+  run "$scen" "$GH_ONLY" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" "$@"
+  [[ $rc -eq 0 && -x "$d/bin/bpfcompat" && -x "$d/libexec/bpfcompat-validator" ]] && itmp_clean || bad+=" not-installed-or-tmpdir"
+  grep -q 'GitHub build attestations verified' "$OUT" || bad+=" not-verified"
+  verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64" || bad+=" verify-calls"
+  # shellcheck disable=SC2086 # one probe attempt per word
+  [[ "$(cat "$GH_API_LOG")" == "$(probes "$scen" $pst)" ]] || bad+=" probe($(tr '\n' '|' <"$GH_API_LOG"))"
+  # shellcheck disable=SC2086
+  waited $pst || bad+=" waits($(tr '\n' '|' <"$SLEEP_LOG"))"
+  ! grep -qE "$C2|$C3|FAILED" "$OUT" || bad+=" refusal-wording"
+  if [[ -z "$bad" ]]; then ok "gh $title: installed"
+  else fail "gh $title (rc=$rc):$bad"; show; fi
+  rm -rf "$d"
+}
+gh_installs "probe HTTP 503, then 200" ghapi "503 200" FAKE_GH_PROBE_SEQ="503 ok"
+gh_installs "probe HTTP 502, 503, then 200 on the third and last attempt" ghapi "502 503 200" FAKE_GH_PROBE_SEQ="502 503 ok"
+gh_installs "probe gets no HTTP response, then 200" ghapi "- 200" FAKE_GH_PROBE_SEQ="down ok"
+gh_class "probe HTTP 503, then 401" ghapi 2 \
+  "$C2: GitHub rejected gh's credentials (HTTP 401) (gh: Bad credentials (HTTP 401)); run 'gh auth login'" 0 "503 401" \
+  FAKE_GH_PROBE_SEQ="503 401"
+gh_class "probe HTTP 503, then 429 (not retried)" ghapi 3 "$C3: HTTP 429, rate limited (gh: You have exceeded" 0 "503 429" \
+  FAKE_GH_PROBE_SEQ="503 429"
+gh_class "probe: no HTTP response, then 403 rate-limited (not retried)" ghapi 3 "$C3: HTTP 403, rate limited" 0 "- 403rl" \
+  FAKE_GH_PROBE_SEQ="down 403rl"
+gh_class "probe HTTP 503, then 404: the verify calls decide" ghnoatt 4 "$C4 $CLI_AMD64" 1 "503 404" FAKE_GH_PROBE_SEQ="503 ok"
+gh_class "probe: no HTTP response, then 200, CLI attested for another tag" ghrefuse 4 "$C4 $CLI_AMD64" 1 "- 200" \
+  FAKE_GH_PROBE_SEQ="down ok"
+
+# 10e. N1: ambiguous probe results go to the verify calls; a verify exit
+#      code that is neither a refusal (1) nor gh's auth code (4) is a
+#      failed verification; the status line is read for HTTP/1.1 too (as
+#      behind a TLS-intercepting proxy).
+gh_installs "probe exits 2 with no output (no status line): the verify calls decide" ghapi crash FAKE_GH_PROBE_SEQ=crash
+gh_class "probe exits 2 with no output, CLI attested for another tag" ghrefuse 4 "$C4 $CLI_AMD64" 1 crash FAKE_GH_PROBE_SEQ=crash
+gh_installs "probe exits 1 with output that is no status line: the verify calls decide" ghapi garbage FAKE_GH_PROBE_SEQ=garbage
+gh_class "verify exits 2 after the API answered" ghapi 4 "$C4 $CLI_AMD64" 1 200 FAKE_GH_VERIFY_RC=2
+gh_installs "API over HTTP/1.1" ghapi 200 FAKE_GH_PROTO=1.1
+gh_class "token rejected over HTTP/1.1" ghapi 2 \
+  "$C2: GitHub rejected gh's credentials (HTTP 401) (gh: Bad credentials (HTTP 401)); run 'gh auth login'" 0 401 \
+  FAKE_GH_AUTH=bad FAKE_GH_PROTO=1.1
+gh_class "HTTP/1.1 503, three times" ghapi 3 "$C3: HTTP 503 (gh: HTTP 503)" 0 "503 503 503" FAKE_GH_NET=503 FAKE_GH_PROTO=1.1
+gh_class "HTTP/1.1 403 rate-limited" ghapi 3 "$C3: HTTP 403, rate limited (gh: API rate limit exceeded" 0 403rl \
+  FAKE_GH_NET=403rl FAKE_GH_PROTO=1.1
 
 if [[ $failures -ne 0 ]]; then
   echo "[install-test] $failures failure(s)" >&2

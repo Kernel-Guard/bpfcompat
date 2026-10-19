@@ -35,9 +35,13 @@ ALT_LIBEXEC_DIR="/usr/libexec/bpfcompat"
 err() { printf 'bpfcompat-install: %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-# first_line FILE: its first non-blank line, without control characters, to
-# quote gh's own words in a refusal (never more, never terminal escapes).
-first_line() { sed -n '/[^[:space:]]/{p;q;}' "$1" | tr -d '[:cntrl:]'; }
+# printable: keep printable ASCII only (space to '~'), so text quoted from
+# gh carries no C0 or C1 control (terminal escapes) and no other bytes.
+# Octal, not [:print:]: busybox tr has no [:print:] class.
+printable() { LC_ALL=C tr -cd '\040-\176'; }
+# first_line FILE: its first non-blank line, printable, to quote gh's own
+# words in a refusal (never more, never terminal escapes).
+first_line() { sed -n '/[^[:space:]]/{p;q;}' "$1" | printable; }
 # gh_no_auth REASON FILE: gh cannot authenticate to GitHub; quote FILE's
 # first line (gh's own words) and refuse.
 gh_no_auth() {
@@ -176,7 +180,7 @@ elif have gh; then
     # A gh that cannot run at all (say, an unreadable config) fails every
     # command; say so with gh's own error rather than blame its version.
     if ! gh --help >/dev/null 2>&1; then
-      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p' | tr -d '[:cntrl:]')" || :
+      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p' | printable)" || :
       die "installed gh could not run 'gh --help'${gh_err:+ ($gh_err)}; fix gh or install cosign - refusing checksum-only installation"
     fi
     gh_lacks="the 'gh attestation' command"
@@ -197,7 +201,7 @@ elif have gh; then
   # token rejected, or the GitHub API out of reach. Tell those apart from a
   # refused verification without trusting gh's wording, which changes
   # between releases and is all gh prints when stdout is not a terminal:
-  # before the first verify call, make one read-only request to the
+  # before the first verify call, make a read-only request to the
   # attestation API that call uses (same gh, host, token and proxy), and
   # refuse here only on positive evidence - gh's documented auth exit code
   # (4), an HTTP 401, no HTTP response at all, a 5xx, a 429 or a
@@ -206,24 +210,36 @@ elif have gh; then
   # always reported as a failed verification. Probing first, not after a
   # failure, means a refusal can never be relabelled as an auth or network
   # problem, however gh words it or whatever the API does next.
+  # A 5xx or no HTTP response can be transient (gh's own verify retries a
+  # 5xx), so those alone are tried again: three attempts at most, 3 s apart,
+  # and the last one decides. A 429 or rate-limited 403 is not retried: it
+  # asks the client to wait (Retry-After, X-Ratelimit-Reset) far longer than
+  # an installer should, and asking again sooner only spends more of the
+  # limit. 200, 404 and 401 are answers.
   gh_digest="$($SHA256 <"$CLI_ASSET" | sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p')" || :
-  gh_rc=0
-  gh api --method GET --include "repos/$REPO/attestations/sha256:$gh_digest?per_page=1" \
-    >.gh-api.out 2>.gh-api.err || gh_rc=$?
-  gh_status="$(tr -d '\r' <.gh-api.out | sed -n '1s/^HTTP\/[0-9.]* \([0-9][0-9][0-9]\).*/\1/p')" || :
-  gh_down=""
-  case "$gh_rc:$gh_status" in
-    4:) gh_no_auth "gh is not logged in" .gh-api.err ;;
-    *:401) gh_no_auth "GitHub rejected gh's credentials (HTTP 401)" .gh-api.err ;;
-    *:5[0-9][0-9]) gh_down="HTTP $gh_status" ;;
-    *:429) gh_down="HTTP 429, rate limited" ;;
-    *:403)
-      # A 403 is an outage only with GitHub's own rate-limit headers.
-      gh_rl="$(tr -d '\r\033' <.gh-api.out | sed -n '2,/^$/{s/\[[0-9;]*m//g;p;}' |
-        grep -ciE '^(x-ratelimit-remaining: *0|retry-after: *[0-9]+)$')" || :
-      [ "${gh_rl:-0}" = 0 ] || gh_down="HTTP 403, rate limited" ;;
-    1:) [ -s .gh-api.out ] || gh_down="no HTTP response" ;;
-  esac
+  gh_try=1
+  while :; do
+    gh_rc=0
+    gh api --method GET --include "repos/$REPO/attestations/sha256:$gh_digest?per_page=1" \
+      >.gh-api.out 2>.gh-api.err || gh_rc=$?
+    gh_status="$(tr -d '\r' <.gh-api.out | sed -n '1s/^HTTP\/[0-9.]* \([0-9][0-9][0-9]\).*/\1/p')" || :
+    gh_down="" gh_again=""
+    case "$gh_rc:$gh_status" in
+      4:) gh_no_auth "gh is not logged in" .gh-api.err ;;
+      *:401) gh_no_auth "GitHub rejected gh's credentials (HTTP 401)" .gh-api.err ;;
+      *:5[0-9][0-9]) gh_down="HTTP $gh_status" gh_again=1 ;;
+      *:429) gh_down="HTTP 429, rate limited" ;;
+      *:403)
+        # A 403 is an outage only with GitHub's own rate-limit headers.
+        gh_rl="$(tr -d '\r\033' <.gh-api.out | sed -n '2,/^$/{s/\[[0-9;]*m//g;p;}' |
+          grep -ciE '^(x-ratelimit-remaining: *0|retry-after: *[0-9]+)$')" || :
+        [ "${gh_rl:-0}" = 0 ] || gh_down="HTTP 403, rate limited" ;;
+      1:) [ -s .gh-api.out ] || gh_down="no HTTP response" gh_again=1 ;;
+    esac
+    if [ -z "$gh_again" ] || [ "$gh_try" -ge 3 ]; then break; fi
+    gh_try=$((gh_try + 1))
+    sleep 3
+  done
   if [ -n "$gh_down" ]; then
     gh_err="$(first_line .gh-api.err)" || :
     die "GitHub API unavailable for attestation verification: $gh_down${gh_err:+ ($gh_err)}; check the network or proxy and https://www.githubstatus.com, then retry, or install cosign - refusing checksum-only installation"
