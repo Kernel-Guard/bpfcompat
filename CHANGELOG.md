@@ -7,7 +7,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.4.0-rc.5] - TBD (date set when the tag is cut)
+
+Release candidate for v0.4.0: the changes merged since v0.4.0-rc.4. rc.4
+qualification evidence does not carry over to this candidate.
+
 ### Security
+- `install.sh` binds verification to the requested release: the cosign
+  certificate identity and the GitHub attestation source ref must name exactly
+  that tag, so a signature or attestation made for another release (for example
+  a prerelease) no longer vouches for it. `BPFCOMPAT_VERSION` and the resolved
+  latest tag must look like `vX.Y.Z` or `vX.Y.Z-rc.N`; the installer body runs
+  only when the whole script was received; whether sudo is needed is decided per
+  target directory before anything is installed. (The installer is served from
+  `main`, so this already applies to `curl … /main/scripts/install.sh | sh`
+  users since #236 merged, including v0.3.7 installs.)
+- `install.sh` without cosign (the gh path) also checks the unsigned
+  `SHA256SUMS` against the subjects of the CLI's verified provenance. It
+  refuses, as a failed verification, when the two disagree on whether the
+  release has a validator or a license bundle, or when a file would be
+  installed under a name that provenance does not give its bytes. Before, a
+  deleted `SHA256SUMS` line, or a genuine asset of the same release served
+  under another asset's name, installed without error. The cosign path is
+  unchanged.
 - The GitHub Action no longer pastes inputs into its `run:` scripts. Every
   input reaches the scripts through `env:` and is read as quoted data, so a
   value containing quotes, `$(...)`, backticks or newlines can no longer run as
@@ -15,7 +37,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   (`scripts/check-action-input-interpolation.sh`) and an end-to-end injection
   test keep it that way.
   - Values containing `$VAR`, backticks or `\` used to be expanded by bash as
-    a side effect; they are now passed literally.
+    a side effect; they are now passed literally. `command` is unchanged: it
+    was already passed through `env:` and is still run by the guest shell.
+- The GitHub Action verifies prebuilt binaries against the attestations of
+  exactly the pinned release: its tag ref and the commit it was built from
+  (`--source-ref`, `--source-digest`). Assets attested by another release's
+  run are a hard error. A tag pin is resolved to its commit with
+  `git ls-remote`, bounded to 60 seconds; if that fails or times out, or gh is
+  older than 2.68.0, the Action builds from its pinned source with a warning
+  instead of using the prebuilt binaries. The v0.4.0-rc.2 to rc.4 Actions
+  accept assets attested by another tag's release run.
+- `scripts/verify-release-assets.sh` requires `BPFCOMPAT_EXPECTED_SOURCE_SHA`
+  (a full commit SHA) and `BPFCOMPAT_EXPECTED_SOURCE_REF` (`refs/tags/v…`),
+  refuses to run without them (exit 2), and binds every
+  `gh attestation verify` to them. The release, promotion and maintenance
+  workflows pass the release's own commit and tag.
+- Promotion requires the draft release's `SHA256SUMS.sig`, `SHA256SUMS.crt`
+  and SBOM files (`bpfcompat.sbom.cdx.json` and its `.sig` and `.crt`) to be
+  the candidate run's own copies, and binds the attestations of the draft
+  assets and the candidate evidence to the tag and commit. Every cosign
+  signature it checks (`SHA256SUMS`, the SBOM and the image) must carry the
+  exact `release-artifacts.yml@refs/tags/<tag>` identity, as on the v0.3.8
+  line, so a signature made by another tag's run is refused.
+- The stable release gate (the `vX.Y.Z` tag build) requires the committed
+  readiness record to show a completed rollback drill of the release's own
+  candidate (drill alias and image digest), as it already required a
+  completed incident drill. It also requires the canary run lookups an
+  attested readiness report records (each canary's run attempt and attempt
+  start, and the release's publication time), so a record written by an
+  earlier `production-readiness-report.sh` is refused.
+  `scripts/release-workflow-gates_test.sh` runs the stable gate and the
+  promotion steps above against stub tools in CI.
 
 ### Fixed
 - A release-pinned GitHub Action now runs the validator it downloaded and
@@ -32,31 +84,64 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   with no record of which kernel ran, and a required target could pass.
 - A missing local `--artifact` path is no longer treated as a registry
   reference, unless it reads like one: a relative path without a `./`, `../`,
-  `/` or `~` prefix that does not end in `.bpf.o` and that either has a
-  host-like first component (it contains `.` or `:`, or is `localhost`) or
-  contains `@sha256:`. A path with one of those prefixes is never pulled.
+  `/` or `~` prefix that does not end in `.bpf.o` and that either contains a
+  `/` after a host-like first component (it contains `.` or `:`, or is
+  `localhost`) or contains `@sha256:`. A path with one of those prefixes is
+  never pulled.
   - Before, any non-existent path that happened to parse as an image reference
-    (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was pulled from
-    Docker Hub. That leaked the local path and failed with a registry error.
+    (`/home/u/prog.bpf.o`, `build/prog.bpf.o`, `./prog.bpf.o`) was treated as a
+    registry reference (Docker Hub for most, e.g. `build/prog.bpf.o`). That
+    leaked the local path and failed with a registry error.
   - It now fails locally with `artifact "<path>": no such file`. This covers
     `test`, `test-command`, `suite`, the API and `pkg/bpfcompat.Validate`.
-  - The CLI now classifies remote refs like the Action's `artifact` input:
-    the first path component must be a registry host (contains `.` or `:`, or
-    is `localhost`), or the ref must pin an `@sha256:` digest.
-  - The Action treats an `artifact` input that looks remote (see
-    `docs/compatibility-contract.md`, including dot-directories such as
-    `.output/`) as remote even when a workspace file of that name exists;
-    prefix workspace files with `./`.
+  - The CLI now classifies remote refs like the Action's `artifact` input, but
+    stricter in the safe direction (see `docs/compatibility-contract.md`): the
+    first path component must be a registry host (contains `.` or `:`, or is
+    `localhost`), or the ref must pin an `@sha256:` digest.
+  - Unchanged behaviour, now documented in `docs/compatibility-contract.md`:
+    the Action treats an `artifact` input that looks remote (including
+    dot-directories such as `.output/`) as remote even when a workspace file of
+    that name exists; prefix workspace files with `./`.
+- `install.sh` without cosign names why gh cannot check a release, instead of
+  saying gh is missing or that verification FAILED, and still refuses: gh
+  lacks the attestation command or flags (gh 2.68.0 or later is needed) or
+  cannot run at all; gh is not logged in or its token is rejected; or the
+  GitHub API cannot be reached (no response, a 5xx, a 429 or a rate-limited
+  403). One read-only API request made before any verification tells these
+  apart from a refusal; a 5xx or no response there is tried up to three
+  times, 3 s apart. A refused verification still reads "GitHub attestation
+  verification FAILED".
+- `install.sh` checks the whole release tag (`BPFCOMPAT_VERSION` or the
+  resolved latest tag): a value that holds a valid tag on one of several lines
+  is refused before any download, not only by curl.
+- The manual verification commands in `README.md` and
+  `docs/verifying-releases.md` are bound to the exact release tag, as
+  `install.sh` is: `cosign verify-blob` uses the exact
+  `release-artifacts.yml@refs/tags/$VER` identity, and `gh attestation verify`
+  passes `--source-ref "refs/tags/$VER"` (gh 2.68.0 or later). The README's
+  image check uses the exact signer identity of the pinned image. Before, they
+  accepted another tag's signature or attestation, and the image check any
+  signer whose identity contained the repository name.
 
 ### Added
+- A read-only RC preflight inventories observed prerequisites without counting
+  pending qualification as a pass. Candidate Action pins and the canary's
+  candidate env are read from actual workflow YAML nodes; comments, shell-script
+  text and steps or jobs that can never run (a constant `if` other than
+  `true`, such as `false` or `0`, or a job that needs one of those; an empty
+  `if` is no condition) cannot establish them. Conditions that read a context
+  or call a function are left to the runner.
 - Releases carry the third-party license material of their binaries as signed
   assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
   (verbatim license, notice and patent texts of every linked Go module, the Go
   toolchain and the validator's native components, with an `INVENTORY.json`
   generated from the shipped binaries) and
   `bpfcompat-validator-relink-kit-linux-amd64.tar.gz` (the validator's `main.o`,
-  link commands, linker trace and map, inputs with owning packages, sources and
-  `relink.sh`). `validator-build-inputs.json` is now a release asset too.
+  link commands, linker trace and map, inputs with owning packages, the
+  validator's own C sources and `relink.sh`, which installs the locked library
+  packages from snapshot.ubuntu.com). The static archives and the native source
+  packages are not included while their distribution decisions are undecided.
+  `validator-build-inputs.json` is now a release asset too.
   - `install.sh` and the GitHub Action install the license bundle, verified
     with the binaries, when a release lists it; releases without it install
     as before. The container image carries the CLI's texts in
@@ -66,10 +151,118 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     refuses while a stable-blocking decision is undecided.
 
 ### Changed
-- **Breaking:** implicit Docker Hub short refs in tag form, such as
-  `org/name:tag`, are no longer pulled. Spell them with the host, e.g.
-  `docker.io/org/name:tag`; the "no such file" error suggests that spelling.
-  Digest-pinned short refs (`org/name@sha256:…`) are still pulled.
+- Release build: the static validator is built inside a digest-pinned Ubuntu
+  builder from `validator/build-inputs.lock` (exact package versions from a
+  fixed snapshot.ubuntu.com state). While the validator sources are the tree the
+  lock records, the build fails unless the result is byte-identical to that
+  recorded reproduction. A stable release must ship the same validator bytes as
+  the release candidate it graduates.
+- Release gate: each VM gate report is evaluated on its own and the gate fails
+  closed on a missing or malformed report.
+- Production readiness binds more evidence to the exact candidate: inputs must
+  be single-object JSON; the rollback drill must use the candidate's alias and
+  image digest and complete after the candidate was built; the operator note
+  must contain the exact candidate-evidence hash; the Falco run must start after
+  the candidate was built (whether it ran the candidate's validator is recorded,
+  not required); the promotion incident note must name `promote-release` and
+  link exactly one workflow run, and an earlier candidate's note is accepted
+  with that fact recorded.
+  - The Falco run's start is the earliest of the report's `run.started_at`,
+    which the runner writes after the targets ran, and every target's
+    `started_at`; every required or passing target must record one.
+  - With attestation verification on, the drill and incident runs are read
+    from GitHub. The drill must be a successful, dispatched
+    `rollback-drill.yml` run of this repository on `main` that started after
+    the candidate was built, with the note's completion time inside it. The
+    incident must link a completed, dispatched `promote-release.yml` run of
+    this repository that did not succeed; which rejection qualifies is the
+    operator's call.
+  - With attestation verification on, every release-candidate canary run is
+    looked up. The run must be a successful `release-candidate-canary.yml` run
+    of this repository from the expected event (the timed ones on `main`). The
+    evidence must come from a successful attempt in which the evidence job
+    itself ran. That attempt must start after the release was published (read
+    from the release, which must be published and not predate the candidate
+    evidence) and, for T+24h and T+72h, before the plan job's window closes:
+    a partial re-run of a failed canary started after its window closed is
+    refused, and one started inside it is accepted. GitHub reports a run's
+    conclusion from its latest attempt, so a failed re-run of a successful
+    canary voids it. The attempt, its start and the run's branch are recorded,
+    with the release's publication time.
+- CI: top-level workflow tokens are read-only; the hosted compatibility gate is
+  required for `pkg/` and `scripts/` changes; untrusted-input parsers have fuzz
+  coverage.
+- The stable release can pass its own consistency checks. While
+  `release.yaml` is on the `stable` channel and `vX.Y.Z` positively does not
+  exist (the stable pull request) or resolves to the commit under check (its
+  tag build), the consumer canary's `# bpfcompat-pin: stable` step may still
+  pin the most recent published stable release before `X.Y.Z`, and the
+  SHA-pinned integration templates may stay on that release; tag-form pins in
+  the docs may name `vX.Y.Z` while its tag does not exist. Every later commit
+  is strict again, so both are repinned once the tag exists, and a failed
+  lookup fails the check. `check-release-consistency_test.sh` reads the
+  channel and stable version from `release.yaml`. The runbook lists the
+  stable-only tag gates and the order: operator record, readiness report,
+  stable pull request, tag, promotion.
+- **Breaking** (CLI, API and `pkg/bpfcompat`; the Action already required an
+  explicit host): implicit Docker Hub short refs in tag form, such as
+  `org/name:tag` or `name:tag` (e.g. `alpine:3`), are no longer pulled. Spell
+  them with the host, e.g. `docker.io/org/name:tag`; the "no such file" error
+  suggests that spelling. Digest-pinned short refs (`org/name@sha256:…`) are
+  still pulled.
+
+### Migration notes
+- Docker Hub images (CLI, API, `pkg/bpfcompat`): write `docker.io/org/name:tag`
+  instead of `org/name:tag`, and `docker.io/name:tag` instead of `name:tag`.
+  The "no such file" error suggests that spelling.
+- GitHub Action (unchanged, now documented): an `artifact` input whose first
+  path component contains `.` or `:` (for example `.output/` from
+  libbpf-bootstrap, or `out.v2/`) is passed to the CLI as a remote reference.
+  Prefix workspace files with `./`. In this release such a missing `.bpf.o`
+  path fails with "no such file" instead of a registry error.
+- Action path and option inputs (`artifact`, `matrix`, `out`, `manifest`,
+  `markdown`, `workdir`, `suite*`, `binary`, `timeout`, `concurrency`,
+  `disk-resize`, `validation-mode`, `keep-vm-on-failure`) containing `$VAR`,
+  backticks or `\` are now passed literally. For example,
+  `out: $RUNNER_TEMP/r.json` must become `out: ${{ runner.temp }}/r.json`.
+  `command` is unchanged: it is still run by the guest shell, so
+  `$BPFCOMPAT_BIN`, `$BPFCOMPAT_ARTIFACT` and `$BPFCOMPAT_REMOTE_ROOT` work as
+  before.
+- Command mode: a target whose guest kernel release cannot be read is now
+  `INFRA_ERROR` (and fails a required run) instead of passing or failing.
+- Self-hosted runners with a validator in `/usr/local/libexec` or
+  `/usr/libexec`: a release-pinned Action now runs the validator it downloaded;
+  set `BPFCOMPAT_VALIDATOR_BIN`/`BPFCOMPAT_VALIDATOR_SHA256` in the workflow to
+  keep using another one (the run then warns).
+- `install.sh` installs the license bundle under `<DOC_DIR>/<tag>/` when the
+  release publishes one (default `<BIN_DIR>/../share/doc/bpfcompat`; set
+  `BPFCOMPAT_DOC_DIR` to change it). If that directory is not writable, the
+  installer uses sudo or stops before installing anything.
+- GitHub Action pinned to a release with `prebuilt: auto` (the default): the
+  prebuilt binaries now need gh 2.68.0 or later on the runner, and a tag pin
+  also needs `git` and `timeout` to resolve the tag within 60 seconds.
+  Otherwise the run builds from the pinned source with a warning, which needs
+  the source-build dependencies. With the v0.4.0-rc.4 Action, self-hosted
+  runners on gh 2.51 to 2.67 used the prebuilt binaries, and on gh 2.47 to
+  2.50 the job failed. A SHA pin needs neither `git` nor `timeout`.
+- Callers of `scripts/verify-release-assets.sh` must set
+  `BPFCOMPAT_EXPECTED_SOURCE_SHA` and `BPFCOMPAT_EXPECTED_SOURCE_REF`; without
+  them it exits 2.
+- A production readiness record generated with an earlier
+  `production-readiness-report.sh` must be regenerated: the stable tag build
+  refuses it.
+
+### Known limitations
+- When this section was drafted, every stable-blocking decision in
+  `distribution/policy.json` was undecided. The license bundle and relink kit
+  record facts and ship texts verbatim; they do not elect a license or state
+  that any license condition is met. A stable release is refused until the
+  stable-blocking decisions are recorded.
+- The prebuilt static validator is published for x86_64 only.
+- See "Known limitations of the supported path" in
+  `docs/compatibility-contract.md` (artifact-path classification, untrusted
+  names in reports, classification codes, Action binary precedence, shared
+  hosts and SSH).
 
 ## [0.4.0-rc.4] - 2026-10-14
 

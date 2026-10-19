@@ -2,8 +2,10 @@
 # Regression for the composite action's third-party license bundle delivery.
 #
 # Renders the real action.yml "Download prebuilt binaries" step the way the
-# Actions runner does and runs it with bash against stubs (curl, gh, uname,
-# verify-release-assets.sh). Hermetic: no network, no real release assets.
+# Actions runner does and runs it with bash against stubs (curl, gh, git,
+# uname, verify-release-assets.sh). Hermetic: no network, no real release
+# assets. The gh and git stubs only let the step bind verification to the
+# pinned release (scripts/action-validator-pin_test.sh covers that binding).
 #
 # Contract checked:
 #   - A release whose SHA256SUMS lists bpfcompat-third-party-licenses.tar.gz:
@@ -26,6 +28,7 @@ import hashlib
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -102,7 +105,23 @@ f='{assets}'/"${{url##*/}}"
 [[ -f "$f" ]] || exit 22
 cp "$f" "$out"
 """)
-    write_exec(os.path.join(stubs, "gh"), "#!/usr/bin/env bash\nexit 0\n")
+    # A gh that can bind attestations to a source ref and commit (>= 2.68.0).
+    write_exec(os.path.join(stubs, "gh"), """#!/usr/bin/env bash
+if [[ "$1 ${2:-} ${3:-}" == "attestation verify --help" ]]; then
+  echo '      --signer-workflow string       Enforce that the workflow that signed the attestation matches the provided value'
+  echo '      --source-digest string         Enforce that the digest associated with the source repository matches the provided value'
+  echo '      --source-ref string            Enforce that the git ref associated with the source repository matches the provided value'
+fi
+exit 0
+""")
+    # git ls-remote resolves the pinned tag v9.9.9 to its commit.
+    write_exec(os.path.join(stubs, "git"), f"""#!/usr/bin/env bash
+if [[ "${{1:-}}" == ls-remote ]]; then
+  printf '%s\\trefs/tags/v9.9.9\\n%s\\trefs/tags/v9.9.9^{{}}\\n' {"d" * 40} {"a" * 40}
+  exit 0
+fi
+exec '{shutil.which("git") or "/usr/bin/git"}' "$@"
+""")
     write_exec(os.path.join(stubs, "uname"),
                "#!/usr/bin/env bash\nif [[ \"$1\" == -m ]]; then echo x86_64; else /bin/uname \"$@\"; fi\n")
     outputs = os.path.join(d, "outputs")

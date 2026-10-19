@@ -35,6 +35,27 @@ ALT_LIBEXEC_DIR="/usr/libexec/bpfcompat"
 err() { printf 'bpfcompat-install: %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# printable: keep printable ASCII only (space to '~'), so text quoted from
+# gh carries no C0 or C1 control (terminal escapes) and no other bytes.
+# Octal, not [:print:]: busybox tr has no [:print:] class.
+printable() { LC_ALL=C tr -cd '\040-\176'; }
+# first_line FILE: its first non-blank line, printable, to quote gh's own
+# words in a refusal (never more, never terminal escapes).
+first_line() { sed -n '/[^[:space:]]/{p;q;}' "$1" | printable; }
+# gh_no_auth REASON FILE: gh cannot authenticate to GitHub; quote FILE's
+# first line (gh's own words) and refuse.
+gh_no_auth() {
+  gh_err="$(first_line "$2")" || :
+  die "GitHub authentication needed for attestation verification: $1${gh_err:+ ($gh_err)}; run 'gh auth login' or set a valid GH_TOKEN, or install cosign - refusing checksum-only installation"
+}
+# gh_refused ASSET STATUS: a `gh attestation verify` call failed. gh exits
+# 4 only when it has no credentials at all (its root check, which runs
+# before the asset is read), so that is no refusal; any other failure is
+# reported as a failed verification, whatever gh printed.
+gh_refused() {
+  [ "$2" != 4 ] || gh_no_auth "gh is not logged in" .gh-verify.out
+  die "GitHub attestation verification FAILED for $1"
+}
 
 # needs_root DIR: true when DIR (or, if it does not exist yet, its nearest
 # existing ancestor, which `install -d` would create it under) is not writable.
@@ -55,9 +76,10 @@ DOC_DIR="${BPFCOMPAT_DOC_DIR:-$(dirname "$BIN_DIR")/share/doc/bpfcompat}"
 LICENSE_ASSET="bpfcompat-third-party-licenses.tar.gz"
 
 have curl || die "curl is required"
-if have sha256sum; then SHACHK="sha256sum -c"; elif have shasum; then SHACHK="shasum -a 256 -c"; else
+if have sha256sum; then SHA256="sha256sum"; elif have shasum; then SHA256="shasum -a 256"; else
   die "need sha256sum or shasum to verify downloads"
 fi
+SHACHK="$SHA256 -c"
 
 os="$(uname -s)"; arch="$(uname -m)"
 [ "$os" = "Linux" ] || die "unsupported OS '$os' (only Linux is published today)"
@@ -77,7 +99,12 @@ if [ "$VERSION" = "latest" ]; then
   [ -n "$VERSION" ] || die "could not resolve the latest release tag"
 fi
 # The tag is spliced into download URLs and into the exact signing identity
-# below, so it must be a plain release tag (no path segments, no regex).
+# below, so it must be a plain release tag (no path segments, no regex). grep
+# matches line by line, so first reject any character a tag cannot hold (a
+# newline included): the whole value is checked, not just one of its lines.
+case "$VERSION" in
+  *[!0123456789.crv-]*) die "invalid release tag '$VERSION' (expected vX.Y.Z or vX.Y.Z-rc.N)" ;;
+esac
 printf '%s\n' "$VERSION" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' ||
   die "invalid release tag '$VERSION' (expected vX.Y.Z or vX.Y.Z-rc.N)"
 base="https://github.com/$REPO/releases/download/$VERSION"
@@ -97,7 +124,8 @@ install_validator=1
 # The static C validator is published for amd64 only today. If this release has
 # no validator for the current arch, install the CLI without it rather than
 # failing - VM artifact validation then needs `make validator-static` locally or
-# command mode. (SHA256SUMS is integrity-checked below regardless.)
+# command mode. (SHA256SUMS is authenticated below regardless: by its cosign
+# signature, or on the gh path against the release run's attested assets.)
 if [ "$install_validator" = "1" ]; then
   if grep -qE "^[0-9a-fA-F]{64}  ${VALIDATOR_ASSET}\$" SHA256SUMS; then
     curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
@@ -143,24 +171,120 @@ if have cosign; then
   else
     die "cosign signature verification FAILED for SHA256SUMS - refusing to install"
   fi
-elif have gh && gh attestation --help >/dev/null 2>&1; then
+elif have gh; then
+  # The tag-bound check below needs `gh attestation` (gh 2.47.0, hidden until
+  # 2.49.0), --signer-workflow (2.51.0) and --source-ref (2.68.0). An older gh
+  # would fail it like a forged release would, so ask gh's own help what it
+  # offers (not its version: distro builds vary) and name what is missing.
+  gh_lacks=""
+  if ! gh attestation --help >/dev/null 2>&1; then
+    # A gh that cannot run at all (say, an unreadable config) fails every
+    # command; say so with gh's own error rather than blame its version.
+    if ! gh --help >/dev/null 2>&1; then
+      gh_err="$( { gh --help >/dev/null; } 2>&1 | sed -n '1p' | printable)" || :
+      die "installed gh could not run 'gh --help'${gh_err:+ ($gh_err)}; fix gh or install cosign - refusing checksum-only installation"
+    fi
+    gh_lacks="the 'gh attestation' command"
+  else
+    gh_help="$(gh attestation verify --help 2>&1 || true)"
+    for flag in --signer-workflow --source-ref; do
+      printf '%s\n' "$gh_help" | grep -Eq -- "(^|[^[:alnum:]-])$flag([^[:alnum:]-]|\$)" ||
+        gh_lacks="${gh_lacks:+$gh_lacks and }$flag"
+    done
+    [ -z "$gh_lacks" ] || gh_lacks="$gh_lacks in 'gh attestation verify'"
+  fi
+  if [ -n "$gh_lacks" ]; then
+    gh_ver="$(gh --version 2>/dev/null | sed -n '1s/^gh version \([0-9][0-9.]*\).*/\1/p')" || :
+    die "installed gh${gh_ver:+ $gh_ver} lacks $gh_lacks, needed for tag-bound attestation verification; upgrade to gh >= 2.68.0 or install cosign - refusing checksum-only installation"
+  fi
   err "cosign not found; verifying GitHub build attestations"
+  # A capable gh can still be unable to check anything: not logged in, its
+  # token rejected, or the GitHub API out of reach. Tell those apart from a
+  # refused verification without trusting gh's wording, which changes
+  # between releases and is all gh prints when stdout is not a terminal:
+  # before the first verify call, make a read-only request to the
+  # attestation API that call uses (same gh, host, token and proxy), and
+  # refuse here only on positive evidence - gh's documented auth exit code
+  # (4), an HTTP 401, no HTTP response at all, a 5xx, a 429 or a
+  # rate-limited 403. Any other answer (200, 404 = no attestation for this
+  # digest, ...) leaves the decision to the verify calls, whose failures are
+  # always reported as a failed verification. Probing first, not after a
+  # failure, means a refusal can never be relabelled as an auth or network
+  # problem, however gh words it or whatever the API does next.
+  # A 5xx or no HTTP response can be transient (gh's own verify retries a
+  # 5xx), so those alone are tried again: three attempts at most, 3 s apart,
+  # and the last one decides. A 429 or rate-limited 403 is not retried: it
+  # asks the client to wait (Retry-After, X-Ratelimit-Reset) far longer than
+  # an installer should, and asking again sooner only spends more of the
+  # limit. 200, 404 and 401 are answers.
+  gh_digest="$($SHA256 <"$CLI_ASSET" | sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p')" || :
+  gh_try=1
+  while :; do
+    gh_rc=0
+    gh api --method GET --include "repos/$REPO/attestations/sha256:$gh_digest?per_page=1" \
+      >.gh-api.out 2>.gh-api.err || gh_rc=$?
+    gh_status="$(tr -d '\r' <.gh-api.out | sed -n '1s/^HTTP\/[0-9.]* \([0-9][0-9][0-9]\).*/\1/p')" || :
+    gh_down="" gh_again=""
+    case "$gh_rc:$gh_status" in
+      4:) gh_no_auth "gh is not logged in" .gh-api.err ;;
+      *:401) gh_no_auth "GitHub rejected gh's credentials (HTTP 401)" .gh-api.err ;;
+      *:5[0-9][0-9]) gh_down="HTTP $gh_status" gh_again=1 ;;
+      *:429) gh_down="HTTP 429, rate limited" ;;
+      *:403)
+        # A 403 is an outage only with GitHub's own rate-limit headers.
+        gh_rl="$(tr -d '\r\033' <.gh-api.out | sed -n '2,/^$/{s/\[[0-9;]*m//g;p;}' |
+          grep -ciE '^(x-ratelimit-remaining: *0|retry-after: *[0-9]+)$')" || :
+        [ "${gh_rl:-0}" = 0 ] || gh_down="HTTP 403, rate limited" ;;
+      1:) [ -s .gh-api.out ] || gh_down="no HTTP response" gh_again=1 ;;
+    esac
+    if [ -z "$gh_again" ] || [ "$gh_try" -ge 3 ]; then break; fi
+    gh_try=$((gh_try + 1))
+    sleep 3
+  done
+  if [ -n "$gh_down" ]; then
+    gh_err="$(first_line .gh-api.err)" || :
+    die "GitHub API unavailable for attestation verification: $gh_down${gh_err:+ ($gh_err)}; check the network or proxy and https://www.githubstatus.com, then retry, or install cosign - refusing checksum-only installation"
+  fi
+  # The CLI's call also prints its verified provenance's subjects: every
+  # asset the tag's release run attested, as "<sha256>  <name>" lines.
   GH_REPO="$REPO" gh attestation verify "$CLI_ASSET" --repo "$REPO" \
     --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-    --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-    die "GitHub attestation verification FAILED for $CLI_ASSET"
+    --source-ref "refs/tags/$VERSION" --format json \
+    --jq '.[].verificationResult.statement.subject[] | "\(.digest.sha256)  \(.name)"' \
+    >.gh-attested 2>.gh-verify.out ||
+    gh_refused "$CLI_ASSET" "$?"
   if [ "$install_validator" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$VALIDATOR_ASSET" --repo "$REPO" \
       --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-      die "GitHub attestation verification FAILED for $VALIDATOR_ASSET"
+      --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+      gh_refused "$VALIDATOR_ASSET" "$?"
   fi
   if [ "$install_licenses" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$LICENSE_ASSET" --repo "$REPO" \
       --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-      --source-ref "refs/tags/$VERSION" >/dev/null 2>&1 ||
-      die "GitHub attestation verification FAILED for $LICENSE_ASSET"
+      --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+      gh_refused "$LICENSE_ASSET" "$?"
   fi
+  # SHA256SUMS is unsigned on this path, and an attestation vouches for
+  # bytes, not for a file name. So SHA256SUMS must agree with the CLI's
+  # verified provenance on whether the release has a validator and a license
+  # bundle (it decides what is downloaded), and that provenance must list
+  # every file under the name it is installed as - not only as some other
+  # asset of the run.
+  for f in "$VALIDATOR_ASSET" "$LICENSE_ASSET"; do
+    gh_a=0; grep -qE "^[0-9a-f]{64}  ${f}\$" .gh-attested && gh_a=1
+    gh_s=0; grep -qE "^[0-9a-fA-F]{64}  ${f}\$" SHA256SUMS && gh_s=1
+    case "$gh_a$gh_s" in
+      10) die "GitHub attestation verification FAILED for $f: SHA256SUMS does not list it, but the $VERSION release provenance of $CLI_ASSET does" ;;
+      01) die "GitHub attestation verification FAILED for $f: SHA256SUMS lists it, but the $VERSION release provenance of $CLI_ASSET does not" ;;
+    esac
+  done
+  for f in $DL_FILES; do
+    gh_d="$($SHA256 <"$f" | sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p')" || :
+    grep -qxF "$gh_d  $f" .gh-attested && continue
+    gh_as="$(sed -n "s/^$gh_d  //p" .gh-attested | sed -n '1p' | printable)" || :
+    die "GitHub attestation verification FAILED for $f: the $VERSION release provenance of $CLI_ASSET does not list these bytes under that name${gh_as:+ (it lists them as $gh_as)}"
+  done
   err "GitHub build attestations verified"
 else
   die "cryptographic verification requires cosign or GitHub CLI (gh); refusing checksum-only installation"

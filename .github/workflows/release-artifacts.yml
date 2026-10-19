@@ -201,6 +201,14 @@ jobs:
             .slo.campaign_count == 4 and
             .slo.infrastructure_errors == 0 and
             (.canaries | length == 3) and
+            ([.canaries[] |
+              (.workflow_run_attempt | type == "number" and . >= 1 and . == floor) and
+              (.attempt_started_at | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+            ] | all) and
+            ($c.published_at | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+            .rollback.completed == true and
+            .rollback.alias == (($c.image | sub("@[^@]*$"; "")) + ":rollback-drill-" + $c.tag) and
+            .rollback.candidate_digest == ($c.image | sub("^.*@"; "")) and
             .incident.completed == true and
             .operator.approval_mode == "solo-maintainer" and
             .operator.confirmed == true
@@ -329,6 +337,8 @@ jobs:
       - name: Verify candidate attestations
         env:
           GH_TOKEN: ${{ github.token }}
+          BPFCOMPAT_EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          BPFCOMPAT_EXPECTED_SOURCE_REF: ${{ github.ref }}
         run: >
           bash scripts/verify-release-assets.sh
           dist Kernel-Guard/bpfcompat
@@ -427,6 +437,8 @@ jobs:
       - name: Verify ARM64 candidate attestation
         env:
           GH_TOKEN: ${{ github.token }}
+          BPFCOMPAT_EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          BPFCOMPAT_EXPECTED_SOURCE_REF: ${{ github.ref }}
         run: >
           bash scripts/verify-release-assets.sh
           dist Kernel-Guard/bpfcompat

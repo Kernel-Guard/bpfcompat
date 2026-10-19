@@ -61,6 +61,12 @@ jobs:
         # v0.3.6 shipped a broken action; the docs kept pointing at it for two
         # weeks because nothing checked the pins a reader copy-pastes.
         run: bash scripts/check-doc-pins.sh
+      - name: Documented action pins regression
+        # The stable release window: docs may name vX.Y.Z before its tag
+        # exists (only that tag, only in the stable channel, only when the
+        # remote positively lacks it), and SHA-pinned templates may stay on
+        # the release the consumer canary's stable pin names until the tag.
+        run: bash scripts/check-doc-pins_test.sh
       - name: Action OCI-artifact detection regression
         # Guards the fix that lets the action accept remote OCI references
         # (ghcr.io/...) as `artifact`. Extracts is_remote_artifact() from
@@ -108,6 +114,10 @@ jobs:
         # missing or inconsistent inputs; open distribution decisions withhold
         # optional assets and block stable builds.
         run: bash scripts/distribution-bundle_test.sh
+      - name: RC preflight regression
+        # The read-only release-candidate inventory reports VERIFIED, MISSING
+        # or PENDING from observed state only; lookup failures abort it.
+        run: bash scripts/rc-preflight_test.sh
       - name: Image prefetch reliability regression
         # The public matrix lane lost five of seven weekly runs (Aug-Oct 2026)
         # to a single failed image download aborting the whole prefetch. These
@@ -156,6 +166,13 @@ jobs:
         run: bash scripts/check-production-code-scanning_test.sh
       - name: Production-readiness evidence regression
         run: bash scripts/production-readiness-report_test.sh
+      - name: Release-workflow gate regression
+        # Run by a tag's own copy, so they cannot be fixed for a release after
+        # it is tagged: the stable gate requires a completed rollback drill of
+        # the release's own candidate; promotion requires the candidate run's
+        # signature files and SBOM, this tag's exact signer identity, and
+        # tag- and commit-bound attestations.
+        run: bash scripts/release-workflow-gates_test.sh
       - name: Campaign-to-candidate binding regression
         # A scheduled campaign must test the designated immutable release
         # candidate (tag, commit, signed assets, attestations), not whatever

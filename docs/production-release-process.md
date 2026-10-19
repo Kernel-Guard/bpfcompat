@@ -67,8 +67,12 @@ digest, and the external Inspektor Gadget/KubeArmor/Falco workflow dispatched
 at the immutable RC tag. Run it once immediately after publication. Its two
 dated schedules run just after T+24 hours and T+72 hours and emit
 `[bpfcompat-rc-canary:v1]` evidence; any out-of-window invocation exits after
-the planning job. Remove or retarget these temporary schedules after
-graduation.
+the planning job. A partial re-run ("Re-run failed jobs", or re-running one
+job) is not a new invocation: it does not run the planning job again, keeps
+the first attempt's window decision, and can write evidence after the window
+has closed. The planning job alone therefore does not bound re-runs; the
+readiness report checks each canary run's attempts (see **Canaries** below).
+Remove or retarget these temporary schedules after graduation.
 
 Every job in `release-candidate-canary`, `external-consumer-canary`, and
 `consumer-canary` runs on the pinned `ubuntu-24.04` image, not the moving
@@ -166,8 +170,11 @@ aggregator binds every piece of evidence to the attested candidate
 (`generated_at`, tag, commit, image digest, evidence SHA-256):
 
 - **Falco.** `falco.started_at` must equal the report's own `run.started_at`,
-  and, as for the campaigns, that run must start after the candidate's
-  `generated_at`: evidence must postdate the candidate it graduates.
+  and the run must start after the candidate's `generated_at`: evidence must
+  postdate the candidate it graduates. The runner writes `run.started_at` when
+  it assembles the report, so the run's start is the earliest of that and every
+  target's `started_at`; a required or passing target without `started_at` is
+  refused, while an optional profile the runner never booted does not count.
   `workflow_run_id` and `commit_sha` are not recorded in the report and remain
   operator-asserted (`falco.run_identity` in the output). Written policy does
   not require the Falco lane to run the candidate's own bpfcompat, so this is
@@ -178,9 +185,28 @@ aggregator binds every piece of evidence to the attested candidate
   every canary must bind the same RC tag, commit, and image digest as the
   attested candidate. Completion times must be in milestone order and at least
   0, 20, and 68 hours after `generated_at`. These are floors derived from the
-  plan job's 20-30h and 68-78h windows after publication: publication time is
-  not in the attested evidence, but it never precedes `generated_at`. The plan
-  job itself enforces the upper bounds. Each canary's components must be
+  plan job's 20-30h and 68-78h windows after publication (T0): publication time
+  is not in the attested evidence, but it never precedes `generated_at`. With
+  attestation verification on, T0 is the release's `published_at`; the release
+  must be published, not a draft, and not before `generated_at`. Each canary's
+  `workflow_run_id` must be a successful `release-candidate-canary.yml` run of
+  this repository from `workflow_dispatch` (manual) or `schedule` (timed, on
+  `main`). GitHub reports a run's conclusion from its latest attempt, so
+  re-running a successful canary can void it: if the re-run fails, the run is
+  no longer successful. The canary's `completed_at` must fall inside a
+  successful attempt of that
+  run in which the `Assemble RC canary evidence` job itself ran and succeeded,
+  and that attempt must have started at or after T0. A timed canary's attempt
+  must have started before its window closed (T0+31h or T0+79h), and a first
+  attempt, which ran its own plan job, must have completed after the window
+  opened (T0+20h or T0+68h). The output records each canary's
+  `workflow_run_attempt`, `attempt_started_at` and `head_branch`, and the
+  release's `published_at`; no written rule names the manual dispatch's
+  branch, so it is recorded, not enforced. A re-run started inside the window
+  is accepted, as the windows are written. Whether a re-run should count is an
+  open operator decision: counting first attempts only would tighten this, and
+  counting a re-run started after the window closed would relax the windows
+  and must be written here first. Each canary's components must be
   artifacts of that canary's own run (`*canary-component-<check>-<run ID>/`),
   and the `<check>.json` record of each of the five checks must be present,
   match its recorded SHA-256, pass, and name the candidate tag and commit; the
@@ -191,12 +217,18 @@ aggregator binds every piece of evidence to the attested candidate
   `ghcr.io/kernel-guard/bpfcompat:rollback-drill-vX.Y.Z-rc.N`,
   `- Candidate digest:` is the candidate image digest, `- Final digest:` equals
   a distinct `- Known-good digest:`, and `- Completed:` is after
-  `generated_at`. A drill of an earlier candidate is refused.
+  `generated_at`. A drill of an earlier candidate is refused. With attestation
+  verification on, `- Workflow run:` must be a successful, dispatched
+  `rollback-drill.yml` run on this repository's `main` that started after
+  `generated_at`, and `- Completed:` must fall inside that run.
 - **Incident.** The note must contain `[bpfcompat-promotion-incident:v1]`,
   name `promote-release`, and link the deliberately rejected run, and only
   that run, as
-  `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. Written
-  policy does not require the incident drill to target the current candidate,
+  `https://github.com/Kernel-Guard/bpfcompat/actions/runs/<run ID>`. With
+  attestation verification on, that run must be a completed, dispatched
+  `promote-release.yml` run on this repository that did not succeed. Written
+  policy does not require the incident drill to target the current
+  candidate,
   so an earlier candidate's fail-closed drill is accepted; the output records
   `incident.promotion_run_id` and `incident.candidate_bound`.
 - **Operator.** The confirmation must contain
@@ -219,7 +251,9 @@ The command writes both Markdown and JSON. Add the reviewed outputs to
 request. The stable release workflow validates, checksums, attests, and
 publishes those files; a stable tag fails if they are absent or not `ready`.
 The online candidate check requires an authenticated GitHub CLI version that
-provides `gh attestation`; an older CLI fails closed.
+provides `gh attestation`, and the candidate release, the canary runs with
+their attempts and jobs, and the drill and incident runs are read through the
+GitHub API; an older or unauthenticated CLI, or no network, fails closed.
 
 Do not use `BPFCOMPAT_SKIP_READINESS_ATTESTATION=1` outside the regression
 test; production evidence must verify the candidate attestation online.
@@ -228,17 +262,53 @@ test; production evidence must verify the candidate attestation online.
 
 After every operational gate passes, set both `stable_version` and
 `release_version` to `X.Y.Z`, set `release_channel` to `stable`, update stable
-documentation, and tag the checked merge commit. The operator checks the
-graduation report and draft assets, records
-`[bpfcompat-solo-promotion:v1]`, and dispatches the exact promotion inputs.
-Only this path may update the `X.Y` and `latest` image aliases or GitHub's
-latest release.
+documentation, and tag the checked merge commit. The operator's
+`[bpfcompat-solo-promotion:v1]` record is an input of the final readiness
+report, so it is written before that report is generated; the operator then
+checks the graduation report and draft assets and dispatches the exact
+promotion inputs as a separate decision. Only this path may update the `X.Y`
+and `latest` image aliases or GitHub's latest release.
+
+The order is: the operator's record, the final readiness report, the stable
+pull request, the tag, then promotion. Before tagging, also confirm these
+stable-only gates, which are easy to miss; the stable tag build refuses
+otherwise, and a `v*` tag cannot be reused:
+
+- `scripts/check-distribution-policy.sh --require-decided` passes, that is,
+  every decision listed in `blocks_stable` in `distribution/policy.json` is
+  recorded.
+- The stable commit's validator rebuilds to the graduated release candidate's
+  `bpfcompat-validator-static-linux-amd64` sha256
+  (`scripts/check-validator-matches-candidate.sh`).
+
+Publish no other stable release between the stable pull request's CI and the
+`vX.Y.Z` tag build: the stable pin may only name the newest published stable
+release below `X.Y.Z`, so one published in that window (a maintenance release,
+for example) fails the tag build. Re-run `make check-release-consistency` on
+the exact commit immediately before tagging, and tag the merge commit as soon
+as the pull request merges: from then until promotion, `main`'s docs name a
+release that is not published yet. In the stable pull request, the tag-form action
+references in `README.md` and `docs/` name `vX.Y.Z`, which
+`scripts/check-doc-pins.sh` accepts while that tag positively does not exist.
+The SHA-pinned integration templates in `docs/integrations/` cannot name it
+yet; during the stable pull request and the tag build they stay, pinned by
+SHA, on the release the consumer canary's `# bpfcompat-pin: stable` step names
+(the most recent published stable release before `X.Y.Z`).
+
+The stable release pull request and the `vX.Y.Z` tag build cannot pin a tag
+that does not exist yet or that names their own commit, so they keep the
+`# bpfcompat-pin: stable` step on the most recent published (non-draft,
+non-prerelease) stable release before `X.Y.Z`. `scripts/check-canary-pins.sh`
+accepts that pin only while `vX.Y.Z` is absent or resolves to the commit under
+check; a tag or GitHub release lookup it cannot complete fails the check.
 
 Once the new stable tag exists, repin the `# bpfcompat-pin: stable` step in
-`.github/workflows/consumer-canary.yml` to its commit SHA and update the
-`# vX.Y.Z` comment beside it. `scripts/check-canary-pins.sh` runs inside the
-release-consistency gate and fails the build until that is done, because a
-canary left on the previous release stops testing the path the documentation
-now sends every reader down. The `# bpfcompat-pin: candidate` step is not
-enforced while `release_channel` is `stable`; repin it with the next
-`X.Y.Z-rc.1`.
+`.github/workflows/consumer-canary.yml` and the SHA-pinned templates in
+`docs/integrations/` to its commit SHA, and update the `# vX.Y.Z` comments
+beside them. `scripts/check-canary-pins.sh` (inside the release-consistency
+gate) and `scripts/check-doc-pins.sh` fail every later commit until that is
+done,
+because a canary left on the previous release stops testing the path the
+documentation now sends every reader down. The `# bpfcompat-pin: candidate`
+step is not enforced while `release_channel` is `stable`; repin it with the
+next `X.Y.Z-rc.1`.
