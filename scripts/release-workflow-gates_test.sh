@@ -7,8 +7,12 @@
 #   1. Stable gate (release-artifacts.yml, "Stage production readiness
 #      evidence"): a ready readiness record must carry a completed rollback
 #      drill of this release's own candidate (drill alias and image digest),
-#      like the incident section. The gate's jq program is extracted from the
-#      workflow and run against real production-readiness-report.sh output.
+#      like the incident section, and the canary run lookups the attested
+#      report records (each canary's run attempt and its start, and the
+#      release's publication time), so a record written by a report that did
+#      not make those lookups is refused. The gate's jq program is extracted
+#      from the workflow and run against real production-readiness-report.sh
+#      output.
 #   2. Promotion (promote-release.yml): the exact run: bodies of the
 #      re-verification and image steps run against stub cosign/gh/docker. The
 #      draft's signature files and SBOM must be the candidate run's own
@@ -56,7 +60,11 @@ run_gate() {
 
 # Unedited production-readiness-report.sh output (attested mode) for the
 # fixture input of production-readiness-report_test.sh, which also runs the
-# extracted gate against freshly generated output.
+# extracted gate against freshly generated output. In attested mode the report
+# looks up the candidate release and every canary run and records
+# candidate.published_at and each canary's workflow_run_attempt,
+# attempt_started_at and head_branch; with the attestation bypass they are
+# null, and a report from before those lookups has none of them.
 cat >"$tmp/attested.json" <<'JSON'
 {
   "schema_version": "v0.2",
@@ -65,12 +73,12 @@ cat >"$tmp/attested.json" <<'JSON'
   "gate_status": "ready",
   "release_version": "0.4.0",
   "supported_boundary": "CLI + GitHub Action + disposable QEMU/KVM validation",
-  "generated_at": "2026-10-19T06:18:49Z",
+  "generated_at": "2026-10-19T19:24:43Z",
   "campaigns": [
-    {"workflow_run_id": 1000, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000001", "started_at": "2026-08-03T03:21:00Z", "report_sha256": "bbbfcb6775f7cc9aeb67c38de6344bf05fe55ba048b64565c6a808460063748a", "target_count": 1},
-    {"workflow_run_id": 1001, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000002", "started_at": "2026-08-10T03:21:00Z", "report_sha256": "b453d76863cda6c5b8f908e61ec16a11343caebbb6b06632efcdb229f0e72e3b", "target_count": 1},
-    {"workflow_run_id": 1002, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000003", "started_at": "2026-08-17T03:21:00Z", "report_sha256": "62aef96eef32fc2e74fb0c45d6f40b7d048a9a66c8e26f80ba0a9207fd99dda9", "target_count": 1},
-    {"workflow_run_id": 1003, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000004", "started_at": "2026-08-24T03:21:00Z", "report_sha256": "34c6d19b431fc19ca3af155fb90a5afcc91da5611e3f98a50045f66e85804c41", "target_count": 1}
+    {"workflow_run_id": 1000, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000001", "started_at": "2026-08-03T03:21:00Z", "report_sha256": "0291d23025530eccf75e3e2b5922edbb6c7f39aee1e48688213a668866cc795c", "target_count": 1},
+    {"workflow_run_id": 1001, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000002", "started_at": "2026-08-10T03:21:00Z", "report_sha256": "2247827b5fe5a0a2a5abd4aa27729809e9fe0ab4dfc4ae3a1eb3a5ffe337806d", "target_count": 1},
+    {"workflow_run_id": 1002, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000003", "started_at": "2026-08-17T03:21:00Z", "report_sha256": "3acb06c0c5086a1bf756c6af91dc911ea324b862596b7283aa877d9f554adca7", "target_count": 1},
+    {"workflow_run_id": 1003, "candidate_tag": "v0.4.0-rc.1", "candidate_commit": "cccccccccccccccccccccccccccccccccccccccc", "executed": {"cli_sha256": "8888888888888888888888888888888888888888888888888888888888888888", "validator_sha256": "7777777777777777777777777777777777777777777777777777777777777777"}, "workflow_sha": "0000000000000000000000000000000000000004", "started_at": "2026-08-24T03:21:00Z", "report_sha256": "dbfeaf53a9af3d5951b354d2d6a057e7010f49fee52d79742dceedfd3e1a4af0", "target_count": 1}
   ],
   "slo": {
     "campaign_count": 4,
@@ -83,7 +91,7 @@ cat >"$tmp/attested.json" <<'JSON'
     "workflow_run_id": 2000,
     "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "started_at": "2026-08-03T06:00:00Z",
-    "report_sha256": "b066de461debfb7a52511e99a0e9f6209bbb0b2e25da441c1563659030c6e5a7",
+    "report_sha256": "477b3159399a5eec5be74073d087fa48982fb3501ebc320f6a61169fcce9cbd0",
     "report_run_id": "falco-run",
     "run_identity": "operator-asserted",
     "started_after_candidate": true,
@@ -95,12 +103,13 @@ cat >"$tmp/attested.json" <<'JSON'
     "tag": "v0.4.0-rc.1",
     "commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
     "image": "ghcr.io/kernel-guard/bpfcompat@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "evidence_sha256": "01463694049c7ae9040e4957ae63b2109a3a689ee53f5e1f7355bfd7825cd94b"
+    "evidence_sha256": "01463694049c7ae9040e4957ae63b2109a3a689ee53f5e1f7355bfd7825cd94b",
+    "published_at": "2026-07-30T14:50:00Z"
   },
   "canaries": [
-    {"milestone": "manual", "workflow_run_id": 3000, "completed_at": "2026-07-30T15:05:34Z", "minutes_after_candidate_generated": 65, "components_verified": true, "evidence_sha256": "9c600cc50ac1ad95d5b2eac72cd7e9bd64209e02527df5f9e23f6366db49e813"},
-    {"milestone": "t-plus-24h", "workflow_run_id": 3001, "completed_at": "2026-07-31T15:05:34Z", "minutes_after_candidate_generated": 1505, "components_verified": true, "evidence_sha256": "ba0b104f1f0d6715fb4948d3109431426a00c1725b439f370068d94ab6b99323"},
-    {"milestone": "t-plus-72h", "workflow_run_id": 3002, "completed_at": "2026-08-02T15:05:34Z", "minutes_after_candidate_generated": 4385, "components_verified": true, "evidence_sha256": "3f7fdf3d7c1a45e6f7dba2a644575d7bb3776737d3e438640878ed0a8695b53e"}
+    {"milestone": "manual", "workflow_run_id": 3000, "workflow_run_attempt": 1, "attempt_started_at": "2026-07-30T14:59:00Z", "head_branch": "main", "completed_at": "2026-07-30T15:05:34Z", "minutes_after_candidate_generated": 65, "components_verified": true, "evidence_sha256": "9c600cc50ac1ad95d5b2eac72cd7e9bd64209e02527df5f9e23f6366db49e813"},
+    {"milestone": "t-plus-24h", "workflow_run_id": 3001, "workflow_run_attempt": 1, "attempt_started_at": "2026-07-31T14:59:00Z", "head_branch": "main", "completed_at": "2026-07-31T15:05:34Z", "minutes_after_candidate_generated": 1505, "components_verified": true, "evidence_sha256": "ba0b104f1f0d6715fb4948d3109431426a00c1725b439f370068d94ab6b99323"},
+    {"milestone": "t-plus-72h", "workflow_run_id": 3002, "workflow_run_attempt": 1, "attempt_started_at": "2026-08-02T14:59:00Z", "head_branch": "main", "completed_at": "2026-08-02T15:05:34Z", "minutes_after_candidate_generated": 4385, "components_verified": true, "evidence_sha256": "3f7fdf3d7c1a45e6f7dba2a644575d7bb3776737d3e438640878ed0a8695b53e"}
   ],
   "rollback": {
     "completed": true,
@@ -161,6 +170,34 @@ another candidate's image digest|.rollback.candidate_digest = $digest
 this tag's drill alias in another image repository|.rollback.alias = "ghcr.io/example/bpfcompat:rollback-drill-v0.4.0-rc.1"
 no incident section (control)|del(.incident)
 incident.completed false (control)|.incident.completed = false
+none of the canary run lookups (a report from before they were made)|del(.canaries[].workflow_run_attempt, .canaries[].attempt_started_at, .canaries[].head_branch, .candidate.published_at)
+the attestation bypass's null lookups, with attestations_verified true|.canaries[] |= (.workflow_run_attempt = null | .attempt_started_at = null | .head_branch = null) | .candidate.published_at = null
+no canary run attempts|del(.canaries[].workflow_run_attempt)
+null canary run attempts|.canaries[].workflow_run_attempt = null
+one canary without its run attempt|.canaries[2].workflow_run_attempt = null
+a canary run attempt as the string "1"|.canaries[1].workflow_run_attempt = "1"
+canary run attempt 0|.canaries[0].workflow_run_attempt = 0
+a fractional canary run attempt|.canaries[0].workflow_run_attempt = 1.5
+no canary attempt start times|del(.canaries[].attempt_started_at)
+one canary without its attempt start|.canaries[1].attempt_started_at = null
+a canary attempt start that is not a UTC timestamp|.canaries[1].attempt_started_at = "2026-07-31 14:59:00"
+no release publication time|del(.candidate.published_at)
+a null release publication time|.candidate.published_at = null
+a release publication time that is not a UTC timestamp|.candidate.published_at = "2026-07-30T14:50:00+00:00"
+CASES
+
+# Canary records the attested report writes for runs it accepts. The manual
+# canary's branch is recorded, not enforced, so the gate does not read it.
+while IFS='|' read -r label edit; do
+  jq "$edit" "$tmp/attested.json" >"$tmp/gate-case.json"
+  if run_gate "$tmp/gate-case.json"; then
+    ok "stable gate accepts readiness with ${label}"
+  else
+    bad "stable gate refused readiness with ${label}"
+  fi
+done <<'CASES'
+a T+24h re-run recorded as attempt 2|.canaries[1].workflow_run_attempt = 2 | .canaries[1].attempt_started_at = "2026-07-31T21:49:59Z"
+a manual canary dispatched on a branch|.canaries[0].head_branch = "rc5-shakeout"
 CASES
 
 # ------------------------------------------------------------------ 2. promotion
