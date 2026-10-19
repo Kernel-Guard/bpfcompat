@@ -21,7 +21,9 @@
 #     from the attestation DB and records it, and can play a capable gh that
 #     is not logged in, holds a rejected token, cannot reach the API or gets
 #     a 5xx / 429 / rate-limited 403, modelled on real gh 2.68.0 / 2.102.0,
-#     one probe attempt at a time;
+#     one probe attempt at a time. For `--format json --jq <the installer's
+#     expression>` it prints, like real gh, the "<sha256>  <name>" subjects
+#     of every attested statement that holds the verified digest;
 #   * sleep only records how long the installer would have waited;
 #   * sudo pretends to be root by unlocking the test's read-only tree.
 #
@@ -40,7 +42,10 @@
 # verification, while every refusal - including one whose stderr claims a
 # network or auth problem - still reads "verification FAILED"), with gh's
 # words reduced to printable ASCII and imported pipefail tolerated; the
-# API probe retried only on a 5xx or no response, at most three times.
+# API probe retried only on a 5xx or no response, at most three times; and
+# on the gh path, SHA256SUMS held to the CLI's attested provenance (it must
+# agree on whether a validator and a license bundle exist, and each file is
+# installed only under the name its bytes were attested as).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,14 +67,19 @@ WWW="$tmp/www"
 SHIM="$tmp/shim"
 TOOLS="$tmp/tools"
 ATTEST_DB="$tmp/attestations"
+# One line per attested subject: "<statement> refs/tags/<tag> <sha256>  <name>".
+SUBJ_DB="$tmp/subjects"
 CURL_LOG="$tmp/curl.log"
 GH_LOG="$tmp/gh.log"
 GH_VERIFY_LOG="$tmp/gh-verify.log"
 GH_API_LOG="$tmp/gh-api.log"
+GH_FMT_LOG="$tmp/gh-format.log"
 SLEEP_LOG="$tmp/sleep.log"
 ITMP="$tmp/itmp"
+# The installer's request for the CLI's attested subjects (gh --jq).
+JQ_SUBJECTS='.[].verificationResult.statement.subject[] | "\(.digest.sha256)  \(.name)"'
 mkdir -p "$WWW" "$SHIM" "$TOOLS" "$tmp/home"
-: >"$ATTEST_DB"
+: >"$ATTEST_DB"; : >"$SUBJ_DB"
 
 failures=0
 fail() { echo "[install-test] FAIL: $*" >&2; failures=$((failures + 1)); }
@@ -78,7 +88,8 @@ ok() { echo "[install-test] ok: $*"; }
 # ---------------------------------------------------------------- fake release
 # release <scenario> <tag> [validator-arches] [bundle]: builds a signed,
 # attested release under the scenario's fake github.com tree, the way
-# release-artifacts.yml does. bundle: "yes" adds the third-party license
+# release-artifacts.yml does: one provenance statement ("<scenario>-<tag>")
+# names every attested asset. bundle: "yes" adds the third-party license
 # bundle; "unattested" adds it to SHA256SUMS without an attestation.
 release() {
   local scen="$1" tag="$2" varches="${3:-amd64}" bundle="${4:-no}" d a b
@@ -102,6 +113,7 @@ release() {
   for a in "$d"/bpfcompat-*; do
     [[ "$bundle" == unattested && "$a" == *third-party-licenses* ]] && continue
     printf '%s refs/tags/%s\n' "$("$REAL_SHA" <"$a" | cut -d' ' -f1)" "$tag" >>"$ATTEST_DB"
+    printf '%s-%s refs/tags/%s %s  %s\n' "$scen" "$tag" "$tag" "$("$REAL_SHA" <"$a" | cut -d' ' -f1)" "${a##*/}" >>"$SUBJ_DB"
   done
   printf 'sig:%s\n' "$("$REAL_SHA" <"$d/SHA256SUMS" | cut -d' ' -f1)" >"$d/SHA256SUMS.sig"
   printf '%s@refs/tags/%s\n' "$WF" "$tag" >"$d/SHA256SUMS.crt"
@@ -303,18 +315,21 @@ if [[ "\${1:-} \${2:-} \${3:-}" == "attestation verify --help" ]]; then
 fi
 [[ "\${1:-} \${2:-}" == "attestation verify" ]] || exit 1
 shift 2
-file="" repo="" signer="" ref=""
+file="" repo="" signer="" ref="" fmt="" jq="" fmtset=""
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == --* && "\$lacks" == *" \$1 "* ]]; then echo "unknown flag: \$1" >&2; exit 1; fi
   case "\$1" in
     --repo) repo="\$2"; shift 2;;
     --signer-workflow) signer="\$2"; shift 2;;
     --source-ref) ref="\$2"; shift 2;;
+    --format) fmt="\$2" fmtset=1; shift 2;;
+    --jq) jq="\$2" fmtset=1; shift 2;;
     -*) echo "gh shim: unknown flag \$1" >&2; exit 2;;
     *) file="\$1"; shift;;
   esac
 done
 printf 'verify %s repo=%s signer=%s ref=%s\n' "\$file" "\$repo" "\$signer" "\$ref" >>"$GH_VERIFY_LOG"
+[[ -z "\$fmtset" ]] || printf '%s fmt=%s jq=%s\n' "\$file" "\$fmt" "\$jq" >>"$GH_FMT_LOG"
 if [[ "\${FAKE_GH_VERIFY_RC:-}" == 2 ]]; then echo "gh shim: verify ended with exit code 2" >&2; exit 2; fi
 # refuse <error>: how gh reports a failed verify when stdout is not a TTY.
 refuse() {
@@ -337,6 +352,17 @@ esac
 sum="\$("$REAL_SHA" <"\$file" | cut -d' ' -f1)"
 if [[ -n "\$ref" ]]; then grep -qx "\$sum \$ref" "$ATTEST_DB" || refuse "expected SourceRepositoryRef to be \$ref"
 else grep -q "^\$sum " "$ATTEST_DB" || refuse "no attestations found"; fi
+[[ -n "\$fmtset" ]] || exit 0
+[[ "\$fmt" == json && "\$jq" == '$JQ_SUBJECTS' ]] ||
+  { echo "gh shim: unexpected --format/--jq: \$fmt \$jq" >&2; exit 2; }
+# Like real gh: the subjects of every verified statement (one whose ref
+# passed) that holds this digest, as "<sha256>  <name>" lines.
+seen=" "
+while read -r st sref sdig _; do
+  [[ "\$sdig" == "\$sum" && ( -z "\$ref" || "\$sref" == "\$ref" ) && "\$seen" != *" \$st "* ]] || continue
+  seen+="\$st "
+  while read -r s2 _ d2 n2; do [[ "\$s2" != "\$st" ]] || printf '%s  %s\n' "\$d2" "\$n2"; done <"$SUBJ_DB"
+done <"$SUBJ_DB"
 EOF
 cat >"$SHIM/sleep" <<EOF
 #!/bin/sh
@@ -400,7 +426,7 @@ OUT="$tmp/out"
 RUN_SH=(sh)
 run() {
   local scen="$1" path="$2"; shift 2
-  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; : >"$GH_API_LOG"; : >"$SLEEP_LOG"
+  : >"$CURL_LOG"; : >"$GH_LOG"; : >"$GH_VERIFY_LOG"; : >"$GH_API_LOG"; : >"$GH_FMT_LOG"; : >"$SLEEP_LOG"
   rm -f "$tmp/sudo.log"
   rm -rf "$ITMP"; mkdir -p "$ITMP"
   set +e
@@ -445,6 +471,11 @@ for s in stable arm64 nosha noverify mismatch bindcosign bindgh bindghcli bindgh
   release "$s" v0.4.0-rc.4 amd64
   latest "$s" v0.3.7
 done
+for s in rbval037 rbcli rbval rbarm rbsep rbsepcli rbrerun; do
+  release "$s" v0.3.7 amd64
+  latest "$s" v0.3.7
+done
+for s in rbval5 rblic5; do release "$s" v0.4.0-rc.5 amd64 yes; done
 for s in lic licbad licmissing licunattested; do
   release "$s" v0.3.7 amd64
   latest "$s" v0.3.7
@@ -637,7 +668,10 @@ if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'download failed: bpfcompat-third-par
 else fail "missing license bundle (rc=$rc)"; show; fi
 d="$tmp/i-licunattested"
 run licunattested "$GH_ONLY" BPFCOMPAT_VERSION=v0.4.0-rc.5 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
-if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'attestation verification FAILED for bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
+# The bundle's own verify call refuses it (the whole line), before the
+# comparison with the CLI's attested subjects in 11 would.
+if [[ $rc -ne 0 && ! -e "$d" ]] && grep -q 'attestation verification FAILED for bpfcompat-third-party-licenses.tar.gz' "$OUT" &&
+  grep -qx 'bpfcompat-install: GitHub attestation verification FAILED for bpfcompat-third-party-licenses.tar.gz' "$OUT"; then
   ok "unattested license bundle refused on the gh path"
 else fail "unattested license bundle (rc=$rc)"; show; fi
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -820,6 +854,8 @@ verified "$GH_ONLY" v0.3.7 "$CLI_AMD64" "$VAL_AMD64" || bad+=" verify-calls"
 [[ "$(cat "$GH_API_LOG")" == "$(probe_path ghapi) 200" ]] || bad+=" probe"
 [[ "$(grep -nE '^(api |attestation verify [^-])' "$GH_LOG" | head -1)" == *":api --method GET --include $(probe_path ghapi)" ]] ||
   bad+=" probe-not-first"
+# Only the CLI's verify call asks for its attested subjects (T4 R-B).
+[[ "$(cat "$GH_FMT_LOG")" == "$CLI_AMD64 fmt=json jq=$JQ_SUBJECTS" ]] || bad+=" subjects-request($(tr '\n' '|' <"$GH_FMT_LOG"))"
 waited 200 || bad+=" waited"
 if [[ -z "$bad" ]]; then ok "gh path: one read-only API probe of the CLI digest, before the verify calls"
 else fail "gh path probe (rc=$rc):$bad"; show; sed 's/^/    gh | /' "$GH_LOG" >&2; fi
@@ -909,6 +945,132 @@ gh_class "token rejected over HTTP/1.1" ghapi 2 \
 gh_class "HTTP/1.1 503, three times" ghapi 3 "$C3: HTTP 503 (gh: HTTP 503)" 0 "503 503 503" FAKE_GH_NET=503 FAKE_GH_PROTO=1.1
 gh_class "HTTP/1.1 403 rate-limited" ghapi 3 "$C3: HTTP 403, rate limited (gh: API rate limit exceeded" 0 403rl \
   FAKE_GH_NET=403rl FAKE_GH_PROTO=1.1
+
+# 11. T4 (remedy R-B): on the gh path SHA256SUMS is unsigned, and an
+#     attestation binds bytes, not a file name. The CLI's verified provenance
+#     names every asset its release run attested, so SHA256SUMS must agree
+#     with it on whether the validator and the license bundle exist, and each
+#     installed file must be attested under the name it is installed as.
+#     Every tamper below passes each gh verify call (genuine bytes of the
+#     requested tag) and the checksum step: only that comparison can catch
+#     it. It reads as a failed verification (class 4) naming the mismatch;
+#     with cosign, the edited SHA256SUMS fails its signature.
+C4_NOT='authenticat|logged in|credential|GH_TOKEN|network|proxy|unavailable|unreachable|rate.limit|refused|retry|HTTP [0-9]|lacks'
+resum() { (cd "$1" && "$REAL_SHA" bpfcompat-* >SHA256SUMS); }
+# rb_refused <title> <scenario> <tag> <text after "FAILED for "> <verified assets> [VAR=value...]
+rb_refused() {
+  local title="$1" scen="$2" tag="$3" want="$4" assets="$5" d="$tmp/i-rb" bad="" cli ghrc
+  shift 5
+  cli="${assets%% *}"
+  run "$scen" "$GH_ONLY" BPFCOMPAT_VERSION="$tag" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" "$@"
+  ghrc=$rc
+  [[ $rc -ne 0 && ! -e "$d" ]] || bad+=" installed-or-rc0"
+  itmp_clean || bad+=" tmpdir-left"
+  grep -qxF -- "bpfcompat-install: $C4 $want" "$OUT" || bad+=" reason-not-named"
+  ! grep -qiE "$C4_NOT" "$OUT" || bad+=" auth-or-network-wording"
+  ! grep -qE "$C2|$C3|attestations verified|checksums verified" "$OUT" || bad+=" other-outcome-named"
+  no_ctl || bad+=" control-bytes"
+  # shellcheck disable=SC2086 # one asset per word
+  verified "$GH_ONLY" "$tag" $assets || bad+=" verify-calls"
+  [[ "$(cat "$GH_API_LOG")" == "$(probe_path "$scen" "$tag" "$cli") 200" ]] || bad+=" probe"
+  [[ "$(cat "$GH_FMT_LOG")" == "$cli fmt=json jq=$JQ_SUBJECTS" ]] || bad+=" subjects-request"
+  [[ -z "$bad" ]] || show
+  rm -rf "$d"
+  run "$scen" "$WITH_COSIGN" BPFCOMPAT_VERSION="$tag" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" "$@"
+  if ! { [[ $rc -ne 0 && ! -e "$d" && ! -s "$GH_LOG" ]] && itmp_clean &&
+    grep -q 'cosign signature verification FAILED for SHA256SUMS' "$OUT"; }; then bad+=" cosign-path"; show; fi
+  rm -rf "$d"
+  if [[ -z "$bad" ]]; then ok "gh: $title: refused as a failed verification (cosign: bad signature)"
+  else fail "gh: $title (gh rc=$ghrc, cosign rc=$rc):$bad"; fi
+}
+# rb_installs <title> <scenario> <tag> <verified assets> [VAR=value...]: an
+#   untampered release passes the comparison; the installed bytes are the
+#   verified ones.
+rb_installs() {
+  local title="$1" scen="$2" tag="$3" assets="$4" d="$tmp/i-rbok" bad="" a
+  shift 4
+  run "$scen" "$GH_ONLY" BPFCOMPAT_VERSION="$tag" BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec" "$@"
+  [[ $rc -eq 0 ]] && itmp_clean && grep -q 'GitHub build attestations verified' "$OUT" || bad+=" not-installed"
+  # shellcheck disable=SC2086 # one asset per word
+  verified "$GH_ONLY" "$tag" $assets || bad+=" verify-calls"
+  [[ "$(cat "$GH_FMT_LOG")" == "${assets%% *} fmt=json jq=$JQ_SUBJECTS" ]] || bad+=" subjects-request"
+  for a in $assets; do
+    case "$a" in
+      bpfcompat-linux-*) cmp -s "$(rel_dir "$scen" "$tag")/$a" "$d/bin/bpfcompat" || bad+=" cli-bytes" ;;
+      bpfcompat-validator-*) cmp -s "$(rel_dir "$scen" "$tag")/$a" "$d/libexec/bpfcompat-validator" || bad+=" validator-bytes" ;;
+    esac
+  done
+  [[ "$assets" == *validator* || ! -e "$d/libexec" ]] || bad+=" unexpected-validator"
+  if [[ -z "$bad" ]]; then ok "gh: $title: installed"
+  else fail "gh: $title (rc=$rc):$bad"; show; fi
+  rm -rf "$d"
+}
+# S1: the validator line deleted from SHA256SUMS (v0.3.7 and rc.5 shapes).
+sed -i "/  $VAL_AMD64\$/d" "$(rel_dir rbval037 v0.3.7)/SHA256SUMS" "$(rel_dir rbval5 v0.4.0-rc.5)/SHA256SUMS"
+rb_refused "validator line deleted from SHA256SUMS (v0.3.7)" rbval037 v0.3.7 \
+  "$VAL_AMD64: SHA256SUMS does not list it, but the v0.3.7 release provenance of $CLI_AMD64 does" "$CLI_AMD64"
+rb_refused "validator line deleted from SHA256SUMS (v0.4.0-rc.5, with the license bundle)" rbval5 v0.4.0-rc.5 \
+  "$VAL_AMD64: SHA256SUMS does not list it, but the v0.4.0-rc.5 release provenance of $CLI_AMD64 does" \
+  "$CLI_AMD64 bpfcompat-third-party-licenses.tar.gz"
+# S2: the license bundle line deleted (rc.5).
+sed -i '/  bpfcompat-third-party-licenses\.tar\.gz$/d' "$(rel_dir rblic5 v0.4.0-rc.5)/SHA256SUMS"
+rb_refused "license bundle line deleted from SHA256SUMS" rblic5 v0.4.0-rc.5 \
+  "bpfcompat-third-party-licenses.tar.gz: SHA256SUMS does not list it, but the v0.4.0-rc.5 release provenance of $CLI_AMD64 does" \
+  "$CLI_AMD64 $VAL_AMD64"
+# S3: the same tag's arm64 CLI served as the amd64 CLI, its line rewritten.
+cp "$(rel_dir rbcli v0.3.7)/bpfcompat-linux-arm64" "$(rel_dir rbcli v0.3.7)/$CLI_AMD64"; resum "$(rel_dir rbcli v0.3.7)"
+rb_refused "the tag's arm64 CLI served as the amd64 CLI" rbcli v0.3.7 \
+  "$CLI_AMD64: the v0.3.7 release provenance of $CLI_AMD64 does not list these bytes under that name (it lists them as bpfcompat-linux-arm64)" \
+  "$CLI_AMD64 $VAL_AMD64"
+# S4: the CLI's bytes served as the validator.
+cp "$(rel_dir rbval v0.3.7)/$CLI_AMD64" "$(rel_dir rbval v0.3.7)/$VAL_AMD64"; resum "$(rel_dir rbval v0.3.7)"
+rb_refused "the CLI's bytes served as the validator" rbval v0.3.7 \
+  "$VAL_AMD64: the v0.3.7 release provenance of $CLI_AMD64 does not list these bytes under that name (it lists them as $CLI_AMD64)" \
+  "$CLI_AMD64 $VAL_AMD64"
+# T4-VERIFY's arm64-host variant: no arm64 validator is published, so
+# SHA256SUMS gains a line for one, served with the amd64 validator's bytes.
+cp "$(rel_dir rbarm v0.3.7)/$VAL_AMD64" "$(rel_dir rbarm v0.3.7)/bpfcompat-validator-static-linux-arm64"
+resum "$(rel_dir rbarm v0.3.7)"
+rb_refused "aarch64 host, an arm64 validator added to SHA256SUMS (amd64 bytes)" rbarm v0.3.7 \
+  "bpfcompat-validator-static-linux-arm64: SHA256SUMS lists it, but the v0.3.7 release provenance of bpfcompat-linux-arm64 does not" \
+  "bpfcompat-linux-arm64 bpfcompat-validator-static-linux-arm64" FAKE_ARCH=aarch64
+# Bytes the same run attested in another statement (release-candidate
+# evidence) served as the validator: not in the CLI's provenance at all.
+printf '{"tag": "v0.3.7", "checksums_sha256": "x"}\n' >"$tmp/rbsep-evidence.json"
+ev="$("$REAL_SHA" <"$tmp/rbsep-evidence.json" | cut -d' ' -f1)"
+printf '%s refs/tags/v0.3.7\n' "$ev" >>"$ATTEST_DB"
+printf 'rbsep-v0.3.7-evidence refs/tags/v0.3.7 %s  release-candidate-evidence.json\n' "$ev" >>"$SUBJ_DB"
+cp "$tmp/rbsep-evidence.json" "$(rel_dir rbsep v0.3.7)/$VAL_AMD64"; resum "$(rel_dir rbsep v0.3.7)"
+rb_refused "bytes from another statement of the same run served as the validator" rbsep v0.3.7 \
+  "$VAL_AMD64: the v0.3.7 release provenance of $CLI_AMD64 does not list these bytes under that name" "$CLI_AMD64 $VAL_AMD64"
+# The same bytes served as the CLI: the provenance verified for the CLI is
+# then that other statement, which names no validator.
+cp "$tmp/rbsep-evidence.json" "$(rel_dir rbsepcli v0.3.7)/$CLI_AMD64"; resum "$(rel_dir rbsepcli v0.3.7)"
+rb_refused "bytes from another statement of the same run served as the CLI" rbsepcli v0.3.7 \
+  "$VAL_AMD64: SHA256SUMS lists it, but the v0.3.7 release provenance of $CLI_AMD64 does not" "$CLI_AMD64 $VAL_AMD64"
+# Controls: untampered releases still install on the gh path (the cases in
+# 1, 1b, 2 and 8 are controls too).
+rb_installs "untampered v0.3.7 with BPFCOMPAT_NO_VALIDATOR=1" ghapi v0.3.7 "$CLI_AMD64" BPFCOMPAT_NO_VALIDATOR=1
+rb_installs "aarch64 host, untampered: arm64 CLI only" arm64 v0.3.7 bpfcompat-linux-arm64 FAKE_ARCH=aarch64
+# A re-run release job: a second statement for the same tag holds the same
+# CLI and a rebuilt validator, which is the one published.
+v2="$(rel_dir rbrerun v0.3.7)/$VAL_AMD64"
+printf 'validator v0.3.7 amd64, rebuilt by attempt 2\n' >"$v2"
+for a in "$CLI_AMD64" bpfcompat-linux-arm64 "$VAL_AMD64"; do
+  printf 'rbrerun-v0.3.7-attempt2 refs/tags/v0.3.7 %s  %s\n' "$("$REAL_SHA" <"$(rel_dir rbrerun v0.3.7)/$a" | cut -d' ' -f1)" "$a" >>"$SUBJ_DB"
+done
+printf '%s refs/tags/v0.3.7\n' "$("$REAL_SHA" <"$v2" | cut -d' ' -f1)" >>"$ATTEST_DB"
+resum "$(rel_dir rbrerun v0.3.7)"
+rb_installs "re-run release, validator from the second attested statement" rbrerun v0.3.7 "$CLI_AMD64 $VAL_AMD64"
+# With pipefail imported, the name comparison still refuses with its reason.
+RUN_SH=(bash --posix)
+d="$tmp/i-rb-pipefail"
+run rbcli "$GH_ONLY" "$PF" BPFCOMPAT_VERSION=v0.3.7 BPFCOMPAT_BIN_DIR="$d/bin" BPFCOMPAT_LIBEXEC_DIR="$d/libexec"
+if [[ $rc -ne 0 && ! -e "$d" ]] && itmp_clean &&
+  grep -qxF "bpfcompat-install: $C4 $CLI_AMD64: the v0.3.7 release provenance of $CLI_AMD64 does not list these bytes under that name (it lists them as bpfcompat-linux-arm64)" "$OUT"; then
+  ok "pipefail imported, arm64 CLI served as amd64: refused with its reason"
+else fail "pipefail imported, arm64 CLI served as amd64 (rc=$rc)"; show; fi
+RUN_SH=(sh)
 
 if [[ $failures -ne 0 ]]; then
   echo "[install-test] $failures failure(s)" >&2

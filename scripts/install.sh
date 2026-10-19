@@ -124,7 +124,8 @@ install_validator=1
 # The static C validator is published for amd64 only today. If this release has
 # no validator for the current arch, install the CLI without it rather than
 # failing - VM artifact validation then needs `make validator-static` locally or
-# command mode. (SHA256SUMS is integrity-checked below regardless.)
+# command mode. (SHA256SUMS is authenticated below regardless: by its cosign
+# signature, or on the gh path against the release run's attested assets.)
 if [ "$install_validator" = "1" ]; then
   if grep -qE "^[0-9a-fA-F]{64}  ${VALIDATOR_ASSET}\$" SHA256SUMS; then
     curl -fsSLO --retry 2 --connect-timeout 10 --max-time 300 \
@@ -244,9 +245,13 @@ elif have gh; then
     gh_err="$(first_line .gh-api.err)" || :
     die "GitHub API unavailable for attestation verification: $gh_down${gh_err:+ ($gh_err)}; check the network or proxy and https://www.githubstatus.com, then retry, or install cosign - refusing checksum-only installation"
   fi
+  # The CLI's call also prints its verified provenance's subjects: every
+  # asset the tag's release run attested, as "<sha256>  <name>" lines.
   GH_REPO="$REPO" gh attestation verify "$CLI_ASSET" --repo "$REPO" \
     --signer-workflow "$REPO/.github/workflows/release-artifacts.yml" \
-    --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
+    --source-ref "refs/tags/$VERSION" --format json \
+    --jq '.[].verificationResult.statement.subject[] | "\(.digest.sha256)  \(.name)"' \
+    >.gh-attested 2>.gh-verify.out ||
     gh_refused "$CLI_ASSET" "$?"
   if [ "$install_validator" = "1" ]; then
     GH_REPO="$REPO" gh attestation verify "$VALIDATOR_ASSET" --repo "$REPO" \
@@ -260,6 +265,26 @@ elif have gh; then
       --source-ref "refs/tags/$VERSION" >.gh-verify.out 2>&1 ||
       gh_refused "$LICENSE_ASSET" "$?"
   fi
+  # SHA256SUMS is unsigned on this path, and an attestation vouches for
+  # bytes, not for a file name. So SHA256SUMS must agree with the CLI's
+  # verified provenance on whether the release has a validator and a license
+  # bundle (it decides what is downloaded), and that provenance must list
+  # every file under the name it is installed as - not only as some other
+  # asset of the run.
+  for f in "$VALIDATOR_ASSET" "$LICENSE_ASSET"; do
+    gh_a=0; grep -qE "^[0-9a-f]{64}  ${f}\$" .gh-attested && gh_a=1
+    gh_s=0; grep -qE "^[0-9a-fA-F]{64}  ${f}\$" SHA256SUMS && gh_s=1
+    case "$gh_a$gh_s" in
+      10) die "GitHub attestation verification FAILED for $f: SHA256SUMS does not list it, but the $VERSION release provenance of $CLI_ASSET does" ;;
+      01) die "GitHub attestation verification FAILED for $f: SHA256SUMS lists it, but the $VERSION release provenance of $CLI_ASSET does not" ;;
+    esac
+  done
+  for f in $DL_FILES; do
+    gh_d="$($SHA256 <"$f" | sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p')" || :
+    grep -qxF "$gh_d  $f" .gh-attested && continue
+    gh_as="$(sed -n "s/^$gh_d  //p" .gh-attested | sed -n '1p' | printable)" || :
+    die "GitHub attestation verification FAILED for $f: the $VERSION release provenance of $CLI_ASSET does not list these bytes under that name${gh_as:+ (it lists them as $gh_as)}"
+  done
   err "GitHub build attestations verified"
 else
   die "cryptographic verification requires cosign or GitHub CLI (gh); refusing checksum-only installation"
