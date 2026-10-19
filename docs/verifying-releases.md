@@ -140,6 +140,16 @@ attestation support), the v0.4.0 release candidates' Action builds from its
 pinned source instead of trusting unverifiable release bytes; the v0.3.8
 release candidates' Action fails the job instead.
 
+From v0.4.0-rc.5 the Action also binds that verification to the pinned
+release: `--source-ref refs/tags/<tag>` and `--source-digest <commit>`, where
+the commit is the pinned SHA or, for a tag pin, the commit the tag points at
+(resolved with `git ls-remote`). Assets attested by another release's run are
+a hard failure. This needs gh 2.68.0 or later: with an older gh, or when the
+tag cannot be resolved to its commit within 60 seconds, the Action builds from
+its pinned source with a warning instead of using the prebuilt binaries. The
+v0.4.0-rc.2 to rc.4 Actions do not bind the tag, so an attestation from
+another tag's release run also passes there.
+
 From v0.4.0-rc.5, after verification the Action runs that validator by path
 and pinned digest (`BPFCOMPAT_VALIDATOR_BIN` / `BPFCOMPAT_VALIDATOR_SHA256`),
 so a validator left in `/usr/local/libexec` or `/usr/libexec` on a self-hosted

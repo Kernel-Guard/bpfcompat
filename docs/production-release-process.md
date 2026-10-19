@@ -191,7 +191,10 @@ aggregator binds every piece of evidence to the attested candidate
   must be published, not a draft, and not before `generated_at`. Each canary's
   `workflow_run_id` must be a successful `release-candidate-canary.yml` run of
   this repository from `workflow_dispatch` (manual) or `schedule` (timed, on
-  `main`). Its `completed_at` must fall inside a successful attempt of that
+  `main`). GitHub reports a run's conclusion from its latest attempt, so
+  re-running a successful canary can void it: if the re-run fails, the run is
+  no longer successful. The canary's `completed_at` must fall inside a
+  successful attempt of that
   run in which the `Assemble RC canary evidence` job itself ran and succeeded,
   and that attempt must have started at or after T0. A timed canary's attempt
   must have started before its window closed (T0+31h or T0+79h), and a first

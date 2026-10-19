@@ -76,7 +76,7 @@ inputs:
     required: false
     default: "true"
   prebuilt:
-    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-checked and verified against GitHub build attestations, and the run then uses that verified validator by path and pinned digest (a workflow that sets BPFCOMPAT_VALIDATOR_BIN or BPFCOMPAT_VALIDATOR_SHA256 keeps its own settings, with a warning). Runners without gh build from source; while pinned to a release, every fallback to a source build is reported as a warning because the run then does not use the attested release validator.
+    description: Use prebuilt release binaries when the action is pinned to a release tag or to a commit SHA that matches a release tag ("auto"), or always build from source ("never"). Downloads are checksum-checked and verified against GitHub build attestations bound to the pinned release's tag and commit, and the run then uses that verified validator by path and pinned digest (a workflow that sets BPFCOMPAT_VALIDATOR_BIN or BPFCOMPAT_VALIDATOR_SHA256 keeps its own settings, with a warning). Runners without gh 2.68.0 or later build from source, and so does a tag pin that cannot be resolved to its commit or whose resolution takes more than 60 s; while pinned to a release, every fallback to a source build is reported as a warning because the run then does not use the attested release validator.
     required: false
     default: "auto"
   binary:
