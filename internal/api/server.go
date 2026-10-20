@@ -631,6 +631,9 @@ func (s *Server) serve(ctx context.Context) error {
 		slog.String("commit", buildInfo.Commit),
 		slog.String("build_date", buildInfo.BuildDate),
 	)
+	if warning := registry.ArtifactHistoryTrustAnchorWarning(); warning != "" {
+		s.log().Warn("artifact-history trust anchor", slog.String("warning", warning))
+	}
 	// Preserve the human-readable startup line for operators tailing stdout
 	// during a local run. Logs go to stderr via slog regardless.
 	fmt.Printf("Web UI: %s\n", listenURL)
