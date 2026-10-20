@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -663,10 +664,10 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	var b strings.Builder
 	b.WriteString("set -e; ")
 	if len(packageURLs) > 0 {
-		centOS725 := isCentOS725SignedPackageSet(release, packageURLs)
+		centOSSigned := isCentOSStream9SignedPackageSet(release, packageURLs)
 		b.WriteString("mkdir -p /tmp/bpfcompat-kernel; cd /tmp/bpfcompat-kernel; ")
 		for i, pkg := range packageURLs {
-			if centOS725 {
+			if centOSSigned {
 				fmt.Fprintf(&b, "curl -fsSL --http1.1 --connect-timeout 15 --max-time 120 --retry 2 --retry-max-time 360 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
 			} else {
 				fmt.Fprintf(&b, "curl -fsSL --retry 2 -o pkg%02d.rpm %s; ", i, shellQuote(pkg))
@@ -678,7 +679,7 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 		// an unprimed keyring reports "SIGNATURES NOT OK" for perfectly
 		// good packages. The keys come from the vendor image itself, which
 		// is the same trust anchor dnf uses for the configured repos.
-		if centOS725 {
+		if centOSSigned {
 			// https://www.centos.org/keys/ publishes fingerprint
 			// 99DB70FAE1D7CE227FB6488205B555B38483C65D. Pin the SHA256
 			// self-signed encoding's bytes: the legacy SHA1 encoding and
@@ -686,10 +687,13 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 			b.WriteString("curl -fsSL --http1.1 --connect-timeout 15 --max-time 30 --retry 2 --retry-max-time 90 -o centos-key.asc https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256; ")
 			b.WriteString("printf '%s  centos-key.asc\\n' 5af55449d6c9bc594e2e2fb7222374cb25a8ad2d8ea6ce3de894a3201944daa2 | sha256sum --check --strict; ")
 			b.WriteString("sudo rpm --import centos-key.asc; ")
+			// Plain --checksig exits 0 for an unsigned package ("digests
+			// OK"); require a valid signature from the imported key.
+			b.WriteString("sudo rpm --checksig --define '_pkgverify_level signature' ./pkg*.rpm; ")
 		} else {
 			b.WriteString("sudo sh -c 'for k in /etc/pki/rpm-gpg/RPM-GPG-KEY-*; do [ -f \"$k\" ] && rpm --import \"$k\"; done'; ")
+			b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
 		}
-		b.WriteString("sudo rpm --checksig ./pkg*.rpm; ")
 		b.WriteString("sudo dnf -y --setopt=localpkg_gpgcheck=1 install ./pkg*.rpm; ")
 	} else {
 		fmt.Fprintf(&b, "sudo dnf -y install %s; ", shellQuote("kernel-core-"+release))
@@ -698,15 +702,24 @@ func guestKernelInstallCmdRHEL(release string, packageURLs []string) string {
 	return b.String()
 }
 
-// Limit the maintenance exception to the exact three signed archived RPMs.
+// centOSStream9Release is an exact CentOS Stream 9 x86_64 kernel release:
+// 5.14.0-<build>.el9.x86_64 with a canonical (non-zero-padded) build number.
+var centOSStream9Release = regexp.MustCompile(`^5\.14\.0-([1-9]\d*)\.el9\.x86_64$`)
+
+// The pinned-key path applies only to exactly the three signed RPMs of the
+// requested CentOS Stream 9 release in the official Koji archive, signed with
+// the CentOS Official key (8483c65d). The rolling mirror retires old kernels,
+// and the current Stream 9 image's own key set cannot be imported by its RPM
+// (SHA1 and V6 keys), so the generic image-key path cannot install them.
 // Other kernels, vendors and package sources retain their existing installer.
-func isCentOS725SignedPackageSet(release string, urls []string) bool {
-	if release != "5.14.0-725.el9.x86_64" || len(urls) != 3 {
+func isCentOSStream9SignedPackageSet(release string, urls []string) bool {
+	m := centOSStream9Release.FindStringSubmatch(release)
+	if m == nil || len(urls) != 3 {
 		return false
 	}
-	const prefix = "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/725.el9/data/signed/8483c65d/x86_64/"
+	prefix := "https://kojihub.stream.centos.org/kojifiles/packages/kernel/5.14.0/" + m[1] + ".el9/data/signed/8483c65d/x86_64/"
 	for i, name := range []string{"kernel-core", "kernel-modules-core", "kernel-modules"} {
-		if urls[i] != prefix+name+"-5.14.0-725.el9.x86_64.rpm" {
+		if urls[i] != prefix+name+"-"+release+".rpm" {
 			return false
 		}
 	}
