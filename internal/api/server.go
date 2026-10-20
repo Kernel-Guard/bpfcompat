@@ -2274,15 +2274,11 @@ func (s *Server) handleRegistryAuditEvents(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireRegistryIdentityForAction(w, r, "registry_audit_list", tenant, projectID); !ok {
 		return
 	}
-	var (
-		err       error
-		principal cloudregistry.Principal
-	)
-	if projectID == "" {
-		principal, err = store.AuthorizeToken(token, tenant, "", false)
-	} else {
-		principal, err = store.AuthorizeRead(token, tenant, projectID)
-	}
+	// SECURITY: the audit stream (actors, agent hostnames, denial messages)
+	// is not part of a public project's published surface, so it always
+	// needs a registry token. AuthorizeRead's anonymous public-project
+	// fallback must not apply here.
+	principal, err := store.AuthorizeToken(token, tenant, projectID, false)
 	if err != nil {
 		appendRegistryAuditBestEffort(store, cloudregistry.AuditEvent{
 			Action:  "audit_list_denied",
