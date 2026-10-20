@@ -65,7 +65,8 @@ func VerifySelectedArtifactProvenance(workDir string, selected registry.Artifact
 		return result, findErr
 	}
 	result.Selected.Index = selectedIndex
-	result.Selected.Verified = selectedRow.Verified
+	bindErr := bindSelectedToVerifiedRow(selected, selectedRow)
+	result.Selected.Verified = selectedRow.Verified && bindErr == nil
 
 	if result.Failed > 0 {
 		return result, fmt.Errorf("history verification failed: %d/%d invalid (%s)",
@@ -74,9 +75,43 @@ func VerifySelectedArtifactProvenance(workDir string, selected registry.Artifact
 	if !selectedRow.Verified {
 		return result, fmt.Errorf("selected record is not verified: %s", formatVerificationSample(selectedRow))
 	}
+	if bindErr != nil {
+		return result, bindErr
+	}
 
 	result.Verified = true
 	return result, nil
+}
+
+// bindSelectedToVerifiedRow requires the caller's selected record to be the
+// exact signed content of the history row that verification just checked.
+// Callers select from a separate read of the history; matching only by
+// name/version/run_id would let a history swap between the two reads pair an
+// unsigned artifact_sha256/artifact_path with a verified row.
+func bindSelectedToVerifiedRow(
+	selected registry.ArtifactVersionRecord,
+	row registry.ArtifactVersionVerification,
+) error {
+	computed, err := registry.ArtifactRecordCanonicalSHA256(selected)
+	if err != nil {
+		return fmt.Errorf("compute selected record hash: %w", err)
+	}
+	verified := strings.TrimSpace(row.ComputedSHA256)
+	if verified == "" || computed != verified || strings.TrimSpace(selected.RecordSHA256) != verified {
+		return fmt.Errorf(
+			"selected record %s@%s (run=%s) does not match the verified history record idx=%d "+
+				"(selected canonical sha256=%s record_sha256=%s, verified sha256=%s); "+
+				"refusing to trust its artifact_sha256/artifact_path",
+			strings.TrimSpace(selected.ArtifactName),
+			strings.TrimSpace(selected.ArtifactVersion),
+			strings.TrimSpace(selected.RunID),
+			row.Index,
+			computed,
+			strings.TrimSpace(selected.RecordSHA256),
+			verified,
+		)
+	}
+	return nil
 }
 
 func findSelectedVerificationRow(
