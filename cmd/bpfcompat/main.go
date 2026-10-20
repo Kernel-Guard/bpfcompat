@@ -77,6 +77,19 @@ func run(args []string) int {
 	}
 }
 
+// rejectPositionalArgs reports whether the parsed flag set was left with
+// positional arguments, printing a usage error when it was. Go's flag package
+// stops at the first non-flag argument, so for a command that takes none a
+// stray token would silently disable every flag after it (for example an
+// --out that is then never written). Such a command must refuse to run.
+func rejectPositionalArgs(fs *flag.FlagSet) bool {
+	if fs.NArg() == 0 {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%s: unexpected positional argument %q; this command takes only flags, and every flag after a positional argument would be ignored\n", fs.Name(), fs.Arg(0))
+	return true
+}
+
 // runVersion prints the build identity. With --json it emits the structured
 // payload so deployment tooling can match against a known release; the
 // default human-readable line is what an operator gets on the shell.
@@ -92,6 +105,9 @@ func runVersion(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	if *asJSON {
@@ -124,6 +140,9 @@ func runEnv(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 	switch {
@@ -359,6 +378,9 @@ func runProfile(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 	if *matrixPath == "" {
 		fmt.Fprintln(os.Stderr, "--matrix is required")
 		return runner.ExitToolError
@@ -410,6 +432,9 @@ func runHistoryList(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 
 	records, err := registry.ListArtifactVersions(*workDir, strings.TrimSpace(*artifactName), *limit)
 	if err != nil {
@@ -458,6 +483,9 @@ func runHistoryVerify(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 
@@ -525,6 +553,9 @@ func runHistorySign(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
 
 	count, err := registry.BackfillArtifactVersionProvenance(*workDir)
 	if err != nil {
@@ -561,6 +592,17 @@ func runCompare(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
+		return runner.ExitToolError
+	}
+
+	// One file cannot be both outputs: the Markdown is written second and
+	// would replace the JSON the caller asked --out for. Same check as diff,
+	// made before any report is read or file written.
+	if err := distinctOutputs(*outPath, *markdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "compare failed: %v\n", err)
 		return runner.ExitToolError
 	}
 
@@ -606,7 +648,12 @@ func runCompare(args []string) int {
 		}
 		fmt.Printf("Compare Markdown: %s\n", *markdownPath)
 	}
-	if strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == "" {
+	// With no output file selected the compare JSON is written to stdout, and
+	// stdout then has to stay one machine-readable document
+	// (`bpfcompat compare ... | jq` must work). The human summary goes to
+	// stderr in that case, matching `diff`.
+	jsonOnStdout := strings.TrimSpace(*outPath) == "" && strings.TrimSpace(*markdownPath) == ""
+	if jsonOnStdout {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(diff); err != nil {
@@ -615,7 +662,11 @@ func runCompare(args []string) int {
 		}
 	}
 
-	fmt.Printf("Diff summary: profiles=%d changed=%d improved=%d regressed=%d required_regressions=%d\n",
+	summaryOut := os.Stdout
+	if jsonOnStdout {
+		summaryOut = os.Stderr
+	}
+	fmt.Fprintf(summaryOut, "Diff summary: profiles=%d changed=%d improved=%d regressed=%d required_regressions=%d\n",
 		diff.Summary.TotalProfiles,
 		diff.Summary.ChangedProfiles,
 		diff.Summary.ImprovedProfiles,
@@ -644,6 +695,9 @@ func runServe(args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return runner.ExitToolError
+	}
+	if rejectPositionalArgs(fs) {
 		return runner.ExitToolError
 	}
 
