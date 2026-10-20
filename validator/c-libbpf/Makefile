@@ -23,3 +23,16 @@ $(BIN): $(SRC)
 
 clean:
 	rm -rf $(OUT_DIR)
+
+# Host-safe regression test for functional-test timeouts, the functional-plan cap,
+# --log-dir handling and result.json write errors. The validator is rebuilt
+# against fake kernel-facing libbpf entry points (tests/runtime_fake_load.c);
+# nothing is loaded into the kernel and no root is needed.
+# VALIDATOR_SANITIZE=1 builds it with ASan/UBSan.
+# Collected by `make test-host` (run in CI); each host test adds itself.
+.PHONY: test-host
+test-host: test-runtime-limits
+
+.PHONY: test-runtime-limits
+test-runtime-limits:
+	bash tests/runtime_limits_test.sh
