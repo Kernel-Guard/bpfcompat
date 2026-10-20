@@ -173,7 +173,10 @@ func TestUpdateFromReport(t *testing.T) {
 		},
 	}
 
-	updated, added := UpdateFromReport(&b, rep)
+	updated, added, skipped := UpdateFromReport(&b, rep)
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %+v", skipped)
+	}
 	if len(updated) != 1 || updated[0] != "ubuntu-22.04-5.15" {
 		t.Errorf("updated = %v", updated)
 	}
