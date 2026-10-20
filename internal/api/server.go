@@ -1661,6 +1661,8 @@ func (s *Server) handleRuntimeExecute(w http.ResponseWriter, r *http.Request) {
 
 	execution, err := runRuntimeExecuteWorkerFn(r.Context(), runtime.ExecuteRequest{
 		ArtifactPath:        fetched.OutputPath,
+		ArtifactRoot:        outDir,
+		ExpectedSHA256:      fetched.VerifiedSHA256(),
 		ManifestPath:        manifestPath,
 		AttachMode:          strings.TrimSpace(req.AttachMode),
 		ProbeFeatures:       probeFeatures,
