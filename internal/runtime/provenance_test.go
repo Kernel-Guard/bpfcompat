@@ -58,6 +58,9 @@ func TestVerifySelectedArtifactProvenancePass(t *testing.T) {
 	if !got.Selected.Verified {
 		t.Fatalf("expected selected record verified=true")
 	}
+	if got.Records != 2 || got.HeadSHA256 == "" || got.HeadSHA256 != selected.RecordSHA256 {
+		t.Fatalf("expected head_sha256=%q records=2, got head=%q records=%d", selected.RecordSHA256, got.HeadSHA256, got.Records)
+	}
 }
 
 func TestVerifySelectedArtifactProvenanceRejectsTamperedRecord(t *testing.T) {

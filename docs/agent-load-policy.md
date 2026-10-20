@@ -66,6 +66,28 @@ Rule fields:
 - `kernel_min`, `kernel_max`: compared with the probed host kernel release
 - `program_types`, `attach_kinds`: require `--manifest` so the agent can inspect intended load/attach behavior
 - `require_verified_history`: requires signed artifact history verification
+- `expect_head_sha256` (optional, 64 hex): the rule matches only when the
+  verified history head (the `record_sha256` of the last record) equals this
+  value
+- `min_records` (optional): the rule matches only when the verified history
+  holds at least this many records
+
+The history chain check is backward-only, so deleting the newest records
+still verifies. `expect_head_sha256` / `min_records` detect that rollback,
+but only if the pinned value lives outside the agent workdir (for example in
+this policy file under `/etc`). Record the current head with
+`bpfcompat history verify` (it prints `head_sha256=... records=N`) and
+re-pin it after each reviewed publish. The same check is available offline:
+
+```bash
+bpfcompat history verify --workdir /var/lib/bpfcompat-agent \
+  --expect-head <64-hex-head-sha256> --min-records 12
+```
+
+Both fields are absent by default, which keeps the previous behaviour. In
+remote mode the head and record count come from the control-plane decision's
+`history_verification`, like `require_verified_history`; a server that does
+not report `head_sha256` never matches a pinned rule.
 
 Top-level `revoked_agents` denies before rules run. Top-level
 `allowed_agents` denies any agent not listed.
