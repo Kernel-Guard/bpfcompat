@@ -50,6 +50,10 @@ func runSuite(args []string) int {
 		fmt.Fprintln(os.Stderr, "--suite is required")
 		return runner.ExitToolError
 	}
+	if err := distinctOutputs(*outPath, *markdownPath); err != nil {
+		fmt.Fprintf(os.Stderr, "bpfcompat suite failed: %v\n", err)
+		return runner.ExitToolError
+	}
 
 	var timeout time.Duration
 	if *timeoutText != "" {

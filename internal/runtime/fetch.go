@@ -40,28 +40,13 @@ func FetchArtifact(record registry.ArtifactVersionRecord, outDir string) (FetchR
 		return FetchResult{}, fmt.Errorf("output directory is required")
 	}
 
-	source, remote, err := resolveFetchSource(record)
+	source, remote, targetPath, err := planFetch(record, outDir)
 	if err != nil {
 		return FetchResult{}, err
 	}
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return FetchResult{}, fmt.Errorf("create output directory: %w", err)
-	}
-
-	targetName := record.ArtifactName + "-" + record.ArtifactVersion
-	if record.ArtifactVariant != "" {
-		targetName += "-" + sanitizeFragment(record.ArtifactVariant)
-	}
-	ext := artifactExtensionFromSource(source, remote)
-	if ext == "" {
-		ext = ".bpf.o"
-	}
-	// targetName/ext derive from registry record fields, so contain the
-	// resulting filename to a single component under outDir.
-	targetPath, err := safepath.LocalJoin(outDir, sanitizeFragment(targetName)+ext)
-	if err != nil {
-		return FetchResult{}, fmt.Errorf("resolve artifact target path: %w", err)
 	}
 
 	stagedPath := targetPath
@@ -97,6 +82,50 @@ func FetchArtifact(record registry.ArtifactVersionRecord, outDir string) (FetchR
 		ExpectedSHA256:  expected,
 		ActualSHA256:    actual,
 	}, nil
+}
+
+// FetchPaths reports, without writing anything, the local file FetchArtifact
+// would read the artifact from (empty when the source is http/https) and the
+// file it would write under outDir. Callers use it to refuse an output path
+// that would land on either before anything is fetched.
+func FetchPaths(record registry.ArtifactVersionRecord, outDir string) (localSource, target string, err error) {
+	if strings.TrimSpace(outDir) == "" {
+		return "", "", fmt.Errorf("output directory is required")
+	}
+	source, remote, target, err := planFetch(record, outDir)
+	if err != nil {
+		return "", "", err
+	}
+	if !remote {
+		return source, target, nil
+	}
+	if u, perr := url.Parse(source); perr == nil && strings.EqualFold(u.Scheme, "file") && strings.TrimSpace(u.Path) != "" {
+		return filepath.Clean(u.Path), target, nil
+	}
+	return "", target, nil
+}
+
+// planFetch resolves the artifact source and the target path under outDir.
+func planFetch(record registry.ArtifactVersionRecord, outDir string) (source string, remote bool, targetPath string, err error) {
+	source, remote, err = resolveFetchSource(record)
+	if err != nil {
+		return "", false, "", err
+	}
+	targetName := record.ArtifactName + "-" + record.ArtifactVersion
+	if record.ArtifactVariant != "" {
+		targetName += "-" + sanitizeFragment(record.ArtifactVariant)
+	}
+	ext := artifactExtensionFromSource(source, remote)
+	if ext == "" {
+		ext = ".bpf.o"
+	}
+	// targetName/ext derive from registry record fields, so contain the
+	// resulting filename to a single component under outDir.
+	targetPath, err = safepath.LocalJoin(outDir, sanitizeFragment(targetName)+ext)
+	if err != nil {
+		return "", false, "", fmt.Errorf("resolve artifact target path: %w", err)
+	}
+	return source, remote, targetPath, nil
 }
 
 func resolveFetchSource(record registry.ArtifactVersionRecord) (string, bool, error) {

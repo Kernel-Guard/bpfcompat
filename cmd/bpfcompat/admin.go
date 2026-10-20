@@ -273,10 +273,25 @@ func runAdminVerifyChain(args []string) int {
 		}
 		return runner.ExitToolError
 	}
+	// A work directory that does not exist has no chain to verify; reporting
+	// "verified 0 ... 0 invalid" with exit 0 would pass an integrity check that
+	// checked nothing (typically a mistyped --workdir or the wrong cwd for the
+	// default). An existing directory with no history yet is still a success
+	// (a brand-new install), but says so.
+	if info, statErr := os.Stat(*workDir); statErr != nil {
+		fmt.Fprintf(os.Stderr, "verify history: work directory %s: %v\n", *workDir, statErr)
+		return runner.ExitToolError
+	} else if !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "verify history: work directory %s is not a directory\n", *workDir)
+		return runner.ExitToolError
+	}
 	verification, err := registry.VerifyArtifactVersionHistory(*workDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verify history: %v\n", err)
 		return runner.ExitToolError
+	}
+	if len(verification) == 0 {
+		fmt.Fprintf(os.Stderr, "note: no local artifact version history under %s; nothing was verified\n", *workDir)
 	}
 	bad := 0
 	for _, v := range verification {
@@ -341,6 +356,20 @@ func runAdminAuditExport(args []string) int {
 	if strings.TrimSpace(*signKey) != "" && strings.TrimSpace(*outPath) == "" {
 		fmt.Fprintln(os.Stderr, "--sign-key requires --out so the signed bytes are reproducible")
 		return runner.ExitToolError
+	}
+	// No output may land on another output or on the signing key: the
+	// envelope written over the export leaves a "signed export" with no
+	// export, and either file written over the key destroys it. Refused
+	// before anything is read or written.
+	for _, pair := range []struct{ aFlag, a, bFlag, b, consequence string }{
+		{"--out", *outPath, "--sig-out", *sigOut, "the signature envelope would overwrite the export it signs"},
+		{"--out", *outPath, "--sign-key", *signKey, "the export would overwrite the private signing key"},
+		{"--sig-out", *sigOut, "--sign-key", *signKey, "the signature envelope would overwrite the private signing key"},
+	} {
+		if err := refuseSameFile(pair.aFlag, pair.a, pair.bFlag, pair.b, pair.consequence); err != nil {
+			fmt.Fprintf(os.Stderr, "audit-export: %v\n", err)
+			return runner.ExitToolError
+		}
 	}
 
 	store := cloudregistry.NewStore(*workDir)
