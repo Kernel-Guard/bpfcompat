@@ -188,6 +188,12 @@ func ExtractEBPFFromOCI(ctx context.Context, ref, dstDir string) (path, digest s
 	if err != nil {
 		return "", "", err
 	}
+	// An image read from an OCI-layout archive is backed by a temporary
+	// unpack directory whose blobs are read lazily; keep it until the eBPF
+	// layer has been copied out.
+	if c, ok := img.(io.Closer); ok {
+		defer c.Close()
+	}
 	if d, digestErr := img.Digest(); digestErr == nil {
 		digest = d.String()
 	}
@@ -283,7 +289,10 @@ func imageFromLayout(dir string) (v1.Image, error) {
 }
 
 // imageFromArchive returns the image in an archive, trying the docker `save`
-// format first and falling back to an OCI-layout tar.
+// format first and falling back to an OCI-layout tar. An OCI-layout tar is
+// unpacked to a temporary directory that the returned image reads its blobs
+// from lazily, so that image is an *unpackedArchiveImage whose Close removes
+// the directory; on error the directory is removed before returning.
 func imageFromArchive(path string) (v1.Image, error) {
 	if img, err := tarball.ImageFromPath(path, nil); err == nil {
 		return img, nil
@@ -292,11 +301,32 @@ func imageFromArchive(path string) (v1.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir for OCI archive: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.RemoveAll(dir)
+		}
+	}()
 	if err := extractTar(path, dir); err != nil {
 		return nil, fmt.Errorf("extract OCI archive %q: %w", path, err)
 	}
-	return imageFromLayout(dir)
+	img, err := imageFromLayout(dir)
+	if err != nil {
+		return nil, err
+	}
+	keep = true
+	return &unpackedArchiveImage{Image: img, dir: dir}, nil
+}
+
+// unpackedArchiveImage is an image backed by a temporary OCI layout directory.
+// The directory must outlive every read of the image's layers; Close removes it.
+type unpackedArchiveImage struct {
+	v1.Image
+	dir string
+}
+
+func (i *unpackedArchiveImage) Close() error {
+	return os.RemoveAll(i.dir)
 }
 
 func firstImageFromIndex(idx v1.ImageIndex) (v1.Image, error) {
