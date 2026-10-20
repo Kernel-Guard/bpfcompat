@@ -40,10 +40,23 @@ import (
 )
 
 const (
-	defaultAddr           = ":8080"
-	defaultConcurrency    = 2
-	defaultTimeout        = 8 * time.Minute
+	defaultAddr        = ":8080"
+	defaultConcurrency = 2
+	defaultTimeout     = 8 * time.Minute
+	// maxMultipartFormBytes bounds how much of a multipart form is held in
+	// memory; larger file parts spill to temp files. It does NOT bound the
+	// request body — maxUploadBytes (BPFCOMPAT_API_MAX_UPLOAD_BYTES) does.
 	maxMultipartFormBytes = 128 << 20
+	// defaultMaxUploadBytes is the default hard cap on the whole multipart
+	// request body for validate and registry uploads (enforced with
+	// http.MaxBytesReader; overflow is answered with 413).
+	defaultMaxUploadBytes = 128 << 20
+	// maxRetainedValidateUploads bounds how many per-request upload
+	// directories of SUCCESSFUL validate runs are kept under
+	// workdir/uploads. They are retained because the local registry history
+	// written by the runner records artifact_path / manifest_path inside
+	// them (runtime fetch/execute read those later); older ones are pruned.
+	maxRetainedValidateUploads = 32
 	// maxJSONRequestBytes caps the body size that decodeJSONBody will read.
 	// JSON handlers carry small request shapes (compare/select/fetch/execute);
 	// a hard cap protects the process from a hostile or buggy caller sending
@@ -112,6 +125,7 @@ const (
 	envSourceCompileTimeout             = "BPFCOMPAT_API_SOURCE_COMPILE_TIMEOUT"
 	envSourceCompileAllowExtraFlags     = "BPFCOMPAT_API_SOURCE_COMPILE_ALLOW_EXTRA_FLAGS"
 	envAllowAnonymousRead               = "BPFCOMPAT_API_ALLOW_ANONYMOUS_READ"
+	envMaxUploadBytes                   = "BPFCOMPAT_API_MAX_UPLOAD_BYTES"
 	// envGitHubMarketplaceWebhookSecret holds the shared secret configured on
 	// the GitHub Marketplace listing's webhook. Deliveries are authenticated by
 	// their HMAC-SHA256 signature against this secret; when unset the endpoint
@@ -164,6 +178,10 @@ type Server struct {
 	// a job that will be cancelled mid-flight. Plain int32 + atomic ops
 	// avoids pulling in a sync.Once for what's effectively a flag.
 	shutting atomicBool
+	// uploads tracks per-request directories under workdir/uploads that
+	// an in-flight validate request or job still needs, so retention
+	// pruning never removes them.
+	uploads uploadTracker
 }
 
 func (s *Server) log() *slog.Logger {
@@ -1913,8 +1931,8 @@ func (s *Server) handleRegistryArtifactUpload(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse multipart form: %v", err))
+	if status, err := parseUploadForm(w, r); err != nil {
+		writeError(w, status, err.Error())
 		return
 	}
 	tenant := strings.TrimSpace(r.FormValue("tenant"))
@@ -2324,17 +2342,22 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireWriteAuthorizationForAction(w, r, "validate"); !ok {
 		return
 	}
-	cfg, status, err := s.buildValidateRunnerConfig(r)
+	cfg, uploadDir, status, err := s.prepareValidateUpload(w, r) //nolint:contextcheck // pre-existing: compileSourceFile bounds clang with its own timeout context (flagged on base at the buildValidateRunnerConfig call)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
 	}
+	succeeded := false
+	// Runs after the response is written: failed runs drop their upload,
+	// successful ones are retained (bounded) for registry-history readers.
+	defer func() { s.releaseUploadDir(uploadDir, succeeded) }()
 
 	result, err := s.validateRunner()(r.Context(), cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	succeeded = true
 	if err := s.autoSyncValidationArtifact(cfg, result); err != nil {
 		s.log().Warn("auto-sync registry warning", slog.String("error", err.Error()))
 	}
@@ -2361,12 +2384,20 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, status, err := s.buildValidateRunnerConfig(r)
+	// Check capacity before reading the body so a full queue never costs
+	// an upload; re-checked below because the body read can take minutes.
+	if err := s.ensureValidateJobCapacity(); err != nil {
+		writeError(w, http.StatusTooManyRequests, err.Error())
+		return
+	}
+
+	cfg, uploadDir, status, err := s.prepareValidateUpload(w, r) //nolint:contextcheck // pre-existing: compileSourceFile bounds clang with its own timeout context (flagged on base at the buildValidateRunnerConfig call)
 	if err != nil {
 		writeError(w, status, err.Error())
 		return
 	}
 	if err := s.ensureValidateJobCapacity(); err != nil {
+		s.releaseUploadDir(uploadDir, false)
 		writeError(w, http.StatusTooManyRequests, err.Error())
 		return
 	}
@@ -2384,6 +2415,9 @@ func (s *Server) handleValidateStart(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.inflight.Done()
 		s.runValidateJob(jobID, cfg)
+		// The job is terminal here: keep the upload only if it completed.
+		final, ok := s.getValidateJob(jobID)
+		s.releaseUploadDir(uploadDir, ok && final.State == "completed")
 	}()
 
 	writeJSON(w, http.StatusAccepted, validateStartResponse{
@@ -2415,16 +2449,27 @@ func (s *Server) handleValidateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-func (s *Server) buildValidateRunnerConfig(r *http.Request) (runner.Config, int, error) {
-	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
-		return runner.Config{}, http.StatusBadRequest, fmt.Errorf("parse multipart form: %w", err)
+// prepareValidateUpload reads the size-capped multipart body, copies the
+// upload into a fresh workdir/uploads/<id> directory and builds the runner
+// config. On any error the directory is removed before returning; on
+// success the caller owns it and must call releaseUploadDir exactly once.
+func (s *Server) prepareValidateUpload(w http.ResponseWriter, r *http.Request) (runner.Config, string, int, error) {
+	if status, err := parseUploadForm(w, r); err != nil {
+		return runner.Config{}, "", status, err
 	}
-
 	requestDir, err := s.newUploadDir()
 	if err != nil {
-		return runner.Config{}, http.StatusInternalServerError, err
+		return runner.Config{}, "", http.StatusInternalServerError, err
 	}
+	cfg, status, err := s.buildValidateRunnerConfig(r, requestDir)
+	if err != nil {
+		s.releaseUploadDir(requestDir, false)
+		return runner.Config{}, "", status, err
+	}
+	return cfg, requestDir, 0, nil
+}
 
+func (s *Server) buildValidateRunnerConfig(r *http.Request, requestDir string) (runner.Config, int, error) {
 	artifactPath, err := extractArtifact(r, requestDir)
 	if err != nil {
 		return runner.Config{}, http.StatusBadRequest, err
@@ -2797,7 +2842,101 @@ func (s *Server) newUploadDir() (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create upload directory: %w", err)
 	}
+	s.uploads.acquire(dir)
 	return dir, nil
+}
+
+// uploadTracker is the set of upload directories still in use.
+type uploadTracker struct {
+	mu     sync.Mutex
+	active map[string]struct{}
+}
+
+func (u *uploadTracker) acquire(dir string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.active == nil {
+		u.active = make(map[string]struct{})
+	}
+	u.active[dir] = struct{}{}
+}
+
+// releaseUploadDir ends a request's ownership of its upload directory.
+// keep=false removes it (rejected request, failed run). keep=true retains
+// it because the runner's local registry history (artifact_path,
+// manifest_path) points into it, then prunes retained directories down to
+// the newest maxRetainedValidateUploads.
+func (s *Server) releaseUploadDir(dir string, keep bool) {
+	if dir == "" {
+		return
+	}
+	s.uploads.mu.Lock()
+	defer s.uploads.mu.Unlock()
+	delete(s.uploads.active, dir)
+	if !keep {
+		if err := os.RemoveAll(dir); err != nil {
+			s.log().Warn("remove upload directory", slog.String("error", err.Error()))
+		}
+		return
+	}
+	s.pruneRetainedUploadsLocked()
+}
+
+func (s *Server) pruneRetainedUploadsLocked() {
+	root := filepath.Join(filepath.Clean(s.cfg.WorkDir), "uploads")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	type retained struct {
+		path    string
+		modTime time.Time
+	}
+	candidates := make([]retained, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		if _, inUse := s.uploads.active[path]; inUse {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, retained{path: path, modTime: info.ModTime()})
+	}
+	if len(candidates) <= maxRetainedValidateUploads {
+		return
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	for _, old := range candidates[maxRetainedValidateUploads:] {
+		if err := os.RemoveAll(old.path); err != nil {
+			s.log().Warn("prune retained upload directory", slog.String("error", err.Error()))
+		}
+	}
+}
+
+// maxUploadBytes is the hard cap on a multipart upload request body.
+func maxUploadBytes() int64 {
+	return int64(parseBoundedIntEnv(envMaxUploadBytes, defaultMaxUploadBytes, 1<<20, 4<<30))
+}
+
+// parseUploadForm caps the request body at maxUploadBytes and parses it as
+// a multipart form. Overflow maps to 413, any other parse error to 400.
+func parseUploadForm(w http.ResponseWriter, r *http.Request) (int, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
+	if err := r.ParseMultipartForm(maxMultipartFormBytes); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds the %d-byte upload limit (%s)", tooLarge.Limit, envMaxUploadBytes)
+		}
+		return http.StatusBadRequest, fmt.Errorf("parse multipart form: %w", err)
+	}
+	return 0, nil
 }
 
 func (s *Server) resolveMatrixPath(r *http.Request, requestDir string) (string, error) {

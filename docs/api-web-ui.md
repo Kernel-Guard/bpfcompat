@@ -294,6 +294,13 @@ Optional fields:
 - `concurrency` (for example `2`)
 - `clang_flags` (used only with source input mode)
 
+Upload bounds and lifecycle (applies to `POST /api/validate` and `POST /api/validate/start`):
+
+- The whole multipart request body is capped at `BPFCOMPAT_API_MAX_UPLOAD_BYTES` (default `134217728`, 128 MiB); a larger body is rejected with `413` before anything is written under `workdir/uploads`. The same cap applies to `POST /api/registry/artifacts/upload`.
+- `POST /api/validate/start` checks queue capacity before reading the body, so a `429` never costs an upload.
+- Each request copies its inputs into `workdir/uploads/<id>/`. That directory is removed when the request is rejected (`400`/`413`/`429`/`500`) or the validation run fails.
+- After a successful run the directory is retained, because the local artifact version history written by the run records `artifact_path` / `manifest_path` inside it (read later by runtime fetch/execute). Only the newest 32 retained upload directories are kept; older ones are pruned, after which runtime fetch for those history records falls back to `artifact_uri` (or fails).
+
 ## `POST /api/registry/projects` JSON body
 
 ```json

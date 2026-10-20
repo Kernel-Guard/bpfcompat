@@ -367,6 +367,11 @@ var catalog = []Var{
 		Description: "Upper bound on the per-job timeout parameter.",
 	},
 	{
+		Name: "BPFCOMPAT_API_MAX_UPLOAD_BYTES", Default: "134217728",
+		Category:    "HTTP Server",
+		Description: "Hard cap on the whole multipart request body for validate and registry uploads; larger bodies get 413. Clamped to 1 MiB..4 GiB.",
+	},
+	{
 		Name: "BPFCOMPAT_API_SOURCE_COMPILE_TIMEOUT", Default: "30s",
 		Category:    "HTTP Server",
 		Description: "clang timeout when compiling source uploads.",
