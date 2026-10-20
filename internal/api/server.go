@@ -2549,7 +2549,10 @@ func (s *Server) applyRunnerProgress(jobID string, update runner.ProgressUpdate)
 		if update.TotalProfiles > 0 {
 			job.TotalProfiles = update.TotalProfiles
 		}
-		if update.CompletedProfiles >= 0 {
+		// Only the runner's "Completed profile" updates carry a count; every
+		// other update leaves CompletedProfiles at its zero value. The count
+		// is monotonic within a run, so never let an update lower it.
+		if update.CompletedProfiles > job.CompletedProfiles {
 			job.CompletedProfiles = update.CompletedProfiles
 		}
 		if profileID := strings.TrimSpace(update.ProfileID); profileID != "" {
