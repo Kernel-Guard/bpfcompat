@@ -28,9 +28,11 @@ import (
 // a consumer parse one as the other.
 const SchemaVersion = "bpfcompat.regression-diff.v0.1"
 
-// supportedReportSchema is the only run-report schema this differ understands.
+// SupportedReportSchema is the only run-report schema this differ understands.
 // Comparing structures whose semantics are unknown is worse than refusing.
-const supportedReportSchema = "v0.1"
+// `bpfcompat compare` enforces the same value, so both commands agree on what
+// a readable report is.
+const SupportedReportSchema = "v0.1"
 
 // Cell classifications. Kept deliberately small: each state exists because a
 // release decision differs for it.
@@ -337,8 +339,8 @@ func CheckSchemas(baseline, candidate schema.ReportV01) error {
 		side string
 		got  string
 	}{{"baseline", baseline.SchemaVersion}, {"candidate", candidate.SchemaVersion}} {
-		if strings.TrimSpace(s.got) != supportedReportSchema {
-			return &UnsupportedSchemaError{Side: s.side, Got: s.got, Want: supportedReportSchema}
+		if strings.TrimSpace(s.got) != SupportedReportSchema {
+			return &UnsupportedSchemaError{Side: s.side, Got: s.got, Want: SupportedReportSchema}
 		}
 	}
 	return nil
