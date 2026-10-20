@@ -333,9 +333,20 @@ paths:
   /api/v1/runtime/decisions:
     get:
       summary: List runtime decision audit events
+      description: >-
+        Reads the decision history under the server's configured workdir
+        only. A `workdir` query parameter is rejected with 400.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 200 }
       responses:
         "200":
           description: Decision events
+        "400":
+          description: >-
+            A `workdir` override was supplied; the error message is fixed and
+            does not echo the value.
         "401":
           $ref: "#/components/responses/Unauthorized"
   /api/v1/runtime/select:
@@ -634,15 +645,33 @@ components:
         version: { type: string }
         target_profile: { type: string }
         limit: { type: integer }
-        workdir: { type: string }
+        workdir:
+          type: string
+          description: >-
+            Rejected with 400 when set. The server always reads its own
+            configured workdir; this field is kept only for CLI parity.
     RuntimeFetchRequest:
       type: object
       properties:
         artifact_name: { type: string }
         version: { type: string }
         target_profile: { type: string }
-        out_dir: { type: string }
-        require_verified_history: { type: boolean }
+        workdir:
+          type: string
+          description: >-
+            Rejected with 400 when set. The server always reads its own
+            configured workdir.
+        out_dir:
+          type: string
+          description: >-
+            Rejected with 400 when set. Fetched artifacts are always written
+            under the server's configured workdir.
+        require_verified_history:
+          type: boolean
+          default: true
+          description: >-
+            Must be true or omitted; false is rejected with 400. Signed
+            history verification cannot be disabled over the API.
     RuntimeExecuteRequest:
       type: object
       required: [tenant, project, artifact_name, allow_host_load]
