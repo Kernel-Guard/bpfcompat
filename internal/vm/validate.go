@@ -101,6 +101,13 @@ func validKernelPackageURL(value, ext string) bool {
 	return true
 }
 
+// ValidKernelRelease reports whether value is acceptable as a profile's
+// install_kernel. Generators such as kernel-sweep use it so they never emit
+// a release the profile loader would reject.
+func ValidKernelRelease(value string) bool {
+	return validKernelRelease(value)
+}
+
 // validKernelRelease keeps install_kernel shell-safe: it is interpolated
 // into guest apt/grub command lines, so only package-name characters are
 // allowed.
