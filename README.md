@@ -14,6 +14,12 @@ real distro kernels in disposable VMs, runs libbpf load/attach checks, and
 produces JSON/Markdown reports that can fail CI when an artifact regresses — so
 the answer is empirical, not inferred from CO-RE.
 
+<p align="center">
+  <a href="#upstream-ci">
+    <img src="docs/assets/upstream-ci.svg" width="720" alt="Used in upstream CI: Falco and Inspektor Gadget. View the merged integrations and workflows below." />
+  </a>
+</p>
+
 The core question is simple:
 
 > Will this `.bpf.o` load and attach on the kernels I care about, and if not,
@@ -40,6 +46,8 @@ DOI for the evolving dataset family is
 version DOI when referring to the exact `research-v1` evidence used for
 reproducibility. The research directory remains an evidence/reproducibility
 scaffold, not a peer-review or institutional-endorsement claim.
+
+<a id="upstream-ci"></a>
 
 **Runs upstream, weekly:** two projects have merged scheduled bpfcompat lanes
 into their own CI.

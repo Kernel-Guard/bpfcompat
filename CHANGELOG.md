@@ -49,6 +49,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
     prefix workspace files with `./`.
 
 ### Added
+- A compact README strip highlights the merged Falco and Inspektor Gadget
+  upstream CI integrations and links to their public evidence.
 - Releases carry the third-party license material of their binaries as signed
   assets listed in `SHA256SUMS`: `bpfcompat-third-party-licenses.tar.gz`
   (verbatim license, notice and patent texts of every linked Go module, the Go
