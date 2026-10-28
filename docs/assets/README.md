@@ -3,6 +3,17 @@
 Prepared submissions for third-party directories. Kept here so a submission is
 a copy-paste, not a rewrite.
 
+## `upstream-ci.svg`
+
+A compact, theme-aware README strip linking to the public upstream CI evidence.
+The project names are plain text, not third-party logos. It records scheduled
+CI integration, consistent with [ADOPTERS.md](../../ADOPTERS.md).
+
+Sources: [Falco's merged integration](https://github.com/falcosecurity/libs/pull/3024)
+and [workflow](https://github.com/falcosecurity/libs/blob/master/.github/workflows/bpfcompat-compatibility.yml);
+[Inspektor Gadget's merged integration](https://github.com/inspektor-gadget/inspektor-gadget/pull/5708)
+and [workflow](https://github.com/inspektor-gadget/inspektor-gadget/blob/main/.github/workflows/gadget-kernel-compatibility.yml).
+
 ## `bpfcompat-logo.svg`
 
 Mark-only (no text). Directory guidelines — CNCF landscape and ebpf.io both —
